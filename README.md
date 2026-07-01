@@ -9,6 +9,7 @@ Suggested domain: `trolleyscout.co.za`
 - React, Vite, TypeScript, Tailwind v4, and Phosphor icons.
 - Cloudflare Pages config through `wrangler.toml` and typed Pages Functions.
 - Cloudflare D1 store for verified offer rows.
+- D1-backed member sessions, saved source lists, and subscription state.
 - Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lover’s Market, Makro, Dis-Chem, Clicks, Usave, and OK Foods.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
@@ -21,6 +22,14 @@ Suggested domain: `trolleyscout.co.za`
 - `POST /api/offers`: validates and saves one source-backed offer draft to D1.
 - `DELETE /api/offers?id=...`: removes one verified offer row from D1.
 - `POST /api/offer-validator`: validates a draft offer and returns field errors or a normalized row preview.
+- `GET /api/member-session`: reads the current member session cookie.
+- `POST /api/member-session`: starts a D1-backed member session.
+- `DELETE /api/member-session`: clears the member session cookie.
+- `GET /api/saved-sources`: lists member-saved retailer source links.
+- `POST /api/saved-sources`: saves one official source link for the current member.
+- `DELETE /api/saved-sources?id=...`: removes one saved source link.
+- `GET /api/subscription`: returns plan state and billing readiness.
+- `POST /api/subscription`: starts Stripe Checkout when billing keys are configured.
 
 ## Data policy
 
@@ -51,6 +60,15 @@ npm run build
 npx wrangler d1 migrations apply trolley-scout --local
 npx wrangler pages dev dist --port 8792 --ip 127.0.0.1
 ```
+
+Paid subscription checkout expects these Cloudflare environment variables:
+
+- `APP_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_SCOUT_PRICE_ID`
+- `STRIPE_HOUSEHOLD_PRICE_ID`
+
+If those keys are missing, paid plans stay visible but checkout is blocked with a billing setup message.
 
 ## Verify
 

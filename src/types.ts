@@ -74,3 +74,66 @@ export interface OfferValidationResult {
   issues: OfferValidationIssue[]
   normalizedOffer?: VerifiedOffer
 }
+
+export type MemberPlanId = 'free' | 'scout' | 'household'
+
+export type MemberPlanStatus = 'active' | 'billing_not_configured' | 'checkout_required'
+
+export interface MemberPlan {
+  id: MemberPlanId
+  name: string
+  description: string
+  badge: string
+  isPaid: boolean
+  statusText: string
+  features: string[]
+}
+
+export interface MemberAccount {
+  id: string
+  email: string
+  displayName: string
+  initials: string
+  planId: MemberPlanId
+  planName: string
+  planStatus: MemberPlanStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MemberSession {
+  account?: MemberAccount
+  isAuthenticated: boolean
+}
+
+export interface MemberSessionDraft {
+  displayName: string
+  email: string
+}
+
+export interface SavedSource {
+  id: string
+  createdAt: string
+  retailerId: RetailerId
+  retailerName: string
+  sourceLabel: string
+  sourceKind: SourceKind
+  sourceUrl: string
+}
+
+export interface SavedSourceDraft {
+  retailerId: RetailerId
+  sourceUrl: string
+}
+
+export interface SubscriptionCheckoutRequest {
+  planId: MemberPlanId
+}
+
+export interface SubscriptionCheckoutResult {
+  billingReady: boolean
+  checkoutUrl?: string
+  message: string
+  planId: MemberPlanId
+  status: MemberPlanStatus
+}

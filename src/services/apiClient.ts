@@ -3,14 +3,32 @@ import { filterRetailers } from './sourceEngine'
 import { validateOfferDraft as validateOfferDraftLocal } from './offerValidation'
 import type {
   ApiEnvelope,
+  MemberSessionResponse,
   OfferCreateResponse,
   OfferDeleteResponse,
   OfferValidationResponse,
   OffersResponse,
   RetailersResponse,
+  SavedSourceCreateResponse,
+  SavedSourceDeleteResponse,
+  SavedSourcesResponse,
   SourceSummary,
+  SubscriptionCheckoutResponse,
+  SubscriptionResponse,
 } from '../api/contracts'
-import type { OfferDraft, OfferValidationResult, Retailer, SourceKind, VerifiedOffer } from '../types'
+import type {
+  MemberPlan,
+  MemberSession,
+  MemberSessionDraft,
+  OfferDraft,
+  OfferValidationResult,
+  Retailer,
+  SavedSource,
+  SavedSourceDraft,
+  SourceKind,
+  SubscriptionCheckoutRequest,
+  VerifiedOffer,
+} from '../types'
 
 type LoadStatus = 'loading' | 'ready' | 'error'
 
@@ -29,6 +47,20 @@ export interface RetailerResource {
 export interface OfferResource {
   offers: VerifiedOffer[]
   summary: SourceSummary
+}
+
+export interface MemberResource {
+  session: MemberSession
+}
+
+export interface SavedSourceResource {
+  savedSources: SavedSource[]
+}
+
+export interface SubscriptionResource {
+  account?: MemberSession['account']
+  billingReady: boolean
+  plans: MemberPlan[]
 }
 
 const defaultMeta: ApiEnvelope<unknown>['meta'] = {
@@ -53,6 +85,42 @@ export function getInitialOfferState(): ResourceState<OfferResource> {
   return {
     data: payload,
     message: 'Loading offer board.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export function getInitialMemberState(): ResourceState<MemberResource> {
+  return {
+    data: {
+      session: {
+        isAuthenticated: false,
+      },
+    },
+    message: 'Checking member session.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export function getInitialSavedSourceState(): ResourceState<SavedSourceResource> {
+  return {
+    data: {
+      savedSources: [],
+    },
+    message: 'Checking saved sources.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export function getInitialSubscriptionState(): ResourceState<SubscriptionResource> {
+  return {
+    data: {
+      billingReady: false,
+      plans: [],
+    },
+    message: 'Checking subscription.',
     meta: defaultMeta,
     status: 'loading',
   }
@@ -281,6 +349,343 @@ export async function deleteVerifiedOffer(
         summary: getStaticOffersPayload().summary,
       },
       message: 'Backend unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function loadMemberSession(signal?: AbortSignal): Promise<ResourceState<MemberResource>> {
+  try {
+    const response = await fetch('/api/member-session', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as MemberSessionResponse
+
+    return {
+      data: envelope.data,
+      message: envelope.data.session.isAuthenticated ? 'Member session active.' : 'Signed out.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        session: {
+          isAuthenticated: false,
+        },
+      },
+      message: 'Member API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function startMemberSession(
+  draft: MemberSessionDraft,
+  signal?: AbortSignal,
+): Promise<ResourceState<MemberResource>> {
+  try {
+    const response = await fetch('/api/member-session', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal,
+    })
+    const envelope = (await response.json()) as MemberSessionResponse
+
+    return {
+      data: envelope.data,
+      message: response.ok ? 'Member session started.' : 'Member session needs edits.',
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        session: {
+          isAuthenticated: false,
+        },
+      },
+      message: 'Member API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function endMemberSession(signal?: AbortSignal): Promise<ResourceState<MemberResource>> {
+  try {
+    const response = await fetch('/api/member-session', {
+      headers: {
+        accept: 'application/json',
+      },
+      method: 'DELETE',
+      signal,
+    })
+    const envelope = (await response.json()) as MemberSessionResponse
+
+    return {
+      data: envelope.data,
+      message: 'Signed out.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        session: {
+          isAuthenticated: false,
+        },
+      },
+      message: 'Member API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function loadSavedSources(signal?: AbortSignal): Promise<ResourceState<SavedSourceResource>> {
+  try {
+    const response = await fetch('/api/saved-sources', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as SavedSourcesResponse
+
+    return {
+      data: envelope.data,
+      message: 'Saved sources loaded.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        savedSources: [],
+      },
+      message: 'Saved source API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function saveSourceForMember(
+  draft: SavedSourceDraft,
+  signal?: AbortSignal,
+): Promise<ResourceState<SavedSourceCreateResponse['data'] | SavedSourcesResponse['data']>> {
+  try {
+    const response = await fetch('/api/saved-sources', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal,
+    })
+    const envelope = (await response.json()) as SavedSourceCreateResponse | SavedSourcesResponse
+
+    return {
+      data: envelope.data,
+      message: response.ok ? 'Source saved.' : 'Source could not be saved.',
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        savedSources: [],
+      },
+      message: 'Saved source API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function deleteSavedSource(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ResourceState<SavedSourceDeleteResponse['data']>> {
+  try {
+    const response = await fetch(`/api/saved-sources?id=${encodeURIComponent(id)}`, {
+      headers: {
+        accept: 'application/json',
+      },
+      method: 'DELETE',
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as SavedSourceDeleteResponse
+
+    return {
+      data: envelope.data,
+      message: envelope.data.deleted ? 'Source removed.' : 'Source was already absent.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        deleted: false,
+        id,
+        savedSources: [],
+      },
+      message: 'Saved source API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function loadSubscription(signal?: AbortSignal): Promise<ResourceState<SubscriptionResource>> {
+  try {
+    const response = await fetch('/api/subscription', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as SubscriptionResponse
+
+    return {
+      data: envelope.data,
+      message: 'Subscription loaded.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        billingReady: false,
+        plans: [],
+      },
+      message: 'Subscription API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function startSubscriptionCheckout(
+  draft: SubscriptionCheckoutRequest,
+  signal?: AbortSignal,
+): Promise<ResourceState<SubscriptionCheckoutResponse['data']>> {
+  try {
+    const response = await fetch('/api/subscription', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal,
+    })
+    const envelope = (await response.json()) as SubscriptionCheckoutResponse
+
+    return {
+      data: envelope.data,
+      message: envelope.data.checkout.message,
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        checkout: {
+          billingReady: false,
+          message: 'Subscription API unavailable.',
+          planId: draft.planId,
+          status: 'billing_not_configured',
+        },
+      },
+      message: 'Subscription API unavailable.',
       meta: {
         generatedAt: new Date().toISOString(),
         source: 'static-fallback',

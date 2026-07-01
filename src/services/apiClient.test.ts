@@ -1,7 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSourceSummary } from '../api/staticData'
 import type { OfferDraft } from '../types'
-import { createVerifiedOffer, deleteVerifiedOffer, loadOffers, loadRetailers, validateOfferDraft } from './apiClient'
+import {
+  createVerifiedOffer,
+  deleteSavedSource,
+  deleteVerifiedOffer,
+  endMemberSession,
+  loadMemberSession,
+  loadOffers,
+  loadRetailers,
+  loadSavedSources,
+  loadSubscription,
+  saveSourceForMember,
+  startMemberSession,
+  startSubscriptionCheckout,
+  validateOfferDraft,
+} from './apiClient'
 
 describe('apiClient', () => {
   afterEach(() => {
@@ -165,5 +179,242 @@ describe('apiClient', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/offers?id=clicks-test', expect.objectContaining({ method: 'DELETE' }))
     expect(state.data.deleted).toBe(true)
+  })
+
+  it('loads a member session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            session: {
+              isAuthenticated: false,
+            },
+          },
+          meta: {
+            generatedAt: '2026-07-01T00:00:00.000Z',
+            source: 'cloudflare-pages',
+          },
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const state = await loadMemberSession()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/member-session', expect.objectContaining({ headers: expect.any(Object) }))
+    expect(state.data.session.isAuthenticated).toBe(false)
+  })
+
+  it('starts and ends a member session', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              session: {
+                account: {
+                  createdAt: '2026-07-01T00:00:00.000Z',
+                  displayName: 'Test Shopper',
+                  email: 'test@example.com',
+                  id: 'member-test',
+                  initials: 'TS',
+                  planId: 'free',
+                  planName: 'Free',
+                  planStatus: 'active',
+                  updatedAt: '2026-07-01T00:00:00.000Z',
+                },
+                isAuthenticated: true,
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              session: {
+                isAuthenticated: false,
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const started = await startMemberSession({
+      displayName: 'Test Shopper',
+      email: 'test@example.com',
+    })
+    const ended = await endMemberSession()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/member-session', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/member-session', expect.objectContaining({ method: 'DELETE' }))
+    expect(started.data.session.isAuthenticated).toBe(true)
+    expect(ended.data.session.isAuthenticated).toBe(false)
+  })
+
+  it('manages saved sources through the member API', async () => {
+    const savedSource = {
+      createdAt: '2026-07-01T00:00:00.000Z',
+      id: 'source-test',
+      retailerId: 'pick-n-pay',
+      retailerName: 'Pick n Pay',
+      sourceKind: 'specials',
+      sourceLabel: 'Catalogues',
+      sourceUrl: 'https://www.pnp.co.za/catalogues',
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              savedSources: [],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              savedSource,
+              savedSources: [savedSource],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              deleted: true,
+              id: savedSource.id,
+              savedSources: [],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const loaded = await loadSavedSources()
+    const saved = await saveSourceForMember({
+      retailerId: 'pick-n-pay',
+      sourceUrl: 'https://www.pnp.co.za/catalogues',
+    })
+    const deleted = await deleteSavedSource(savedSource.id)
+
+    expect(loaded.data.savedSources).toEqual([])
+    expect('savedSource' in saved.data && saved.data.savedSource.id).toBe(savedSource.id)
+    expect(deleted.data.deleted).toBe(true)
+  })
+
+  it('loads subscription plans and starts checkout', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              billingReady: false,
+              plans: [
+                {
+                  badge: 'Included',
+                  description: 'Use the source directory.',
+                  features: ['Official source directory'],
+                  id: 'free',
+                  isPaid: false,
+                  name: 'Free',
+                  statusText: 'Active now',
+                },
+              ],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              checkout: {
+                billingReady: false,
+                message: 'Billing keys are not configured for this plan.',
+                planId: 'scout',
+                status: 'billing_not_configured',
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 503,
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const subscription = await loadSubscription()
+    const checkout = await startSubscriptionCheckout({ planId: 'scout' })
+
+    expect(subscription.data.plans).toHaveLength(1)
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/subscription', expect.objectContaining({ method: 'POST' }))
+    expect(checkout.data.checkout.status).toBe('billing_not_configured')
   })
 })
