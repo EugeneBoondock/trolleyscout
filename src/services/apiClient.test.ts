@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSourceSummary } from '../api/staticData'
 import type { OfferDraft } from '../types'
 import {
+  addBasketItemForMember,
   createVerifiedOffer,
+  deleteBasketItemForMember,
   deleteSavedDeal,
   deleteSavedSource,
   deleteVerifiedOffer,
   endMemberSession,
   loadDiscovery,
+  loadBasket,
   loadSavedDeals,
   loadMemberSession,
   loadOffers,
@@ -18,6 +21,7 @@ import {
   saveDealForMember,
   startMemberSession,
   startSubscriptionCheckout,
+  updateBasketItemForMember,
   validateOfferDraft,
 } from './apiClient'
 
@@ -506,6 +510,160 @@ describe('apiClient', () => {
 
     expect(loaded.data.savedDeals).toEqual([])
     expect('savedDeal' in saved.data && saved.data.savedDeal.id).toBe(savedDeal.id)
+    expect(deleted.data.deleted).toBe(true)
+  })
+
+  it('manages basket items through the member API', async () => {
+    const savedDeal = {
+      capturedAt: '2026-07-01T00:00:00.000Z',
+      evidenceText: 'Source product. Now R99.99',
+      id: 'saved-deal-test',
+      priceText: 'R99.99',
+      productUrl: 'https://www.dischem.co.za/product-test',
+      retailerId: 'dis-chem' as const,
+      retailerName: 'Dis-Chem',
+      savedAt: '2026-07-01T00:00:00.000Z',
+      sourceLabel: 'On promotion',
+      sourceUrl: 'https://www.dischem.co.za/on-promotion',
+      title: 'Source product',
+    }
+    const basketItem = {
+      addedAt: '2026-07-01T00:00:00.000Z',
+      deal: savedDeal,
+      id: 'basket-test',
+      linePriceCents: 9999,
+      quantity: 1,
+      savedDealId: savedDeal.id,
+      unitPriceCents: 9999,
+      updatedAt: '2026-07-01T00:00:00.000Z',
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              basket: {
+                items: [],
+                summary: {
+                  itemCount: 0,
+                  knownPriceItemCount: 0,
+                  savingsCents: 0,
+                  totalCents: 0,
+                },
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              basket: {
+                items: [basketItem],
+                summary: {
+                  itemCount: 1,
+                  knownPriceItemCount: 1,
+                  savingsCents: 0,
+                  totalCents: 9999,
+                },
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              basket: {
+                items: [
+                  {
+                    ...basketItem,
+                    linePriceCents: 29997,
+                    quantity: 3,
+                  },
+                ],
+                summary: {
+                  itemCount: 3,
+                  knownPriceItemCount: 3,
+                  savingsCents: 0,
+                  totalCents: 29997,
+                },
+              },
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              basket: {
+                items: [],
+                summary: {
+                  itemCount: 0,
+                  knownPriceItemCount: 0,
+                  savingsCents: 0,
+                  totalCents: 0,
+                },
+              },
+              deleted: true,
+              id: basketItem.id,
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const loaded = await loadBasket()
+    const added = await addBasketItemForMember({ savedDealId: savedDeal.id })
+    const updated = await updateBasketItemForMember({ id: basketItem.id, quantity: 3 })
+    const deleted = await deleteBasketItemForMember(basketItem.id)
+
+    expect(loaded.data.basket.items).toEqual([])
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/basket-items', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/basket-items', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/basket-items?id=basket-test',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(added.data.basket.summary.totalCents).toBe(9999)
+    expect(updated.data.basket.summary.itemCount).toBe(3)
     expect(deleted.data.deleted).toBe(true)
   })
 

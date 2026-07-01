@@ -3,6 +3,10 @@ import { filterRetailers } from './sourceEngine'
 import { validateOfferDraft as validateOfferDraftLocal } from './offerValidation'
 import type {
   ApiEnvelope,
+  BasketItemCreateResponse,
+  BasketItemDeleteResponse,
+  BasketItemUpdateResponse,
+  BasketResponse,
   DiscoveryResponse,
   MemberSessionResponse,
   OfferCreateResponse,
@@ -21,6 +25,9 @@ import type {
   SubscriptionResponse,
 } from '../api/contracts'
 import type {
+  Basket,
+  BasketItemDraft,
+  BasketQuantityDraft,
   MemberPlan,
   MemberSession,
   MemberSessionDraft,
@@ -71,6 +78,10 @@ export interface SavedSourceResource {
 
 export interface SavedDealResource {
   savedDeals: SavedDeal[]
+}
+
+export interface BasketResource {
+  basket: Basket
 }
 
 export interface SubscriptionResource {
@@ -258,6 +269,17 @@ export function getInitialSavedDealState(): ResourceState<SavedDealResource> {
       savedDeals: [],
     },
     message: 'Checking saved deals.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export function getInitialBasketState(): ResourceState<BasketResource> {
+  return {
+    data: {
+      basket: emptyBasket(),
+    },
+    message: 'Checking basket.',
     meta: defaultMeta,
     status: 'loading',
   }
@@ -902,6 +924,174 @@ export async function deleteSavedDeal(
   }
 }
 
+export async function loadBasket(signal?: AbortSignal): Promise<ResourceState<BasketResource>> {
+  try {
+    const response = await fetch('/api/basket-items', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as BasketResponse
+
+    return {
+      data: envelope.data,
+      message: 'Basket loaded.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        basket: emptyBasket(),
+      },
+      message: 'Basket API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function addBasketItemForMember(
+  draft: BasketItemDraft,
+  signal?: AbortSignal,
+): Promise<ResourceState<BasketItemCreateResponse['data'] | BasketResponse['data']>> {
+  try {
+    const response = await fetch('/api/basket-items', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal,
+    })
+    const envelope = (await response.json()) as BasketItemCreateResponse | BasketResponse
+
+    return {
+      data: envelope.data,
+      message: response.ok ? 'Added to basket.' : 'Basket item could not be saved.',
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        basket: emptyBasket(),
+      },
+      message: 'Basket API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function updateBasketItemForMember(
+  draft: BasketQuantityDraft,
+  signal?: AbortSignal,
+): Promise<ResourceState<BasketItemUpdateResponse['data'] | BasketResponse['data']>> {
+  try {
+    const response = await fetch('/api/basket-items', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'PATCH',
+      signal,
+    })
+    const envelope = (await response.json()) as BasketItemUpdateResponse | BasketResponse
+
+    return {
+      data: envelope.data,
+      message: response.ok ? 'Basket updated.' : 'Basket item could not be updated.',
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        basket: emptyBasket(),
+      },
+      message: 'Basket API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function deleteBasketItemForMember(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ResourceState<BasketItemDeleteResponse['data']>> {
+  try {
+    const response = await fetch(`/api/basket-items?id=${encodeURIComponent(id)}`, {
+      headers: {
+        accept: 'application/json',
+      },
+      method: 'DELETE',
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as BasketItemDeleteResponse
+
+    return {
+      data: envelope.data,
+      message: envelope.data.deleted ? 'Basket item removed.' : 'Basket item was already absent.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        basket: emptyBasket(),
+        deleted: false,
+        id,
+      },
+      message: 'Basket API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
 function emptyDiscoveryRun(): DiscoveryRun {
   return {
     deals: [] satisfies DiscoveredDeal[],
@@ -911,6 +1101,18 @@ function emptyDiscoveryRun(): DiscoveryRun {
       dataPolicy: 'Discovery rows require official source pages and extracted source text.',
       foundDealCount: 0,
       unavailableSourceCount: 0,
+    },
+  }
+}
+
+function emptyBasket(): Basket {
+  return {
+    items: [],
+    summary: {
+      itemCount: 0,
+      knownPriceItemCount: 0,
+      savingsCents: 0,
+      totalCents: 0,
     },
   }
 }

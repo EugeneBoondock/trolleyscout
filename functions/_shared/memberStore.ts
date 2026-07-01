@@ -1,4 +1,9 @@
 import type {
+  Basket,
+  BasketItem,
+  BasketItemDraft,
+  BasketQuantityDraft,
+  BasketSummary,
   MemberAccount,
   MemberPlanId,
   MemberPlanStatus,
@@ -44,6 +49,26 @@ interface SavedDealRow {
   price_text: string | null
   product_url: string
   retailer_id: string
+  saving_text: string | null
+  source_label: string
+  source_url: string
+  title: string
+}
+
+interface BasketItemRow {
+  basket_created_at: string
+  basket_id: string
+  basket_quantity: number
+  basket_updated_at: string
+  captured_at: string
+  deal_id: string
+  evidence_text: string
+  previous_price_text: string | null
+  price_text: string | null
+  product_url: string
+  retailer_id: string
+  saved_deal_created_at: string
+  saved_deal_id: string
   saving_text: string | null
   source_label: string
   source_url: string
@@ -406,6 +431,149 @@ export async function deleteMemberDeal(env: TrolleyScoutEnv, accountId: string |
   return result.meta.changes > 0
 }
 
+export async function getMemberBasket(env: TrolleyScoutEnv, accountId?: string): Promise<Basket> {
+  if (!hasMemberStore(env) || !accountId) {
+    return emptyBasket()
+  }
+
+  const result = await env.DB.prepare(
+    `SELECT
+      member_basket_items.id AS basket_id,
+      member_basket_items.quantity AS basket_quantity,
+      member_basket_items.created_at AS basket_created_at,
+      member_basket_items.updated_at AS basket_updated_at,
+      member_saved_deals.id AS saved_deal_id,
+      member_saved_deals.deal_id AS deal_id,
+      member_saved_deals.retailer_id AS retailer_id,
+      member_saved_deals.source_label AS source_label,
+      member_saved_deals.source_url AS source_url,
+      member_saved_deals.product_url AS product_url,
+      member_saved_deals.title AS title,
+      member_saved_deals.captured_at AS captured_at,
+      member_saved_deals.price_text AS price_text,
+      member_saved_deals.previous_price_text AS previous_price_text,
+      member_saved_deals.saving_text AS saving_text,
+      member_saved_deals.evidence_text AS evidence_text,
+      member_saved_deals.created_at AS saved_deal_created_at
+      FROM member_basket_items
+      INNER JOIN member_saved_deals ON member_saved_deals.id = member_basket_items.saved_deal_id
+      WHERE member_basket_items.account_id = ?
+      ORDER BY member_basket_items.created_at DESC`,
+  )
+    .bind(accountId)
+    .all<BasketItemRow>()
+
+  return buildBasket(result.results.map(basketItemRowToItem))
+}
+
+export async function addBasketItem(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: BasketItemDraft,
+) {
+  if (!hasMemberStore(env)) {
+    return {
+      issues: ['Member storage is not configured.'],
+    }
+  }
+
+  if (!accountId) {
+    return {
+      issues: ['Sign in before adding basket items.'],
+    }
+  }
+
+  const quantity = normalizeQuantity(input.quantity ?? 1)
+  const savedDeal = await env.DB.prepare(
+    `SELECT id FROM member_saved_deals
+      WHERE account_id = ? AND id = ?`,
+  )
+    .bind(accountId, input.savedDealId)
+    .first<{ id: string }>()
+
+  if (!savedDeal) {
+    return {
+      issues: ['Save the deal before adding it to basket.'],
+    }
+  }
+
+  const timestamp = new Date().toISOString()
+  const id = `${accountId}-${hashString(`basket:${input.savedDealId}`)}`
+
+  await env.DB.prepare(
+    `INSERT INTO member_basket_items (
+      id, account_id, saved_deal_id, quantity, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, saved_deal_id) DO UPDATE SET
+      quantity = excluded.quantity,
+      updated_at = excluded.updated_at`,
+  )
+    .bind(id, accountId, input.savedDealId, quantity, timestamp, timestamp)
+    .run()
+
+  return {
+    basket: await getMemberBasket(env, accountId),
+  }
+}
+
+export async function updateBasketItemQuantity(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: BasketQuantityDraft,
+) {
+  if (!hasMemberStore(env)) {
+    return {
+      issues: ['Member storage is not configured.'],
+    }
+  }
+
+  if (!accountId) {
+    return {
+      issues: ['Sign in before changing basket items.'],
+    }
+  }
+
+  const quantity = normalizeQuantity(input.quantity)
+  const result = await env.DB.prepare(
+    `UPDATE member_basket_items
+      SET quantity = ?, updated_at = ?
+      WHERE account_id = ? AND id = ?`,
+  )
+    .bind(quantity, new Date().toISOString(), accountId, input.id)
+    .run()
+
+  if (result.meta.changes === 0) {
+    return {
+      issues: ['Basket item was not found.'],
+    }
+  }
+
+  return {
+    basket: await getMemberBasket(env, accountId),
+  }
+}
+
+export async function deleteBasketItem(env: TrolleyScoutEnv, accountId: string | undefined, id: string) {
+  if (!hasMemberStore(env) || !accountId) {
+    return {
+      basket: emptyBasket(),
+      deleted: false,
+    }
+  }
+
+  const result = await env.DB.prepare(
+    `DELETE FROM member_basket_items
+      WHERE account_id = ? AND id = ?`,
+  )
+    .bind(accountId, id)
+    .run()
+
+  return {
+    basket: await getMemberBasket(env, accountId),
+    deleted: result.meta.changes > 0,
+  }
+}
+
 export async function startSubscriptionCheckout(
   env: TrolleyScoutEnv,
   request: Request,
@@ -558,6 +726,73 @@ function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
   }
 }
 
+function basketItemRowToItem(row: BasketItemRow): BasketItem {
+  const deal = savedDealRowToDeal({
+    captured_at: row.captured_at,
+    created_at: row.saved_deal_created_at,
+    deal_id: row.deal_id,
+    evidence_text: row.evidence_text,
+    id: row.saved_deal_id,
+    previous_price_text: row.previous_price_text,
+    price_text: row.price_text,
+    product_url: row.product_url,
+    retailer_id: row.retailer_id,
+    saving_text: row.saving_text,
+    source_label: row.source_label,
+    source_url: row.source_url,
+    title: row.title,
+  })
+  const unitPriceCents = parseRandCents(deal.priceText)
+  const previousUnitPriceCents = parseRandCents(deal.previousPriceText)
+  const linePriceCents = unitPriceCents === undefined ? undefined : unitPriceCents * row.basket_quantity
+  const lineSavingCents =
+    unitPriceCents === undefined || previousUnitPriceCents === undefined || previousUnitPriceCents <= unitPriceCents
+      ? undefined
+      : (previousUnitPriceCents - unitPriceCents) * row.basket_quantity
+
+  return {
+    addedAt: row.basket_created_at,
+    deal,
+    id: row.basket_id,
+    linePriceCents,
+    lineSavingCents,
+    previousUnitPriceCents,
+    quantity: row.basket_quantity,
+    savedDealId: row.saved_deal_id,
+    unitPriceCents,
+    updatedAt: row.basket_updated_at,
+  }
+}
+
+function buildBasket(items: BasketItem[]): Basket {
+  return {
+    items,
+    summary: basketSummary(items),
+  }
+}
+
+function basketSummary(items: BasketItem[]): BasketSummary {
+  return items.reduce<BasketSummary>(
+    (summary, item) => ({
+      itemCount: summary.itemCount + item.quantity,
+      knownPriceItemCount:
+        summary.knownPriceItemCount + (item.unitPriceCents === undefined ? 0 : item.quantity),
+      savingsCents: summary.savingsCents + (item.lineSavingCents ?? 0),
+      totalCents: summary.totalCents + (item.linePriceCents ?? 0),
+    }),
+    {
+      itemCount: 0,
+      knownPriceItemCount: 0,
+      savingsCents: 0,
+      totalCents: 0,
+    },
+  )
+}
+
+function emptyBasket(): Basket {
+  return buildBasket([])
+}
+
 function validateSavedDeal(input: SavedDealDraft) {
   const issues: string[] = []
 
@@ -670,6 +905,53 @@ function matchesRetailerSourceUrl(value: string, retailer: { sources: Array<{ ur
   } catch {
     return false
   }
+}
+
+function normalizeQuantity(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+
+  return Math.min(99, Math.max(1, Math.trunc(value)))
+}
+
+function parseRandCents(value?: string) {
+  if (!value) {
+    return undefined
+  }
+
+  const match = /R\s*([0-9][0-9\s,.]*)/i.exec(value)
+
+  if (!match) {
+    return undefined
+  }
+
+  const rawAmount = match[1].replace(/\s/g, '')
+  const lastComma = rawAmount.lastIndexOf(',')
+  const lastDot = rawAmount.lastIndexOf('.')
+  let normalized = rawAmount.replace(/[,.]/g, '')
+
+  if (lastComma > -1 && (lastDot === -1 || lastComma > lastDot)) {
+    const centsPart = rawAmount.slice(lastComma + 1)
+
+    if (/^\d{2}$/.test(centsPart)) {
+      normalized = `${rawAmount.slice(0, lastComma).replace(/[,.]/g, '')}.${centsPart}`
+    }
+  } else if (lastDot > -1) {
+    const centsPart = rawAmount.slice(lastDot + 1)
+
+    if (/^\d{2}$/.test(centsPart)) {
+      normalized = `${rawAmount.slice(0, lastDot).replace(/[,.]/g, '')}.${centsPart}`
+    }
+  }
+
+  const amount = Number(normalized)
+
+  if (!Number.isFinite(amount)) {
+    return undefined
+  }
+
+  return Math.round(amount * 100)
 }
 
 function hashString(value: string) {

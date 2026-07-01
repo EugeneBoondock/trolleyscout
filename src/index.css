@@ -413,7 +413,8 @@ h3 {
 .discovery-panel,
 .empty-panel,
 .scanner-panel,
-.rules-panel {
+.rules-panel,
+.basket-panel {
   border: 1px solid var(--line);
   border-radius: 1.25rem;
   background: var(--surface);
@@ -484,7 +485,8 @@ h3 {
 .discovery-panel,
 .empty-panel,
 .scanner-panel,
-.rules-panel {
+.rules-panel,
+.basket-panel {
   margin-top: 1rem;
 }
 
@@ -781,7 +783,8 @@ h3 {
 }
 
 .offer-row a,
-.saved-source-row a {
+.saved-source-row a,
+.basket-row a {
   display: inline-flex;
   gap: 0.4rem;
   align-items: center;
@@ -1036,7 +1039,9 @@ h3 {
 .subscription-panel,
 .profile-panel,
 .plan-card,
-.saved-source-row {
+.saved-source-row,
+.basket-total-card,
+.basket-row {
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: var(--surface);
@@ -1271,6 +1276,123 @@ h3 {
   color: var(--muted);
 }
 
+.basket-panel {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.basket-panel .member-section-head {
+  margin-bottom: 0;
+}
+
+.basket-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.basket-total-card {
+  display: grid;
+  gap: 0.3rem;
+  min-height: 9rem;
+  padding: 1rem;
+  background: var(--surface-raised);
+}
+
+.basket-total-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.basket-total-card strong {
+  color: var(--ink);
+  font-size: clamp(1.55rem, 4vw, 2.2rem);
+  line-height: 1;
+}
+
+.basket-total-card p {
+  color: var(--muted);
+}
+
+.basket-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.basket-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.46fr);
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem;
+  background: var(--surface-raised);
+}
+
+.basket-row-main {
+  min-width: 0;
+}
+
+.basket-row-main p:not(.eyebrow) {
+  color: var(--muted);
+}
+
+.basket-row-side {
+  display: grid;
+  justify-items: end;
+  gap: 0.8rem;
+}
+
+.quantity-control {
+  display: inline-grid;
+  grid-template-columns: 2.4rem 3rem 2.4rem;
+  align-items: center;
+  min-height: 2.4rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.quantity-control button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  color: var(--ink);
+  background: transparent;
+}
+
+.quantity-control span {
+  color: var(--ink);
+  font-weight: 900;
+  text-align: center;
+}
+
+.basket-line-total {
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.basket-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  min-height: 24rem;
+  text-align: center;
+}
+
+.basket-empty svg {
+  color: var(--accent);
+}
+
+.basket-empty p:not(.eyebrow) {
+  max-width: 36rem;
+  color: var(--muted);
+}
+
 .subscription-panel,
 .profile-panel {
   display: grid;
@@ -1410,6 +1532,7 @@ h3 {
   .source-grid,
   .discovery-source-grid,
   .discovery-summary,
+  .basket-summary,
   .scanner-layout,
   .requirement-grid,
   .rules-grid {
@@ -1444,6 +1567,8 @@ h3 {
   .source-grid,
   .discovery-source-grid,
   .discovery-summary,
+  .basket-summary,
+  .basket-row,
   .scanner-layout,
   .form-grid,
   .requirement-grid,
@@ -1465,6 +1590,10 @@ h3 {
 
   .offer-actions {
     justify-content: flex-start;
+  }
+
+  .basket-row-side {
+    justify-items: start;
   }
 
   .topbar-actions {

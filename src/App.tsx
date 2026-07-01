@@ -10,20 +10,25 @@ import {
   LinkSimple,
   List,
   MagnifyingGlass,
+  Minus,
   MoonStars,
+  Plus,
   ReceiptX,
   ShieldCheck,
+  ShoppingCart,
   SlidersHorizontal,
   SignOut,
   Storefront,
   Sun,
   Tag,
+  Trash,
   UserCircle,
   Wallet,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
 import {
+  addBasketItemForMember,
   getInitialOfferState,
   getInitialRetailerState,
   loadOffers,
@@ -33,9 +38,11 @@ import {
   type RetailerResource,
   createVerifiedOffer,
   deleteVerifiedOffer,
+  deleteBasketItemForMember,
   deleteSavedDeal,
   deleteSavedSource,
   endMemberSession,
+  getInitialBasketState,
   getInitialMemberState,
   getInitialDiscoveryState,
   getInitialSavedDealState,
@@ -43,6 +50,7 @@ import {
   getInitialSubscriptionState,
   loadMemberSession,
   loadDiscovery,
+  loadBasket,
   loadSavedDeals,
   validateOfferDraft,
   loadSavedSources,
@@ -51,8 +59,10 @@ import {
   saveDealForMember,
   startMemberSession,
   startSubscriptionCheckout,
+  updateBasketItemForMember,
 } from './services/apiClient'
 import type {
+  BasketItem,
   MemberSession,
   MemberPlanId,
   MemberSessionDraft,
@@ -64,6 +74,7 @@ import type {
   VerifiedOffer,
 } from './types'
 import type {
+  BasketResource,
   DiscoveryResource,
   MemberResource,
   SavedSourceResource,
@@ -78,6 +89,7 @@ type MemberView =
   | 'sources'
   | 'discovery'
   | 'savedDeals'
+  | 'basket'
   | 'saved'
   | 'offers'
   | 'scanner'
@@ -98,6 +110,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Storefront size={20} />, label: 'Sources', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
+  { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
   { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
   { icon: <ReceiptX size={20} />, label: 'Offers', value: 'offers' },
   { icon: <ShieldCheck size={20} />, label: 'Scanner', value: 'scanner' },
@@ -148,6 +161,7 @@ function App() {
   const [savedDealState, setSavedDealState] = useState<ResourceState<SavedDealResource>>(
     getInitialSavedDealState,
   )
+  const [basketState, setBasketState] = useState<ResourceState<BasketResource>>(getInitialBasketState)
   const [subscriptionState, setSubscriptionState] = useState<ResourceState<SubscriptionResource>>(
     getInitialSubscriptionState,
   )
@@ -160,8 +174,11 @@ function App() {
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [savingSourceUrl, setSavingSourceUrl] = useState<string | undefined>()
   const [savingDealUrl, setSavingDealUrl] = useState<string | undefined>()
+  const [addingBasketDealId, setAddingBasketDealId] = useState<string | undefined>()
   const [deletingSourceId, setDeletingSourceId] = useState<string | undefined>()
   const [deletingDealId, setDeletingDealId] = useState<string | undefined>()
+  const [deletingBasketItemId, setDeletingBasketItemId] = useState<string | undefined>()
+  const [updatingBasketItemId, setUpdatingBasketItemId] = useState<string | undefined>()
   const [checkoutPlanId, setCheckoutPlanId] = useState<MemberPlanId | undefined>()
 
   useEffect(() => {
@@ -245,6 +262,7 @@ function App() {
     if (!memberState.data.session.isAuthenticated) {
       setSavedSourceState(getInitialSavedSourceState())
       setSavedDealState(getInitialSavedDealState())
+      setBasketState(getInitialBasketState())
       setSubscriptionState(getInitialSubscriptionState())
       return () => controller.abort()
     }
@@ -262,6 +280,11 @@ function App() {
     setSavedDealState((current) => ({
       ...current,
       message: 'Checking saved deals.',
+      status: 'loading',
+    }))
+    setBasketState((current) => ({
+      ...current,
+      message: 'Checking basket.',
       status: 'loading',
     }))
 
@@ -286,6 +309,13 @@ function App() {
           return
         }
       })
+    loadBasket(controller.signal)
+      .then(setBasketState)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
 
     return () => controller.abort()
   }, [memberState.data.session.isAuthenticated])
@@ -303,6 +333,8 @@ function App() {
   const savedSourceCount = savedSourceState.data.savedSources.length
   const savedDealUrls = new Set(savedDealState.data.savedDeals.map((deal) => deal.productUrl))
   const savedDealCount = savedDealState.data.savedDeals.length
+  const basketSavedDealIds = new Set(basketState.data.basket.items.map((item) => item.savedDealId))
+  const basketItemCount = basketState.data.basket.summary.itemCount
 
   useEffect(() => {
     const controller = new AbortController()
@@ -370,6 +402,7 @@ function App() {
     setMemberState(result)
     setSavedSourceState(getInitialSavedSourceState())
     setSavedDealState(getInitialSavedDealState())
+    setBasketState(getInitialBasketState())
     setSubscriptionState(getInitialSubscriptionState())
     setMemberMode(false)
     setMemberView('dashboard')
@@ -454,6 +487,30 @@ function App() {
     }
   }
 
+  async function addSavedDealToBasket(savedDealId: string) {
+    setAddingBasketDealId(savedDealId)
+    setMemberNotice(undefined)
+
+    try {
+      const result = await addBasketItemForMember({ savedDealId })
+      setBasketState({
+        data: {
+          basket: result.data.basket,
+        },
+        message: result.message,
+        meta: result.meta,
+        status: result.status,
+      })
+      setMemberNotice(result.message)
+
+      if (result.status === 'ready') {
+        setMemberView('basket')
+      }
+    } finally {
+      setAddingBasketDealId(undefined)
+    }
+  }
+
   async function removeSavedDeal(id: string) {
     setDeletingDealId(id)
     setMemberNotice(undefined)
@@ -469,8 +526,51 @@ function App() {
         status: result.status,
       })
       setMemberNotice(result.message)
+
+      const basket = await loadBasket()
+      setBasketState(basket)
     } finally {
       setDeletingDealId(undefined)
+    }
+  }
+
+  async function updateBasketQuantity(item: BasketItem, quantity: number) {
+    setUpdatingBasketItemId(item.id)
+    setMemberNotice(undefined)
+
+    try {
+      const result = await updateBasketItemForMember({ id: item.id, quantity })
+      setBasketState({
+        data: {
+          basket: result.data.basket,
+        },
+        message: result.message,
+        meta: result.meta,
+        status: result.status,
+      })
+      setMemberNotice(result.message)
+    } finally {
+      setUpdatingBasketItemId(undefined)
+    }
+  }
+
+  async function removeBasketItem(id: string) {
+    setDeletingBasketItemId(id)
+    setMemberNotice(undefined)
+
+    try {
+      const result = await deleteBasketItemForMember(id)
+      setBasketState({
+        data: {
+          basket: result.data.basket,
+        },
+        message: result.message,
+        meta: result.meta,
+        status: result.status,
+      })
+      setMemberNotice(result.message)
+    } finally {
+      setDeletingBasketItemId(undefined)
     }
   }
 
@@ -626,8 +726,13 @@ function App() {
     return (
       <MemberShell
         activeView={memberView}
+        addingBasketDealId={addingBasketDealId}
         apiMode={apiMode}
+        basketItemCount={basketItemCount}
+        basketSavedDealIds={basketSavedDealIds}
+        basketState={basketState}
         checkoutPlanId={checkoutPlanId}
+        deletingBasketItemId={deletingBasketItemId}
         deletingOfferId={deletingOfferId}
         deletingDealId={deletingDealId}
         deletingSourceId={deletingSourceId}
@@ -639,8 +744,10 @@ function App() {
         memberNotice={memberNotice}
         memberState={memberState}
         offerState={offerState}
+        onAddToBasket={addSavedDealToBasket}
         onCheckout={requestCheckout}
         onCloseSidebar={() => setIsMemberSidebarOpen(false)}
+        onDeleteBasketItem={removeBasketItem}
         onDeleteOffer={removeOffer}
         onDeleteDeal={removeSavedDeal}
         onDeleteSource={removeSavedSource}
@@ -656,6 +763,7 @@ function App() {
         onSignOut={signOutMemberMode}
         onThemeToggle={() => setTheme(theme === 'light' ? 'dark' : 'light')}
         onToggleSidebar={() => setIsMemberSidebarOpen((current) => !current)}
+        onUpdateBasketQuantity={updateBasketQuantity}
         onUpdateScanner={updateScannerDraft}
         onQueryChange={setQuery}
         onSourceKindChange={setSourceKind}
@@ -675,6 +783,7 @@ function App() {
         sourceKind={sourceKind}
         subscriptionState={subscriptionState}
         theme={theme}
+        updatingBasketItemId={updatingBasketItemId}
         writeNotice={writeNotice}
       />
     )
@@ -941,8 +1050,13 @@ function MemberAuthScreen({
 
 function MemberShell({
   activeView,
+  addingBasketDealId,
   apiMode,
+  basketItemCount,
+  basketSavedDealIds,
+  basketState,
   checkoutPlanId,
+  deletingBasketItemId,
   deletingOfferId,
   deletingDealId,
   deletingSourceId,
@@ -954,8 +1068,10 @@ function MemberShell({
   memberNotice,
   memberState,
   offerState,
+  onAddToBasket,
   onCheckout,
   onCloseSidebar,
+  onDeleteBasketItem,
   onDeleteOffer,
   onDeleteDeal,
   onDeleteSource,
@@ -973,6 +1089,7 @@ function MemberShell({
   onSourceKindChange,
   onThemeToggle,
   onToggleSidebar,
+  onUpdateBasketQuantity,
   onUpdateScanner,
   query,
   retailerState,
@@ -990,11 +1107,17 @@ function MemberShell({
   sourceKind,
   subscriptionState,
   theme,
+  updatingBasketItemId,
   writeNotice,
 }: {
   activeView: MemberView
+  addingBasketDealId?: string
   apiMode: string
+  basketItemCount: number
+  basketSavedDealIds: Set<string>
+  basketState: ResourceState<BasketResource>
   checkoutPlanId?: MemberPlanId
+  deletingBasketItemId?: string
   deletingOfferId?: string
   deletingDealId?: string
   deletingSourceId?: string
@@ -1006,8 +1129,10 @@ function MemberShell({
   memberNotice?: string
   memberState: ResourceState<MemberResource>
   offerState: ResourceState<OfferResource>
+  onAddToBasket: (savedDealId: string) => void
   onCheckout: (planId: MemberPlanId) => void
   onCloseSidebar: () => void
+  onDeleteBasketItem: (id: string) => void
   onDeleteOffer: (id: string) => void
   onDeleteDeal: (id: string) => void
   onDeleteSource: (id: string) => void
@@ -1025,6 +1150,7 @@ function MemberShell({
   onSourceKindChange: (value: SourceKind | 'all') => void
   onThemeToggle: () => void
   onToggleSidebar: () => void
+  onUpdateBasketQuantity: (item: BasketItem, quantity: number) => void
   onUpdateScanner: (field: keyof OfferDraft, value: string) => void
   query: string
   retailerState: ResourceState<RetailerResource>
@@ -1042,6 +1168,7 @@ function MemberShell({
   sourceKind: SourceKind | 'all'
   subscriptionState: ResourceState<SubscriptionResource>
   theme: ThemeMode
+  updatingBasketItemId?: string
   writeNotice?: string
 }) {
   const account = memberState.data.session.account
@@ -1111,6 +1238,8 @@ function MemberShell({
           <MemberDashboard
             account={account}
             apiMode={apiMode}
+            basketItemCount={basketItemCount}
+            basketTotal={formatRand(basketState.data.basket.summary.totalCents)}
             discoveryCount={discoveryState.data.discovery.summary.foundDealCount}
             onRefresh={onRefresh}
             onSetView={onSetView}
@@ -1165,11 +1294,27 @@ function MemberShell({
 
         {activeView === 'savedDeals' && (
           <SavedDealsPanel
+            addingBasketDealId={addingBasketDealId}
+            basketSavedDealIds={basketSavedDealIds}
             deletingDealId={deletingDealId}
             memberNotice={memberNotice}
+            onAddToBasket={onAddToBasket}
             onDelete={onDeleteDeal}
             onReviewDeal={onReviewDeal}
             savedDealState={savedDealState}
+          />
+        )}
+
+        {activeView === 'basket' && (
+          <BasketPanel
+            basketState={basketState}
+            deletingBasketItemId={deletingBasketItemId}
+            memberNotice={memberNotice}
+            onDeleteItem={onDeleteBasketItem}
+            onReviewDeal={onReviewDeal}
+            onSetView={onSetView}
+            onUpdateQuantity={onUpdateBasketQuantity}
+            updatingBasketItemId={updatingBasketItemId}
           />
         )}
 
@@ -1290,6 +1435,8 @@ function SourceFilterPanel({
 function MemberDashboard({
   account,
   apiMode,
+  basketItemCount,
+  basketTotal,
   discoveryCount,
   onRefresh,
   onSetView,
@@ -1300,6 +1447,8 @@ function MemberDashboard({
 }: {
   account: NonNullable<MemberSession['account']>
   apiMode: string
+  basketItemCount: number
+  basketTotal: string
   discoveryCount: number
   onRefresh: () => void
   onSetView: (view: MemberView) => void
@@ -1326,6 +1475,8 @@ function MemberDashboard({
         <Metric icon={<LinkSimple size={22} />} label="Official links" value={`${retailerState.data.summary.sourceCount}`} />
         <Metric icon={<Tag size={22} />} label="Found deals" value={`${discoveryCount}`} />
         <Metric icon={<Wallet size={22} />} label="Saved deals" value={`${savedDealCount}`} />
+        <Metric icon={<ShoppingCart size={22} />} label="Basket total" value={basketTotal} />
+        <Metric icon={<ShoppingCart size={22} />} label="Basket items" value={`${basketItemCount}`} />
         <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
         <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
       </div>
@@ -1375,20 +1526,37 @@ function MemberDashboard({
             Saved deals
           </button>
         </article>
+        <article className="dashboard-panel">
+          <div>
+            <p className="eyebrow">Basket</p>
+            <h2>Plan spend</h2>
+          </div>
+          <p>Add saved deals to a basket and watch the rand total before checkout.</p>
+          <button className="ghost-button" onClick={() => onSetView('basket')} type="button">
+            <ShoppingCart size={18} />
+            Basket
+          </button>
+        </article>
       </div>
     </section>
   )
 }
 
 function SavedDealsPanel({
+  addingBasketDealId,
+  basketSavedDealIds,
   deletingDealId,
   memberNotice,
+  onAddToBasket,
   onDelete,
   onReviewDeal,
   savedDealState,
 }: {
+  addingBasketDealId?: string
+  basketSavedDealIds: Set<string>
   deletingDealId?: string
   memberNotice?: string
+  onAddToBasket: (savedDealId: string) => void
   onDelete: (id: string) => void
   onReviewDeal: (deal: DiscoveredDeal) => void
   savedDealState: ResourceState<SavedDealResource>
@@ -1401,33 +1569,45 @@ function SavedDealsPanel({
       {memberNotice && <div className="write-notice">{memberNotice}</div>}
       {savedDeals.length > 0 ? (
         <div className="saved-source-list">
-          {savedDeals.map((deal) => (
-            <article className="saved-source-row" key={deal.id}>
-              <div>
-                <p className="eyebrow">{deal.retailerName}</p>
-                <h3>{deal.title}</h3>
-                <p>{deal.priceText ?? 'No price text'}</p>
-                <p>Saved {deal.savedAt.slice(0, 10)}</p>
-              </div>
-              <div className="offer-actions">
-                <a href={deal.productUrl} rel="noreferrer" target="_blank">
-                  Product
-                  <LinkSimple size={14} />
-                </a>
-                <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
-                  Review
-                </button>
-                <button
-                  className="ghost-button"
-                  disabled={deletingDealId === deal.id}
-                  onClick={() => onDelete(deal.id)}
-                  type="button"
-                >
-                  {deletingDealId === deal.id ? 'Removing' : 'Remove'}
-                </button>
-              </div>
-            </article>
-          ))}
+          {savedDeals.map((deal) => {
+            const isInBasket = basketSavedDealIds.has(deal.id)
+
+            return (
+              <article className="saved-source-row" key={deal.id}>
+                <div>
+                  <p className="eyebrow">{deal.retailerName}</p>
+                  <h3>{deal.title}</h3>
+                  <p>{deal.priceText ?? 'No price text'}</p>
+                  <p>Saved {deal.savedAt.slice(0, 10)}</p>
+                </div>
+                <div className="offer-actions">
+                  <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                    Product
+                    <LinkSimple size={14} />
+                  </a>
+                  <button
+                    className="ghost-button"
+                    disabled={isInBasket || addingBasketDealId === deal.id}
+                    onClick={() => onAddToBasket(deal.id)}
+                    type="button"
+                  >
+                    {isInBasket ? 'In basket' : addingBasketDealId === deal.id ? 'Adding' : 'Add to basket'}
+                  </button>
+                  <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
+                    Review
+                  </button>
+                  <button
+                    className="ghost-button"
+                    disabled={deletingDealId === deal.id}
+                    onClick={() => onDelete(deal.id)}
+                    type="button"
+                  >
+                    {deletingDealId === deal.id ? 'Removing' : 'Remove'}
+                  </button>
+                </div>
+              </article>
+            )
+          })}
         </div>
       ) : (
         <>
@@ -1436,6 +1616,151 @@ function SavedDealsPanel({
           <h2>No saved deals yet</h2>
           <p>Save rows from the deal finder to keep a short review list.</p>
         </>
+      )}
+    </section>
+  )
+}
+
+function BasketPanel({
+  basketState,
+  deletingBasketItemId,
+  memberNotice,
+  onDeleteItem,
+  onReviewDeal,
+  onSetView,
+  onUpdateQuantity,
+  updatingBasketItemId,
+}: {
+  basketState: ResourceState<BasketResource>
+  deletingBasketItemId?: string
+  memberNotice?: string
+  onDeleteItem: (id: string) => void
+  onReviewDeal: (deal: DiscoveredDeal) => void
+  onSetView: (view: MemberView) => void
+  onUpdateQuantity: (item: BasketItem, quantity: number) => void
+  updatingBasketItemId?: string
+}) {
+  const basket = basketState.data.basket
+  const hasItems = basket.items.length > 0
+
+  return (
+    <section className="basket-panel" aria-label="Basket">
+      <div className="member-section-head">
+        <div>
+          <p className="eyebrow">Basket</p>
+          <h1>Source-backed spend</h1>
+        </div>
+        <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
+          <Wallet size={18} />
+          Saved deals
+        </button>
+      </div>
+
+      {basketState.status === 'loading' && <LoadingStrip label="Checking basket" />}
+      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+
+      {hasItems ? (
+        <>
+          <div className="basket-summary" aria-label="Basket summary">
+            <article className="basket-total-card">
+              <span>Total from prices</span>
+              <strong>{formatRand(basket.summary.totalCents)}</strong>
+              <p>
+                {basket.summary.knownPriceItemCount} priced of {basket.summary.itemCount}
+              </p>
+            </article>
+            <article className="basket-total-card">
+              <span>Savings found</span>
+              <strong>{formatRand(basket.summary.savingsCents)}</strong>
+              <p>Based on previous price text when present.</p>
+            </article>
+            <article className="basket-total-card">
+              <span>Items</span>
+              <strong>{basket.summary.itemCount}</strong>
+              <p>Quantities from saved source rows.</p>
+            </article>
+          </div>
+
+          <div className="basket-list">
+            {basket.items.map((item) => {
+              const isUpdating = updatingBasketItemId === item.id
+              const isDeleting = deletingBasketItemId === item.id
+
+              return (
+                <article className="basket-row" key={item.id}>
+                  <div className="basket-row-main">
+                    <p className="eyebrow">{item.deal.retailerName}</p>
+                    <h3>{item.deal.title}</h3>
+                    <div className="deal-price-line">
+                      {item.deal.priceText && <strong>{item.deal.priceText}</strong>}
+                      {item.deal.previousPriceText && <span>{item.deal.previousPriceText}</span>}
+                      {item.deal.savingText && <span>{item.deal.savingText}</span>}
+                    </div>
+                    <p>{item.deal.sourceLabel}</p>
+                  </div>
+
+                  <div className="basket-row-side">
+                    <div className="quantity-control" aria-label={`Quantity for ${item.deal.title}`}>
+                      <button
+                        disabled={isUpdating || item.quantity <= 1}
+                        onClick={() => onUpdateQuantity(item, item.quantity - 1)}
+                        type="button"
+                        aria-label="Decrease quantity"
+                      >
+                        <Minus size={16} />
+                      </button>
+                      <span aria-live="polite">{item.quantity}</span>
+                      <button
+                        disabled={isUpdating || item.quantity >= 99}
+                        onClick={() => onUpdateQuantity(item, item.quantity + 1)}
+                        type="button"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                    <strong className="basket-line-total">
+                      {item.linePriceCents === undefined ? 'Price not found' : formatRand(item.linePriceCents)}
+                    </strong>
+                    <div className="offer-actions">
+                      <a href={item.deal.sourceUrl} rel="noreferrer" target="_blank">
+                        Source
+                        <LinkSimple size={14} />
+                      </a>
+                      <a href={item.deal.productUrl} rel="noreferrer" target="_blank">
+                        Product
+                        <LinkSimple size={14} />
+                      </a>
+                      <button className="ghost-button" onClick={() => onReviewDeal(item.deal)} type="button">
+                        Review
+                      </button>
+                      <button
+                        className="ghost-button"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteItem(item.id)}
+                        type="button"
+                      >
+                        <Trash size={16} />
+                        {isDeleting ? 'Removing' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="basket-empty">
+          <ShoppingCart size={48} />
+          <p className="eyebrow">Basket</p>
+          <h2>Basket is empty</h2>
+          <p>Add saved deals after a source check. The total uses prices found on retailer pages.</p>
+          <button className="primary-button" onClick={() => onSetView('savedDeals')} type="button">
+            <Wallet size={18} />
+            Open saved deals
+          </button>
+        </div>
       )}
     </section>
   )
@@ -1615,6 +1940,15 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
   }
 
   return 'Active'
+}
+
+function formatRand(cents: number) {
+  return new Intl.NumberFormat('en-ZA', {
+    currency: 'ZAR',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: 'currency',
+  }).format(cents / 100)
 }
 
 function RuntimeBanner({

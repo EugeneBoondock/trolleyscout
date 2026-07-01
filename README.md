@@ -9,8 +9,8 @@ Suggested domain: `trolleyscout.co.za`
 - React, Vite, TypeScript, Tailwind v4, and Phosphor icons.
 - Cloudflare Pages config through `wrangler.toml` and typed Pages Functions.
 - Cloudflare D1 store for verified offer rows.
-- D1-backed member sessions, saved source lists, saved deal lists, and subscription state.
-- Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lover’s Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
+- D1-backed member sessions, saved source lists, saved deal lists, basket items, and subscription state.
+- Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lovers Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
 - Source-backed deal discovery for approved official pages that expose static product rows.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
@@ -33,6 +33,10 @@ Suggested domain: `trolleyscout.co.za`
 - `GET /api/saved-deals`: lists member-saved discovery rows.
 - `POST /api/saved-deals`: saves one source-backed discovery row for the current member.
 - `DELETE /api/saved-deals?id=...`: removes one saved deal.
+- `GET /api/basket-items`: lists basket items built from saved deals.
+- `POST /api/basket-items`: adds one saved deal to the current member basket.
+- `PATCH /api/basket-items`: changes basket item quantity.
+- `DELETE /api/basket-items?id=...`: removes one basket item.
 - `GET /api/subscription`: returns plan state and billing readiness.
 - `POST /api/subscription`: starts Stripe Checkout when billing keys are configured.
 
@@ -52,6 +56,8 @@ Each offer row must have:
 The scanner accepts a draft only when its source URL belongs to the selected retailer source list. A passing scan can then be saved to D1 from the app.
 
 The discovery endpoint never seeds offer rows. It fetches approved official sources, extracts only supported static product cards, and reports script-rendered pages as checked without copying product rows.
+
+Basket rows can be created only from saved deal IDs. Basket totals use extracted rand price text from the retailer page. Rows without parsed prices stay visible and are excluded from the rand total.
 
 ## Run locally
 
@@ -120,7 +126,7 @@ npm run cf:deploy
 - Woolworths: https://www.woolworths.co.za/content/article/wrewards-inspirational-videos/wrewards-instant-savings/_/A-cmp210372
 - SPAR: https://www.spar.co.za/SPAR-Rewards, https://www.spar.co.za/specials, https://www.spar.co.za/rewards-app
 - Boxer: https://www.boxer.co.za/promotions, https://www.boxer.co.za/news/the-boxer-rewards-club-is-here, https://www.boxer.co.za/money-kiosk/boxer-ecoupons
-- Food Lover’s Market: https://foodloversmarket.co.za/
+- Food Lovers Market: https://foodloversmarket.co.za/
 - Makro: https://business.makro.co.za/mRewardsdeals
 - Dis-Chem: https://www.dischem.co.za/better-reward, https://www.dischem.co.za/on-promotion
 - Clicks: https://clicks.co.za/clubcard, https://clicks.co.za/Myclubcard-deals

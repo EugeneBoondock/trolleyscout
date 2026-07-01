@@ -1,4 +1,7 @@
 import type {
+  Basket,
+  BasketItemDraft,
+  BasketQuantityDraft,
   MemberAccount,
   MemberPlan,
   MemberSession,
@@ -107,6 +110,28 @@ export type SavedDealDeleteResponse = ApiEnvelope<{
   deleted: boolean
   id: string
   savedDeals: SavedDeal[]
+}>
+
+export type BasketResponse = ApiEnvelope<{
+  basket: Basket
+}>
+
+export type BasketItemRequest = BasketItemDraft
+
+export type BasketItemCreateResponse = ApiEnvelope<{
+  basket: Basket
+}>
+
+export type BasketItemUpdateRequest = BasketQuantityDraft
+
+export type BasketItemUpdateResponse = ApiEnvelope<{
+  basket: Basket
+}>
+
+export type BasketItemDeleteResponse = ApiEnvelope<{
+  basket: Basket
+  deleted: boolean
+  id: string
 }>
 
 export type SubscriptionResponse = ApiEnvelope<{

@@ -197,6 +197,41 @@ export interface SavedDeal extends DiscoveredDeal {
 
 export type SavedDealDraft = DiscoveredDeal
 
+export interface BasketItem {
+  id: string
+  savedDealId: string
+  quantity: number
+  addedAt: string
+  updatedAt: string
+  deal: SavedDeal
+  unitPriceCents?: number
+  previousUnitPriceCents?: number
+  linePriceCents?: number
+  lineSavingCents?: number
+}
+
+export interface BasketSummary {
+  itemCount: number
+  knownPriceItemCount: number
+  totalCents: number
+  savingsCents: number
+}
+
+export interface Basket {
+  items: BasketItem[]
+  summary: BasketSummary
+}
+
+export interface BasketItemDraft {
+  savedDealId: string
+  quantity?: number
+}
+
+export interface BasketQuantityDraft {
+  id: string
+  quantity: number
+}
+
 export interface SubscriptionCheckoutRequest {
   planId: MemberPlanId
 }
