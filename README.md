@@ -39,6 +39,7 @@ Suggested domain: `trolleyscout.co.za`
 - `DELETE /api/basket-items?id=...`: removes one basket item.
 - `GET /api/subscription`: returns plan state and billing readiness.
 - `POST /api/subscription`: starts Stripe Checkout when billing keys are configured.
+- `POST /api/stripe-webhook`: verifies Stripe events and updates member plan state.
 
 ## Data policy
 
@@ -80,8 +81,9 @@ Paid subscription checkout expects these Cloudflare environment variables:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_SCOUT_PRICE_ID`
 - `STRIPE_HOUSEHOLD_PRICE_ID`
+- `STRIPE_WEBHOOK_SECRET`
 
-If those keys are missing, paid plans stay visible but checkout is blocked with a billing setup message.
+If those keys are missing, paid plans stay visible but checkout is blocked with a billing setup message. Point the Stripe webhook at `/api/stripe-webhook` and send `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`.
 
 ## Verify
 

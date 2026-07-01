@@ -97,7 +97,7 @@ export function getSubscriptionPlans() {
 }
 
 export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {
-  if (!env.STRIPE_SECRET_KEY) {
+  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
     return false
   }
 
@@ -629,6 +629,8 @@ export async function startSubscriptionCheckout(
   params.set('line_items[0][quantity]', '1')
   params.set('metadata[member_account_id]', account.id)
   params.set('metadata[plan_id]', planId)
+  params.set('subscription_data[metadata][member_account_id]', account.id)
+  params.set('subscription_data[metadata][plan_id]', planId)
 
   const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     body: params,
@@ -660,6 +662,117 @@ export async function startSubscriptionCheckout(
     message: 'Checkout is ready.',
     planId,
     status: 'checkout_required' as MemberPlanStatus,
+  }
+}
+
+export async function activateMemberSubscriptionFromCheckout(
+  env: TrolleyScoutEnv,
+  input: {
+    customerId?: string
+    memberAccountId?: string
+    planId?: string
+    subscriptionId?: string
+  },
+) {
+  if (!hasMemberStore(env) || !input.memberAccountId) {
+    return {
+      updated: false,
+    }
+  }
+
+  const planId = normalizePaidPlanId(input.planId)
+
+  if (!planId || !input.subscriptionId) {
+    return {
+      updated: false,
+    }
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE member_accounts
+      SET plan_id = ?, plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
+        stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = ?
+      WHERE id = ?`,
+  )
+    .bind(planId, 'active', input.customerId ?? null, input.subscriptionId, new Date().toISOString(), input.memberAccountId)
+    .run()
+
+  return {
+    planId,
+    status: 'active' as MemberPlanStatus,
+    updated: result.meta.changes > 0,
+  }
+}
+
+export async function updateMemberSubscriptionFromStripe(
+  env: TrolleyScoutEnv,
+  input: {
+    customerId?: string
+    memberAccountId?: string
+    planId?: string
+    status?: string
+    subscriptionId?: string
+  },
+) {
+  if (!hasMemberStore(env) || !input.subscriptionId) {
+    return {
+      updated: false,
+    }
+  }
+
+  const timestamp = new Date().toISOString()
+  const memberStatus = stripeStatusToMemberStatus(input.status)
+  const planId = normalizePaidPlanId(input.planId)
+
+  if (input.memberAccountId && planId) {
+    const result = await env.DB.prepare(
+      `UPDATE member_accounts
+        SET plan_id = ?, plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
+          stripe_subscription_id = ?, updated_at = ?
+        WHERE id = ?`,
+    )
+      .bind(planId, memberStatus, input.customerId ?? null, input.subscriptionId, timestamp, input.memberAccountId)
+      .run()
+
+    return {
+      status: memberStatus,
+      updated: result.meta.changes > 0,
+    }
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE member_accounts
+      SET plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id), updated_at = ?
+      WHERE stripe_subscription_id = ?`,
+  )
+    .bind(memberStatus, input.customerId ?? null, timestamp, input.subscriptionId)
+    .run()
+
+  return {
+    status: memberStatus,
+    updated: result.meta.changes > 0,
+  }
+}
+
+export async function deactivateMemberSubscriptionFromStripe(env: TrolleyScoutEnv, subscriptionId?: string) {
+  if (!hasMemberStore(env) || !subscriptionId) {
+    return {
+      updated: false,
+    }
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE member_accounts
+      SET plan_id = ?, plan_status = ?, stripe_subscription_id = NULL, updated_at = ?
+      WHERE stripe_subscription_id = ?`,
+  )
+    .bind('free', 'active', new Date().toISOString(), subscriptionId)
+    .run()
+
+  return {
+    planId: 'free' as MemberPlanId,
+    status: 'active' as MemberPlanStatus,
+    updated: result.meta.changes > 0,
   }
 }
 
@@ -874,12 +987,24 @@ function normalizePlanId(value: string): MemberPlanId {
   return value === 'scout' || value === 'household' ? value : 'free'
 }
 
+function normalizePaidPlanId(value?: string): Exclude<MemberPlanId, 'free'> | undefined {
+  return value === 'scout' || value === 'household' ? value : undefined
+}
+
 function normalizePlanStatus(value: string): MemberPlanStatus {
   if (value === 'billing_not_configured' || value === 'checkout_required') {
     return value
   }
 
   return 'active'
+}
+
+function stripeStatusToMemberStatus(value?: string): MemberPlanStatus {
+  if (value === 'active' || value === 'trialing') {
+    return 'active'
+  }
+
+  return 'checkout_required'
 }
 
 function normalizeRetailerId(value: string): RetailerId {
