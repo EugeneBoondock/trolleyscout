@@ -1,0 +1,9 @@
+name = "trolley-scout"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trolley-scout"
+database_id = "local-trolley-scout"
+migrations_dir = "migrations"
