@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { extractDealsFromHtml, getDiscoveryTargets } from './dealDiscovery'
+import {
+  buildTakealotDealsApiUrl,
+  extractDealsFromHtml,
+  extractTakealotProductDeals,
+  getDiscoveryTargets,
+} from './dealDiscovery'
 
 describe('dealDiscovery', () => {
   it('extracts Dis-Chem static promotion cards', () => {
@@ -116,5 +121,66 @@ describe('dealDiscovery', () => {
       title: 'USB C Hub 8 in 1 Adapter',
     })
     expect(deals[0].productUrl).toBe('https://www.amazon.co.za/USB-Hub-Adapter/dp/B0H3LWJJBR')
+  })
+
+  it('builds Takealot deal API URLs from official page URLs', () => {
+    const apiUrl = new URL(buildTakealotDealsApiUrl('https://www.takealot.com/deals?filter=Type:34'))
+
+    expect(apiUrl.origin).toBe('https://api.takealot.com')
+    expect(apiUrl.pathname).toBe('/rest/v-1-17-0/searches/products')
+    expect(apiUrl.searchParams.get('context')).toBe('deals')
+    expect(apiUrl.searchParams.getAll('filter')).toEqual(['Type:34'])
+  })
+
+  it('extracts Takealot API deal rows', () => {
+    const target = getDiscoveryTargets().find(
+      (candidate) => candidate.parserId === 'takealot-deals' && candidate.sourceLabel === 'Household deals',
+    )
+
+    expect(target).toBeDefined()
+
+    const payload = {
+      sections: {
+        products: {
+          results: [
+            {
+              type: 'product_views',
+              product_views: {
+                badges: {
+                  entries: [
+                    {
+                      id: 'badge-0',
+                      type: 'saving',
+                      value: '22% off',
+                    },
+                  ],
+                },
+                buybox_summary: {
+                  pretty_price: 'From R 248',
+                },
+                core: {
+                  id: 70902784,
+                  slug: 'indomie-mi-goreng-hot-and-spicy-noodle-80gr-x-40-units',
+                  title: 'Indomie Mi Goreng Hot and Spicy Noodle 80gr x 40 Units',
+                },
+              },
+            },
+          ],
+        },
+      },
+    }
+
+    const deals = extractTakealotProductDeals(target!, payload, '2026-07-01T10:00:00.000Z')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      priceText: 'From R 248',
+      retailerId: 'takealot',
+      savingText: '22% off',
+      title: 'Indomie Mi Goreng Hot and Spicy Noodle 80gr x 40 Units',
+    })
+    expect(deals[0].productUrl).toBe(
+      'https://www.takealot.com/indomie-mi-goreng-hot-and-spicy-noodle-80gr-x-40-units/PLID70902784',
+    )
   })
 })

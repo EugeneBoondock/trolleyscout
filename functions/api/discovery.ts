@@ -1,7 +1,9 @@
 import { dataPolicy } from '../../src/api/staticData'
 import {
+  buildTakealotDealsApiUrl,
   buildSourceResult,
   extractDealsFromHtml,
+  extractTakealotProductDeals,
   getDiscoveryTargets,
   type ResolvedDiscoveryTarget,
 } from '../../src/services/dealDiscovery'
@@ -43,6 +45,10 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   deals: DiscoveredDeal[]
   source: DiscoverySourceResult
 }> {
+  if (target.parserId === 'takealot-deals') {
+    return checkTakealotSource(target)
+  }
+
   const checkedAt = new Date().toISOString()
 
   try {
@@ -65,6 +71,51 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
 
     const html = await response.text()
     const deals = extractDealsFromHtml(target, html, checkedAt)
+
+    return {
+      deals,
+      source: buildSourceResult(target, checkedAt, deals.length, {
+        httpStatus: response.status,
+        parserId: target.parserId,
+      }),
+    }
+  } catch {
+    return {
+      deals: [],
+      source: buildSourceResult(target, checkedAt, 0, {
+        unavailable: true,
+      }),
+    }
+  }
+}
+
+async function checkTakealotSource(target: ResolvedDiscoveryTarget): Promise<{
+  deals: DiscoveredDeal[]
+  source: DiscoverySourceResult
+}> {
+  const checkedAt = new Date().toISOString()
+
+  try {
+    const response = await fetch(buildTakealotDealsApiUrl(target.source.url), {
+      headers: {
+        accept: 'application/json',
+        referer: target.source.url,
+        'user-agent': 'TrolleyScoutSourceCheck/1.0',
+      },
+    })
+
+    if (!response.ok) {
+      return {
+        deals: [],
+        source: buildSourceResult(target, checkedAt, 0, {
+          httpStatus: response.status,
+          unavailable: true,
+        }),
+      }
+    }
+
+    const payload = (await response.json()) as unknown
+    const deals = extractTakealotProductDeals(target, payload, checkedAt)
 
     return {
       deals,

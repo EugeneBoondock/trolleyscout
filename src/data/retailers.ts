@@ -298,6 +298,11 @@ export const retailers: Retailer[] = [
         kind: 'specials',
       },
       {
+        label: 'Household deals',
+        url: 'https://www.takealot.com/deals?filter=Type:34',
+        kind: 'specials',
+      },
+      {
         label: 'Deals and promotions',
         url: 'https://www.takealot.com/deals--promotions',
         kind: 'specials',

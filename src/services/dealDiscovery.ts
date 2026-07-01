@@ -25,9 +25,14 @@ export const discoveryTargets: DiscoverySourceTarget[] = [
     sourceLabel: 'Specials',
   },
   {
-    parserId: 'metadata-only',
+    parserId: 'takealot-deals',
     retailerId: 'takealot',
     sourceLabel: 'Deals',
+  },
+  {
+    parserId: 'takealot-deals',
+    retailerId: 'takealot',
+    sourceLabel: 'Household deals',
   },
   {
     parserId: 'amazon-deals',
@@ -85,6 +90,81 @@ export function extractDealsFromHtml(
   return []
 }
 
+export function buildTakealotDealsApiUrl(sourceUrl: string) {
+  const apiUrl = new URL(
+    'https://api.takealot.com/rest/v-1-17-0/searches/products',
+  )
+  apiUrl.searchParams.set('context', 'deals')
+
+  try {
+    const url = new URL(sourceUrl)
+    const promotionMatch = /\/deals\/(\d+)/.exec(url.pathname)
+
+    if (promotionMatch) {
+      apiUrl.searchParams.append('filter', `Promotions:${promotionMatch[1]}`)
+    }
+
+    for (const filter of url.searchParams.getAll('filter')) {
+      apiUrl.searchParams.append('filter', filter)
+    }
+  } catch {
+    return apiUrl.toString()
+  }
+
+  return apiUrl.toString()
+}
+
+export function extractTakealotProductDeals(
+  target: ResolvedDiscoveryTarget,
+  payload: unknown,
+  capturedAt: string,
+  limit = 8,
+) {
+  const results = getPath(payload, ['sections', 'products', 'results'])
+  const deals: DiscoveredDeal[] = []
+  const seenProducts = new Set<string>()
+
+  if (!Array.isArray(results)) {
+    return deals
+  }
+
+  for (const result of results) {
+    if (deals.length >= limit) {
+      break
+    }
+
+    const view = recordValue(result, 'product_views')
+    const core = recordValue(view, 'core')
+    const productId = recordValue(core, 'id')
+    const title = normalizeText(stringValue(core, 'title'))
+    const priceText = takealotPriceText(view)
+    const savingText = takealotSavingText(view)
+    const productUrl = takealotProductUrl(view, target.source.url)
+    const dedupeKey = `${productId || title}-${priceText || ''}`
+
+    if (!title || !priceText || seenProducts.has(dedupeKey)) {
+      continue
+    }
+
+    seenProducts.add(dedupeKey)
+    deals.push({
+      capturedAt,
+      evidenceText: evidenceText(title, priceText, undefined, savingText),
+      id: dealId(target.retailer.id, title, priceText, deals.length),
+      priceText,
+      productUrl,
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      savingText,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+      title,
+    })
+  }
+
+  return deals
+}
+
 export function buildSourceResult(
   target: ResolvedDiscoveryTarget,
   checkedAt: string,
@@ -135,6 +215,8 @@ export function buildSourceResult(
     statusText:
       options.parserId === 'metadata-only'
         ? 'Official page checked. Product rows need browser rendering.'
+        : options.parserId === 'takealot-deals'
+          ? 'Official deals source checked. No product rows matched.'
         : 'Official page checked. No static product rows matched.',
   }
 }
@@ -311,6 +393,59 @@ function extractJsonObjectsWithKey(html: string, key: string) {
   }
 
   return objects
+}
+
+function takealotPriceText(view: unknown) {
+  const buybox = recordValue(view, 'buybox_summary')
+  const prettyPrice = normalizeText(stringValue(buybox, 'pretty_price'))
+  const appPrettyPrice = normalizeText(stringValue(buybox, 'app_pretty_price'))
+
+  if (prettyPrice) {
+    return prettyPrice
+  }
+
+  if (appPrettyPrice) {
+    return appPrettyPrice
+  }
+
+  const impressionPrice = recordValue(getPath(view, ['enhanced_ecommerce_impression', 'ecommerce', 'impressions', '0']), 'price')
+
+  if (typeof impressionPrice === 'string' || typeof impressionPrice === 'number') {
+    return formatRandAmount(impressionPrice)
+  }
+
+  return undefined
+}
+
+function takealotSavingText(view: unknown) {
+  const badges = getPath(view, ['badges', 'entries'])
+
+  if (Array.isArray(badges)) {
+    for (const badge of badges) {
+      const type = stringValue(badge, 'type')
+      const value = normalizeText(stringValue(badge, 'value'))
+
+      if (type === 'saving' && value) {
+        return value
+      }
+    }
+  }
+
+  const saving = normalizeText(stringValue(recordValue(view, 'buybox_summary'), 'saving'))
+
+  return saving ? `${saving} off` : undefined
+}
+
+function takealotProductUrl(view: unknown, baseUrl: string) {
+  const core = recordValue(view, 'core')
+  const productId = recordValue(core, 'id')
+  const slug = stringValue(core, 'slug')
+
+  if ((typeof productId === 'string' || typeof productId === 'number') && slug) {
+    return `https://www.takealot.com/${slug}/PLID${productId}`
+  }
+
+  return baseUrl
 }
 
 function balancedJsonObject(value: string, start: number) {
