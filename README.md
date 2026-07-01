@@ -11,7 +11,7 @@ Suggested domain: `trolleyscout.co.za`
 - Cloudflare D1 store for verified offer rows.
 - D1-backed member sessions, saved source lists, saved deal lists, basket items, and subscription state.
 - Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lovers Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
-- Source-backed deal discovery for approved official pages that expose static product rows.
+- Source-backed deal discovery for approved official pages that expose static product rows, including Amazon South Africa deals and voucher JSON.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
 ## API routes
@@ -55,7 +55,7 @@ Each offer row must have:
 
 The scanner accepts a draft only when its source URL belongs to the selected retailer source list. A passing scan can then be saved to D1 from the app.
 
-The discovery endpoint never seeds offer rows. It fetches approved official sources, extracts only supported static product cards, and reports script-rendered pages as checked without copying product rows.
+The discovery endpoint never seeds offer rows. It fetches approved official sources, extracts only supported static product cards and embedded product JSON, and reports script-rendered pages as checked without copying product rows.
 
 Basket rows can be created only from saved deal IDs. Basket totals use extracted rand price text from the retailer page. Rows without parsed prices stay visible and are excluded from the rand total.
 

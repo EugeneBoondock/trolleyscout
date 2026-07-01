@@ -157,11 +157,11 @@ export const retailers: Retailer[] = [
   },
   {
     id: 'food-lovers',
-    name: 'Food Lover’s Market',
-    shortName: 'Food Lover’s',
+    name: 'Food Lovers Market',
+    shortName: 'Food Lovers',
     group: 'Fresh market',
     program: 'Market specials',
-    sourceNote: 'Official Food Lover’s Market specials entry point.',
+    sourceNote: 'Official Food Lovers Market specials entry point.',
     verifiedOn: sourceVerifiedOn,
     accentColor: '#78a22f',
     sources: [

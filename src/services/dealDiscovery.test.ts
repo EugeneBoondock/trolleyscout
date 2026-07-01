@@ -69,4 +69,52 @@ describe('dealDiscovery', () => {
     })
     expect(deals[0].productUrl).toBe('https://www.yuppiechef.com/philips-coffee-makers.htm?id=65331&name=Philips-5500-Series-Fully-Automatic-Bean-to-Cup-and-Cold-Brew-Espresso-Machine')
   })
+
+  it('extracts Amazon static deal JSON', () => {
+    const target = getDiscoveryTargets().find((candidate) => candidate.parserId === 'amazon-deals')
+
+    expect(target).toBeDefined()
+
+    const html = `
+      <script>
+        {"asin":"B0FQFW7P4S","title":"Apple iPhone 17 Pro Max 512GB","link":"/Apple-iPhone-17-Pro-Max/dp/B0FQFW7P4S","price":{"priceToPay":{"label":"Deal Price:","price":"31999.0","strikethrough":false},"basisPrice":{"label":"List:","price":"35399.0","strikethrough":true}},"dealBadge":{"label":{"content":{"fragments":[{"text":"10% off"}]}}}}
+      </script>
+    `
+
+    const deals = extractDealsFromHtml(target!, html, '2026-07-01T10:00:00.000Z')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      previousPriceText: expect.stringContaining('List'),
+      priceText: expect.stringContaining('Deal Price'),
+      retailerId: 'amazon-za',
+      savingText: '10% off',
+      title: 'Apple iPhone 17 Pro Max 512GB',
+    })
+    expect(deals[0].productUrl).toBe('https://www.amazon.co.za/Apple-iPhone-17-Pro-Max/dp/B0FQFW7P4S')
+  })
+
+  it('extracts Amazon static voucher JSON', () => {
+    const target = getDiscoveryTargets().find((candidate) => candidate.parserId === 'amazon-vouchers')
+
+    expect(target).toBeDefined()
+
+    const html = `
+      <script>
+        {"asin":"B0H3LWJJBR","title":"USB C Hub 8 in 1 Adapter","link":"/USB-Hub-Adapter/dp/B0H3LWJJBR","price":{"priceToPay":{"label":"Price:","price":"125.0","strikethrough":false}},"coupon":{"label":{"fragments":[{"text":"You pay "},{"money":{"amount":"112.50","currencyCode":"ZAR"}}]},"messaging":{"text":" with voucher"},"id":"/promo/A13E9H0R6NENRV"}}
+      </script>
+    `
+
+    const deals = extractDealsFromHtml(target!, html, '2026-07-01T10:00:00.000Z')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      previousPriceText: expect.stringContaining('Price'),
+      priceText: expect.stringContaining('Voucher price'),
+      retailerId: 'amazon-za',
+      savingText: 'With voucher',
+      title: 'USB C Hub 8 in 1 Adapter',
+    })
+    expect(deals[0].productUrl).toBe('https://www.amazon.co.za/USB-Hub-Adapter/dp/B0H3LWJJBR')
+  })
 })

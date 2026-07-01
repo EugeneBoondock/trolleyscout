@@ -62,7 +62,12 @@ export interface VerifiedOffer {
   updatedAt?: string
 }
 
-export type DiscoveryParserId = 'dischem-promotion' | 'yuppiechef-specials' | 'metadata-only'
+export type DiscoveryParserId =
+  | 'amazon-deals'
+  | 'amazon-vouchers'
+  | 'dischem-promotion'
+  | 'yuppiechef-specials'
+  | 'metadata-only'
 
 export type DiscoverySourceStatus =
   | 'found'

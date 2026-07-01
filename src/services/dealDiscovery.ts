@@ -30,12 +30,12 @@ export const discoveryTargets: DiscoverySourceTarget[] = [
     sourceLabel: 'Deals',
   },
   {
-    parserId: 'metadata-only',
+    parserId: 'amazon-deals',
     retailerId: 'amazon-za',
     sourceLabel: 'Deals',
   },
   {
-    parserId: 'metadata-only',
+    parserId: 'amazon-vouchers',
     retailerId: 'amazon-za',
     sourceLabel: 'Vouchers',
   },
@@ -72,6 +72,14 @@ export function extractDealsFromHtml(
 
   if (target.parserId === 'yuppiechef-specials') {
     return extractYuppiechefSpecials(target, html, capturedAt, limit)
+  }
+
+  if (target.parserId === 'amazon-deals') {
+    return extractAmazonProductDeals(target, html, capturedAt, limit, 'deals')
+  }
+
+  if (target.parserId === 'amazon-vouchers') {
+    return extractAmazonProductDeals(target, html, capturedAt, limit, 'vouchers')
   }
 
   return []
@@ -222,6 +230,244 @@ function extractYuppiechefSpecials(
   return deals
 }
 
+function extractAmazonProductDeals(
+  target: ResolvedDiscoveryTarget,
+  html: string,
+  capturedAt: string,
+  limit: number,
+  mode: 'deals' | 'vouchers',
+) {
+  const products = extractJsonObjectsWithKey(html, '"asin":"')
+  const deals: DiscoveredDeal[] = []
+  const seenAsins = new Set<string>()
+
+  for (const product of products) {
+    if (deals.length >= limit) {
+      break
+    }
+
+    const asin = stringValue(product, 'asin')
+    const title = normalizeText(stringValue(product, 'title'))
+    const link = stringValue(product, 'link')
+    const priceText = amazonPriceText(product, mode)
+    const previousPriceText = amazonPreviousPriceText(product, mode)
+    const savingText = amazonSavingText(product, mode)
+
+    if (!asin || seenAsins.has(asin) || !title || !link || !priceText) {
+      continue
+    }
+
+    if (mode === 'vouchers' && !hasObject(product, 'coupon')) {
+      continue
+    }
+
+    if (mode === 'deals' && !hasObject(product, 'dealBadge')) {
+      continue
+    }
+
+    seenAsins.add(asin)
+    deals.push({
+      capturedAt,
+      evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
+      id: dealId(target.retailer.id, title, priceText, deals.length),
+      previousPriceText,
+      priceText,
+      productUrl: absoluteUrl(link, target.source.url),
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      savingText,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+      title,
+    })
+  }
+
+  return deals
+}
+
+function extractJsonObjectsWithKey(html: string, key: string) {
+  const objects: unknown[] = []
+  let searchFrom = 0
+
+  while (searchFrom < html.length) {
+    const index = html.indexOf(`{${key}`, searchFrom)
+
+    if (index === -1) {
+      break
+    }
+
+    const objectText = balancedJsonObject(html, index)
+    searchFrom = index + key.length + 1
+
+    if (!objectText) {
+      continue
+    }
+
+    try {
+      objects.push(JSON.parse(objectText) as unknown)
+    } catch {
+      // Amazon can include nearby JS snippets that are not strict JSON.
+    }
+  }
+
+  return objects
+}
+
+function balancedJsonObject(value: string, start: number) {
+  let depth = 0
+  let inString = false
+  let isEscaped = false
+
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index]
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false
+      } else if (character === '\\') {
+        isEscaped = true
+      } else if (character === '"') {
+        inString = false
+      }
+
+      continue
+    }
+
+    if (character === '"') {
+      inString = true
+      continue
+    }
+
+    if (character === '{') {
+      depth += 1
+    } else if (character === '}') {
+      depth -= 1
+
+      if (depth === 0) {
+        return value.slice(start, index + 1)
+      }
+    }
+  }
+
+  return undefined
+}
+
+function amazonPriceText(product: unknown, mode: 'deals' | 'vouchers') {
+  if (mode === 'vouchers') {
+    const couponAmount = moneyAmount(getPath(product, ['coupon', 'label', 'fragments']))
+
+    if (couponAmount) {
+      return `Voucher price ${couponAmount}`
+    }
+  }
+
+  return priceWithLabel(getPath(product, ['price', 'priceToPay']))
+}
+
+function amazonPreviousPriceText(product: unknown, mode: 'deals' | 'vouchers') {
+  if (mode === 'vouchers') {
+    return priceWithLabel(getPath(product, ['price', 'priceToPay']))
+  }
+
+  return priceWithLabel(getPath(product, ['price', 'basisPrice']))
+}
+
+function amazonSavingText(product: unknown, mode: 'deals' | 'vouchers') {
+  if (mode === 'vouchers') {
+    const message = normalizeText(stringValue(getPath(product, ['coupon', 'messaging']), 'text'))
+
+    return message ? sentenceCase(message) : 'Voucher available'
+  }
+
+  return fragmentText(getPath(product, ['dealBadge', 'label', 'content', 'fragments']))
+}
+
+function priceWithLabel(value: unknown) {
+  const price = recordValue(value, 'price')
+
+  if (typeof price !== 'string' && typeof price !== 'number') {
+    return undefined
+  }
+
+  const formattedPrice = formatRandAmount(price)
+  const label = normalizeText(stringValue(value, 'label')).replace(/:$/, '')
+
+  return label ? `${label} ${formattedPrice}` : formattedPrice
+}
+
+function moneyAmount(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  for (const fragment of value) {
+    const money = recordValue(fragment, 'money')
+    const amount = recordValue(money, 'amount')
+
+    if (typeof amount === 'string' || typeof amount === 'number') {
+      return formatRandAmount(amount)
+    }
+  }
+
+  return undefined
+}
+
+function fragmentText(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const text = value
+    .map((fragment) => normalizeText(stringValue(fragment, 'text')))
+    .filter(Boolean)
+    .join(' ')
+
+  return text || undefined
+}
+
+function formatRandAmount(value: string | number) {
+  const amount = Number(value)
+
+  if (!Number.isFinite(amount)) {
+    return normalizeText(String(value))
+  }
+
+  return new Intl.NumberFormat('en-ZA', {
+    currency: 'ZAR',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: 'currency',
+  }).format(amount)
+}
+
+function sentenceCase(value: string) {
+  const normalized = normalizeText(value)
+
+  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : ''
+}
+
+function getPath(value: unknown, path: string[]) {
+  return path.reduce<unknown>((current, key) => recordValue(current, key), value)
+}
+
+function recordValue(value: unknown, key: string) {
+  return typeof value === 'object' && value !== null && key in value
+    ? (value as Record<string, unknown>)[key]
+    : undefined
+}
+
+function stringValue(value: unknown, key: string) {
+  const current = recordValue(value, key)
+
+  return typeof current === 'string' ? current : ''
+}
+
+function hasObject(value: unknown, key: string) {
+  const current = recordValue(value, key)
+
+  return typeof current === 'object' && current !== null
+}
+
 function firstClassText(html: string, className: string) {
   const pattern = new RegExp(`<([a-z0-9]+)[^>]*class="[^"]*${escapeRegExp(className)}[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>`, 'i')
   return pattern.exec(html)?.[2] ?? ''
@@ -266,6 +512,9 @@ function absoluteUrl(value: string, baseUrl: string) {
 function normalizeText(value: string) {
   return stripTags(decodeHtml(value))
     .replace(/'/g, '’')
+    .replace(/\u00e2\u20ac\u2122/g, '’')
+    .replace(/\u00e2\u20ac\u0153/g, '“')
+    .replace(/\u00e2\u20ac\ufffd/g, '”')
     .replace(/\s+/g, ' ')
     .trim()
 }
