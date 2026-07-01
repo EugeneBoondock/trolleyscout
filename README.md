@@ -10,7 +10,8 @@ Suggested domain: `trolleyscout.co.za`
 - Cloudflare Pages config through `wrangler.toml` and typed Pages Functions.
 - Cloudflare D1 store for verified offer rows.
 - D1-backed member sessions, saved source lists, and subscription state.
-- Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lover’s Market, Makro, Dis-Chem, Clicks, Usave, and OK Foods.
+- Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lover’s Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
+- Source-backed deal discovery for approved official pages that expose static product rows.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
 ## API routes
@@ -19,6 +20,7 @@ Suggested domain: `trolleyscout.co.za`
 - `GET /api/summary`: retailer, source, and verified-offer counts.
 - `GET /api/retailers`: official retailer sources, with optional `q` and `kind` query params.
 - `GET /api/offers`: verified offers from D1, or an empty local board when D1 is unavailable.
+- `GET /api/discovery`: checks approved official deal pages and returns extracted source-backed rows plus source status.
 - `POST /api/offers`: validates and saves one source-backed offer draft to D1.
 - `DELETE /api/offers?id=...`: removes one verified offer row from D1.
 - `POST /api/offer-validator`: validates a draft offer and returns field errors or a normalized row preview.
@@ -45,6 +47,8 @@ Each offer row must have:
 - Terms and loyalty rules
 
 The scanner accepts a draft only when its source URL belongs to the selected retailer source list. A passing scan can then be saved to D1 from the app.
+
+The discovery endpoint never seeds offer rows. It fetches approved official sources, extracts only supported static product cards, and reports script-rendered pages as checked without copying product rows.
 
 ## Run locally
 
@@ -119,3 +123,8 @@ npm run cf:deploy
 - Clicks: https://clicks.co.za/clubcard, https://clicks.co.za/Myclubcard-deals
 - Usave: https://www.usave.co.za/specials.html
 - OK Foods: https://www.okfoods.co.za/specials.html
+- Takealot: https://www.takealot.com/deals, https://www.takealot.com/deals--promotions, https://www.takealot.com/takealotmore
+- Amazon South Africa: https://www.amazon.co.za/deals, https://www.amazon.co.za/coupons, https://www.amazon.co.za/amazonprime
+- Game: https://www.game.co.za/on-promotion
+- Builders: https://www.builders.co.za/promotions
+- Yuppiechef: https://www.yuppiechef.com/specials.htm

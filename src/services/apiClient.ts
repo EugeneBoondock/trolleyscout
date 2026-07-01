@@ -3,6 +3,7 @@ import { filterRetailers } from './sourceEngine'
 import { validateOfferDraft as validateOfferDraftLocal } from './offerValidation'
 import type {
   ApiEnvelope,
+  DiscoveryResponse,
   MemberSessionResponse,
   OfferCreateResponse,
   OfferDeleteResponse,
@@ -23,6 +24,8 @@ import type {
   OfferDraft,
   OfferValidationResult,
   Retailer,
+  DiscoveryRun,
+  DiscoveredDeal,
   SavedSource,
   SavedSourceDraft,
   SourceKind,
@@ -47,6 +50,10 @@ export interface RetailerResource {
 export interface OfferResource {
   offers: VerifiedOffer[]
   summary: SourceSummary
+}
+
+export interface DiscoveryResource {
+  discovery: DiscoveryRun
 }
 
 export interface MemberResource {
@@ -85,6 +92,17 @@ export function getInitialOfferState(): ResourceState<OfferResource> {
   return {
     data: payload,
     message: 'Loading offer board.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export function getInitialDiscoveryState(): ResourceState<DiscoveryResource> {
+  return {
+    data: {
+      discovery: emptyDiscoveryRun(),
+    },
+    message: 'Waiting to check deal sources.',
     meta: defaultMeta,
     status: 'loading',
   }
@@ -216,6 +234,48 @@ export async function loadOffers(signal?: AbortSignal): Promise<ResourceState<Of
     return {
       data: getStaticOffersPayload(),
       message: 'Using bundled offer board.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function loadDiscovery(signal?: AbortSignal): Promise<ResourceState<DiscoveryResource>> {
+  try {
+    const response = await fetch('/api/discovery', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as DiscoveryResponse
+
+    return {
+      data: {
+        discovery: envelope.data,
+      },
+      message: 'Discovery check finished.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        discovery: emptyDiscoveryRun(),
+      },
+      message: 'Discovery API unavailable.',
       meta: {
         generatedAt: new Date().toISOString(),
         source: 'static-fallback',
@@ -692,5 +752,18 @@ export async function startSubscriptionCheckout(
       },
       status: 'error',
     }
+  }
+}
+
+function emptyDiscoveryRun(): DiscoveryRun {
+  return {
+    deals: [] satisfies DiscoveredDeal[],
+    sources: [],
+    summary: {
+      checkedSourceCount: 0,
+      dataPolicy: 'Discovery rows require official source pages and extracted source text.',
+      foundDealCount: 0,
+      unavailableSourceCount: 0,
+    },
   }
 }

@@ -36,9 +36,11 @@ import {
   deleteSavedSource,
   endMemberSession,
   getInitialMemberState,
+  getInitialDiscoveryState,
   getInitialSavedSourceState,
   getInitialSubscriptionState,
   loadMemberSession,
+  loadDiscovery,
   validateOfferDraft,
   loadSavedSources,
   loadSubscription,
@@ -54,20 +56,32 @@ import type {
   OfferValidationResult,
   Retailer,
   SourceKind,
+  DiscoveredDeal,
   VerifiedOffer,
 } from './types'
 import type {
+  DiscoveryResource,
   MemberResource,
   SavedSourceResource,
   SubscriptionResource,
 } from './services/apiClient'
 
 type ThemeMode = 'light' | 'dark'
-type ActiveView = 'sources' | 'offers' | 'scanner' | 'rules'
-type MemberView = 'dashboard' | 'sources' | 'saved' | 'offers' | 'scanner' | 'subscription' | 'profile' | 'rules'
+type ActiveView = 'sources' | 'discovery' | 'offers' | 'scanner' | 'rules'
+type MemberView =
+  | 'dashboard'
+  | 'sources'
+  | 'discovery'
+  | 'saved'
+  | 'offers'
+  | 'scanner'
+  | 'subscription'
+  | 'profile'
+  | 'rules'
 
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Sources', value: 'sources' },
+  { label: 'Find deals', value: 'discovery' },
   { label: 'Offers', value: 'offers' },
   { label: 'Scanner', value: 'scanner' },
   { label: 'Rules', value: 'rules' },
@@ -76,6 +90,7 @@ const viewOptions: Array<{ label: string; value: ActiveView }> = [
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
   { icon: <Storefront size={20} />, label: 'Sources', value: 'sources' },
+  { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
   { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
   { icon: <ReceiptX size={20} />, label: 'Offers', value: 'offers' },
   { icon: <ShieldCheck size={20} />, label: 'Scanner', value: 'scanner' },
@@ -106,6 +121,10 @@ function App() {
     getInitialRetailerState,
   )
   const [offerState, setOfferState] = useState<ResourceState<OfferResource>>(getInitialOfferState)
+  const [discoveryState, setDiscoveryState] = useState<ResourceState<DiscoveryResource>>(
+    getInitialDiscoveryState,
+  )
+  const [discoveryKey, setDiscoveryKey] = useState(0)
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -128,6 +147,7 @@ function App() {
   })
   const [memberNotice, setMemberNotice] = useState<string | undefined>()
   const [isStartingMemberSession, setIsStartingMemberSession] = useState(false)
+  const [isDiscovering, setIsDiscovering] = useState(false)
   const [savingSourceUrl, setSavingSourceUrl] = useState<string | undefined>()
   const [deletingSourceId, setDeletingSourceId] = useState<string | undefined>()
   const [checkoutPlanId, setCheckoutPlanId] = useState<MemberPlanId | undefined>()
@@ -252,12 +272,44 @@ function App() {
   const retailerCount = retailerState.data.summary.retailerCount
   const apiMode = retailerState.meta.source === 'cloudflare-pages' ? 'API live' : 'Local list'
   const memberSession = memberState.data.session
+  const discoveryVisible =
+    activeView === 'discovery' || (memberSession.isAuthenticated && memberView === 'discovery')
   const savedSourceUrls = new Set(savedSourceState.data.savedSources.map((source) => source.sourceUrl))
   const savedSourceCount = savedSourceState.data.savedSources.length
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    if (!discoveryVisible) {
+      return () => controller.abort()
+    }
+
+    setIsDiscovering(true)
+    setDiscoveryState((current) => ({
+      ...current,
+      message: 'Checking deal sources.',
+      status: 'loading',
+    }))
+
+    loadDiscovery(controller.signal)
+      .then(setDiscoveryState)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
+      .finally(() => setIsDiscovering(false))
+
+    return () => controller.abort()
+  }, [discoveryKey, discoveryVisible])
 
   function refreshSources() {
     setIsRefreshing(true)
     setRefreshKey((current) => current + 1)
+  }
+
+  function runDiscovery() {
+    setDiscoveryKey((current) => current + 1)
   }
 
   function updateMemberDraft(field: keyof MemberSessionDraft, value: string) {
@@ -378,6 +430,29 @@ function App() {
     setWriteNotice(undefined)
   }
 
+  function reviewDiscoveredDeal(deal: DiscoveredDeal) {
+    setScannerDraft({
+      capturedAt: deal.capturedAt.slice(0, 10),
+      priceText: deal.priceText ?? '',
+      retailerId: deal.retailerId,
+      savingText: deal.savingText ?? '',
+      sourceUrl: deal.productUrl || deal.sourceUrl,
+      termsText: deal.evidenceText,
+      title: deal.title,
+      validFrom: '',
+      validTo: '',
+    })
+    setScannerResult(undefined)
+    setWriteNotice('Discovery row copied to scanner. Add valid dates and source terms before saving.')
+
+    if (memberSession.isAuthenticated) {
+      setMemberView('scanner')
+      return
+    }
+
+    setActiveView('scanner')
+  }
+
   async function scanOfferDraft() {
     setIsScanning(true)
     setWriteNotice(undefined)
@@ -478,6 +553,8 @@ function App() {
         checkoutPlanId={checkoutPlanId}
         deletingOfferId={deletingOfferId}
         deletingSourceId={deletingSourceId}
+        discoveryState={discoveryState}
+        isDiscovering={isDiscovering}
         isRefreshing={isRefreshing}
         isSavingOffer={isSavingOffer}
         isScanning={isScanning}
@@ -489,6 +566,8 @@ function App() {
         onDeleteOffer={removeOffer}
         onDeleteSource={removeSavedSource}
         onRefresh={refreshSources}
+        onReviewDeal={reviewDiscoveredDeal}
+        onRunDiscovery={runDiscovery}
         onResetScanner={resetScannerDraft}
         onSaveOffer={saveScannerDraft}
         onSaveSource={saveSource}
@@ -645,6 +724,15 @@ function App() {
           </>
         )}
 
+        {activeView === 'discovery' && (
+          <DiscoveryPanel
+            isDiscovering={isDiscovering}
+            onReviewDeal={reviewDiscoveredDeal}
+            onRunDiscovery={runDiscovery}
+            state={discoveryState}
+          />
+        )}
+
         {activeView === 'offers' && (
           <OffersPanel
             deletingOfferId={deletingOfferId}
@@ -773,6 +861,8 @@ function MemberShell({
   checkoutPlanId,
   deletingOfferId,
   deletingSourceId,
+  discoveryState,
+  isDiscovering,
   isRefreshing,
   isSavingOffer,
   isScanning,
@@ -785,6 +875,8 @@ function MemberShell({
   onDeleteSource,
   onQueryChange,
   onRefresh,
+  onReviewDeal,
+  onRunDiscovery,
   onResetScanner,
   onSaveOffer,
   onSaveSource,
@@ -814,6 +906,8 @@ function MemberShell({
   checkoutPlanId?: MemberPlanId
   deletingOfferId?: string
   deletingSourceId?: string
+  discoveryState: ResourceState<DiscoveryResource>
+  isDiscovering: boolean
   isRefreshing: boolean
   isSavingOffer: boolean
   isScanning: boolean
@@ -826,6 +920,8 @@ function MemberShell({
   onDeleteSource: (id: string) => void
   onQueryChange: (value: string) => void
   onRefresh: () => void
+  onReviewDeal: (deal: DiscoveredDeal) => void
+  onRunDiscovery: () => void
   onResetScanner: () => void
   onSaveOffer: () => void
   onSaveSource: (retailerId: Retailer['id'], sourceUrl: string) => void
@@ -917,6 +1013,7 @@ function MemberShell({
           <MemberDashboard
             account={account}
             apiMode={apiMode}
+            discoveryCount={discoveryState.data.discovery.summary.foundDealCount}
             onRefresh={onRefresh}
             onSetView={onSetView}
             retailerState={retailerState}
@@ -953,6 +1050,15 @@ function MemberShell({
               savingSourceUrl={savingSourceUrl}
             />
           </>
+        )}
+
+        {activeView === 'discovery' && (
+          <DiscoveryPanel
+            isDiscovering={isDiscovering}
+            onReviewDeal={onReviewDeal}
+            onRunDiscovery={onRunDiscovery}
+            state={discoveryState}
+          />
         )}
 
         {activeView === 'saved' && (
@@ -1072,6 +1178,7 @@ function SourceFilterPanel({
 function MemberDashboard({
   account,
   apiMode,
+  discoveryCount,
   onRefresh,
   onSetView,
   retailerState,
@@ -1080,6 +1187,7 @@ function MemberDashboard({
 }: {
   account: NonNullable<MemberSession['account']>
   apiMode: string
+  discoveryCount: number
   onRefresh: () => void
   onSetView: (view: MemberView) => void
   retailerState: ResourceState<RetailerResource>
@@ -1102,6 +1210,7 @@ function MemberDashboard({
       <div className="member-metrics">
         <Metric icon={<Storefront size={22} />} label="Retailers" value={`${retailerState.data.summary.retailerCount}`} />
         <Metric icon={<LinkSimple size={22} />} label="Official links" value={`${retailerState.data.summary.sourceCount}`} />
+        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discoveryCount}`} />
         <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
         <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
       </div>
@@ -1127,6 +1236,17 @@ function MemberDashboard({
           <button className="ghost-button" onClick={() => onSetView('sources')} type="button">
             <Storefront size={18} />
             Open sources
+          </button>
+        </article>
+        <article className="dashboard-panel">
+          <div>
+            <p className="eyebrow">Deal finder</p>
+            <h2>Source-backed rows</h2>
+          </div>
+          <p>Check official deal pages and send useful rows to the scanner for review.</p>
+          <button className="ghost-button" onClick={() => onSetView('discovery')} type="button">
+            <Tag size={18} />
+            Find deals
           </button>
         </article>
       </div>
@@ -1409,6 +1529,105 @@ function SourcePanel({
           </motion.article>
         ))}
       </div>
+    </section>
+  )
+}
+
+function DiscoveryPanel({
+  isDiscovering,
+  onReviewDeal,
+  onRunDiscovery,
+  state,
+}: {
+  isDiscovering: boolean
+  onReviewDeal: (deal: DiscoveredDeal) => void
+  onRunDiscovery: () => void
+  state: ResourceState<DiscoveryResource>
+}) {
+  const discovery = state.data.discovery
+  const deals = discovery.deals
+
+  return (
+    <section className="discovery-panel" aria-label="Deal finder">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Deal finder</p>
+          <h2>Source-backed specials</h2>
+        </div>
+        <button className="primary-button" disabled={isDiscovering} onClick={onRunDiscovery} type="button">
+          <ArrowClockwise size={18} className={clsx(isDiscovering && 'is-spinning')} />
+          {isDiscovering ? 'Checking' : 'Check now'}
+        </button>
+      </div>
+
+      {state.status === 'loading' && <LoadingStrip label="Checking official deal pages" />}
+      {state.status === 'error' && <div className="write-notice">{state.message}</div>}
+
+      <div className="discovery-summary">
+        <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
+        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
+        <Metric icon={<ReceiptX size={22} />} label="Unread sources" value={`${discovery.summary.unavailableSourceCount}`} />
+      </div>
+
+      {discovery.sources.length > 0 && (
+        <div className="discovery-source-grid" aria-label="Checked sources">
+          {discovery.sources.map((source) => (
+            <article className={clsx('discovery-source-card', `is-${source.status}`)} key={`${source.retailerId}-${source.sourceLabel}`}>
+              <div>
+                <p className="eyebrow">{source.retailerName}</p>
+                <h3>{source.sourceLabel}</h3>
+                <p>{source.statusText}</p>
+              </div>
+              <div className="source-meta">
+                <span>{source.httpStatus ? `HTTP ${source.httpStatus}` : 'No status'}</span>
+                <span>{source.itemCount} rows</span>
+              </div>
+              <a href={source.sourceUrl} rel="noreferrer" target="_blank">
+                Source
+                <LinkSimple size={14} />
+              </a>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {deals.length > 0 ? (
+        <div className="discovery-deal-list">
+          {deals.map((deal) => (
+            <article className="discovery-deal-row" key={deal.id}>
+              <div>
+                <p className="eyebrow">{deal.retailerName}</p>
+                <h3>{deal.title}</h3>
+                <div className="deal-price-line">
+                  {deal.priceText && <strong>{deal.priceText}</strong>}
+                  {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
+                  {deal.savingText && <span>{deal.savingText}</span>}
+                </div>
+                <p>{deal.evidenceText}</p>
+              </div>
+              <div className="offer-actions">
+                <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                  Product
+                  <LinkSimple size={14} />
+                </a>
+                <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
+                  Review in scanner
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="discovery-empty">
+          <Tag size={46} />
+          <p className="eyebrow">No deal rows yet</p>
+          <h3>Run a source check</h3>
+          <p>
+            The finder only shows rows extracted from official pages. Script-rendered pages are reported as checked,
+            with no product rows copied.
+          </p>
+        </div>
+      )}
     </section>
   )
 }

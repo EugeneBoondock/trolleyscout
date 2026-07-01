@@ -282,6 +282,111 @@ export const retailers: Retailer[] = [
       },
     ],
   },
+  {
+    id: 'takealot',
+    name: 'Takealot',
+    shortName: 'Takealot',
+    group: 'Marketplace',
+    program: 'Deals and TakealotMORE',
+    sourceNote: 'Official Takealot deals and TakealotMORE savings pages.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#0b79bf',
+    sources: [
+      {
+        label: 'Deals',
+        url: 'https://www.takealot.com/deals',
+        kind: 'specials',
+      },
+      {
+        label: 'Deals and promotions',
+        url: 'https://www.takealot.com/deals--promotions',
+        kind: 'specials',
+      },
+      {
+        label: 'TakealotMORE',
+        url: 'https://www.takealot.com/takealotmore',
+        kind: 'loyalty',
+      },
+    ],
+  },
+  {
+    id: 'amazon-za',
+    name: 'Amazon South Africa',
+    shortName: 'Amazon ZA',
+    group: 'Marketplace',
+    program: 'Deals, vouchers, and Prime',
+    sourceNote: 'Official Amazon South Africa deals, vouchers, and Prime pages.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#ff9900',
+    sources: [
+      {
+        label: 'Deals',
+        url: 'https://www.amazon.co.za/deals',
+        kind: 'specials',
+      },
+      {
+        label: 'Vouchers',
+        url: 'https://www.amazon.co.za/coupons',
+        kind: 'app',
+      },
+      {
+        label: 'Prime',
+        url: 'https://www.amazon.co.za/amazonprime',
+        kind: 'loyalty',
+      },
+    ],
+  },
+  {
+    id: 'game',
+    name: 'Game',
+    shortName: 'Game',
+    group: 'General retailer',
+    program: 'Promotions',
+    sourceNote: 'Official Game promotion page.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#d71920',
+    sources: [
+      {
+        label: 'On promotion',
+        url: 'https://www.game.co.za/on-promotion',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'builders',
+    name: 'Builders',
+    shortName: 'Builders',
+    group: 'General retailer',
+    program: 'Promotions',
+    sourceNote: 'Official Builders promotion page.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#f68b1f',
+    sources: [
+      {
+        label: 'Promotions',
+        url: 'https://www.builders.co.za/promotions',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'yuppiechef',
+    name: 'Yuppiechef',
+    shortName: 'Yuppiechef',
+    group: 'Homeware',
+    program: 'On promotion',
+    sourceNote: 'Official Yuppiechef promotion page with static product cards.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#2f3337',
+    sources: [
+      {
+        label: 'Specials',
+        url: 'https://www.yuppiechef.com/specials.htm',
+        kind: 'specials',
+      },
+    ],
+  },
 ]
 
 export const retailerById = new Map(retailers.map((retailer) => [retailer.id, retailer]))

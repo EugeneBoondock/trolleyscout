@@ -6,6 +6,7 @@ import {
   deleteSavedSource,
   deleteVerifiedOffer,
   endMemberSession,
+  loadDiscovery,
   loadMemberSession,
   loadOffers,
   loadRetailers,
@@ -67,6 +68,64 @@ describe('apiClient', () => {
 
     expect(state.meta.source).toBe('static-fallback')
     expect(state.data.offers).toEqual([])
+  })
+
+  it('loads source-backed discovery runs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            deals: [
+              {
+                capturedAt: '2026-07-01T00:00:00.000Z',
+                evidenceText: 'Source product. Now R99.99',
+                id: 'deal-test',
+                priceText: 'R99.99',
+                productUrl: 'https://www.dischem.co.za/product-test',
+                retailerId: 'dis-chem',
+                retailerName: 'Dis-Chem',
+                sourceLabel: 'On promotion',
+                sourceUrl: 'https://www.dischem.co.za/on-promotion',
+                title: 'Source product',
+              },
+            ],
+            sources: [
+              {
+                checkedAt: '2026-07-01T00:00:00.000Z',
+                httpStatus: 200,
+                itemCount: 1,
+                retailerId: 'dis-chem',
+                retailerName: 'Dis-Chem',
+                sourceLabel: 'On promotion',
+                sourceUrl: 'https://www.dischem.co.za/on-promotion',
+                status: 'found',
+                statusText: 'Source-backed rows found.',
+              },
+            ],
+            summary: {
+              checkedSourceCount: 1,
+              dataPolicy: 'Official source text only.',
+              foundDealCount: 1,
+              unavailableSourceCount: 0,
+            },
+          },
+          meta: {
+            generatedAt: '2026-07-01T00:00:00.000Z',
+            source: 'cloudflare-pages',
+          },
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const state = await loadDiscovery()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/discovery', expect.objectContaining({ headers: expect.any(Object) }))
+    expect(state.data.discovery.summary.foundDealCount).toBe(1)
   })
 
   it('posts offer drafts to the validator API', async () => {

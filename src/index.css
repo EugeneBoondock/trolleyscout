@@ -410,6 +410,7 @@ h3 {
 
 .filter-panel,
 .source-panel,
+.discovery-panel,
 .empty-panel,
 .scanner-panel,
 .rules-panel {
@@ -480,6 +481,7 @@ h3 {
 }
 
 .source-panel,
+.discovery-panel,
 .empty-panel,
 .scanner-panel,
 .rules-panel {
@@ -605,6 +607,130 @@ h3 {
 .source-link-group button:disabled {
   color: var(--accent-strong);
   background: var(--accent-soft);
+}
+
+.discovery-panel {
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: var(--surface);
+}
+
+.discovery-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.discovery-source-grid,
+.discovery-deal-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+}
+
+.discovery-source-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.discovery-source-card,
+.discovery-deal-row {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface-raised);
+}
+
+.discovery-source-card {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+  min-height: 14rem;
+  padding: 1rem;
+}
+
+.discovery-source-card h3,
+.discovery-deal-row h3 {
+  overflow-wrap: anywhere;
+}
+
+.discovery-source-card p:not(.eyebrow),
+.discovery-deal-row p {
+  color: var(--muted);
+}
+
+.discovery-source-card.is-found {
+  background: var(--accent-soft);
+}
+
+.discovery-source-card.is-unavailable {
+  background: color-mix(in srgb, #f6e7df 60%, var(--surface));
+}
+
+:root[data-theme="dark"] .discovery-source-card.is-unavailable {
+  background: color-mix(in srgb, #4a251c 55%, var(--surface));
+}
+
+.discovery-source-card a,
+.discovery-deal-row a {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-self: start;
+  min-height: 2.2rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.discovery-deal-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.deal-price-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.deal-price-line strong,
+.deal-price-line span {
+  display: inline-flex;
+  min-height: 1.9rem;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.deal-price-line strong {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.discovery-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  text-align: center;
+}
+
+.discovery-empty svg {
+  color: var(--accent);
+}
+
+.discovery-empty p:not(.eyebrow) {
+  max-width: 42rem;
+  color: var(--muted);
 }
 
 .empty-panel {
@@ -1095,7 +1221,7 @@ h3 {
 
 .member-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 0.85rem;
 }
 
@@ -1281,6 +1407,8 @@ h3 {
 
   .metric-strip,
   .source-grid,
+  .discovery-source-grid,
+  .discovery-summary,
   .scanner-layout,
   .requirement-grid,
   .rules-grid {
@@ -1313,6 +1441,8 @@ h3 {
 
   .metric-strip,
   .source-grid,
+  .discovery-source-grid,
+  .discovery-summary,
   .scanner-layout,
   .form-grid,
   .requirement-grid,
@@ -1326,7 +1456,8 @@ h3 {
     width: auto;
   }
 
-  .offer-row {
+  .offer-row,
+  .discovery-deal-row {
     align-items: flex-start;
     flex-direction: column;
   }

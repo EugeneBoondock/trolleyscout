@@ -3,6 +3,7 @@ import type {
   MemberPlan,
   MemberSession,
   MemberSessionDraft,
+  DiscoveryRun,
   OfferDraft,
   OfferValidationResult,
   Retailer,
@@ -41,6 +42,8 @@ export type OffersResponse = ApiEnvelope<{
   offers: VerifiedOffer[]
   summary: SourceSummary
 }>
+
+export type DiscoveryResponse = ApiEnvelope<DiscoveryRun>
 
 export type HealthResponse = ApiEnvelope<{
   ok: boolean

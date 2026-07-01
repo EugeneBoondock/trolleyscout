@@ -11,10 +11,23 @@ export type RetailerId =
   | 'clicks'
   | 'usave'
   | 'ok-foods'
+  | 'takealot'
+  | 'amazon-za'
+  | 'game'
+  | 'builders'
+  | 'yuppiechef'
 
 export type SourceKind = 'specials' | 'loyalty' | 'app' | 'store-finder'
 
-export type RetailerGroup = 'Supermarket' | 'Value grocer' | 'Fresh market' | 'Wholesale' | 'Pharmacy'
+export type RetailerGroup =
+  | 'Supermarket'
+  | 'Value grocer'
+  | 'Fresh market'
+  | 'Wholesale'
+  | 'Pharmacy'
+  | 'Marketplace'
+  | 'General retailer'
+  | 'Homeware'
 
 export interface RetailerSource {
   label: string
@@ -47,6 +60,58 @@ export interface VerifiedOffer {
   termsText?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export type DiscoveryParserId = 'dischem-promotion' | 'yuppiechef-specials' | 'metadata-only'
+
+export type DiscoverySourceStatus =
+  | 'found'
+  | 'checked_no_static_rows'
+  | 'unavailable'
+  | 'unsupported'
+
+export interface DiscoverySourceTarget {
+  retailerId: RetailerId
+  sourceLabel: string
+  parserId: DiscoveryParserId
+}
+
+export interface DiscoveredDeal {
+  id: string
+  retailerId: RetailerId
+  retailerName: string
+  sourceLabel: string
+  sourceUrl: string
+  productUrl: string
+  title: string
+  capturedAt: string
+  priceText?: string
+  previousPriceText?: string
+  savingText?: string
+  evidenceText: string
+}
+
+export interface DiscoverySourceResult {
+  checkedAt: string
+  httpStatus?: number
+  itemCount: number
+  retailerId: RetailerId
+  retailerName: string
+  sourceLabel: string
+  sourceUrl: string
+  status: DiscoverySourceStatus
+  statusText: string
+}
+
+export interface DiscoveryRun {
+  deals: DiscoveredDeal[]
+  sources: DiscoverySourceResult[]
+  summary: {
+    checkedSourceCount: number
+    dataPolicy: string
+    foundDealCount: number
+    unavailableSourceCount: number
+  }
 }
 
 export interface OfferDraft {
