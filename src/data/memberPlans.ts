@@ -13,7 +13,7 @@ export const memberPlans: MemberPlan[] = [
   {
     badge: 'Paid plan',
     description: 'For one shopper managing saved retailer sources and offer checks.',
-    features: ['Saved source list', 'Member dashboard', 'Profile and plan state'],
+    features: ['Saved source list', 'Saved deal list', 'Member dashboard', 'Profile and plan state'],
     id: 'scout',
     isPaid: true,
     name: 'Scout',
@@ -22,7 +22,7 @@ export const memberPlans: MemberPlan[] = [
   {
     badge: 'Paid plan',
     description: 'For a household plan once billing is connected.',
-    features: ['Saved source list', 'Plan state in profile', 'Ready for Stripe checkout'],
+    features: ['Saved source list', 'Saved deal list', 'Plan state in profile', 'Ready for Stripe checkout'],
     id: 'household',
     isPaid: true,
     name: 'Household',

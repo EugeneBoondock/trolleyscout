@@ -3,6 +3,8 @@ import type {
   MemberPlanId,
   MemberPlanStatus,
   RetailerId,
+  SavedDeal,
+  SavedDealDraft,
   SavedSource,
   SourceKind,
 } from '../../src/types'
@@ -30,6 +32,22 @@ interface SavedSourceRow {
   source_kind: string
   source_label: string
   source_url: string
+}
+
+interface SavedDealRow {
+  captured_at: string
+  created_at: string
+  deal_id: string
+  evidence_text: string
+  id: string
+  previous_price_text: string | null
+  price_text: string | null
+  product_url: string
+  retailer_id: string
+  saving_text: string | null
+  source_label: string
+  source_url: string
+  title: string
 }
 
 export interface MemberSessionInput {
@@ -270,6 +288,124 @@ export async function deleteMemberSource(env: TrolleyScoutEnv, accountId: string
   return result.meta.changes > 0
 }
 
+export async function listSavedDeals(env: TrolleyScoutEnv, accountId?: string) {
+  if (!hasMemberStore(env) || !accountId) {
+    return []
+  }
+
+  const result = await env.DB.prepare(
+    `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
+      FROM member_saved_deals
+      WHERE account_id = ?
+      ORDER BY created_at DESC`,
+  )
+    .bind(accountId)
+    .all<SavedDealRow>()
+
+  return result.results.map(savedDealRowToDeal)
+}
+
+export async function saveMemberDeal(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: SavedDealDraft,
+) {
+  if (!hasMemberStore(env)) {
+    return {
+      issues: ['Member storage is not configured.'],
+    }
+  }
+
+  if (!accountId) {
+    return {
+      issues: ['Sign in before saving a deal.'],
+    }
+  }
+
+  const issues = validateSavedDeal(input)
+
+  if (issues.length > 0) {
+    return {
+      issues,
+    }
+  }
+
+  const retailer = retailers.find((candidate) => candidate.id === input.retailerId)
+  const source = retailer?.sources.find((candidate) => candidate.url === input.sourceUrl)
+
+  if (!retailer || !source || !matchesRetailerSourceUrl(input.productUrl, retailer)) {
+    return {
+      issues: ['Save deals only from official retailer sources.'],
+    }
+  }
+
+  const id = `${accountId}-${hashString(`${input.retailerId}:${input.productUrl}`)}`
+  const timestamp = new Date().toISOString()
+
+  await env.DB.prepare(
+    `INSERT INTO member_saved_deals (
+      id, account_id, deal_id, retailer_id, source_label, source_url, product_url,
+      title, captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, product_url) DO UPDATE SET
+      deal_id = excluded.deal_id,
+      source_label = excluded.source_label,
+      source_url = excluded.source_url,
+      title = excluded.title,
+      captured_at = excluded.captured_at,
+      price_text = excluded.price_text,
+      previous_price_text = excluded.previous_price_text,
+      saving_text = excluded.saving_text,
+      evidence_text = excluded.evidence_text`,
+  )
+    .bind(
+      id,
+      accountId,
+      input.id,
+      retailer.id,
+      source.label,
+      source.url,
+      input.productUrl,
+      input.title.trim(),
+      input.capturedAt,
+      input.priceText ?? null,
+      input.previousPriceText ?? null,
+      input.savingText ?? null,
+      input.evidenceText.trim(),
+      timestamp,
+    )
+    .run()
+
+  const savedDeal = await env.DB.prepare(
+    `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
+      FROM member_saved_deals
+      WHERE account_id = ? AND product_url = ?`,
+  )
+    .bind(accountId, input.productUrl)
+    .first<SavedDealRow>()
+
+  return {
+    savedDeal: savedDeal ? savedDealRowToDeal(savedDeal) : undefined,
+  }
+}
+
+export async function deleteMemberDeal(env: TrolleyScoutEnv, accountId: string | undefined, id: string) {
+  if (!hasMemberStore(env) || !accountId) {
+    return false
+  }
+
+  const result = await env.DB.prepare(
+    `DELETE FROM member_saved_deals
+      WHERE account_id = ? AND id = ?`,
+  )
+    .bind(accountId, id)
+    .run()
+
+  return result.meta.changes > 0
+}
+
 export async function startSubscriptionCheckout(
   env: TrolleyScoutEnv,
   request: Request,
@@ -402,6 +538,52 @@ function savedSourceRowToSource(row: SavedSourceRow): SavedSource {
   }
 }
 
+function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
+  const retailer = retailers.find((candidate) => candidate.id === row.retailer_id)
+
+  return {
+    capturedAt: row.captured_at,
+    evidenceText: row.evidence_text,
+    id: row.id,
+    previousPriceText: row.previous_price_text ?? undefined,
+    priceText: row.price_text ?? undefined,
+    productUrl: row.product_url,
+    retailerId: normalizeRetailerId(row.retailer_id),
+    retailerName: retailer?.name ?? row.retailer_id,
+    savedAt: row.created_at,
+    savingText: row.saving_text ?? undefined,
+    sourceLabel: row.source_label,
+    sourceUrl: row.source_url,
+    title: row.title,
+  }
+}
+
+function validateSavedDeal(input: SavedDealDraft) {
+  const issues: string[] = []
+
+  if (!input.retailerId || !retailers.some((retailer) => retailer.id === input.retailerId)) {
+    issues.push('Choose a supported retailer.')
+  }
+
+  if (!input.sourceUrl || !input.productUrl) {
+    issues.push('Deal source URLs are required.')
+  }
+
+  if (!input.title?.trim()) {
+    issues.push('Deal title is required.')
+  }
+
+  if (!input.capturedAt) {
+    issues.push('Capture time is required.')
+  }
+
+  if (!input.evidenceText?.trim()) {
+    issues.push('Source evidence is required.')
+  }
+
+  return issues
+}
+
 function validateMemberInput(email: string, displayName: string) {
   const issues: string[] = []
 
@@ -475,6 +657,19 @@ function normalizeSourceKind(value: string): SourceKind {
   }
 
   return 'specials'
+}
+
+function matchesRetailerSourceUrl(value: string, retailer: { sources: Array<{ url: string }> }) {
+  try {
+    const candidate = new URL(value)
+
+    return retailer.sources.some((source) => {
+      const sourceUrl = new URL(source.url)
+      return candidate.hostname === sourceUrl.hostname || candidate.hostname.endsWith(`.${sourceUrl.hostname}`)
+    })
+  } catch {
+    return false
+  }
 }
 
 function hashString(value: string) {

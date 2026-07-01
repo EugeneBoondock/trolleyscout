@@ -9,7 +9,7 @@ Suggested domain: `trolleyscout.co.za`
 - React, Vite, TypeScript, Tailwind v4, and Phosphor icons.
 - Cloudflare Pages config through `wrangler.toml` and typed Pages Functions.
 - Cloudflare D1 store for verified offer rows.
-- D1-backed member sessions, saved source lists, and subscription state.
+- D1-backed member sessions, saved source lists, saved deal lists, and subscription state.
 - Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lover’s Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
 - Source-backed deal discovery for approved official pages that expose static product rows.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
@@ -30,6 +30,9 @@ Suggested domain: `trolleyscout.co.za`
 - `GET /api/saved-sources`: lists member-saved retailer source links.
 - `POST /api/saved-sources`: saves one official source link for the current member.
 - `DELETE /api/saved-sources?id=...`: removes one saved source link.
+- `GET /api/saved-deals`: lists member-saved discovery rows.
+- `POST /api/saved-deals`: saves one source-backed discovery row for the current member.
+- `DELETE /api/saved-deals?id=...`: removes one saved deal.
 - `GET /api/subscription`: returns plan state and billing readiness.
 - `POST /api/subscription`: starts Stripe Checkout when billing keys are configured.
 

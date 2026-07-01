@@ -7,6 +7,8 @@ import type {
   OfferDraft,
   OfferValidationResult,
   Retailer,
+  SavedDeal,
+  SavedDealDraft,
   SavedSource,
   SavedSourceDraft,
   SourceKind,
@@ -88,6 +90,23 @@ export type SavedSourceDeleteResponse = ApiEnvelope<{
   deleted: boolean
   id: string
   savedSources: SavedSource[]
+}>
+
+export type SavedDealsResponse = ApiEnvelope<{
+  savedDeals: SavedDeal[]
+}>
+
+export type SavedDealRequest = SavedDealDraft
+
+export type SavedDealCreateResponse = ApiEnvelope<{
+  savedDeal: SavedDeal
+  savedDeals: SavedDeal[]
+}>
+
+export type SavedDealDeleteResponse = ApiEnvelope<{
+  deleted: boolean
+  id: string
+  savedDeals: SavedDeal[]
 }>
 
 export type SubscriptionResponse = ApiEnvelope<{

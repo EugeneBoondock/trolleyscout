@@ -33,18 +33,22 @@ import {
   type RetailerResource,
   createVerifiedOffer,
   deleteVerifiedOffer,
+  deleteSavedDeal,
   deleteSavedSource,
   endMemberSession,
   getInitialMemberState,
   getInitialDiscoveryState,
+  getInitialSavedDealState,
   getInitialSavedSourceState,
   getInitialSubscriptionState,
   loadMemberSession,
   loadDiscovery,
+  loadSavedDeals,
   validateOfferDraft,
   loadSavedSources,
   loadSubscription,
   saveSourceForMember,
+  saveDealForMember,
   startMemberSession,
   startSubscriptionCheckout,
 } from './services/apiClient'
@@ -63,6 +67,7 @@ import type {
   DiscoveryResource,
   MemberResource,
   SavedSourceResource,
+  SavedDealResource,
   SubscriptionResource,
 } from './services/apiClient'
 
@@ -72,6 +77,7 @@ type MemberView =
   | 'dashboard'
   | 'sources'
   | 'discovery'
+  | 'savedDeals'
   | 'saved'
   | 'offers'
   | 'scanner'
@@ -91,6 +97,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
   { icon: <Storefront size={20} />, label: 'Sources', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
+  { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
   { icon: <ReceiptX size={20} />, label: 'Offers', value: 'offers' },
   { icon: <ShieldCheck size={20} />, label: 'Scanner', value: 'scanner' },
@@ -138,6 +145,9 @@ function App() {
   const [savedSourceState, setSavedSourceState] = useState<ResourceState<SavedSourceResource>>(
     getInitialSavedSourceState,
   )
+  const [savedDealState, setSavedDealState] = useState<ResourceState<SavedDealResource>>(
+    getInitialSavedDealState,
+  )
   const [subscriptionState, setSubscriptionState] = useState<ResourceState<SubscriptionResource>>(
     getInitialSubscriptionState,
   )
@@ -149,7 +159,9 @@ function App() {
   const [isStartingMemberSession, setIsStartingMemberSession] = useState(false)
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [savingSourceUrl, setSavingSourceUrl] = useState<string | undefined>()
+  const [savingDealUrl, setSavingDealUrl] = useState<string | undefined>()
   const [deletingSourceId, setDeletingSourceId] = useState<string | undefined>()
+  const [deletingDealId, setDeletingDealId] = useState<string | undefined>()
   const [checkoutPlanId, setCheckoutPlanId] = useState<MemberPlanId | undefined>()
 
   useEffect(() => {
@@ -232,6 +244,7 @@ function App() {
 
     if (!memberState.data.session.isAuthenticated) {
       setSavedSourceState(getInitialSavedSourceState())
+      setSavedDealState(getInitialSavedDealState())
       setSubscriptionState(getInitialSubscriptionState())
       return () => controller.abort()
     }
@@ -246,6 +259,11 @@ function App() {
       message: 'Checking subscription.',
       status: 'loading',
     }))
+    setSavedDealState((current) => ({
+      ...current,
+      message: 'Checking saved deals.',
+      status: 'loading',
+    }))
 
     loadSavedSources(controller.signal)
       .then(setSavedSourceState)
@@ -256,6 +274,13 @@ function App() {
       })
     loadSubscription(controller.signal)
       .then(setSubscriptionState)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
+    loadSavedDeals(controller.signal)
+      .then(setSavedDealState)
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return
@@ -276,6 +301,8 @@ function App() {
     activeView === 'discovery' || (memberSession.isAuthenticated && memberView === 'discovery')
   const savedSourceUrls = new Set(savedSourceState.data.savedSources.map((source) => source.sourceUrl))
   const savedSourceCount = savedSourceState.data.savedSources.length
+  const savedDealUrls = new Set(savedDealState.data.savedDeals.map((deal) => deal.productUrl))
+  const savedDealCount = savedDealState.data.savedDeals.length
 
   useEffect(() => {
     const controller = new AbortController()
@@ -342,6 +369,7 @@ function App() {
     const result = await endMemberSession()
     setMemberState(result)
     setSavedSourceState(getInitialSavedSourceState())
+    setSavedDealState(getInitialSavedDealState())
     setSubscriptionState(getInitialSubscriptionState())
     setMemberMode(false)
     setMemberView('dashboard')
@@ -394,6 +422,55 @@ function App() {
       setMemberNotice(result.message)
     } finally {
       setDeletingSourceId(undefined)
+    }
+  }
+
+  async function saveDiscoveredDeal(deal: DiscoveredDeal) {
+    if (!memberSession.isAuthenticated) {
+      setMemberMode(true)
+      setMemberNotice('Start a member session before saving deals.')
+      return
+    }
+
+    setSavingDealUrl(deal.productUrl)
+    setMemberNotice(undefined)
+
+    try {
+      const result = await saveDealForMember(deal)
+
+      if ('savedDeals' in result.data) {
+        setSavedDealState({
+          data: {
+            savedDeals: result.data.savedDeals,
+          },
+          message: result.message,
+          meta: result.meta,
+          status: result.status,
+        })
+        setMemberNotice(result.message)
+      }
+    } finally {
+      setSavingDealUrl(undefined)
+    }
+  }
+
+  async function removeSavedDeal(id: string) {
+    setDeletingDealId(id)
+    setMemberNotice(undefined)
+
+    try {
+      const result = await deleteSavedDeal(id)
+      setSavedDealState({
+        data: {
+          savedDeals: result.data.savedDeals,
+        },
+        message: result.message,
+        meta: result.meta,
+        status: result.status,
+      })
+      setMemberNotice(result.message)
+    } finally {
+      setDeletingDealId(undefined)
     }
   }
 
@@ -552,6 +629,7 @@ function App() {
         apiMode={apiMode}
         checkoutPlanId={checkoutPlanId}
         deletingOfferId={deletingOfferId}
+        deletingDealId={deletingDealId}
         deletingSourceId={deletingSourceId}
         discoveryState={discoveryState}
         isDiscovering={isDiscovering}
@@ -564,12 +642,14 @@ function App() {
         onCheckout={requestCheckout}
         onCloseSidebar={() => setIsMemberSidebarOpen(false)}
         onDeleteOffer={removeOffer}
+        onDeleteDeal={removeSavedDeal}
         onDeleteSource={removeSavedSource}
         onRefresh={refreshSources}
         onReviewDeal={reviewDiscoveredDeal}
         onRunDiscovery={runDiscovery}
         onResetScanner={resetScannerDraft}
         onSaveOffer={saveScannerDraft}
+        onSaveDeal={saveDiscoveredDeal}
         onSaveSource={saveSource}
         onScan={scanOfferDraft}
         onSetView={setMemberView}
@@ -581,10 +661,14 @@ function App() {
         onSourceKindChange={setSourceKind}
         query={query}
         retailerState={retailerState}
+        savedDealCount={savedDealCount}
+        savedDealState={savedDealState}
+        savedDealUrls={savedDealUrls}
         savedSourceCount={savedSourceCount}
         savedSourceState={savedSourceState}
         savedSourceUrls={savedSourceUrls}
         savingSourceUrl={savingSourceUrl}
+        savingDealUrl={savingDealUrl}
         scannerDraft={scannerDraft}
         scannerResult={scannerResult}
         sidebarOpen={isMemberSidebarOpen}
@@ -860,6 +944,7 @@ function MemberShell({
   apiMode,
   checkoutPlanId,
   deletingOfferId,
+  deletingDealId,
   deletingSourceId,
   discoveryState,
   isDiscovering,
@@ -872,6 +957,7 @@ function MemberShell({
   onCheckout,
   onCloseSidebar,
   onDeleteOffer,
+  onDeleteDeal,
   onDeleteSource,
   onQueryChange,
   onRefresh,
@@ -879,6 +965,7 @@ function MemberShell({
   onRunDiscovery,
   onResetScanner,
   onSaveOffer,
+  onSaveDeal,
   onSaveSource,
   onScan,
   onSetView,
@@ -889,10 +976,14 @@ function MemberShell({
   onUpdateScanner,
   query,
   retailerState,
+  savedDealCount,
+  savedDealState,
+  savedDealUrls,
   savedSourceCount,
   savedSourceState,
   savedSourceUrls,
   savingSourceUrl,
+  savingDealUrl,
   scannerDraft,
   scannerResult,
   sidebarOpen,
@@ -905,6 +996,7 @@ function MemberShell({
   apiMode: string
   checkoutPlanId?: MemberPlanId
   deletingOfferId?: string
+  deletingDealId?: string
   deletingSourceId?: string
   discoveryState: ResourceState<DiscoveryResource>
   isDiscovering: boolean
@@ -917,6 +1009,7 @@ function MemberShell({
   onCheckout: (planId: MemberPlanId) => void
   onCloseSidebar: () => void
   onDeleteOffer: (id: string) => void
+  onDeleteDeal: (id: string) => void
   onDeleteSource: (id: string) => void
   onQueryChange: (value: string) => void
   onRefresh: () => void
@@ -924,6 +1017,7 @@ function MemberShell({
   onRunDiscovery: () => void
   onResetScanner: () => void
   onSaveOffer: () => void
+  onSaveDeal: (deal: DiscoveredDeal) => void
   onSaveSource: (retailerId: Retailer['id'], sourceUrl: string) => void
   onScan: () => void
   onSetView: (view: MemberView) => void
@@ -934,10 +1028,14 @@ function MemberShell({
   onUpdateScanner: (field: keyof OfferDraft, value: string) => void
   query: string
   retailerState: ResourceState<RetailerResource>
+  savedDealCount: number
+  savedDealState: ResourceState<SavedDealResource>
+  savedDealUrls: Set<string>
   savedSourceCount: number
   savedSourceState: ResourceState<SavedSourceResource>
   savedSourceUrls: Set<string>
   savingSourceUrl?: string
+  savingDealUrl?: string
   scannerDraft: OfferDraft
   scannerResult?: ResourceState<OfferValidationResult>
   sidebarOpen: boolean
@@ -1017,6 +1115,7 @@ function MemberShell({
             onRefresh={onRefresh}
             onSetView={onSetView}
             retailerState={retailerState}
+            savedDealCount={savedDealCount}
             savedSourceCount={savedSourceCount}
             verifiedOfferCount={offerState.data.summary.verifiedOfferCount}
           />
@@ -1057,7 +1156,20 @@ function MemberShell({
             isDiscovering={isDiscovering}
             onReviewDeal={onReviewDeal}
             onRunDiscovery={onRunDiscovery}
+            onSaveDeal={onSaveDeal}
+            savedDealUrls={savedDealUrls}
+            savingDealUrl={savingDealUrl}
             state={discoveryState}
+          />
+        )}
+
+        {activeView === 'savedDeals' && (
+          <SavedDealsPanel
+            deletingDealId={deletingDealId}
+            memberNotice={memberNotice}
+            onDelete={onDeleteDeal}
+            onReviewDeal={onReviewDeal}
+            savedDealState={savedDealState}
           />
         )}
 
@@ -1182,6 +1294,7 @@ function MemberDashboard({
   onRefresh,
   onSetView,
   retailerState,
+  savedDealCount,
   savedSourceCount,
   verifiedOfferCount,
 }: {
@@ -1191,6 +1304,7 @@ function MemberDashboard({
   onRefresh: () => void
   onSetView: (view: MemberView) => void
   retailerState: ResourceState<RetailerResource>
+  savedDealCount: number
   savedSourceCount: number
   verifiedOfferCount: number
 }) {
@@ -1211,6 +1325,7 @@ function MemberDashboard({
         <Metric icon={<Storefront size={22} />} label="Retailers" value={`${retailerState.data.summary.retailerCount}`} />
         <Metric icon={<LinkSimple size={22} />} label="Official links" value={`${retailerState.data.summary.sourceCount}`} />
         <Metric icon={<Tag size={22} />} label="Found deals" value={`${discoveryCount}`} />
+        <Metric icon={<Wallet size={22} />} label="Saved deals" value={`${savedDealCount}`} />
         <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
         <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
       </div>
@@ -1249,7 +1364,79 @@ function MemberDashboard({
             Find deals
           </button>
         </article>
+        <article className="dashboard-panel">
+          <div>
+            <p className="eyebrow">Saved deals</p>
+            <h2>Review later</h2>
+          </div>
+          <p>Keep useful rows from discovery and open them in the scanner when ready.</p>
+          <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
+            <Wallet size={18} />
+            Saved deals
+          </button>
+        </article>
       </div>
+    </section>
+  )
+}
+
+function SavedDealsPanel({
+  deletingDealId,
+  memberNotice,
+  onDelete,
+  onReviewDeal,
+  savedDealState,
+}: {
+  deletingDealId?: string
+  memberNotice?: string
+  onDelete: (id: string) => void
+  onReviewDeal: (deal: DiscoveredDeal) => void
+  savedDealState: ResourceState<SavedDealResource>
+}) {
+  const savedDeals = savedDealState.data.savedDeals
+
+  return (
+    <section className="empty-panel" aria-label="Saved deals">
+      {savedDealState.status === 'loading' && <LoadingStrip label="Checking saved deals" />}
+      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {savedDeals.length > 0 ? (
+        <div className="saved-source-list">
+          {savedDeals.map((deal) => (
+            <article className="saved-source-row" key={deal.id}>
+              <div>
+                <p className="eyebrow">{deal.retailerName}</p>
+                <h3>{deal.title}</h3>
+                <p>{deal.priceText ?? 'No price text'}</p>
+                <p>Saved {deal.savedAt.slice(0, 10)}</p>
+              </div>
+              <div className="offer-actions">
+                <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                  Product
+                  <LinkSimple size={14} />
+                </a>
+                <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
+                  Review
+                </button>
+                <button
+                  className="ghost-button"
+                  disabled={deletingDealId === deal.id}
+                  onClick={() => onDelete(deal.id)}
+                  type="button"
+                >
+                  {deletingDealId === deal.id ? 'Removing' : 'Remove'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <>
+          <Wallet size={48} />
+          <p className="eyebrow">Saved deals</p>
+          <h2>No saved deals yet</h2>
+          <p>Save rows from the deal finder to keep a short review list.</p>
+        </>
+      )}
     </section>
   )
 }
@@ -1537,11 +1724,17 @@ function DiscoveryPanel({
   isDiscovering,
   onReviewDeal,
   onRunDiscovery,
+  onSaveDeal,
+  savedDealUrls = new Set<string>(),
+  savingDealUrl,
   state,
 }: {
   isDiscovering: boolean
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
+  onSaveDeal?: (deal: DiscoveredDeal) => void
+  savedDealUrls?: Set<string>
+  savingDealUrl?: string
   state: ResourceState<DiscoveryResource>
 }) {
   const discovery = state.data.discovery
@@ -1610,6 +1803,20 @@ function DiscoveryPanel({
                   Product
                   <LinkSimple size={14} />
                 </a>
+                {onSaveDeal && (
+                  <button
+                    className="ghost-button"
+                    disabled={savedDealUrls.has(deal.productUrl) || savingDealUrl === deal.productUrl}
+                    onClick={() => onSaveDeal(deal)}
+                    type="button"
+                  >
+                    {savedDealUrls.has(deal.productUrl)
+                      ? 'Saved'
+                      : savingDealUrl === deal.productUrl
+                        ? 'Saving'
+                        : 'Save deal'}
+                  </button>
+                )}
                 <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
                   Review in scanner
                 </button>

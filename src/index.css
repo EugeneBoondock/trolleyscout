@@ -780,7 +780,8 @@ h3 {
   justify-content: flex-end;
 }
 
-.offer-row a {
+.offer-row a,
+.saved-source-row a {
   display: inline-flex;
   gap: 0.4rem;
   align-items: center;

@@ -3,16 +3,19 @@ import { buildSourceSummary } from '../api/staticData'
 import type { OfferDraft } from '../types'
 import {
   createVerifiedOffer,
+  deleteSavedDeal,
   deleteSavedSource,
   deleteVerifiedOffer,
   endMemberSession,
   loadDiscovery,
+  loadSavedDeals,
   loadMemberSession,
   loadOffers,
   loadRetailers,
   loadSavedSources,
   loadSubscription,
   saveSourceForMember,
+  saveDealForMember,
   startMemberSession,
   startSubscriptionCheckout,
   validateOfferDraft,
@@ -411,6 +414,98 @@ describe('apiClient', () => {
 
     expect(loaded.data.savedSources).toEqual([])
     expect('savedSource' in saved.data && saved.data.savedSource.id).toBe(savedSource.id)
+    expect(deleted.data.deleted).toBe(true)
+  })
+
+  it('manages saved deals through the member API', async () => {
+    const savedDeal = {
+      capturedAt: '2026-07-01T00:00:00.000Z',
+      evidenceText: 'Source product. Now R99.99',
+      id: 'saved-deal-test',
+      priceText: 'R99.99',
+      productUrl: 'https://www.dischem.co.za/product-test',
+      retailerId: 'dis-chem' as const,
+      retailerName: 'Dis-Chem',
+      savedAt: '2026-07-01T00:00:00.000Z',
+      sourceLabel: 'On promotion',
+      sourceUrl: 'https://www.dischem.co.za/on-promotion',
+      title: 'Source product',
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              savedDeals: [],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              savedDeal,
+              savedDeals: [savedDeal],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              deleted: true,
+              id: savedDeal.id,
+              savedDeals: [],
+            },
+            meta: {
+              generatedAt: '2026-07-01T00:00:00.000Z',
+              source: 'cloudflare-pages',
+            },
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const loaded = await loadSavedDeals()
+    const saved = await saveDealForMember({
+      capturedAt: savedDeal.capturedAt,
+      evidenceText: savedDeal.evidenceText,
+      id: 'deal-test',
+      priceText: savedDeal.priceText,
+      productUrl: savedDeal.productUrl,
+      retailerId: savedDeal.retailerId,
+      retailerName: savedDeal.retailerName,
+      sourceLabel: savedDeal.sourceLabel,
+      sourceUrl: savedDeal.sourceUrl,
+      title: savedDeal.title,
+    })
+    const deleted = await deleteSavedDeal(savedDeal.id)
+
+    expect(loaded.data.savedDeals).toEqual([])
+    expect('savedDeal' in saved.data && saved.data.savedDeal.id).toBe(savedDeal.id)
     expect(deleted.data.deleted).toBe(true)
   })
 

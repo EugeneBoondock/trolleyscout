@@ -191,6 +191,12 @@ export interface SavedSourceDraft {
   sourceUrl: string
 }
 
+export interface SavedDeal extends DiscoveredDeal {
+  savedAt: string
+}
+
+export type SavedDealDraft = DiscoveredDeal
+
 export interface SubscriptionCheckoutRequest {
   planId: MemberPlanId
 }

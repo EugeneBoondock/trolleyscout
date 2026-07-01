@@ -10,6 +10,9 @@ import type {
   OfferValidationResponse,
   OffersResponse,
   RetailersResponse,
+  SavedDealCreateResponse,
+  SavedDealDeleteResponse,
+  SavedDealsResponse,
   SavedSourceCreateResponse,
   SavedSourceDeleteResponse,
   SavedSourcesResponse,
@@ -28,6 +31,8 @@ import type {
   DiscoveredDeal,
   SavedSource,
   SavedSourceDraft,
+  SavedDeal,
+  SavedDealDraft,
   SourceKind,
   SubscriptionCheckoutRequest,
   VerifiedOffer,
@@ -62,6 +67,10 @@ export interface MemberResource {
 
 export interface SavedSourceResource {
   savedSources: SavedSource[]
+}
+
+export interface SavedDealResource {
+  savedDeals: SavedDeal[]
 }
 
 export interface SubscriptionResource {
@@ -240,6 +249,17 @@ export async function loadOffers(signal?: AbortSignal): Promise<ResourceState<Of
       },
       status: 'error',
     }
+  }
+}
+
+export function getInitialSavedDealState(): ResourceState<SavedDealResource> {
+  return {
+    data: {
+      savedDeals: [],
+    },
+    message: 'Checking saved deals.',
+    meta: defaultMeta,
+    status: 'loading',
   }
 }
 
@@ -746,6 +766,133 @@ export async function startSubscriptionCheckout(
         },
       },
       message: 'Subscription API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function loadSavedDeals(signal?: AbortSignal): Promise<ResourceState<SavedDealResource>> {
+  try {
+    const response = await fetch('/api/saved-deals', {
+      headers: {
+        accept: 'application/json',
+      },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as SavedDealsResponse
+
+    return {
+      data: envelope.data,
+      message: 'Saved deals loaded.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        savedDeals: [],
+      },
+      message: 'Saved deal API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function saveDealForMember(
+  draft: SavedDealDraft,
+  signal?: AbortSignal,
+): Promise<ResourceState<SavedDealCreateResponse['data'] | SavedDealsResponse['data']>> {
+  try {
+    const response = await fetch('/api/saved-deals', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+      signal,
+    })
+    const envelope = (await response.json()) as SavedDealCreateResponse | SavedDealsResponse
+
+    return {
+      data: envelope.data,
+      message: response.ok ? 'Deal saved.' : 'Deal could not be saved.',
+      meta: envelope.meta,
+      status: response.ok ? 'ready' : 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        savedDeals: [],
+      },
+      message: 'Saved deal API unavailable.',
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'static-fallback',
+      },
+      status: 'error',
+    }
+  }
+}
+
+export async function deleteSavedDeal(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ResourceState<SavedDealDeleteResponse['data']>> {
+  try {
+    const response = await fetch(`/api/saved-deals?id=${encodeURIComponent(id)}`, {
+      headers: {
+        accept: 'application/json',
+      },
+      method: 'DELETE',
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as SavedDealDeleteResponse
+
+    return {
+      data: envelope.data,
+      message: envelope.data.deleted ? 'Deal removed.' : 'Deal was already absent.',
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      data: {
+        deleted: false,
+        id,
+        savedDeals: [],
+      },
+      message: 'Saved deal API unavailable.',
       meta: {
         generatedAt: new Date().toISOString(),
         source: 'static-fallback',
