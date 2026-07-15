@@ -2047,6 +2047,85 @@ main {
   box-shadow: var(--shadow-soft);
 }
 
+/* Plan usage meters — makes free capacity visible and upgrades tangible. */
+
+.plan-usage {
+  display: grid;
+  gap: 1rem;
+  padding: 1.3rem clamp(1.2rem, 3vw, 1.6rem);
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.plan-usage-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.plan-usage-head h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.3rem;
+}
+
+.plan-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.usage-meter {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.usage-meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.usage-meter-label span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.usage-meter-label strong {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-bar {
+  height: 0.7rem;
+  border: 2px solid var(--line);
+  background: var(--bg);
+}
+
+.usage-bar span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.usage-bar.is-near span {
+  background: var(--yellow);
+}
+
+.usage-bar.is-full span {
+  background: var(--red-bright);
+}
+
+.plan-usage-nudge {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-left: 4px solid var(--yellow);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .basket-panel {
   display: grid;
   gap: 1.2rem;
@@ -2360,6 +2439,7 @@ main {
     transform: rotate(0.6deg);
   }
 
+  .plan-usage-grid,
   .staple-grid,
   .home-paths,
   .home-promises,

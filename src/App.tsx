@@ -83,6 +83,7 @@ import type {
   SavedDealResource,
   SubscriptionResource,
 } from './services/apiClient'
+import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { MoneyHelpView } from './views/MoneyHelpView'
@@ -1463,6 +1464,79 @@ function SourceFilterPanel({
   )
 }
 
+function PlanUsage({
+  account,
+  basketItemCount,
+  onSetView,
+  savedDealCount,
+  savedSourceCount,
+}: {
+  account: NonNullable<MemberSession['account']>
+  basketItemCount: number
+  onSetView: (view: MemberView) => void
+  savedDealCount: number
+  savedSourceCount: number
+}) {
+  const plan = getMemberPlan(account.planId)
+  const rows: Array<{ label: string; used: number; limit: number }> = [
+    { label: 'Saved deals', limit: plan.limits.savedDeals, used: savedDealCount },
+    { label: 'Saved sources', limit: plan.limits.savedSources, used: savedSourceCount },
+    { label: 'Basket items', limit: plan.limits.basketItems, used: basketItemCount },
+  ]
+  const nearLimit = rows.some((row) => row.used / row.limit >= 0.8)
+
+  return (
+    <section className="plan-usage" aria-label="Plan usage">
+      <div className="plan-usage-head">
+        <div>
+          <p className="eyebrow">Your {plan.name} plan</p>
+          <h2>Space used</h2>
+        </div>
+        {plan.id !== 'household' && (
+          <button className="ghost-button" onClick={() => onSetView('subscription')} type="button">
+            <CreditCard size={18} />
+            {plan.id === 'free' ? 'See paid plans' : 'Upgrade'}
+          </button>
+        )}
+      </div>
+
+      <div className="plan-usage-grid">
+        {rows.map((row) => {
+          const percent = Math.min(100, Math.round((row.used / row.limit) * 100))
+          const isFull = row.used >= row.limit
+
+          return (
+            <div className="usage-meter" key={row.label}>
+              <div className="usage-meter-label">
+                <span>{row.label}</span>
+                <strong>
+                  {row.used} / {row.limit}
+                </strong>
+              </div>
+              <div
+                aria-valuemax={row.limit}
+                aria-valuenow={row.used}
+                aria-label={row.label}
+                className={clsx('usage-bar', isFull && 'is-full', !isFull && percent >= 80 && 'is-near')}
+                role="progressbar"
+              >
+                <span style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {nearLimit && plan.id !== 'household' && (
+        <p className="plan-usage-nudge">
+          Running low on space. {plan.id === 'free' ? 'Scout' : 'Household'} gives you far more
+          room — and keeps the free money help running for everyone.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function MemberDashboard({
   account,
   apiMode,
@@ -1511,6 +1585,14 @@ function MemberDashboard({
         <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
         <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
       </div>
+
+      <PlanUsage
+        account={account}
+        basketItemCount={basketItemCount}
+        onSetView={onSetView}
+        savedDealCount={savedDealCount}
+        savedSourceCount={savedSourceCount}
+      />
 
       <div className="dashboard-grid">
         <article className="dashboard-panel">
