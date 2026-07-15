@@ -18,6 +18,15 @@ interface PriceMatch {
 const pricePattern = /\b(?:R|ZAR)\s*([0-9]+(?:[\s,][0-9]{3})*(?:[.,][0-9]{2})?)\b/gi
 const barePricePattern = /\b([0-9]{1,6}[.,][0-9]{2})\b/g
 const invalidVisionTitles = /^(?:save|saving|deal|special|from|only|each|price|promotion|discount)s?[!:.\s-]*$/i
+// Reject scene descriptions and banner fragments the vision model sometimes
+// emits instead of a real product name. Real titles are noun phrases (brand +
+// product + size); these patterns signal a sentence describing the picture,
+// e.g. "red boxed product displayed at the top right", "container of Remora
+// coffee priced at 64.99", "Special Item: In the top right corner...".
+const describedVisionTitle =
+  /\b(?:displayed|shown|show(?:s|ing)|located|positioned|pictured|depicted|visible|appears?|priced\s+at|offered|listed|features?|centrally|corner|top (?:right|left)|bottom (?:right|left)|left side|right side|various|assorted|selection of|premium cut|is (?:a|an|the|shown|offered|listed|priced)|are (?:shown|offered|listed|priced)|boxed product|branded product)\b/i
+const bannerFragmentTitle =
+  /^(?:any\s*\d|buy\s*\d|mix|deal for|promotion(?:al)?\b|combo|special item|two\b|a (?:pack|bag|bottle|jar|box|container|selection)\b|container of|selection of)/i
 
 export function extractCatalogueDeals(
   input: CatalogueDealInput,
@@ -108,7 +117,13 @@ export function extractVisionCatalogueDeals(
     const priceText = normalizeVisionPrice(item.price)
     const previousPriceText = normalizeVisionPrice(item.previousPrice)
 
-    if (!isProductText(title) || invalidVisionTitles.test(title) || !priceText) {
+    if (
+      !isProductText(title) ||
+      invalidVisionTitles.test(title) ||
+      describedVisionTitle.test(title) ||
+      bannerFragmentTitle.test(title) ||
+      !priceText
+    ) {
       continue
     }
 

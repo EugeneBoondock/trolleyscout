@@ -20,16 +20,21 @@ const MAX_DOCUMENTS_PER_RUN = 4
 const MAX_PAGES_PER_CATALOGUE = 1
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-const CATALOGUE_VISION_PROMPT = `Read this South African supermarket catalogue page and return only valid JSON in this exact shape:
+
+interface VisionChatResponse {
+  choices?: Array<{ message?: { content?: string | null } }>
+}
+const CATALOGUE_VISION_PROMPT = `You are reading a South African supermarket catalogue page. Return only valid JSON in this exact shape:
 {"deals":[{"title":"Brand and product with size","price":"R0.00","previousPrice":"R0.00"}]}
 
-Rules:
-- Include only a clearly named product with its selling price.
-- Preserve the brand, product name, pack size and quantity when visible.
-- Treat large SAVE, discount, percentage and loyalty saving figures as banners, never as prices.
-- Omit previousPrice when no normal or previous price is printed.
-- Exclude headings, dates, terms, category labels and generic words such as SAVE, FROM, DEAL or SPECIAL.
-- Never guess obscured text or a price.
+The "title" must be the product's printed name exactly as a shopper would read it on the pack or label — brand, product and pack size, e.g. "Huggies Baby Soft Diapers Size 4 44s" or "Sunfoil Sunflower Oil 2L".
+
+Hard rules:
+- title MUST be the actual product name copied from the label. NEVER describe the picture, position or appearance. Reject phrases like "red boxed product", "displayed at the top right", "is shown", "located", "various items". If you cannot read a real product name, omit that deal entirely.
+- Do NOT output banner text as a title: skip "Any 2 for", "Any 3 for", "SAVE", "SPECIAL", "DEAL", "FROM", "%", category headings, dates and terms.
+- price is the single selling price shown for that product, formatted like "R69.99".
+- Omit previousPrice unless a struck-through or "was" price is printed for that product.
+- Never guess obscured text or a price. Only include products whose name AND price you can read clearly.
 - Return at most 30 deals and no prose outside the JSON.`
 
 export interface CatalogueScoutResult {
@@ -333,7 +338,17 @@ async function scanInteractiveCatalogue(
       await Promise.all(
         pages.map(async (page) => {
           try {
-            const output = await ai.run('@cf/google/gemma-4-26b-a4b-it', {
+            // Mistral Small 3.1 is a vision model that emits the structured
+            // JSON directly. (Gemma 4 is a reasoning model that spends the whole
+            // token budget on chain-of-thought and never returns the JSON, and
+            // Llama vision requires accepting a Meta licence on the account.)
+            // The OpenAI-style chat call is cast because the generated
+            // per-model binding types don't cover this compat endpoint.
+            const runVision = ai.run as unknown as (
+              model: string,
+              input: unknown,
+            ) => Promise<VisionChatResponse>
+            const output = await runVision('@cf/mistralai/mistral-small-3.1-24b-instruct', {
               max_completion_tokens: 2400,
               messages: [
                 {
@@ -384,7 +399,7 @@ async function scanInteractiveCatalogue(
             return extractVisionCatalogueDeals({
               capturedAt: checkedAt,
               imageUrl: page.pageUrl,
-              markdown: output.choices[0]?.message.content ?? '',
+              markdown: output.choices?.[0]?.message?.content ?? '',
               retailerId: leaflet.retailerId,
               retailerName: leaflet.retailerName,
               sourceUrl: leaflet.documentUrl ?? leaflet.url,
@@ -400,46 +415,17 @@ async function scanInteractiveCatalogue(
       )
     ).flat()
 
-    if (visionDeals.length > 0) {
-      debugCatalogue(debug, leaflet, {
-        dealCount: visionDeals.length,
-        eventStage: 'page_vision',
-        pageCount: pages.length,
-      })
-      return visionDeals
-    }
-
-    const conversions = await ai.toMarkdown(
-      pages.map(({ blob, name }) => ({ blob, name })),
-      { conversionOptions: { image: { descriptionLanguage: 'en' } } },
-    )
-    const fallbackDeals = conversions.flatMap((conversion, index) => {
-      if (conversion.format !== 'markdown') {
-        return []
-      }
-
-      return extractCatalogueDeals({
-        capturedAt: checkedAt,
-        imageUrl: pages[index]?.pageUrl ?? leaflet.imageUrl,
-        markdown: conversion.data,
-        retailerId: leaflet.retailerId,
-        retailerName: leaflet.retailerName,
-        sourceUrl: leaflet.documentUrl ?? leaflet.url,
-      })
-    })
-
+    // Only the strict structured-vision output is trusted. We deliberately do
+    // NOT fall back to ai.toMarkdown image description: on promotional collages
+    // that produces prose ("a red boxed product at the top right") which reads
+    // as garbage product names. Storing nothing beats storing a scene caption.
     debugCatalogue(debug, leaflet, {
-      dealCount: fallbackDeals.length,
-      eventStage: 'page_markdown_fallback',
+      dealCount: visionDeals.length,
+      eventStage: 'page_vision',
       pageCount: pages.length,
-      sample: conversions
-        .filter((conversion) => conversion.format === 'markdown')
-        .map((conversion) => conversion.format === 'markdown' ? conversion.data : '')
-        .join('\n')
-        .slice(0, 2400),
     })
 
-    return fallbackDeals
+    return visionDeals
   } catch (error) {
     debugCatalogue(debug, leaflet, {
       error: error instanceof Error ? error.message : String(error),

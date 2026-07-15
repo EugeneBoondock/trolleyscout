@@ -110,6 +110,28 @@ describe('extractVisionCatalogueDeals', () => {
     })
   })
 
+  it('rejects scene descriptions and banner fragments, keeps real names', () => {
+    const deals = extractVisionCatalogueDeals({
+      capturedAt: '2026-07-15T00:00:00.000Z',
+      imageUrl: 'https://example.com/page.webp',
+      markdown: JSON.stringify({
+        deals: [
+          { title: 'red boxed product is displayed at the top right', price: 'R69.99' },
+          { title: 'green bag of mixed vegetables is shown on the left', price: 'R34.99' },
+          { title: 'Any 3 for', price: 'R290' },
+          { title: 'Various food or household items are shown', price: 'R110' },
+          { title: 'Huggies Baby Soft Diapers Size 4 44s', price: 'R179.99' },
+        ],
+      }),
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      sourceUrl: 'https://example.com/catalogue',
+    })
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0].title).toBe('Huggies Baby Soft Diapers Size 4 44s')
+  })
+
   it('accepts JSON wrapped in a code fence', () => {
     const deals = extractVisionCatalogueDeals({
       capturedAt: '2026-07-15T00:00:00.000Z',
