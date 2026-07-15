@@ -1,20 +1,103 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildClicksPromotionsApiUrl,
+  buildPnpPromotionsApiUrl,
   buildTakealotDealsApiUrl,
   extractClicksPromotionDeals,
   extractDealsFromHtml,
+  extractPnpPromotionDeals,
   extractTakealotProductDeals,
   getDiscoveryTargets,
 } from './dealDiscovery'
 
 describe('dealDiscovery', () => {
+  it('builds the Pick n Pay promotions OCC URL', () => {
+    const apiUrl = new URL(buildPnpPromotionsApiUrl())
+
+    expect(apiUrl.origin).toBe('https://www.pnp.co.za')
+    expect(apiUrl.pathname).toBe('/pnphybris/v2/pnp-spa/products/search')
+    expect(apiUrl.searchParams.get('storeCode')).toBe('WC21')
+    expect(apiUrl.searchParams.get('query')).toBe(':relevance:allCategories:pnpbase:isOnPromotion:On%20Promotion')
+  })
+
+  it('extracts Pick n Pay promotion rows from the OCC search JSON', () => {
+    const target = getDiscoveryTargets().find((candidate) => candidate.parserId === 'pnp-promotions')
+
+    expect(target).toBeDefined()
+
+    // Shape mirrors the live pnphybris products/search payload.
+    const payload = {
+      pagination: { totalResults: 2809 },
+      products: [
+        {
+          code: '000000000000110222_EA',
+          inStockIndicator: true,
+          name: 'Tastic Rice 2kg',
+          price: {
+            currencyIso: 'ZAR',
+            formattedValue: 'R29.99',
+            oldPrice: 39.99,
+            oldPriceFormattedValue: 'R39.99',
+            savings: 10.0,
+            savingsFormattedValue: 'R10.00',
+            value: 29.99,
+          },
+        },
+        {
+          code: '000000000000765432_EA',
+          inStockIndicator: true,
+          name: 'Koo Baked Beans In Tomato Sauce 400g',
+          price: {
+            formattedValue: 'R16.99',
+            oldPrice: 0.0,
+            oldPriceFormattedValue: 'R0.00',
+            savings: 0.0,
+            savingsFormattedValue: 'R0.00',
+            value: 16.99,
+          },
+          potentialPromotions: [{ description: 'Smart Shopper price' }],
+        },
+        {
+          code: '000000000000999999_EA',
+          inStockIndicator: false,
+          name: 'Out of stock item',
+          price: { formattedValue: 'R9.99' },
+        },
+      ],
+    }
+
+    const deals = extractPnpPromotionDeals(target!, payload, '2026-07-15T10:00:00.000Z')
+
+    expect(deals).toHaveLength(2)
+    expect(deals[0]).toMatchObject({
+      previousPriceText: 'R39.99',
+      priceText: 'R29.99',
+      retailerId: 'pick-n-pay',
+      savingText: 'Save R10.00',
+      title: 'Tastic Rice 2kg',
+    })
+    expect(deals[0].productUrl).toBe('https://www.pnp.co.za/tastic-rice-2kg/p/000000000000110222_EA')
+    expect(deals[1]).toMatchObject({
+      previousPriceText: undefined,
+      savingText: 'Smart Shopper price',
+      title: 'Koo Baked Beans In Tomato Sauce 400g',
+    })
+  })
+
   it('builds the Clicks promotions results URL', () => {
     const apiUrl = new URL(buildClicksPromotionsApiUrl())
 
     expect(apiUrl.origin).toBe('https://clicks.co.za')
     expect(apiUrl.pathname).toBe('/products/c/OH1/results')
     expect(apiUrl.searchParams.get('q')).toBe(':relevance:promoStickerplp:1')
+  })
+
+  it('derives the Clicks category from the official page URL', () => {
+    const apiUrl = new URL(
+      buildClicksPromotionsApiUrl('https://clicks.co.za/health-and-pharmacy/c/OH10005?q=%3Arelevance%3ApromoStickerplp%3A1&text='),
+    )
+
+    expect(apiUrl.pathname).toBe('/products/c/OH10005/results')
   })
 
   it('extracts Clicks promotion rows from the results JSON', () => {

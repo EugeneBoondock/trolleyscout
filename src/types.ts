@@ -66,6 +66,7 @@ export type DiscoveryParserId =
   | 'amazon-deals'
   | 'amazon-vouchers'
   | 'clicks-promotions'
+  | 'pnp-promotions'
   | 'dischem-promotion'
   | 'takealot-deals'
   | 'yuppiechef-specials'

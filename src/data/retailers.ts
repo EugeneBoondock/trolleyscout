@@ -28,6 +28,11 @@ export const retailers: Retailer[] = [
         url: 'https://www.pnp.co.za/online-specials',
         kind: 'specials',
       },
+      {
+        label: 'On promotion',
+        url: 'https://www.pnp.co.za/c/pnpbase?query=%3Arelevance%3AallCategories%3Apnpbase%3AisOnPromotion%3AOn%2520Promotion',
+        kind: 'specials',
+      },
     ],
   },
   {
@@ -239,6 +244,16 @@ export const retailers: Retailer[] = [
       {
         label: 'Promotions',
         url: 'https://clicks.co.za/promotions',
+        kind: 'specials',
+      },
+      {
+        label: 'Health promotions',
+        url: 'https://clicks.co.za/health-and-pharmacy/c/OH10005?q=%3Arelevance%3ApromoStickerplp%3A1&text=',
+        kind: 'specials',
+      },
+      {
+        label: 'Baby promotions',
+        url: 'https://clicks.co.za/mom-and-baby/c/OH10008?q=%3Arelevance%3ApromoStickerplp%3A1&text=',
         kind: 'specials',
       },
     ],

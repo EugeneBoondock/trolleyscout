@@ -15,9 +15,24 @@ export interface ResolvedDiscoveryTarget extends DiscoverySourceTarget {
 
 export const discoveryTargets: DiscoverySourceTarget[] = [
   {
+    parserId: 'pnp-promotions',
+    retailerId: 'pick-n-pay',
+    sourceLabel: 'On promotion',
+  },
+  {
     parserId: 'clicks-promotions',
     retailerId: 'clicks',
     sourceLabel: 'Promotions',
+  },
+  {
+    parserId: 'clicks-promotions',
+    retailerId: 'clicks',
+    sourceLabel: 'Health promotions',
+  },
+  {
+    parserId: 'clicks-promotions',
+    retailerId: 'clicks',
+    sourceLabel: 'Baby promotions',
   },
   {
     parserId: 'dischem-promotion',
@@ -170,18 +185,109 @@ export function extractTakealotProductDeals(
   return deals
 }
 
+// Pick n Pay's storefront reads promotions from its OCC commerce API. The
+// endpoint answers anonymous POST requests; WC21 is the national online
+// store used by the site itself before a shopper picks a branch.
+export function buildPnpPromotionsApiUrl(pageSize = 24) {
+  const fields =
+    'products(code,name,price(FULL),potentialPromotions(FULL),inStockIndicator),pagination(DEFAULT)'
+  const query = ':relevance:allCategories:pnpbase:isOnPromotion:On%20Promotion'
+
+  return (
+    'https://www.pnp.co.za/pnphybris/v2/pnp-spa/products/search' +
+    `?fields=${encodeURIComponent(fields)}` +
+    `&query=${encodeURIComponent(query)}` +
+    `&pageSize=${pageSize}&storeCode=WC21&lang=en&curr=ZAR`
+  )
+}
+
+export function extractPnpPromotionDeals(
+  target: ResolvedDiscoveryTarget,
+  payload: unknown,
+  capturedAt: string,
+  limit = 12,
+) {
+  const products = recordValue(payload, 'products')
+  const deals: DiscoveredDeal[] = []
+  const seenCodes = new Set<string>()
+
+  if (!Array.isArray(products)) {
+    return deals
+  }
+
+  for (const product of products) {
+    if (deals.length >= limit) {
+      break
+    }
+
+    const code = stringValue(product, 'code')
+    const title = normalizeText(stringValue(product, 'name'))
+    const inStock = recordValue(product, 'inStockIndicator')
+
+    const price = recordValue(product, 'price')
+    const priceText = normalizeText(stringValue(price, 'formattedValue'))
+    const oldPrice = recordValue(price, 'oldPrice')
+    const hasOldPrice = typeof oldPrice === 'number' && oldPrice > 0
+    const previousPriceText = hasOldPrice
+      ? normalizeText(stringValue(price, 'oldPriceFormattedValue')) || undefined
+      : undefined
+    const savings = recordValue(price, 'savings')
+    const savingsText = normalizeText(stringValue(price, 'savingsFormattedValue'))
+    const hasSavings = typeof savings === 'number' && savings > 0 && savingsText !== ''
+
+    const promotions = recordValue(product, 'potentialPromotions')
+    const promotionDescription = Array.isArray(promotions)
+      ? normalizeText(stringValue(promotions[0], 'description'))
+      : ''
+    const savingText = hasSavings ? `Save ${savingsText}` : promotionDescription || undefined
+
+    if (!code || seenCodes.has(code) || !title || !priceText || inStock === false) {
+      continue
+    }
+
+    seenCodes.add(code)
+    deals.push({
+      capturedAt,
+      evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
+      id: dealId(target.retailer.id, title, priceText, deals.length),
+      previousPriceText,
+      priceText,
+      productUrl: `https://www.pnp.co.za/${slug(title)}/p/${code}`,
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      savingText,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+      title,
+    })
+  }
+
+  return deals
+}
+
 // Clicks renders its promotion listings client-side from a public Hybris
 // results endpoint. OH1 is the root "all products" category; the
 // promoStickerplp facet limits rows to items with an active promotion.
-export function buildClicksPromotionsApiUrl(page = 0) {
-  return `https://clicks.co.za/products/c/OH1/results?q=%3Arelevance%3ApromoStickerplp%3A1&page=${page}`
+// Category pages (e.g. /health-and-pharmacy/c/OH10005) narrow the feed.
+export function buildClicksPromotionsApiUrl(sourceUrl?: string, page = 0) {
+  let categoryId = 'OH1'
+
+  if (sourceUrl) {
+    const categoryMatch = /\/c\/(OH\d+)/.exec(sourceUrl)
+
+    if (categoryMatch) {
+      categoryId = categoryMatch[1]
+    }
+  }
+
+  return `https://clicks.co.za/products/c/${categoryId}/results?q=%3Arelevance%3ApromoStickerplp%3A1&page=${page}`
 }
 
 export function extractClicksPromotionDeals(
   target: ResolvedDiscoveryTarget,
   payload: unknown,
   capturedAt: string,
-  limit = 12,
+  limit = 8,
 ) {
   const results = recordValue(payload, 'results')
   const deals: DiscoveredDeal[] = []

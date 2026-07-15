@@ -1,29 +1,77 @@
 import { dataPolicy } from '../../src/api/staticData'
 import {
   buildClicksPromotionsApiUrl,
+  buildPnpPromotionsApiUrl,
   buildTakealotDealsApiUrl,
   buildSourceResult,
   extractClicksPromotionDeals,
   extractDealsFromHtml,
+  extractPnpPromotionDeals,
   extractTakealotProductDeals,
   getDiscoveryTargets,
   type ResolvedDiscoveryTarget,
 } from '../../src/services/dealDiscovery'
 import type { DiscoveredDeal, DiscoverySourceResult } from '../../src/types'
+import {
+  readDealSnapshots,
+  saveDealSnapshots,
+  snapshotKey,
+} from '../_shared/dealSnapshotStore'
+import type { TrolleyScoutEnv } from '../_shared/env'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
-export const onRequest: PagesFunction = async ({ request }) => {
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method)
   }
 
   const targets = getDiscoveryTargets()
-  const settled = await Promise.all(targets.map((target) => checkSource(target)))
-  const deals = settled.flatMap((result) => result.deals)
+  const [settled, snapshots] = await Promise.all([
+    Promise.all(targets.map((target) => checkSource(target))),
+    readDealSnapshots(env),
+  ])
+
+  // Live rows refresh the per-source snapshots; sources that failed or came
+  // back empty fall back to their last snapshot so the board never goes dark
+  // because one retailer had a bad morning.
+  const freshEntries: Array<{
+    retailerId: string
+    sourceLabel: string
+    checkedAt: string
+    deals: DiscoveredDeal[]
+  }> = []
+
+  for (const result of settled) {
+    if (result.deals.length > 0) {
+      freshEntries.push({
+        checkedAt: result.source.checkedAt,
+        deals: result.deals,
+        retailerId: result.source.retailerId,
+        sourceLabel: result.source.sourceLabel,
+      })
+      continue
+    }
+
+    const snapshot = snapshots.get(snapshotKey(result.source.retailerId, result.source.sourceLabel))
+
+    if (snapshot) {
+      result.deals = snapshot.deals
+      result.source = {
+        ...result.source,
+        itemCount: snapshot.deals.length,
+        status: 'found',
+        statusText: `Live check had no rows. Showing rows captured ${snapshot.checkedAt.slice(0, 10)}.`,
+      }
+    }
+  }
+
+  waitUntil(saveDealSnapshots(env, freshEntries))
+
+  const deals = dedupeByProductUrl(settled.flatMap((result) => result.deals))
   const sources = settled.map((result) => result.source)
 
   return json(
@@ -43,6 +91,21 @@ export const onRequest: PagesFunction = async ({ request }) => {
   )
 }
 
+// Overlapping feeds (e.g. Clicks all-promotions vs a category feed) can
+// surface the same product; keep the first row for each product URL.
+function dedupeByProductUrl(deals: DiscoveredDeal[]): DiscoveredDeal[] {
+  const seen = new Set<string>()
+
+  return deals.filter((deal) => {
+    if (seen.has(deal.productUrl)) {
+      return false
+    }
+
+    seen.add(deal.productUrl)
+    return true
+  })
+}
+
 async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   deals: DiscoveredDeal[]
   source: DiscoverySourceResult
@@ -52,7 +115,12 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   }
 
   if (target.parserId === 'clicks-promotions') {
-    return checkJsonSource(target, buildClicksPromotionsApiUrl(), extractClicksPromotionDeals)
+    return checkJsonSource(target, buildClicksPromotionsApiUrl(target.source.url), extractClicksPromotionDeals)
+  }
+
+  if (target.parserId === 'pnp-promotions') {
+    // The PnP OCC search route only answers POST.
+    return checkJsonSource(target, buildPnpPromotionsApiUrl(), extractPnpPromotionDeals, 'POST')
   }
 
   const checkedAt = new Date().toISOString()
@@ -99,6 +167,7 @@ async function checkJsonSource(
   target: ResolvedDiscoveryTarget,
   apiUrl: string,
   extract: (target: ResolvedDiscoveryTarget, payload: unknown, capturedAt: string) => DiscoveredDeal[],
+  method: 'GET' | 'POST' = 'GET',
 ): Promise<{
   deals: DiscoveredDeal[]
   source: DiscoverySourceResult
@@ -112,6 +181,7 @@ async function checkJsonSource(
         referer: target.source.url,
         'user-agent': 'TrolleyScoutSourceCheck/1.0',
       },
+      method,
     })
 
     if (!response.ok) {
