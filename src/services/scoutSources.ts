@@ -31,6 +31,12 @@ export const externalRetailerTargets: ExternalRetailerTarget[] = [
     sourceUrl: 'https://frontlinesa.co.za/',
     trustAllPdfs: true,
   },
+  {
+    // Walmart's SA stores (via Massmart) publish a dated catalogue PDF here.
+    retailerId: 'walmart',
+    retailerName: 'Walmart',
+    sourceUrl: 'https://www.massmart.co.za/walmart-announces-stores-in-south-africa',
+  },
 ]
 
 export function extractRetailerLeafletsFromHtml(

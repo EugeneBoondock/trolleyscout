@@ -20,6 +20,7 @@ export type RetailerId =
   | 'president-hyper'
   | 'roots-butchery'
   | 'frontline'
+  | 'walmart'
 
 export type SourceKind = 'specials' | 'loyalty' | 'app' | 'store-finder'
 
