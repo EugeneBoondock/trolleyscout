@@ -200,7 +200,10 @@ async function refreshAllSources(
   }
 
   await saveDealSnapshots(env, freshEntries)
-  return settled
+  return [
+    ...settled,
+    ...buildDynamicSnapshotChecks(priorSnapshots, knownSourceKeys(targets)),
+  ]
 }
 
 function respond(
@@ -261,8 +264,9 @@ function newestSnapshotTime(snapshots: Map<string, DealSnapshot>): string | unde
 // Reconstructs the discovery board from stored snapshots alone — one "found"
 // source row per snapshotted feed, plus a "pending" row for feeds not yet
 // captured, so the instant response matches the live response shape.
-function buildSnapshotChecks(snapshots: Map<string, DealSnapshot>): SourceCheck[] {
-  return getDiscoveryTargets().map((target) => {
+export function buildSnapshotChecks(snapshots: Map<string, DealSnapshot>): SourceCheck[] {
+  const targets = getDiscoveryTargets()
+  const fixedChecks: SourceCheck[] = targets.map((target) => {
     const snapshot = snapshots.get(snapshotKey(target.retailer.id, target.source.label))
     const base = {
       retailerId: target.retailer.id,
@@ -294,6 +298,44 @@ function buildSnapshotChecks(snapshots: Map<string, DealSnapshot>): SourceCheck[
         statusText: `Captured ${snapshot.checkedAt.slice(0, 10)}.`,
       },
     }
+  })
+
+  return [
+    ...fixedChecks,
+    ...buildDynamicSnapshotChecks(snapshots, knownSourceKeys(targets)),
+  ]
+}
+
+function knownSourceKeys(targets: ResolvedDiscoveryTarget[]) {
+  return new Set(
+    targets.map((target) => snapshotKey(target.retailer.id, target.source.label)),
+  )
+}
+
+function buildDynamicSnapshotChecks(
+  snapshots: Map<string, DealSnapshot>,
+  fixedSourceKeys: Set<string>,
+): SourceCheck[] {
+  return Array.from(snapshots.entries()).flatMap(([sourceKey, snapshot]) => {
+    const firstDeal = snapshot.deals[0]
+
+    if (fixedSourceKeys.has(sourceKey) || !firstDeal) {
+      return []
+    }
+
+    return [{
+      deals: snapshot.deals,
+      source: {
+        checkedAt: snapshot.checkedAt,
+        itemCount: snapshot.deals.length,
+        retailerId: firstDeal.retailerId,
+        retailerName: firstDeal.retailerName,
+        sourceLabel: firstDeal.sourceLabel,
+        sourceUrl: firstDeal.sourceUrl,
+        status: 'found' as const,
+        statusText: `Captured ${snapshot.checkedAt.slice(0, 10)} by the scheduled scout.`,
+      },
+    }]
   })
 }
 

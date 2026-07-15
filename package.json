@@ -12,7 +12,9 @@
     "typecheck:functions": "tsc -p tsconfig.functions.json",
     "verify": "npm run test && npm run lint && npm run build && npm run typecheck:functions",
     "cf:preview": "wrangler pages dev dist",
-    "cf:deploy": "wrangler pages deploy dist --project-name trolley-scout"
+    "cf:deploy": "wrangler pages deploy dist --project-name trolley-scout",
+    "cf:deploy:scout": "wrangler deploy --config wrangler.scout.toml",
+    "cf:dev:scout": "wrangler dev --config wrangler.scout.toml --test-scheduled"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.7",

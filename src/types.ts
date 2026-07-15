@@ -16,6 +16,9 @@ export type RetailerId =
   | 'game'
   | 'builders'
   | 'yuppiechef'
+  | 'kit-kat'
+  | 'president-hyper'
+  | 'roots-butchery'
 
 export type SourceKind = 'specials' | 'loyalty' | 'app' | 'store-finder'
 
@@ -97,6 +100,7 @@ export interface DiscoveredDeal {
   previousPriceText?: string
   savingText?: string
   evidenceText: string
+  imageUrl?: string
   personalizationReason?: string
 }
 
@@ -141,6 +145,8 @@ export interface StoreLeaflet {
   retailerId: RetailerId
   retailerName: string
   name: string
+  imageUrl?: string
+  documentUrl?: string
   validFrom?: string
   validTo?: string
   url: string

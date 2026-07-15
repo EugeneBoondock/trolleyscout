@@ -376,6 +376,15 @@ main {
   box-shadow: var(--shadow-soft);
 }
 
+.leaflet-cover {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  margin-bottom: 0.45rem;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+  object-fit: cover;
+}
+
 .leaflet-retailer {
   margin: 0;
   color: var(--red);
@@ -1646,6 +1655,22 @@ main {
   font-size: 0.88rem;
 }
 
+.discovery-deal-main {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.deal-product-image {
+  flex: 0 0 auto;
+  width: 6.4rem;
+  height: 6.4rem;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+  object-fit: contain;
+}
+
 .deal-price-line {
   display: flex;
   flex-wrap: wrap;
@@ -2743,6 +2768,15 @@ main {
   .discovery-deal-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .discovery-deal-main {
+    align-items: flex-start;
+  }
+
+  .deal-product-image {
+    width: 5.2rem;
+    height: 5.2rem;
   }
 
   .offer-actions {

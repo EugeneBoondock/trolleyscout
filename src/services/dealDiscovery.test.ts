@@ -18,6 +18,7 @@ describe('dealDiscovery', () => {
     expect(apiUrl.pathname).toBe('/pnphybris/v2/pnp-spa/products/search')
     expect(apiUrl.searchParams.get('storeCode')).toBe('WC21')
     expect(apiUrl.searchParams.get('query')).toBe(':relevance:allCategories:pnpbase:isOnPromotion:On%20Promotion')
+    expect(apiUrl.searchParams.get('fields')).toContain('images(FULL)')
   })
 
   it('extracts Pick n Pay promotion rows from the OCC search JSON', () => {
@@ -31,6 +32,10 @@ describe('dealDiscovery', () => {
       products: [
         {
           code: '000000000000110222_EA',
+          images: [
+            { format: 'thumbnail', imageType: 'PRIMARY', url: 'https://cdn.pnp.test/rice-96.jpg' },
+            { format: 'product', imageType: 'PRIMARY', url: 'https://cdn.pnp.test/rice-400.jpg' },
+          ],
           inStockIndicator: true,
           name: 'Tastic Rice 2kg',
           price: {
@@ -75,6 +80,7 @@ describe('dealDiscovery', () => {
       retailerId: 'pick-n-pay',
       savingText: 'Save R10.00',
       title: 'Tastic Rice 2kg',
+      imageUrl: 'https://cdn.pnp.test/rice-400.jpg',
     })
     expect(deals[0].productUrl).toBe('https://www.pnp.co.za/tastic-rice-2kg/p/000000000000110222_EA')
     expect(deals[1]).toMatchObject({
@@ -113,6 +119,9 @@ describe('dealDiscovery', () => {
           code: '180234',
           brand: 'Yardley',
           name: 'Stayfast Pressed Powder Deep Beige 04 15g',
+          images: [
+            { format: 'productListing', imageType: 'PRIMARY', url: '/medias/yardley-listing.jpg' },
+          ],
           url: '/yardley_stayfast-pressed-powder-deep-beige-04-15g/p/180234',
           stock: { stockLevelStatus: { code: 'inStock' } },
           price: {
@@ -148,6 +157,7 @@ describe('dealDiscovery', () => {
       retailerId: 'clicks',
       savingText: 'Save 30% Stayfast liquid foundation. Valid until 22 July 2026',
       title: 'Yardley Stayfast Pressed Powder Deep Beige 04 15g',
+      imageUrl: 'https://clicks.co.za/medias/yardley-listing.jpg',
     })
     expect(deals[0].productUrl).toBe(
       'https://clicks.co.za/yardley_stayfast-pressed-powder-deep-beige-04-15g/p/180234',
@@ -162,6 +172,7 @@ describe('dealDiscovery', () => {
     const html = `
       <li data-content-type="slide" class="keen-slider__slide product-item">
         <div class="product-item-info">
+          <img class="product-image-photo" src="https://www.dischem.co.za/media/fame.jpg" alt="Fame">
           <div class="price-box-wrapper-listing simple-from">
             <span class="old-price"><span class="price">R 2,065.00</span></span>
             <span class="special-price special-red"><span class="price">R 1,032.50</span></span>
@@ -183,6 +194,7 @@ describe('dealDiscovery', () => {
       previousPriceText: 'R 2,065.00',
       retailerId: 'dis-chem',
       title: 'Paco Rabanne Fame Eau De Parfum 50ml',
+      imageUrl: 'https://www.dischem.co.za/media/fame.jpg',
     })
   })
 
@@ -194,6 +206,7 @@ describe('dealDiscovery', () => {
     const html = `
       <article class="card flex-grid-content product-card product-card--small">
         <a href="philips-coffee-makers.htm?id=65331&amp;name=Philips-5500-Series-Fully-Automatic-Bean-to-Cup-and-Cold-Brew-Espresso-Machine" class="u-block-link">
+          <img src="https://www.yuppiechef.com/spatula/products/philips-5500.jpg" alt="Philips 5500">
           <div class="card__content-wrapper">
             <h1 class="product-card__title">
               <span class="product-card__brand">Philips</span>
@@ -218,6 +231,7 @@ describe('dealDiscovery', () => {
       retailerId: 'yuppiechef',
       savingText: 'Save R2,500',
       title: 'Philips 5500 Series Fully Automatic Bean-to-Cup & Cold Brew Espresso Machine',
+      imageUrl: 'https://www.yuppiechef.com/spatula/products/philips-5500.jpg',
     })
     expect(deals[0].productUrl).toBe('https://www.yuppiechef.com/philips-coffee-makers.htm?id=65331&name=Philips-5500-Series-Fully-Automatic-Bean-to-Cup-and-Cold-Brew-Espresso-Machine')
   })
@@ -310,6 +324,9 @@ describe('dealDiscovery', () => {
                   slug: 'indomie-mi-goreng-hot-and-spicy-noodle-80gr-x-40-units',
                   title: 'Indomie Mi Goreng Hot and Spicy Noodle 80gr x 40 Units',
                 },
+                gallery: {
+                  images: ['https://media.takealot.com/noodles/s-{size}.file'],
+                },
               },
             },
           ],
@@ -325,6 +342,7 @@ describe('dealDiscovery', () => {
       retailerId: 'takealot',
       savingText: '22% off',
       title: 'Indomie Mi Goreng Hot and Spicy Noodle 80gr x 40 Units',
+      imageUrl: 'https://media.takealot.com/noodles/s-300.file',
     })
     expect(deals[0].productUrl).toBe(
       'https://www.takealot.com/indomie-mi-goreng-hot-and-spicy-noodle-80gr-x-40-units/PLID70902784',

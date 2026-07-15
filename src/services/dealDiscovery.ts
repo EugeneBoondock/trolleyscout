@@ -160,6 +160,7 @@ export function extractTakealotProductDeals(
     const priceText = takealotPriceText(view)
     const savingText = takealotSavingText(view)
     const productUrl = takealotProductUrl(view, target.source.url)
+    const imageUrl = takealotImageUrl(view)
     const dedupeKey = `${productId || title}-${priceText || ''}`
 
     if (!title || !priceText || seenProducts.has(dedupeKey)) {
@@ -171,6 +172,7 @@ export function extractTakealotProductDeals(
       capturedAt,
       evidenceText: evidenceText(title, priceText, undefined, savingText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       priceText,
       productUrl,
       retailerId: target.retailer.id,
@@ -190,7 +192,7 @@ export function extractTakealotProductDeals(
 // store used by the site itself before a shopper picks a branch.
 export function buildPnpPromotionsApiUrl(pageSize = 100, page = 0) {
   const fields =
-    'products(code,name,price(FULL),potentialPromotions(FULL),inStockIndicator),pagination(DEFAULT)'
+    'products(code,name,price(FULL),potentialPromotions(FULL),inStockIndicator,images(FULL)),pagination(DEFAULT)'
   const query = ':relevance:allCategories:pnpbase:isOnPromotion:On%20Promotion'
 
   return (
@@ -240,6 +242,12 @@ export function extractPnpPromotionDeals(
       ? normalizeText(stringValue(promotions[0], 'description'))
       : ''
     const savingText = hasSavings ? `Save ${savingsText}` : promotionDescription || undefined
+    const imageUrl = productImageUrl(product, 'https://www.pnp.co.za/', [
+      'product',
+      'carousel',
+      'listing',
+      'thumbnail',
+    ])
 
     if (!code || seenCodes.has(code) || !title || !priceText || inStock === false) {
       continue
@@ -250,6 +258,7 @@ export function extractPnpPromotionDeals(
       capturedAt,
       evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       previousPriceText,
       priceText,
       productUrl: `https://www.pnp.co.za/${slug(title)}/p/${code}`,
@@ -332,12 +341,18 @@ export function extractClicksPromotionDeals(
     const priceText = promoPriceText ?? listedPriceText
     const previousPriceText = promoPriceText && promoPriceText !== listedPriceText ? listedPriceText : undefined
     const savingText = promotionDescription || undefined
+    const imageUrl = productImageUrl(result, 'https://clicks.co.za/', [
+      'productListing',
+      'product',
+      'thumbnail',
+    ])
 
     seenCodes.add(code)
     deals.push({
       capturedAt,
       evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       previousPriceText,
       priceText,
       productUrl: absoluteUrl(path || target.source.url, 'https://clicks.co.za/'),
@@ -430,6 +445,7 @@ function extractDischemPromotionDeals(
 
     const title = normalizeText(linkMatch?.[2] ?? '')
     const productUrl = absoluteUrl(linkMatch?.[1] ?? target.source.url, target.source.url)
+    const imageUrl = htmlImageUrl(block, target.source.url)
     const priceText = prices.at(-1)
     const previousPriceText = prices.length > 1 ? prices[0] : undefined
 
@@ -441,6 +457,7 @@ function extractDischemPromotionDeals(
       capturedAt,
       evidenceText: evidenceText(title, priceText, previousPriceText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       previousPriceText,
       priceText,
       productUrl,
@@ -476,6 +493,7 @@ function extractYuppiechefSpecials(
     const priceText = normalizeText(firstClassText(block, 'card-price-list__item--now'))
     const previousPriceText = normalizeText(firstClassText(block, 'card-price-list__item--was')) || undefined
     const savingText = normalizeText(firstClassText(block, 'card-sticker--price')) || undefined
+    const imageUrl = htmlImageUrl(block, target.source.url)
 
     if (!title || !priceText || !linkMatch?.[1]) {
       continue
@@ -485,6 +503,7 @@ function extractYuppiechefSpecials(
       capturedAt,
       evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       previousPriceText,
       priceText,
       productUrl: absoluteUrl(linkMatch[1], target.source.url),
@@ -522,6 +541,7 @@ function extractAmazonProductDeals(
     const priceText = amazonPriceText(product, mode)
     const previousPriceText = amazonPreviousPriceText(product, mode)
     const savingText = amazonSavingText(product, mode)
+    const imageUrl = objectImageUrl(product, target.source.url)
 
     if (!asin || seenAsins.has(asin) || !title || !link || !priceText) {
       continue
@@ -540,6 +560,7 @@ function extractAmazonProductDeals(
       capturedAt,
       evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
       id: dealId(target.retailer.id, title, priceText, deals.length),
+      imageUrl,
       previousPriceText,
       priceText,
       productUrl: absoluteUrl(link, target.source.url),
@@ -634,6 +655,17 @@ function takealotProductUrl(view: unknown, baseUrl: string) {
   }
 
   return baseUrl
+}
+
+function takealotImageUrl(view: unknown) {
+  const images = recordValue(recordValue(view, 'gallery'), 'images')
+
+  if (!Array.isArray(images)) {
+    return undefined
+  }
+
+  const image = images.find((value): value is string => typeof value === 'string' && value.startsWith('https://'))
+  return image?.replace('{size}', '300')
 }
 
 function balancedJsonObject(value: string, start: number) {
@@ -789,6 +821,61 @@ function hasObject(value: unknown, key: string) {
   const current = recordValue(value, key)
 
   return typeof current === 'object' && current !== null
+}
+
+function productImageUrl(
+  product: unknown,
+  baseUrl: string,
+  preferredFormats: string[],
+) {
+  const images = recordValue(product, 'images')
+
+  if (!Array.isArray(images)) {
+    return undefined
+  }
+
+  const records = images.filter((image): image is Record<string, unknown> =>
+    typeof image === 'object' && image !== null,
+  )
+  const selected = preferredFormats
+    .map((format) => records.find((image) => image.format === format && image.imageType === 'PRIMARY'))
+    .find(Boolean) ?? records.find((image) => image.imageType === 'PRIMARY')
+  const path = selected?.url
+
+  if (typeof path !== 'string' || path.length === 0) {
+    return undefined
+  }
+
+  const imageUrl = absoluteUrl(path, baseUrl)
+  return /^https:\/\//.test(imageUrl) ? imageUrl : undefined
+}
+
+function htmlImageUrl(html: string, baseUrl: string) {
+  const match = /<img[^>]+(?:src|data-src)=["']([^"']+)["']/i.exec(html)
+
+  if (!match?.[1]) {
+    return undefined
+  }
+
+  const imageUrl = absoluteUrl(match[1], baseUrl)
+  return /^https:\/\//.test(imageUrl) ? imageUrl : undefined
+}
+
+function objectImageUrl(value: unknown, baseUrl: string) {
+  const nestedImage = recordValue(value, 'image')
+  const path = [
+    stringValue(value, 'imageUrl'),
+    typeof nestedImage === 'string' ? nestedImage : '',
+    stringValue(nestedImage, 'url'),
+    stringValue(nestedImage, 'src'),
+  ].find(Boolean)
+
+  if (!path) {
+    return undefined
+  }
+
+  const imageUrl = absoluteUrl(path, baseUrl)
+  return /^https:\/\//.test(imageUrl) ? imageUrl : undefined
 }
 
 function firstClassText(html: string, className: string) {

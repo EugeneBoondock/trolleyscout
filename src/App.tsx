@@ -2355,6 +2355,17 @@ function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
       <div className="leaflet-grid">
         {leaflets.map((leaflet) => (
           <article className="leaflet-card" key={leaflet.id}>
+            {leaflet.imageUrl && (
+              <img
+                alt={`${leaflet.retailerName} catalogue cover`}
+                className="leaflet-cover"
+                decoding="async"
+                loading="lazy"
+                onError={(event) => { event.currentTarget.hidden = true }}
+                referrerPolicy="no-referrer"
+                src={leaflet.imageUrl}
+              />
+            )}
             <p className="leaflet-retailer">{leaflet.retailerName}</p>
             <h4>{leaflet.name}</h4>
             {(leaflet.validFrom || leaflet.validTo) && (
@@ -2604,16 +2615,29 @@ function DiscoveryPanel({
         <div className="discovery-deal-list">
           {deals.map((deal) => (
             <article className="discovery-deal-row" key={deal.id}>
-              <div>
-                <p className="eyebrow">{deal.retailerName}</p>
-                {deal.personalizationReason && (
-                  <p className="personalization-reason">{deal.personalizationReason}</p>
+              <div className="discovery-deal-main">
+                {deal.imageUrl && (
+                  <img
+                    alt={deal.title}
+                    className="deal-product-image"
+                    decoding="async"
+                    loading="lazy"
+                    onError={(event) => { event.currentTarget.hidden = true }}
+                    referrerPolicy="no-referrer"
+                    src={deal.imageUrl}
+                  />
                 )}
-                <h3>{deal.title}</h3>
-                <div className="deal-price-line">
-                  {deal.priceText && <strong>{deal.priceText}</strong>}
-                  {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
-                  {deal.savingText && <span>{deal.savingText}</span>}
+                <div>
+                  <p className="eyebrow">{deal.retailerName}</p>
+                  {deal.personalizationReason && (
+                    <p className="personalization-reason">{deal.personalizationReason}</p>
+                  )}
+                  <h3>{deal.title}</h3>
+                  <div className="deal-price-line">
+                    {deal.priceText && <strong>{deal.priceText}</strong>}
+                    {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
+                    {deal.savingText && <span>{deal.savingText}</span>}
+                  </div>
                 </div>
               </div>
               <div className="offer-actions">

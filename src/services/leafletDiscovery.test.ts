@@ -40,6 +40,7 @@ describe('extractSixtyLeaflets', () => {
 
     expect(leaflets).toHaveLength(1)
     expect(leaflets[0]).toMatchObject({
+      imageUrl: 'https://www.shoprite.co.za/medias/GN-Checkers.jpg',
       name: 'Shoprite Low Price Lowduuuma Gauteng 13 July - 22 July',
       retailerId: 'shoprite',
       url: 'https://specials.shoprite.co.za/deals/gnlowprice13jul/index.html',

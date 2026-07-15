@@ -1,0 +1,20 @@
+name = "trolley-scout-scout"
+main = "workers/scout.ts"
+compatibility_date = "2026-07-01"
+workers_dev = false
+preview_urls = false
+
+[ai]
+binding = "AI"
+
+[vars]
+SCOUT_ORIGIN = "https://trolleyscout.co.za"
+
+[triggers]
+crons = ["17 */6 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trolley-scout"
+database_id = "2c43ec07-75b4-4d1f-aacb-ea0b112f36e3"
+migrations_dir = "migrations"

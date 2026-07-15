@@ -15,6 +15,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["functions", "src/api", "src/data", "src/services", "src/types.ts"],
+  "include": ["functions", "workers", "src/api", "src/data", "src/services", "src/types.ts"],
   "exclude": ["src/services/payfastOnsite.ts", "src/services/payfastOnsite.test.ts"]
 }

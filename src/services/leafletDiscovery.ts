@@ -73,7 +73,9 @@ export function buildLeafletApiUrl(apiBase: string): string {
 }
 
 interface SixtyLeafletRow {
+  imageUrl?: unknown
   name?: unknown
+  metaPdfUrl?: unknown
   url?: unknown
   startDate?: unknown
   endDate?: unknown
@@ -99,6 +101,8 @@ export function extractSixtyLeaflets(
 
     const name = cleanText(typeof row.name === 'string' ? row.name : '')
     const url = typeof row.url === 'string' ? row.url : ''
+    const imageUrl = absoluteHttpUrl(row.imageUrl, target.apiBase)
+    const documentUrl = absoluteHttpUrl(row.metaPdfUrl, target.apiBase)
 
     if (!name || !url.startsWith('http') || seen.has(url)) {
       continue
@@ -107,7 +111,9 @@ export function extractSixtyLeaflets(
     seen.add(url)
     leaflets.push({
       capturedAt,
+      documentUrl,
       id: leafletId(target.retailerId, url),
+      imageUrl,
       name,
       retailerId: target.retailerId,
       retailerName: target.retailerName,
@@ -243,6 +249,19 @@ function absoluteBoxerUrl(path: string): string {
     return new URL(path, 'https://www.boxer.co.za/').toString()
   } catch {
     return 'https://www.boxer.co.za/promotions'
+  }
+}
+
+function absoluteHttpUrl(value: unknown, baseUrl: string | undefined): string | undefined {
+  if (typeof value !== 'string' || value.length === 0 || !baseUrl) {
+    return undefined
+  }
+
+  try {
+    const url = new URL(value, baseUrl)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined
+  } catch {
+    return undefined
   }
 }
 
