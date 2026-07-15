@@ -106,6 +106,39 @@ function dedupeByProductUrl(deals: DiscoveredDeal[]): DiscoveredDeal[] {
   })
 }
 
+// Retry transient failures (5xx, 429, network errors) with exponential
+// backoff before giving up. Adapted from the resilient-scrape pattern:
+// most "the source is down" blips are a single bad response.
+const MAX_ATTEMPTS = 3
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response | undefined> {
+  let backoffMs = 300
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, init)
+
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+        // A 2xx or a definitive client error (401/404) will not change on retry.
+        return response
+      }
+    } catch {
+      // Network error — fall through to the backoff and try again.
+    }
+
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(backoffMs)
+      backoffMs *= 2
+    }
+  }
+
+  return undefined
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   deals: DiscoveredDeal[]
   source: DiscoverySourceResult
@@ -126,18 +159,18 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   const checkedAt = new Date().toISOString()
 
   try {
-    const response = await fetch(target.source.url, {
+    const response = await fetchWithRetry(target.source.url, {
       headers: {
         accept: 'text/html,application/xhtml+xml',
         'user-agent': 'TrolleyScoutSourceCheck/1.0',
       },
     })
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       return {
         deals: [],
         source: buildSourceResult(target, checkedAt, 0, {
-          httpStatus: response.status,
+          httpStatus: response?.status,
           unavailable: true,
         }),
       }
@@ -175,7 +208,7 @@ async function checkJsonSource(
   const checkedAt = new Date().toISOString()
 
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithRetry(apiUrl, {
       headers: {
         accept: 'application/json',
         referer: target.source.url,
@@ -184,11 +217,11 @@ async function checkJsonSource(
       method,
     })
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       return {
         deals: [],
         source: buildSourceResult(target, checkedAt, 0, {
-          httpStatus: response.status,
+          httpStatus: response?.status,
           unavailable: true,
         }),
       }

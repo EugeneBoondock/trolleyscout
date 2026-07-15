@@ -89,7 +89,7 @@ export function extractDealsFromHtml(
   target: ResolvedDiscoveryTarget,
   html: string,
   capturedAt: string,
-  limit = 8,
+  limit = 24,
 ): DiscoveredDeal[] {
   if (target.parserId === 'dischem-promotion') {
     return extractDischemPromotionDeals(target, html, capturedAt, limit)
@@ -188,7 +188,7 @@ export function extractTakealotProductDeals(
 // Pick n Pay's storefront reads promotions from its OCC commerce API. The
 // endpoint answers anonymous POST requests; WC21 is the national online
 // store used by the site itself before a shopper picks a branch.
-export function buildPnpPromotionsApiUrl(pageSize = 24) {
+export function buildPnpPromotionsApiUrl(pageSize = 100, page = 0) {
   const fields =
     'products(code,name,price(FULL),potentialPromotions(FULL),inStockIndicator),pagination(DEFAULT)'
   const query = ':relevance:allCategories:pnpbase:isOnPromotion:On%20Promotion'
@@ -197,7 +197,7 @@ export function buildPnpPromotionsApiUrl(pageSize = 24) {
     'https://www.pnp.co.za/pnphybris/v2/pnp-spa/products/search' +
     `?fields=${encodeURIComponent(fields)}` +
     `&query=${encodeURIComponent(query)}` +
-    `&pageSize=${pageSize}&storeCode=WC21&lang=en&curr=ZAR`
+    `&pageSize=${pageSize}&currentPage=${page}&storeCode=WC21&lang=en&curr=ZAR`
   )
 }
 
@@ -205,7 +205,7 @@ export function extractPnpPromotionDeals(
   target: ResolvedDiscoveryTarget,
   payload: unknown,
   capturedAt: string,
-  limit = 12,
+  limit = 60,
 ) {
   const products = recordValue(payload, 'products')
   const deals: DiscoveredDeal[] = []
@@ -287,7 +287,7 @@ export function extractClicksPromotionDeals(
   target: ResolvedDiscoveryTarget,
   payload: unknown,
   capturedAt: string,
-  limit = 8,
+  limit = 24,
 ) {
   const results = recordValue(payload, 'results')
   const deals: DiscoveredDeal[] = []
