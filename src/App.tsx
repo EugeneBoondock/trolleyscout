@@ -261,6 +261,25 @@ function App() {
     return () => controller.abort()
   }, [refreshKey])
 
+  // Coming back from Stripe Checkout: acknowledge the outcome and land the
+  // member on their subscription view instead of the public home page.
+  useEffect(() => {
+    const billing = new URLSearchParams(window.location.search).get('billing')
+
+    if (billing !== 'success' && billing !== 'cancelled') {
+      return
+    }
+
+    setMemberMode(true)
+    setMemberView('subscription')
+    setMemberNotice(
+      billing === 'success'
+        ? 'Payment received. Your plan updates within a minute or two of Stripe confirming — refresh if it still shows the old plan.'
+        : 'Checkout was cancelled — nothing was charged and your plan is unchanged.',
+    )
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [])
+
   useEffect(() => {
     const controller = new AbortController()
 

@@ -50,8 +50,26 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    const planId = normalizeCheckoutPlan(body.planId)
-    const checkout = await startSubscriptionCheckout(env, request, session.account, planId)
+    // An unknown plan id must never fall through to a plan change —
+    // coercing junk to "free" would silently downgrade a paying member.
+    if (!isKnownPlanId(body.planId)) {
+      return json(
+        {
+          checkout: {
+            billingReady: isBillingReady(env),
+            message: 'Choose a valid plan.',
+            planId: 'free' as MemberPlanId,
+            status: 'checkout_required',
+          },
+        },
+        {
+          headers: privateHeaders,
+          status: 400,
+        },
+      )
+    }
+
+    const checkout = await startSubscriptionCheckout(env, request, session.account, body.planId)
 
     return json(
       {
@@ -59,7 +77,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       },
       {
         headers: privateHeaders,
-        status: checkout.billingReady || planId === 'free' ? 200 : 503,
+        status: checkout.billingReady || body.planId === 'free' ? 200 : 503,
       },
     )
   }
@@ -67,10 +85,6 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   return methodNotAllowed(request.method, 'GET, POST')
 }
 
-function normalizeCheckoutPlan(planId: string): MemberPlanId {
-  if (planId === 'scout' || planId === 'household') {
-    return planId
-  }
-
-  return 'free'
+function isKnownPlanId(planId: string): planId is MemberPlanId {
+  return planId === 'free' || planId === 'scout' || planId === 'household'
 }
