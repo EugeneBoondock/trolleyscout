@@ -1,4 +1,4 @@
-import type { MemberPlanId, SubscriptionCheckoutRequest } from '../../src/types'
+import type { BillingCycle, MemberPlanId, SubscriptionCheckoutRequest } from '../../src/types'
 import {
   getMemberSession,
   getSubscriptionPlans,
@@ -37,9 +37,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       return json(
         {
           checkout: {
+            billingCycle: 'monthly' as BillingCycle,
             billingReady: false,
             message: 'Request body must be valid JSON.',
             planId: 'free' as MemberPlanId,
+            provider: 'payfast',
             status: 'checkout_required',
           },
         },
@@ -56,9 +58,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       return json(
         {
           checkout: {
+            billingCycle: isBillingCycle(body.billingCycle) ? body.billingCycle : 'monthly',
             billingReady: isBillingReady(env),
             message: 'Choose a valid plan.',
             planId: 'free' as MemberPlanId,
+            provider: 'payfast',
             status: 'checkout_required',
           },
         },
@@ -69,7 +73,38 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    const checkout = await startSubscriptionCheckout(env, request, session.account, body.planId)
+    if (!isBillingCycle(body.billingCycle)) {
+      return json(
+        {
+          checkout: {
+            billingCycle: 'monthly' as BillingCycle,
+            billingReady: isBillingReady(env),
+            message: 'Choose monthly or annual billing.',
+            planId: body.planId,
+            provider: 'payfast',
+            status: 'checkout_required',
+          },
+        },
+        {
+          headers: privateHeaders,
+          status: 400,
+        },
+      )
+    }
+
+    const checkout = await startSubscriptionCheckout(
+      env,
+      request,
+      session.account,
+      body.planId,
+      body.billingCycle,
+    )
+    const status =
+      body.planId === 'free' || checkout.onsiteUuid
+        ? 200
+        : checkout.billingReady
+          ? 502
+          : 503
 
     return json(
       {
@@ -77,7 +112,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       },
       {
         headers: privateHeaders,
-        status: checkout.billingReady || body.planId === 'free' ? 200 : 503,
+        status,
       },
     )
   }
@@ -87,4 +122,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
 function isKnownPlanId(planId: string): planId is MemberPlanId {
   return planId === 'free' || planId === 'scout' || planId === 'household'
+}
+
+function isBillingCycle(value: string): value is BillingCycle {
+  return value === 'monthly' || value === 'annual'
 }

@@ -784,9 +784,11 @@ export async function startSubscriptionCheckout(
     return {
       data: {
         checkout: {
+          billingCycle: draft.billingCycle,
           billingReady: false,
           message: 'Subscription API unavailable.',
           planId: draft.planId,
+          provider: 'payfast',
           status: 'billing_not_configured',
         },
       },

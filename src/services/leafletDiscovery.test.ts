@@ -2,12 +2,14 @@ import { describe, expect, test } from 'vitest'
 import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
+  extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
 } from './leafletDiscovery'
 
 const shoprite = leafletTargets.find((target) => target.retailerId === 'shoprite')!
 const boxer = leafletTargets.find((target) => target.retailerId === 'boxer')!
+const usave = leafletTargets.find((target) => target.retailerId === 'usave')!
 
 describe('buildLeafletApiUrl', () => {
   test('builds the get-store-leaflets endpoint', () => {
@@ -48,6 +50,24 @@ describe('extractSixtyLeaflets', () => {
 
   test('returns empty for a non-array payload', () => {
     expect(extractSixtyLeaflets(shoprite, { error: 'nope' }, '2026-07-15T10:00:00.000Z')).toEqual([])
+  })
+})
+
+describe('extractPdfLeaflets', () => {
+  test('extracts specials PDFs with readable names and skips terms docs', () => {
+    const html = `
+      <a href="/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf">July specials</a>
+      <a href="/content/dam/ShopriteGroup/Terms/PDFS/Voucher-Product-Terms.pdf">Terms</a>
+      <a href="/content/dam/shp/docs/shoprite-group-paia-manual.pdf">PAIA</a>`
+
+    const leaflets = extractPdfLeaflets(usave, html, '2026-07-15T10:00:00.000Z')
+
+    expect(leaflets).toHaveLength(1)
+    expect(leaflets[0].url).toBe(
+      'https://www.usave.co.za/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf',
+    )
+    expect(leaflets[0].retailerId).toBe('usave')
+    expect(leaflets[0].name).toBe('Usave specials — July')
   })
 })
 

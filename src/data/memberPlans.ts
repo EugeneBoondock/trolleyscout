@@ -1,4 +1,4 @@
-import type { MemberPlan, MemberPlanId } from '../types'
+import type { BillingCycle, MemberPlan, MemberPlanId } from '../types'
 
 // Plan philosophy: everything a household needs to eat and claim what is
 // theirs stays free, with honest capacity. Paid plans buy bigger lists for
@@ -21,6 +21,10 @@ export const memberPlans: MemberPlan[] = [
       savedSources: 10,
     },
     name: 'Free',
+    prices: {
+      annual: 0,
+      monthly: 0,
+    },
     statusText: 'Active now',
   },
   {
@@ -40,6 +44,10 @@ export const memberPlans: MemberPlan[] = [
       savedSources: 100,
     },
     name: 'Scout',
+    prices: {
+      annual: 29000,
+      monthly: 2900,
+    },
     statusText: 'Checkout required',
   },
   {
@@ -59,10 +67,30 @@ export const memberPlans: MemberPlan[] = [
       savedSources: 250,
     },
     name: 'Household',
+    prices: {
+      annual: 59000,
+      monthly: 5900,
+    },
     statusText: 'Checkout required',
   },
 ]
 
 export function getMemberPlan(planId: MemberPlanId) {
   return memberPlans.find((plan) => plan.id === planId) ?? memberPlans[0]
+}
+
+export function getPlanBillingOption(planId: MemberPlanId, billingCycle: BillingCycle) {
+  const plan = getMemberPlan(planId)
+
+  if (!plan.isPaid) {
+    return undefined
+  }
+
+  return {
+    amountCents: plan.prices[billingCycle],
+    billingCycle,
+    frequency: billingCycle === 'monthly' ? 3 : 6,
+    itemName: `Trolley Scout ${plan.name} ${billingCycle}`,
+    planId,
+  }
 }

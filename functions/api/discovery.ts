@@ -14,6 +14,7 @@ import {
 import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
+  extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
   type LeafletTarget,
@@ -36,6 +37,11 @@ const privateHeaders = {
 
 // How old the newest snapshot may get before a background refresh is kicked.
 const STALE_AFTER_MS = 60 * 60 * 1000
+
+// The Shoprite-Group leaflet endpoints and pages reject non-browser
+// user-agents with a 403, so reading their free public catalogues needs one.
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 interface SourceCheck {
   deals: DiscoveredDeal[]
@@ -96,16 +102,13 @@ async function refreshAllLeaflets(
 async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<StoreLeaflet[]> {
   try {
     if (target.kind === 'sixty60-api' && target.apiBase && target.storeId) {
-      // These public leaflet endpoints reject non-browser user-agents with a
-      // 403, so a standard browser UA is required to read the free catalogue.
       const response = await fetch(buildLeafletApiUrl(target.apiBase), {
         body: JSON.stringify({ posSiteCode: target.storeId }),
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
           referer: `${target.apiBase}/`,
-          'user-agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          'user-agent': BROWSER_USER_AGENT,
         },
         method: 'POST',
       })
@@ -117,11 +120,11 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
       return extractSixtyLeaflets(target, await response.json(), checkedAt)
     }
 
-    if (target.kind === 'html-list' && target.pageUrl) {
+    if ((target.kind === 'html-list' || target.kind === 'html-pdf') && target.pageUrl) {
       const response = await fetch(target.pageUrl, {
         headers: {
           accept: 'text/html',
-          'user-agent': 'TrolleyScoutSourceCheck/1.0',
+          'user-agent': BROWSER_USER_AGENT,
         },
       })
 
@@ -129,7 +132,10 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
         return []
       }
 
-      return extractBoxerLeaflets(target, await response.text(), checkedAt)
+      const html = await response.text()
+      return target.kind === 'html-pdf'
+        ? extractPdfLeaflets(target, html, checkedAt)
+        : extractBoxerLeaflets(target, html, checkedAt)
     }
   } catch {
     // A single retailer's leaflet fetch failing must not sink the board.

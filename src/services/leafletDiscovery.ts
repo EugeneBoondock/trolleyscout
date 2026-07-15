@@ -7,12 +7,13 @@ import type { RetailerId, StoreLeaflet } from '../types'
 export interface LeafletTarget {
   retailerId: RetailerId
   retailerName: string
-  kind: 'sixty60-api' | 'html-list'
+  kind: 'sixty60-api' | 'html-list' | 'html-pdf'
   // For sixty60-api: the leaflet API base + a representative national store id.
   apiBase?: string
   storeId?: string
-  // For html-list: the specials page to parse.
+  // For html-list / html-pdf: the specials page to parse and its origin.
   pageUrl?: string
+  origin?: string
 }
 
 export const leafletTargets: LeafletTarget[] = [
@@ -36,7 +37,36 @@ export const leafletTargets: LeafletTarget[] = [
     retailerId: 'boxer',
     retailerName: 'Boxer',
   },
+  {
+    kind: 'html-pdf',
+    origin: 'https://www.usave.co.za',
+    pageUrl: 'https://www.usave.co.za/specials.html',
+    retailerId: 'usave',
+    retailerName: 'Usave',
+  },
+  {
+    kind: 'html-pdf',
+    origin: 'https://www.okfoods.co.za',
+    pageUrl: 'https://www.okfoods.co.za/specials.html',
+    retailerId: 'ok-foods',
+    retailerName: 'OK Foods',
+  },
 ]
+
+const MONTHS: Record<string, string> = {
+  january: 'January',
+  february: 'February',
+  march: 'March',
+  april: 'April',
+  may: 'May',
+  june: 'June',
+  july: 'July',
+  august: 'August',
+  september: 'September',
+  october: 'October',
+  november: 'November',
+  december: 'December',
+}
 
 export function buildLeafletApiUrl(apiBase: string): string {
   return `${apiBase}/api/stores/get-store-leaflets`
@@ -135,6 +165,57 @@ export function extractBoxerLeaflets(
   }
 
   return leaflets
+}
+
+// Usave and OK Foods publish their specials as leaflet PDFs whose path
+// carries the month and a region/section code. We surface each current
+// leaflet with a readable name derived from that path.
+export function extractPdfLeaflets(
+  target: LeafletTarget,
+  html: string,
+  capturedAt: string,
+  limit = 1,
+): StoreLeaflet[] {
+  const leaflets: StoreLeaflet[] = []
+  const seen = new Set<string>()
+  const pdfPattern = /\/content\/dam\/[^"']*?\.pdf/gi
+  let match: RegExpExecArray | null
+
+  while ((match = pdfPattern.exec(html)) !== null && leaflets.length < limit) {
+    const path = match[0]
+    const lower = path.toLowerCase()
+
+    // Only current specials/leaflet PDFs — skip terms, PAIA manuals, etc.
+    if (!/special|leaflet/.test(lower) || seen.has(path)) {
+      continue
+    }
+
+    seen.add(path)
+    const url = target.origin ? `${target.origin}${path}` : path
+
+    leaflets.push({
+      capturedAt,
+      id: leafletId(target.retailerId, path),
+      name: pdfLeafletName(target.retailerName, path),
+      retailerId: target.retailerId,
+      retailerName: target.retailerName,
+      url,
+      validFrom: undefined,
+      validTo: undefined,
+    })
+  }
+
+  return leaflets
+}
+
+function pdfLeafletName(retailerName: string, path: string): string {
+  const month = path
+    .toLowerCase()
+    .split('/')
+    .map((segment) => MONTHS[segment])
+    .find(Boolean)
+
+  return month ? `${retailerName} specials — ${month}` : `${retailerName} specials leaflet`
 }
 
 function boxerLeafletName(text: string, path: string): string {

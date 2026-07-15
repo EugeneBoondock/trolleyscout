@@ -4,6 +4,7 @@ import type {
   BasketItemDraft,
   BasketQuantityDraft,
   BasketSummary,
+  BillingCycle,
   MemberAccount,
   MemberPlanId,
   MemberPlanStatus,
@@ -13,9 +14,14 @@ import type {
   SavedSource,
   SourceKind,
 } from '../../src/types'
-import { memberPlans, getMemberPlan } from '../../src/data/memberPlans'
+import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
+import { getPayFastEndpoints } from './payfast'
+import {
+  createPayFastCheckoutFields,
+  requestPayFastOnsitePayment,
+} from './payfastBilling'
 
 const sessionCookieName = 'ts_member_session'
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 30
@@ -97,19 +103,14 @@ export function getSubscriptionPlans() {
 }
 
 export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
-    return false
-  }
+  const hasPayFastSecrets = Boolean(
+    env.PAYFAST_MERCHANT_ID &&
+      env.PAYFAST_MERCHANT_KEY &&
+      env.PAYFAST_PASSPHRASE &&
+      (env.PAYFAST_MODE === 'sandbox' || env.PAYFAST_MODE === 'live'),
+  )
 
-  if (planId === 'scout') {
-    return Boolean(env.STRIPE_SCOUT_PRICE_ID)
-  }
-
-  if (planId === 'household') {
-    return Boolean(env.STRIPE_HOUSEHOLD_PRICE_ID)
-  }
-
-  return Boolean(env.STRIPE_SCOUT_PRICE_ID && env.STRIPE_HOUSEHOLD_PRICE_ID)
+  return planId === 'free' ? true : hasPayFastSecrets
 }
 
 export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
@@ -666,200 +667,130 @@ export async function startSubscriptionCheckout(
   request: Request,
   account: MemberAccount | undefined,
   planId: MemberPlanId,
+  billingCycle: BillingCycle,
 ) {
   if (!hasMemberStore(env) || !account) {
     return {
+      billingCycle,
       billingReady: false,
       message: 'Sign in before changing plan.',
       planId,
+      provider: 'payfast' as const,
       status: 'checkout_required' as MemberPlanStatus,
     }
   }
 
   if (planId === 'free') {
-    await env.DB.prepare(
-      `UPDATE member_accounts
-        SET plan_id = ?, plan_status = ?, updated_at = ?
-        WHERE id = ?`,
-    )
-      .bind('free', 'active', new Date().toISOString(), account.id)
-      .run()
-
     return {
+      billingCycle,
       billingReady: true,
-      message: 'Free plan is active.',
+      message:
+        account.planId === 'free'
+          ? 'Free plan is active.'
+          : 'Paid-plan cancellation will be available from subscription settings.',
       planId,
-      status: 'active' as MemberPlanStatus,
+      provider: 'payfast' as const,
+      status: (account.planId === 'free' ? 'active' : 'checkout_required') as MemberPlanStatus,
     }
   }
 
-  const priceId = getStripePriceId(env, planId)
+  const billingOption = getPlanBillingOption(planId, billingCycle)
 
-  if (!env.STRIPE_SECRET_KEY || !priceId) {
+  if (
+    !billingOption ||
+    !isBillingReady(env, planId) ||
+    !env.PAYFAST_MERCHANT_ID ||
+    !env.PAYFAST_MERCHANT_KEY ||
+    !env.PAYFAST_PASSPHRASE ||
+    (env.PAYFAST_MODE !== 'sandbox' && env.PAYFAST_MODE !== 'live')
+  ) {
     return {
+      billingCycle,
       billingReady: false,
       message: 'Billing keys are not configured for this plan.',
       planId,
+      provider: 'payfast' as const,
       status: 'billing_not_configured' as MemberPlanStatus,
     }
   }
 
   const origin = env.APP_URL ?? new URL(request.url).origin
-  const params = new URLSearchParams({
-    cancel_url: `${origin}/?billing=cancelled`,
-    client_reference_id: account.id,
-    customer_email: account.email,
-    mode: 'subscription',
-    success_url: `${origin}/?billing=success`,
-  })
-  params.set('line_items[0][price]', priceId)
-  params.set('line_items[0][quantity]', '1')
-  params.set('metadata[member_account_id]', account.id)
-  params.set('metadata[plan_id]', planId)
-  params.set('subscription_data[metadata][member_account_id]', account.id)
-  params.set('subscription_data[metadata][plan_id]', planId)
+  const attemptId = `billing-${crypto.randomUUID()}`
+  const timestamp = new Date().toISOString()
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
 
-  const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    body: params,
-    headers: {
-      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      'content-type': 'application/x-www-form-urlencoded',
-    },
-    method: 'POST',
+  await env.DB.prepare(
+    `INSERT INTO billing_attempts (
+      id, account_id, provider, plan_id, billing_cycle, amount_cents,
+      status, created_at, updated_at, expires_at
+    ) VALUES (?, ?, 'payfast', ?, ?, ?, 'created', ?, ?, ?)`,
+  )
+    .bind(
+      attemptId,
+      account.id,
+      planId,
+      billingCycle,
+      billingOption.amountCents,
+      timestamp,
+      timestamp,
+      expiresAt,
+    )
+    .run()
+
+  const fields = createPayFastCheckoutFields({
+    account,
+    attemptId,
+    merchantId: env.PAYFAST_MERCHANT_ID,
+    merchantKey: env.PAYFAST_MERCHANT_KEY,
+    notifyUrl: new URL('/api/payfast-itn', origin).toString(),
+    option: billingOption,
+    passphrase: env.PAYFAST_PASSPHRASE,
   })
-  const stripeData = (await stripeResponse.json()) as {
-    error?: {
-      message?: string
-    }
-    url?: string
+
+  let onsiteUuid: string | undefined
+
+  try {
+    onsiteUuid = await requestPayFastOnsitePayment(fields, env.PAYFAST_MODE)
+  } catch {
+    onsiteUuid = undefined
   }
 
-  if (!stripeResponse.ok || !stripeData.url) {
+  if (!onsiteUuid) {
+    await env.DB.prepare(
+      `UPDATE billing_attempts
+        SET status = 'provider_error', updated_at = ?
+        WHERE id = ?`,
+    )
+      .bind(new Date().toISOString(), attemptId)
+      .run()
+
     return {
+      billingCycle,
       billingReady: true,
-      message: stripeData.error?.message ?? 'Checkout could not be created.',
+      message: 'PayFast checkout could not be created. Please try again.',
       planId,
+      provider: 'payfast' as const,
       status: 'checkout_required' as MemberPlanStatus,
     }
   }
 
-  return {
-    billingReady: true,
-    checkoutUrl: stripeData.url,
-    message: 'Checkout is ready.',
-    planId,
-    status: 'checkout_required' as MemberPlanStatus,
-  }
-}
-
-export async function activateMemberSubscriptionFromCheckout(
-  env: TrolleyScoutEnv,
-  input: {
-    customerId?: string
-    memberAccountId?: string
-    planId?: string
-    subscriptionId?: string
-  },
-) {
-  if (!hasMemberStore(env) || !input.memberAccountId) {
-    return {
-      updated: false,
-    }
-  }
-
-  const planId = normalizePaidPlanId(input.planId)
-
-  if (!planId || !input.subscriptionId) {
-    return {
-      updated: false,
-    }
-  }
-
-  const result = await env.DB.prepare(
-    `UPDATE member_accounts
-      SET plan_id = ?, plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
-        stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = ?
+  await env.DB.prepare(
+    `UPDATE billing_attempts
+      SET onsite_uuid = ?, status = 'pending', updated_at = ?
       WHERE id = ?`,
   )
-    .bind(planId, 'active', input.customerId ?? null, input.subscriptionId, new Date().toISOString(), input.memberAccountId)
+    .bind(onsiteUuid, new Date().toISOString(), attemptId)
     .run()
 
   return {
+    billingCycle,
+    billingReady: true,
+    engineUrl: getPayFastEndpoints(env.PAYFAST_MODE).engineUrl,
+    message: 'PayFast checkout is ready.',
+    onsiteUuid,
     planId,
-    status: 'active' as MemberPlanStatus,
-    updated: result.meta.changes > 0,
-  }
-}
-
-export async function updateMemberSubscriptionFromStripe(
-  env: TrolleyScoutEnv,
-  input: {
-    customerId?: string
-    memberAccountId?: string
-    planId?: string
-    status?: string
-    subscriptionId?: string
-  },
-) {
-  if (!hasMemberStore(env) || !input.subscriptionId) {
-    return {
-      updated: false,
-    }
-  }
-
-  const timestamp = new Date().toISOString()
-  const memberStatus = stripeStatusToMemberStatus(input.status)
-  const planId = normalizePaidPlanId(input.planId)
-
-  if (input.memberAccountId && planId) {
-    const result = await env.DB.prepare(
-      `UPDATE member_accounts
-        SET plan_id = ?, plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
-          stripe_subscription_id = ?, updated_at = ?
-        WHERE id = ?`,
-    )
-      .bind(planId, memberStatus, input.customerId ?? null, input.subscriptionId, timestamp, input.memberAccountId)
-      .run()
-
-    return {
-      status: memberStatus,
-      updated: result.meta.changes > 0,
-    }
-  }
-
-  const result = await env.DB.prepare(
-    `UPDATE member_accounts
-      SET plan_status = ?, stripe_customer_id = COALESCE(?, stripe_customer_id), updated_at = ?
-      WHERE stripe_subscription_id = ?`,
-  )
-    .bind(memberStatus, input.customerId ?? null, timestamp, input.subscriptionId)
-    .run()
-
-  return {
-    status: memberStatus,
-    updated: result.meta.changes > 0,
-  }
-}
-
-export async function deactivateMemberSubscriptionFromStripe(env: TrolleyScoutEnv, subscriptionId?: string) {
-  if (!hasMemberStore(env) || !subscriptionId) {
-    return {
-      updated: false,
-    }
-  }
-
-  const result = await env.DB.prepare(
-    `UPDATE member_accounts
-      SET plan_id = ?, plan_status = ?, stripe_subscription_id = NULL, updated_at = ?
-      WHERE stripe_subscription_id = ?`,
-  )
-    .bind('free', 'active', new Date().toISOString(), subscriptionId)
-    .run()
-
-  return {
-    planId: 'free' as MemberPlanId,
-    status: 'active' as MemberPlanStatus,
-    updated: result.meta.changes > 0,
+    provider: 'payfast' as const,
+    status: 'checkout_required' as MemberPlanStatus,
   }
 }
 
@@ -1058,24 +989,8 @@ function getInitials(displayName: string) {
     .join('')
 }
 
-function getStripePriceId(env: TrolleyScoutEnv, planId: MemberPlanId) {
-  if (planId === 'scout') {
-    return env.STRIPE_SCOUT_PRICE_ID
-  }
-
-  if (planId === 'household') {
-    return env.STRIPE_HOUSEHOLD_PRICE_ID
-  }
-
-  return undefined
-}
-
 function normalizePlanId(value: string): MemberPlanId {
   return value === 'scout' || value === 'household' ? value : 'free'
-}
-
-function normalizePaidPlanId(value?: string): Exclude<MemberPlanId, 'free'> | undefined {
-  return value === 'scout' || value === 'household' ? value : undefined
 }
 
 function normalizePlanStatus(value: string): MemberPlanStatus {
@@ -1084,14 +999,6 @@ function normalizePlanStatus(value: string): MemberPlanStatus {
   }
 
   return 'active'
-}
-
-function stripeStatusToMemberStatus(value?: string): MemberPlanStatus {
-  if (value === 'active' || value === 'trialing') {
-    return 'active'
-  }
-
-  return 'checkout_required'
 }
 
 function normalizeRetailerId(value: string): RetailerId {

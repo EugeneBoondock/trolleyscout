@@ -1,8 +1,8 @@
 export interface TrolleyScoutEnv {
   DB?: D1Database
   APP_URL?: string
-  STRIPE_HOUSEHOLD_PRICE_ID?: string
-  STRIPE_SCOUT_PRICE_ID?: string
-  STRIPE_SECRET_KEY?: string
-  STRIPE_WEBHOOK_SECRET?: string
+  PAYFAST_MERCHANT_ID?: string
+  PAYFAST_MERCHANT_KEY?: string
+  PAYFAST_MODE?: 'sandbox' | 'live'
+  PAYFAST_PASSPHRASE?: string
 }

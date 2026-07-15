@@ -2313,6 +2313,64 @@ main {
   color: var(--red);
 }
 
+.billing-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.billing-toggle-option {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.billing-toggle-option.is-active {
+  color: #1c1710;
+  background: var(--yellow);
+}
+
+.billing-save {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+.billing-toggle-option.is-active .billing-save {
+  background: var(--red-bright);
+}
+
+.plan-price {
+  display: flex;
+  gap: 0.3rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+.plan-price strong {
+  font-family: var(--display);
+  font-size: 1.9rem;
+  font-weight: 400;
+  color: var(--red);
+}
+
+.plan-price span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .plan-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

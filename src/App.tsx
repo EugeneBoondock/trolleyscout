@@ -63,8 +63,10 @@ import {
   startSubscriptionCheckout,
   updateBasketItemForMember,
 } from './services/apiClient'
+import { openPayFastOnsite } from './services/payfastOnsite'
 import type {
   BasketItem,
+  BillingCycle,
   MemberSession,
   MemberPlanId,
   MemberSessionDraft,
@@ -262,25 +264,6 @@ function App() {
 
     return () => controller.abort()
   }, [refreshKey])
-
-  // Coming back from Stripe Checkout: acknowledge the outcome and land the
-  // member on their subscription view instead of the public home page.
-  useEffect(() => {
-    const billing = new URLSearchParams(window.location.search).get('billing')
-
-    if (billing !== 'success' && billing !== 'cancelled') {
-      return
-    }
-
-    setMemberMode(true)
-    setMemberView('subscription')
-    setMemberNotice(
-      billing === 'success'
-        ? 'Payment received. Your plan updates within a minute or two of Stripe confirming — refresh if it still shows the old plan.'
-        : 'Checkout was cancelled — nothing was charged and your plan is unchanged.',
-    )
-    window.history.replaceState(null, '', window.location.pathname)
-  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -625,16 +608,59 @@ function App() {
     }
   }
 
-  async function requestCheckout(planId: MemberPlanId) {
+  async function requestCheckout(planId: MemberPlanId, billingCycle: BillingCycle) {
     setCheckoutPlanId(planId)
     setMemberNotice(undefined)
 
     try {
-      const result = await startSubscriptionCheckout({ planId })
+      const result = await startSubscriptionCheckout({ billingCycle, planId })
       setMemberNotice(result.message)
 
-      if (result.data.checkout.checkoutUrl) {
-        window.location.href = result.data.checkout.checkoutUrl
+      const { checkout } = result.data
+
+      // PayFast onsite: open the secure payment modal in place rather than
+      // redirecting away, so the member never leaves Trolley Scout.
+      if (checkout.onsiteUuid && checkout.engineUrl) {
+        const outcome = await openPayFastOnsite({
+          engineUrl: checkout.engineUrl,
+          onsiteUuid: checkout.onsiteUuid,
+        })
+
+        if (outcome === 'closed') {
+          setMemberNotice('PayFast was closed. Your plan is unchanged.')
+          return
+        }
+
+        setMemberNotice('Payment submitted. Waiting for PayFast confirmation.')
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 800 : 1_500))
+          const subscription = await loadSubscription()
+          setSubscriptionState(subscription)
+
+          if (subscription.data.account) {
+            setMemberState((current) => ({
+              ...current,
+              data: {
+                session: {
+                  account: subscription.data.account,
+                  isAuthenticated: true,
+                },
+              },
+            }))
+          }
+
+          if (
+            subscription.data.account?.planId === planId &&
+            subscription.data.account.planStatus === 'active'
+          ) {
+            setMemberNotice(`PayFast confirmed your ${subscription.data.account.planName} plan.`)
+            return
+          }
+        }
+
+        setMemberNotice('Payment submitted. Your plan will update after PayFast confirms it.')
+        return
       }
 
       const subscription = await loadSubscription()
@@ -1183,7 +1209,7 @@ function MemberShell({
   memberState: ResourceState<MemberResource>
   offerState: ResourceState<OfferResource>
   onAddToBasket: (savedDealId: string) => void
-  onCheckout: (planId: MemberPlanId) => void
+  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
   onCloseSidebar: () => void
   onDeleteBasketItem: (id: string) => void
   onDeleteOffer: (id: string) => void
@@ -1969,34 +1995,71 @@ function SubscriptionPanel({
   account: NonNullable<MemberSession['account']>
   checkoutPlanId?: MemberPlanId
   memberNotice?: string
-  onCheckout: (planId: MemberPlanId) => void
+  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
   subscriptionState: ResourceState<SubscriptionResource>
 }) {
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual')
+
   return (
     <section className="subscription-panel" aria-label="Subscription">
       <div className="member-section-head">
         <div>
           <p className="eyebrow">Subscription</p>
           <h1>Plan and billing</h1>
+          <p className="section-lede">
+            Free covers every household essential. Paid plans add space for power savers and keep
+            the money help free for everyone. Billed securely in rand via PayFast.
+          </p>
         </div>
         <span className="plan-pill">{subscriptionState.data.billingReady ? 'Billing ready' : 'Billing setup needed'}</span>
       </div>
       {memberNotice && <div className="write-notice">{memberNotice}</div>}
+
+      <div className="billing-toggle" role="group" aria-label="Billing cycle">
+        <button
+          aria-pressed={billingCycle === 'monthly'}
+          className={clsx('billing-toggle-option', billingCycle === 'monthly' && 'is-active')}
+          onClick={() => setBillingCycle('monthly')}
+          type="button"
+        >
+          Monthly
+        </button>
+        <button
+          aria-pressed={billingCycle === 'annual'}
+          className={clsx('billing-toggle-option', billingCycle === 'annual' && 'is-active')}
+          onClick={() => setBillingCycle('annual')}
+          type="button"
+        >
+          Annual <span className="billing-save">save 2 months</span>
+        </button>
+      </div>
+
       <div className="plan-grid">
         {subscriptionState.data.plans.map((plan) => {
           const isCurrent = plan.id === account.planId
+          const priceCents = plan.prices[billingCycle]
           const buttonText = isCurrent
             ? 'Current plan'
             : plan.isPaid && !subscriptionState.data.billingReady
               ? 'Billing needed'
               : plan.isPaid
-                ? 'Start checkout'
+                ? 'Pay with PayFast'
                 : 'Use free'
 
           return (
             <article className={clsx('plan-card', isCurrent && 'is-current')} key={plan.id}>
               <span>{plan.badge}</span>
               <h2>{plan.name}</h2>
+              <p className="plan-price">
+                {plan.isPaid ? (
+                  <>
+                    <strong>{formatRand(priceCents)}</strong>
+                    <span>/{billingCycle === 'monthly' ? 'month' : 'year'}</span>
+                  </>
+                ) : (
+                  <strong>Free</strong>
+                )}
+              </p>
               <p>{plan.description}</p>
               <ul>
                 {plan.features.map((feature) => (
@@ -2009,7 +2072,7 @@ function SubscriptionPanel({
               <button
                 className={isCurrent ? 'ghost-button' : 'primary-button'}
                 disabled={isCurrent || checkoutPlanId === plan.id || (plan.isPaid && !subscriptionState.data.billingReady)}
-                onClick={() => onCheckout(plan.id)}
+                onClick={() => onCheckout(plan.id, billingCycle)}
                 type="button"
               >
                 <Wallet size={18} />

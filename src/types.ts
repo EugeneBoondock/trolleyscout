@@ -97,6 +97,7 @@ export interface DiscoveredDeal {
   previousPriceText?: string
   savingText?: string
   evidenceText: string
+  personalizationReason?: string
 }
 
 export interface DiscoverySourceResult {
@@ -165,6 +166,8 @@ export interface OfferValidationResult {
 
 export type MemberPlanId = 'free' | 'scout' | 'household'
 
+export type BillingCycle = 'monthly' | 'annual'
+
 export type MemberPlanStatus = 'active' | 'billing_not_configured' | 'checkout_required'
 
 export interface MemberPlanLimits {
@@ -182,6 +185,10 @@ export interface MemberPlan {
   statusText: string
   features: string[]
   limits: MemberPlanLimits
+  prices: {
+    annual: number
+    monthly: number
+  }
 }
 
 export interface MemberAccount {
@@ -263,13 +270,17 @@ export interface BasketQuantityDraft {
 }
 
 export interface SubscriptionCheckoutRequest {
+  billingCycle: BillingCycle
   planId: MemberPlanId
 }
 
 export interface SubscriptionCheckoutResult {
+  billingCycle: BillingCycle
   billingReady: boolean
-  checkoutUrl?: string
+  engineUrl?: string
   message: string
+  onsiteUuid?: string
   planId: MemberPlanId
+  provider: 'payfast'
   status: MemberPlanStatus
 }

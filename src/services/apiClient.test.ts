@@ -723,7 +723,7 @@ describe('apiClient', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const subscription = await loadSubscription()
-    const checkout = await startSubscriptionCheckout({ planId: 'scout' })
+    const checkout = await startSubscriptionCheckout({ billingCycle: 'monthly', planId: 'scout' })
 
     expect(subscription.data.plans).toHaveLength(1)
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/subscription', expect.objectContaining({ method: 'POST' }))
