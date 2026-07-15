@@ -64,9 +64,18 @@ import {
   updateBasketItemForMember,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
+import {
+  clearDealLearningHistory,
+  deleteDealLearningActivity,
+  loadDealLearning,
+  recordDealLearningActivity,
+  setDealLearningEnabled,
+} from './services/dealLearningClient'
 import type {
   BasketItem,
   BillingCycle,
+  DealActivity,
+  DealLearningState,
   MemberSession,
   MemberPlanId,
   MemberSessionDraft,
@@ -243,6 +252,21 @@ function App() {
       controller.abort()
     }
   }, [query, refreshKey, sourceKind])
+
+  useEffect(() => {
+    if (!memberState.data.session.isAuthenticated || query.trim().length < 3) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void recordDealLearningActivity({
+        eventType: 'search_submitted',
+        term: query,
+      }).catch(() => undefined)
+    }, 800)
+
+    return () => window.clearTimeout(timer)
+  }, [memberState.data.session.isAuthenticated, query])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -515,6 +539,14 @@ function App() {
           status: result.status,
         })
         setMemberNotice(result.message)
+
+        if (result.status === 'ready') {
+          void recordDealLearningActivity({
+            eventType: 'deal_saved',
+            retailerId: deal.retailerId,
+            title: deal.title,
+          }).catch(() => undefined)
+        }
       }
     } finally {
       setSavingDealUrl(undefined)
@@ -538,6 +570,14 @@ function App() {
       setMemberNotice(result.message)
 
       if (result.status === 'ready') {
+        const deal = savedDealState.data.savedDeals.find((candidate) => candidate.id === savedDealId)
+        if (deal) {
+          void recordDealLearningActivity({
+            eventType: 'basket_added',
+            retailerId: deal.retailerId,
+            title: deal.title,
+          }).catch(() => undefined)
+        }
         setMemberView('basket')
       }
     } finally {
@@ -2114,12 +2154,168 @@ function MemberProfilePanel({
         <ProfileRow label="Saved sources" value={`${savedSourceCount}`} />
         <ProfileRow label="Member since" value={account.createdAt.slice(0, 10)} />
       </div>
+      <DealLearningControls />
       <button className="ghost-button" onClick={onSignOut} type="button">
         <SignOut size={18} />
         Sign out
       </button>
     </section>
   )
+}
+
+function DealLearningControls() {
+  const [learning, setLearning] = useState<DealLearningState>({ activities: [], enabled: true })
+  const [isLoading, setIsLoading] = useState(true)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [notice, setNotice] = useState<string>()
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    loadDealLearning(controller.signal)
+      .then((nextLearning) => setLearning(nextLearning))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setNotice(error instanceof Error ? error.message : 'Deal learning could not be loaded.')
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [])
+
+  const updateEnabled = async () => {
+    setIsUpdating(true)
+    setNotice(undefined)
+
+    try {
+      const nextLearning = await setDealLearningEnabled(!learning.enabled)
+      setLearning(nextLearning)
+      setNotice(nextLearning.enabled ? 'Deal learning is on.' : 'Deal learning is paused.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Deal learning could not be updated.')
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const clearHistory = async () => {
+    if (!window.confirm('Clear all deal learning history?')) {
+      return
+    }
+
+    setIsUpdating(true)
+    setNotice(undefined)
+
+    try {
+      setLearning(await clearDealLearningHistory())
+      setNotice('Deal learning history cleared.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Deal learning history could not be cleared.')
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const removeActivity = async (activityId: string) => {
+    setIsUpdating(true)
+    setNotice(undefined)
+
+    try {
+      setLearning(await deleteDealLearningActivity(activityId))
+      setNotice('Learning activity removed.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Learning activity could not be removed.')
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  return (
+    <section className="deal-learning-panel" aria-labelledby="deal-learning-heading">
+      <div className="deal-learning-head">
+        <div>
+          <p className="eyebrow">Personal deal finder</p>
+          <h2 id="deal-learning-heading">Deal learning</h2>
+          <p>
+            Trolley Scout uses your submitted searches, saved deals, and basket additions to order deals and choose
+            what to scout.
+          </p>
+        </div>
+        <button
+          aria-pressed={learning.enabled}
+          className={clsx('learning-toggle', learning.enabled && 'is-enabled')}
+          disabled={isLoading || isUpdating}
+          onClick={updateEnabled}
+          type="button"
+        >
+          <span aria-hidden="true" />
+          {learning.enabled ? 'Learning on' : 'Learning paused'}
+        </button>
+      </div>
+
+      {notice && <div className="write-notice" role="status">{notice}</div>}
+      {isLoading ? (
+        <LoadingStrip label="Loading deal learning" />
+      ) : (
+        <>
+          <div className="deal-learning-actions">
+            <p>{learning.activities.length} recent learning {learning.activities.length === 1 ? 'item' : 'items'}</p>
+            <button
+              className="ghost-button"
+              disabled={isUpdating || learning.activities.length === 0}
+              onClick={clearHistory}
+              type="button"
+            >
+              <Trash size={16} />
+              Clear history
+            </button>
+          </div>
+          {learning.activities.length > 0 && (
+            <ul className="learning-activity-list" aria-label="Recent deal learning activity">
+              {learning.activities.slice(0, 8).map((activity) => (
+                <li key={activity.id}>
+                  <div>
+                    <strong>{learningActivityLabel(activity)}</strong>
+                    <span>{formatActivityDate(activity.createdAt)}</span>
+                  </div>
+                  <button
+                    aria-label={`Remove ${learningActivityLabel(activity)}`}
+                    disabled={isUpdating}
+                    onClick={() => removeActivity(activity.id)}
+                    type="button"
+                  >
+                    <Trash size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function learningActivityLabel(activity: DealActivity) {
+  const subject = activity.term ?? activity.title ?? activity.retailerId ?? 'deal'
+
+  if (activity.eventType === 'search_submitted') return `Searched for ${subject}`
+  if (activity.eventType === 'deal_saved') return `Saved ${subject}`
+  if (activity.eventType === 'basket_added') return `Added ${subject} to basket`
+  if (activity.eventType === 'retailer_opened') return `Viewed ${subject}`
+  return `Opened ${subject}`
+}
+
+function formatActivityDate(value: string) {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.valueOf())
+    ? value
+    : parsed.toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
@@ -2410,6 +2606,9 @@ function DiscoveryPanel({
             <article className="discovery-deal-row" key={deal.id}>
               <div>
                 <p className="eyebrow">{deal.retailerName}</p>
+                {deal.personalizationReason && (
+                  <p className="personalization-reason">{deal.personalizationReason}</p>
+                )}
                 <h3>{deal.title}</h3>
                 <div className="deal-price-line">
                   {deal.priceText && <strong>{deal.priceText}</strong>}

@@ -29,6 +29,12 @@ import {
   snapshotKey,
 } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { rankDealsForMember, type DealInterestWeight } from '../_shared/dealLearning'
+import {
+  getDealLearningState,
+  listMemberInterestWeights,
+} from '../_shared/dealLearningStore'
+import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const privateHeaders = {
@@ -54,10 +60,12 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   }
 
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
-  const [snapshots, leafletSnapshot] = await Promise.all([
+  const [snapshots, leafletSnapshot, session] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
+    getMemberSession(env, request),
   ])
+  const interests = await getRequestInterests(env, session.account?.id)
 
   // Instant path: serve the last stored snapshot without waiting on any
   // retailer. A background refresh keeps it fresh so the next visitor still
@@ -70,7 +78,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       waitUntil(Promise.all([refreshAllSources(env), refreshAllLeaflets(env)]))
     }
 
-    return respond(buildSnapshotChecks(snapshots), leafletSnapshot?.leaflets ?? [], newestCheckedAt, true)
+    return respond(
+      buildSnapshotChecks(snapshots),
+      leafletSnapshot?.leaflets ?? [],
+      newestCheckedAt,
+      true,
+      interests,
+    )
   }
 
   // Live path: explicit "Check now", or a cold store with nothing to serve.
@@ -78,7 +92,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     refreshAllSources(env, snapshots),
     refreshAllLeaflets(env, leafletSnapshot?.leaflets),
   ])
-  return respond(settled, leaflets, new Date().toISOString(), false)
+  return respond(settled, leaflets, new Date().toISOString(), false, interests)
 }
 
 // Fetches current specials leaflets for the big grocers that publish
@@ -194,8 +208,12 @@ function respond(
   leaflets: StoreLeaflet[],
   refreshedAt: string | undefined,
   fromCache: boolean,
+  interests: DealInterestWeight[],
 ) {
-  const deals = dedupeByProductUrl(settled.flatMap((result) => result.deals))
+  const deals = rankDealsForMember(
+    dedupeByProductUrl(settled.flatMap((result) => result.deals)),
+    interests,
+  )
   const sources = settled.map((result) => result.source)
 
   return json(
@@ -217,6 +235,15 @@ function respond(
       headers: privateHeaders,
     },
   )
+}
+
+async function getRequestInterests(env: TrolleyScoutEnv, accountId: string | undefined) {
+  if (!accountId) {
+    return []
+  }
+
+  const learning = await getDealLearningState(env, accountId)
+  return learning.enabled ? listMemberInterestWeights(env, accountId) : []
 }
 
 function newestSnapshotTime(snapshots: Map<string, DealSnapshot>): string | undefined {

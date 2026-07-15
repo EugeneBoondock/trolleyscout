@@ -1,18 +1,8 @@
-import type { DiscoveredDeal } from '../../src/types'
-
-export type DealActivityEventType =
-  | 'search_submitted'
-  | 'deal_opened'
-  | 'deal_saved'
-  | 'basket_added'
-  | 'retailer_opened'
-
-export interface DealActivityInput {
-  eventType: DealActivityEventType
-  retailerId?: string
-  term?: string
-  title?: string
-}
+import type {
+  DealActivityDraft,
+  DealActivityEventType,
+  DiscoveredDeal,
+} from '../../src/types'
 
 export interface DealInterestWeight {
   interestKey: string
@@ -51,7 +41,7 @@ export function normalizeSearchTerm(value: string) {
   return normalized.length >= 3 ? normalized : undefined
 }
 
-export function buildActivitySignals(input: DealActivityInput): DealInterestWeight[] {
+export function buildActivitySignals(input: DealActivityDraft): DealInterestWeight[] {
   const weight = actionWeights[input.eventType]
   const signals = new Map<string, DealInterestWeight>()
   const normalizedText = normalizeSearchTerm(input.term ?? input.title ?? '')

@@ -100,6 +100,30 @@ export interface DiscoveredDeal {
   personalizationReason?: string
 }
 
+export type DealActivityEventType =
+  | 'search_submitted'
+  | 'deal_opened'
+  | 'deal_saved'
+  | 'basket_added'
+  | 'retailer_opened'
+
+export interface DealActivityDraft {
+  eventType: DealActivityEventType
+  retailerId?: string
+  term?: string
+  title?: string
+}
+
+export interface DealActivity extends DealActivityDraft {
+  createdAt: string
+  id: string
+}
+
+export interface DealLearningState {
+  activities: DealActivity[]
+  enabled: boolean
+}
+
 export interface DiscoverySourceResult {
   checkedAt: string
   httpStatus?: number
