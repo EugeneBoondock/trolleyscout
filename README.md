@@ -1,8 +1,23 @@
 # Trolley Scout
 
-South African grocery source tracking for specials, loyalty pages, app deals, and store pages.
+Stretch every rand. A cost-of-living toolkit for South African households: money help that
+people are entitled to but rarely claim, in-store price tools, and grocery deal tracking from
+official retailer sources.
 
 Suggested domain: `trolleyscout.co.za`
+
+## For households (no sign-in needed)
+
+- **Money help**: every SASSA grant with current amounts (effective 2026-04-01), school fee
+  exemptions, free basic electricity and water via the municipal indigent register, UIF, the
+  22 zero-rated (VAT-free) foods, and grant fraud safety. Every fact links to its official
+  source with the date it was checked (`src/data/moneyHelp.ts`).
+- **Unit price checker**: client-side pack comparison (rand per kg/litre/item) that works
+  offline once loaded (`src/services/unitPrice.ts`).
+- **Fair-price benchmark**: the PMBEJD Household Affordability Index headline figure with
+  source link.
+- **Data-light by design**: no hero imagery on the money pages, a service worker for flaky
+  connections (`public/sw.js`), and an installable web manifest.
 
 ## What is here
 
@@ -11,7 +26,8 @@ Suggested domain: `trolleyscout.co.za`
 - Cloudflare D1 store for verified offer rows.
 - D1-backed member sessions, saved source lists, saved deal lists, basket items, and subscription state.
 - Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lovers Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
-- Source-backed deal discovery for approved official pages that expose static rows, official listing JSON, or embedded product JSON, including Takealot and Amazon South Africa.
+- Source-backed deal discovery for approved official pages that expose static rows, official listing JSON, or embedded product JSON: Clicks (Hybris promotions results JSON), Takealot (public search API), Amazon South Africa, Dis-Chem, and Yuppiechef. Shoprite, Checkers, Pick n Pay, and Woolworths render products client-side only (verified July 2026) and are reported as checked without rows.
+- Design language: the South African specials-insert — newsprint cream, ink rules, specials-red prices, marker-yellow highlights, hard cut-paper shadows, Anton price-card display type, and the till-slip hero.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
 ## API routes

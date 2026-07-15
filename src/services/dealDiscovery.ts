@@ -15,6 +15,11 @@ export interface ResolvedDiscoveryTarget extends DiscoverySourceTarget {
 
 export const discoveryTargets: DiscoverySourceTarget[] = [
   {
+    parserId: 'clicks-promotions',
+    retailerId: 'clicks',
+    sourceLabel: 'Promotions',
+  },
+  {
     parserId: 'dischem-promotion',
     retailerId: 'dis-chem',
     sourceLabel: 'On promotion',
@@ -153,6 +158,83 @@ export function extractTakealotProductDeals(
       id: dealId(target.retailer.id, title, priceText, deals.length),
       priceText,
       productUrl,
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      savingText,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+      title,
+    })
+  }
+
+  return deals
+}
+
+// Clicks renders its promotion listings client-side from a public Hybris
+// results endpoint. OH1 is the root "all products" category; the
+// promoStickerplp facet limits rows to items with an active promotion.
+export function buildClicksPromotionsApiUrl(page = 0) {
+  return `https://clicks.co.za/products/c/OH1/results?q=%3Arelevance%3ApromoStickerplp%3A1&page=${page}`
+}
+
+export function extractClicksPromotionDeals(
+  target: ResolvedDiscoveryTarget,
+  payload: unknown,
+  capturedAt: string,
+  limit = 12,
+) {
+  const results = recordValue(payload, 'results')
+  const deals: DiscoveredDeal[] = []
+  const seenCodes = new Set<string>()
+
+  if (!Array.isArray(results)) {
+    return deals
+  }
+
+  for (const result of results) {
+    if (deals.length >= limit) {
+      break
+    }
+
+    const code = stringValue(result, 'code')
+    const brand = normalizeText(stringValue(result, 'brand'))
+    const name = normalizeText(stringValue(result, 'name'))
+    const title = name.toLowerCase().startsWith(brand.toLowerCase())
+      ? name
+      : [brand, name].filter(Boolean).join(' ')
+    const path = stringValue(result, 'url')
+    const stockCode = stringValue(recordValue(recordValue(result, 'stock'), 'stockLevelStatus'), 'code')
+
+    const price = recordValue(result, 'price')
+    const listedPriceText = normalizeText(stringValue(price, 'formattedValue'))
+    // Match the "R 249.95" convention Clicks uses in formattedValue.
+    const promoPrice = recordValue(price, 'grossPriceWithPromotionApplied')
+    const promoPriceText =
+      typeof promoPrice === 'number' && Number.isFinite(promoPrice)
+        ? `R ${promoPrice.toFixed(2)}`
+        : undefined
+
+    const promotions = recordValue(result, 'potentialPromotions')
+    const promotionDescription = Array.isArray(promotions)
+      ? normalizeText(stringValue(promotions[0], 'description'))
+      : ''
+
+    if (!code || seenCodes.has(code) || !title || !listedPriceText || stockCode === 'outOfStock') {
+      continue
+    }
+
+    const priceText = promoPriceText ?? listedPriceText
+    const previousPriceText = promoPriceText && promoPriceText !== listedPriceText ? listedPriceText : undefined
+    const savingText = promotionDescription || undefined
+
+    seenCodes.add(code)
+    deals.push({
+      capturedAt,
+      evidenceText: evidenceText(title, priceText, previousPriceText, savingText),
+      id: dealId(target.retailer.id, title, priceText, deals.length),
+      previousPriceText,
+      priceText,
+      productUrl: absoluteUrl(path || target.source.url, 'https://clicks.co.za/'),
       retailerId: target.retailer.id,
       retailerName: target.retailer.name,
       savingText,

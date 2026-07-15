@@ -65,6 +65,7 @@ export interface VerifiedOffer {
 export type DiscoveryParserId =
   | 'amazon-deals'
   | 'amazon-vouchers'
+  | 'clicks-promotions'
   | 'dischem-promotion'
   | 'takealot-deals'
   | 'yuppiechef-specials'

@@ -1,12 +1,76 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildClicksPromotionsApiUrl,
   buildTakealotDealsApiUrl,
+  extractClicksPromotionDeals,
   extractDealsFromHtml,
   extractTakealotProductDeals,
   getDiscoveryTargets,
 } from './dealDiscovery'
 
 describe('dealDiscovery', () => {
+  it('builds the Clicks promotions results URL', () => {
+    const apiUrl = new URL(buildClicksPromotionsApiUrl())
+
+    expect(apiUrl.origin).toBe('https://clicks.co.za')
+    expect(apiUrl.pathname).toBe('/products/c/OH1/results')
+    expect(apiUrl.searchParams.get('q')).toBe(':relevance:promoStickerplp:1')
+  })
+
+  it('extracts Clicks promotion rows from the results JSON', () => {
+    const target = getDiscoveryTargets().find((candidate) => candidate.parserId === 'clicks-promotions')
+
+    expect(target).toBeDefined()
+
+    // Shape mirrors the live clicks.co.za /products/c/OH1/results payload.
+    const payload = {
+      pagination: { totalNumberOfResults: 429 },
+      results: [
+        {
+          code: '180234',
+          brand: 'Yardley',
+          name: 'Stayfast Pressed Powder Deep Beige 04 15g',
+          url: '/yardley_stayfast-pressed-powder-deep-beige-04-15g/p/180234',
+          stock: { stockLevelStatus: { code: 'inStock' } },
+          price: {
+            currencyIso: 'ZAR',
+            value: 249.95,
+            formattedValue: 'R 249.95',
+            grossPriceWithPromotionApplied: 174.96499999999997,
+          },
+          potentialPromotions: [
+            {
+              code: '202606092032131394',
+              description: 'Save 30% Stayfast liquid foundation. Valid until 22 July 2026',
+            },
+          ],
+        },
+        {
+          code: '333222',
+          brand: 'Sold Out',
+          name: 'Out of stock item',
+          url: '/sold-out/p/333222',
+          stock: { stockLevelStatus: { code: 'outOfStock' } },
+          price: { formattedValue: 'R 99.00' },
+        },
+      ],
+    }
+
+    const deals = extractClicksPromotionDeals(target!, payload, '2026-07-15T10:00:00.000Z')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      previousPriceText: 'R 249.95',
+      priceText: 'R 174.96',
+      retailerId: 'clicks',
+      savingText: 'Save 30% Stayfast liquid foundation. Valid until 22 July 2026',
+      title: 'Yardley Stayfast Pressed Powder Deep Beige 04 15g',
+    })
+    expect(deals[0].productUrl).toBe(
+      'https://clicks.co.za/yardley_stayfast-pressed-powder-deep-beige-04-15g/p/180234',
+    )
+  })
+
   it('extracts Dis-Chem static promotion cards', () => {
     const target = getDiscoveryTargets().find((candidate) => candidate.parserId === 'dischem-promotion')
 

@@ -1,7 +1,9 @@
 import { dataPolicy } from '../../src/api/staticData'
 import {
+  buildClicksPromotionsApiUrl,
   buildTakealotDealsApiUrl,
   buildSourceResult,
+  extractClicksPromotionDeals,
   extractDealsFromHtml,
   extractTakealotProductDeals,
   getDiscoveryTargets,
@@ -46,7 +48,11 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   source: DiscoverySourceResult
 }> {
   if (target.parserId === 'takealot-deals') {
-    return checkTakealotSource(target)
+    return checkJsonSource(target, buildTakealotDealsApiUrl(target.source.url), extractTakealotProductDeals)
+  }
+
+  if (target.parserId === 'clicks-promotions') {
+    return checkJsonSource(target, buildClicksPromotionsApiUrl(), extractClicksPromotionDeals)
   }
 
   const checkedAt = new Date().toISOString()
@@ -89,14 +95,18 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
   }
 }
 
-async function checkTakealotSource(target: ResolvedDiscoveryTarget): Promise<{
+async function checkJsonSource(
+  target: ResolvedDiscoveryTarget,
+  apiUrl: string,
+  extract: (target: ResolvedDiscoveryTarget, payload: unknown, capturedAt: string) => DiscoveredDeal[],
+): Promise<{
   deals: DiscoveredDeal[]
   source: DiscoverySourceResult
 }> {
   const checkedAt = new Date().toISOString()
 
   try {
-    const response = await fetch(buildTakealotDealsApiUrl(target.source.url), {
+    const response = await fetch(apiUrl, {
       headers: {
         accept: 'application/json',
         referer: target.source.url,
@@ -115,7 +125,7 @@ async function checkTakealotSource(target: ResolvedDiscoveryTarget): Promise<{
     }
 
     const payload = (await response.json()) as unknown
-    const deals = extractTakealotProductDeals(target, payload, checkedAt)
+    const deals = extract(target, payload, checkedAt)
 
     return {
       deals,

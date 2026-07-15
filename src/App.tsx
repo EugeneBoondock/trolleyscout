@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
   BookmarkSimple,
+  Calculator,
   CheckCircle,
   ClipboardText,
   CreditCard,
+  HandCoins,
   HouseLine,
   LinkSimple,
   List,
@@ -81,11 +83,24 @@ import type {
   SavedDealResource,
   SubscriptionResource,
 } from './services/apiClient'
+import { HomeView, type HomeDestination } from './views/HomeView'
+import { MoneyHelpView } from './views/MoneyHelpView'
+import { ToolkitView } from './views/ToolkitView'
 
 type ThemeMode = 'light' | 'dark'
-type ActiveView = 'sources' | 'discovery' | 'offers' | 'scanner' | 'rules'
+type ActiveView =
+  | 'home'
+  | 'help'
+  | 'tools'
+  | 'sources'
+  | 'discovery'
+  | 'offers'
+  | 'scanner'
+  | 'rules'
 type MemberView =
   | 'dashboard'
+  | 'help'
+  | 'tools'
   | 'sources'
   | 'discovery'
   | 'savedDeals'
@@ -98,16 +113,24 @@ type MemberView =
   | 'rules'
 
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
-  { label: 'Sources', value: 'sources' },
-  { label: 'Find deals', value: 'discovery' },
-  { label: 'Offers', value: 'offers' },
+  { label: 'Home', value: 'home' },
+  { label: 'Deals', value: 'discovery' },
+  { label: 'Money help', value: 'help' },
+  { label: 'Tools', value: 'tools' },
+  { label: 'Stores', value: 'sources' },
+]
+
+const dataDeskOptions: Array<{ label: string; value: ActiveView }> = [
+  { label: 'Verified offers', value: 'offers' },
   { label: 'Scanner', value: 'scanner' },
-  { label: 'Rules', value: 'rules' },
+  { label: 'Data rules', value: 'rules' },
 ]
 
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
-  { icon: <Storefront size={20} />, label: 'Sources', value: 'sources' },
+  { icon: <HandCoins size={20} />, label: 'Money help', value: 'help' },
+  { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
+  { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
@@ -132,7 +155,7 @@ const defaultRetailerId = initialRetailers[0]?.id ?? 'pick-n-pay'
 
 function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme())
-  const [activeView, setActiveView] = useState<ActiveView>('sources')
+  const [activeView, setActiveView] = useState<ActiveView>('home')
   const [query, setQuery] = useState('')
   const [sourceKind, setSourceKind] = useState<SourceKind | 'all'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -323,7 +346,6 @@ function App() {
   const sourceKinds = retailerState.data.summary.sourceKinds
   const filteredRetailers = retailerState.data.retailers
   const officialSourceCount = retailerState.data.summary.sourceCount
-  const verifiedOfferCount = offerState.data.summary.verifiedOfferCount
   const retailerCount = retailerState.data.summary.retailerCount
   const apiMode = retailerState.meta.source === 'cloudflare-pages' ? 'API live' : 'Local list'
   const memberSession = memberState.data.session
@@ -826,52 +848,50 @@ function App() {
         </div>
       </header>
 
-      <main id="top">
-        <section className="hero-section">
-          <div className="hero-copy">
-            <p className="eyebrow">South African grocery source tracker</p>
-            <h1>Trolley Scout</h1>
-            <p className="hero-text">
-              Track official specials, loyalty, app, and store pages across major South African
-              grocers. Offers stay hidden until the source, date, and terms are checked.
-            </p>
+      <nav className="data-desk-nav" aria-label="Data desk views">
+        <span>Data desk</span>
+        {dataDeskOptions.map((view) => (
+          <button
+            className={clsx('data-desk-link', activeView === view.value && 'is-active')}
+            key={view.value}
+            onClick={() => setActiveView(view.value)}
+            type="button"
+          >
+            {view.label}
+          </button>
+        ))}
+      </nav>
 
-            <div className="hero-actions">
+      <main id="top">
+        {activeView === 'home' && (
+          <HomeView onOpen={(destination: HomeDestination) => setActiveView(destination)} />
+        )}
+
+        {activeView === 'help' && <MoneyHelpView onOpenSources={() => setActiveView('sources')} />}
+
+        {activeView === 'tools' && <ToolkitView />}
+
+        {(activeView === 'sources' || activeView === 'discovery' || activeView === 'offers' || activeView === 'scanner') && (
+          <RuntimeBanner retailerState={retailerState} offerState={offerState} />
+        )}
+
+        {activeView === 'sources' && (
+          <>
+            <section className="member-section-head">
+              <div>
+                <p className="eyebrow">Official pages only</p>
+                <h1>Stores</h1>
+                <p className="section-lede">
+                  Specials pages, catalogues, and free loyalty sign-ups for {retailerCount}{' '}
+                  retailers with {officialSourceCount} official links — so you never have to trust
+                  a forwarded screenshot.
+                </p>
+              </div>
               <button className="primary-button" type="button" onClick={refreshSources}>
                 <ArrowClockwise size={18} className={clsx(isRefreshing && 'is-spinning')} />
                 Check sources
               </button>
-              <button className="ghost-button" type="button" onClick={() => setActiveView('offers')}>
-                <ReceiptX size={18} />
-                View offers
-              </button>
-            </div>
-          </div>
-
-          <div className="hero-visual" aria-label="Trolley Scout grocery source image">
-            <img src="/assets/hero-grocery-source.png" alt="" />
-            <div className="source-status-card">
-              <span className="status-dot" />
-              <div>
-                <p className="receipt-label">Data mode</p>
-                <strong>Verified sources only</strong>
-              </div>
-              <p>Offer rows require an official URL and capture date.</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="metric-strip" aria-label="Source overview">
-          <Metric icon={<Storefront size={22} />} label="Retailers" value={`${retailerCount}`} />
-          <Metric icon={<LinkSimple size={22} />} label="Official links" value={`${officialSourceCount}`} />
-          <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
-          <Metric icon={<ShieldCheck size={22} />} label="Backend" value={apiMode} />
-        </section>
-
-        <RuntimeBanner retailerState={retailerState} offerState={offerState} />
-
-        {activeView === 'sources' && (
-          <>
+            </section>
             <section className="filter-panel" aria-label="Source filters">
               <div className="search-field">
                 <MagnifyingGlass size={20} />
@@ -1249,6 +1269,10 @@ function MemberShell({
             verifiedOfferCount={offerState.data.summary.verifiedOfferCount}
           />
         )}
+
+        {activeView === 'help' && <MoneyHelpView onOpenSources={() => onSetView('sources')} />}
+
+        {activeView === 'tools' && <ToolkitView />}
 
         {activeView === 'sources' && (
           <>
@@ -1965,11 +1989,11 @@ function RuntimeBanner({
     <section className={clsx('runtime-banner', isApiLive && 'is-live')} aria-label="Backend status">
       <span className={clsx('status-dot', isLoading && 'is-pulsing')} />
       <div>
-        <strong>{isLoading ? 'Checking backend' : isApiLive ? 'Backend online' : 'Local source list'}</strong>
+        <strong>{isLoading ? 'Checking live data' : isApiLive ? 'Live data' : 'Offline lists'}</strong>
         <p>
           {isApiLive
-            ? 'Frontend is reading Cloudflare Pages API routes.'
-            : 'Frontend is using bundled data because the local Vite server is not serving Pages Functions.'}
+            ? 'Prices and deals are being read from official store pages right now.'
+            : 'Showing the built-in store directory. Deal checking needs the online service.'}
         </p>
       </div>
     </section>
@@ -2008,14 +2032,12 @@ function SourcePanel({
             className="source-card"
             initial={{ opacity: 0, y: 10 }}
             key={retailer.id}
+            style={{ '--card-accent': retailer.accentColor } as CSSProperties}
             transition={{ delay: Math.min(index * 0.02, 0.18) }}
           >
-            <img src="/assets/source-supermarket.png" alt="" loading="lazy" />
             <div className="source-card-body">
               <div className="source-card-head">
-                <span className="retailer-pill" style={{ backgroundColor: `${retailer.accentColor}22` }}>
-                  {retailer.group}
-                </span>
+                <span className="retailer-pill">{retailer.group}</span>
                 <h3>{retailer.name}</h3>
                 <p>{retailer.sourceNote}</p>
               </div>
@@ -2130,7 +2152,6 @@ function DiscoveryPanel({
                   {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
                   {deal.savingText && <span>{deal.savingText}</span>}
                 </div>
-                <p>{deal.evidenceText}</p>
               </div>
               <div className="offer-actions">
                 <a href={deal.productUrl} rel="noreferrer" target="_blank">

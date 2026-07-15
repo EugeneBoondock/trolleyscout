@@ -236,6 +236,11 @@ export const retailers: Retailer[] = [
         url: 'https://clicks.co.za/Myclubcard-deals',
         kind: 'app',
       },
+      {
+        label: 'Promotions',
+        url: 'https://clicks.co.za/promotions',
+        kind: 'specials',
+      },
     ],
   },
   {
