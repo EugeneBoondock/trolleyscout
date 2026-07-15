@@ -248,6 +248,51 @@ export async function listSavedSources(env: TrolleyScoutEnv, accountId?: string)
   return result.results.map(savedSourceRowToSource)
 }
 
+// Plan capacity is enforced server-side from the account's stored plan.
+// Replacing an existing row (same unique key) is never blocked.
+async function findPlanCapacityIssue(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  accountId: string,
+  options: {
+    countSql: string
+    existsSql: string
+    existsKey: string
+    limitKey: 'savedSources' | 'savedDeals' | 'basketItems'
+    noun: string
+  },
+): Promise<string | undefined> {
+  const existing = await env.DB.prepare(options.existsSql)
+    .bind(accountId, options.existsKey)
+    .first<{ id: string }>()
+
+  if (existing) {
+    return undefined
+  }
+
+  const account = await env.DB.prepare('SELECT plan_id FROM member_accounts WHERE id = ?')
+    .bind(accountId)
+    .first<{ plan_id: string }>()
+
+  const plan = getMemberPlan((account?.plan_id ?? 'free') as MemberPlanId)
+  const limit = plan.limits[options.limitKey]
+  const countRow = await env.DB.prepare(options.countSql)
+    .bind(accountId)
+    .first<{ n: number }>()
+
+  if ((countRow?.n ?? 0) < limit) {
+    return undefined
+  }
+
+  const upgradeHint =
+    plan.id === 'free'
+      ? ' Remove one, or upgrade to Scout for 10x the space.'
+      : plan.id === 'scout'
+        ? ' Remove one, or upgrade to Household for more space.'
+        : ' Remove one to make space.'
+
+  return `Your ${plan.name} plan holds ${limit} ${options.noun}.${upgradeHint}`
+}
+
 export async function saveMemberSource(env: TrolleyScoutEnv, accountId: string | undefined, input: {
   retailerId: string
   sourceUrl: string
@@ -270,6 +315,20 @@ export async function saveMemberSource(env: TrolleyScoutEnv, accountId: string |
   if (!retailer || !source) {
     return {
       issues: ['Select an official retailer source.'],
+    }
+  }
+
+  const capacityIssue = await findPlanCapacityIssue(env, accountId, {
+    countSql: 'SELECT COUNT(*) AS n FROM member_saved_sources WHERE account_id = ?',
+    existsKey: source.url,
+    existsSql: 'SELECT id FROM member_saved_sources WHERE account_id = ? AND source_url = ?',
+    limitKey: 'savedSources',
+    noun: 'saved sources',
+  })
+
+  if (capacityIssue) {
+    return {
+      issues: [capacityIssue],
     }
   }
 
@@ -362,6 +421,20 @@ export async function saveMemberDeal(
   if (!retailer || !source || !matchesRetailerSourceUrl(input.productUrl, retailer)) {
     return {
       issues: ['Save deals only from official retailer sources.'],
+    }
+  }
+
+  const capacityIssue = await findPlanCapacityIssue(env, accountId, {
+    countSql: 'SELECT COUNT(*) AS n FROM member_saved_deals WHERE account_id = ?',
+    existsKey: input.productUrl,
+    existsSql: 'SELECT id FROM member_saved_deals WHERE account_id = ? AND product_url = ?',
+    limitKey: 'savedDeals',
+    noun: 'saved deals',
+  })
+
+  if (capacityIssue) {
+    return {
+      issues: [capacityIssue],
     }
   }
 
@@ -494,6 +567,20 @@ export async function addBasketItem(
   if (!savedDeal) {
     return {
       issues: ['Save the deal before adding it to basket.'],
+    }
+  }
+
+  const capacityIssue = await findPlanCapacityIssue(env, accountId, {
+    countSql: 'SELECT COUNT(*) AS n FROM member_basket_items WHERE account_id = ?',
+    existsKey: input.savedDealId,
+    existsSql: 'SELECT id FROM member_basket_items WHERE account_id = ? AND saved_deal_id = ?',
+    limitKey: 'basketItems',
+    noun: 'basket items',
+  })
+
+  if (capacityIssue) {
+    return {
+      issues: [capacityIssue],
     }
   }
 

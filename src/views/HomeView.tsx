@@ -13,6 +13,7 @@ import {
   GRANTS_EFFECTIVE_FROM,
   socialGrants,
 } from '../data/moneyHelp'
+import type { DiscoveredDeal } from '../types'
 
 export type HomeDestination = 'help' | 'tools' | 'discovery' | 'sources'
 
@@ -39,7 +40,15 @@ const tillLines: TillLine[] = [
   { label: 'Loyalty cards, all majors', value: 'R0 to join' },
 ]
 
-export function HomeView({ onOpen }: { onOpen: (destination: HomeDestination) => void }) {
+export function HomeView({
+  isCheckingStaples = false,
+  onOpen,
+  stapleDeals = [],
+}: {
+  isCheckingStaples?: boolean
+  onOpen: (destination: HomeDestination) => void
+  stapleDeals?: DiscoveredDeal[]
+}) {
   return (
     <div className="home-view">
       <section className="home-hero" aria-label="What Trolley Scout does">
@@ -110,6 +119,40 @@ export function HomeView({ onOpen }: { onOpen: (destination: HomeDestination) =>
           <LinkSimple size={16} />
         </a>
       </section>
+
+      {(stapleDeals.length > 0 || isCheckingStaples) && (
+        <section className="staple-strip" aria-label="Staples on special">
+          <div className="staple-strip-head">
+            <div>
+              <p className="eyebrow">Straight from official store pages</p>
+              <h2>Staples on special right now</h2>
+            </div>
+            <button className="ghost-button" onClick={() => onOpen('discovery')} type="button">
+              <Tag size={18} />
+              All deals
+            </button>
+          </div>
+
+          {stapleDeals.length > 0 ? (
+            <ul className="staple-grid">
+              {stapleDeals.map((deal) => (
+                <li className="staple-card" key={deal.id}>
+                  <p className="staple-retailer">{deal.retailerName}</p>
+                  <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                    {deal.title}
+                  </a>
+                  <p className="staple-price">
+                    <strong>{deal.priceText}</strong>
+                    {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="staple-checking">Checking today’s staple prices…</p>
+          )}
+        </section>
+      )}
 
       <section className="home-paths" aria-label="What you can do here">
         <HomePathCard

@@ -732,6 +732,92 @@ main {
   color: #1c1710;
 }
 
+/* Staples strip: live prices for the foods that decide the month. */
+
+.staple-strip {
+  display: grid;
+  gap: 1rem;
+}
+
+.staple-strip-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  border-bottom: 3px solid var(--line);
+}
+
+.staple-strip-head h2 {
+  margin: 0.2rem 0 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.staple-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staple-card {
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  padding: 1rem 1.1rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.staple-retailer {
+  margin: 0;
+  color: var(--red);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.staple-card a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration-color: var(--line-soft);
+}
+
+.staple-card a:hover {
+  text-decoration-color: var(--red);
+}
+
+.staple-price {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin: 0.15rem 0 0;
+}
+
+.staple-price strong {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--red);
+}
+
+.staple-price span {
+  color: var(--faint);
+  font-size: 0.88rem;
+  text-decoration: line-through;
+  text-decoration-color: var(--red-bright);
+  text-decoration-thickness: 2px;
+}
+
+.staple-checking {
+  margin: 0;
+  color: var(--muted);
+}
+
 .home-paths {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2211,7 +2297,8 @@ main {
 }
 
 @media (max-width: 1120px) {
-  .home-paths {
+  .home-paths,
+  .staple-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2273,6 +2360,7 @@ main {
     transform: rotate(0.6deg);
   }
 
+  .staple-grid,
   .home-paths,
   .home-promises,
   .unit-pack-fields,

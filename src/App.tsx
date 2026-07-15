@@ -83,6 +83,7 @@ import type {
   SavedDealResource,
   SubscriptionResource,
 } from './services/apiClient'
+import { pickStapleDeals } from './services/stapleDeals'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { MoneyHelpView } from './views/MoneyHelpView'
 import { ToolkitView } from './views/ToolkitView'
@@ -350,7 +351,9 @@ function App() {
   const apiMode = retailerState.meta.source === 'cloudflare-pages' ? 'API live' : 'Local list'
   const memberSession = memberState.data.session
   const discoveryVisible =
-    activeView === 'discovery' || (memberSession.isAuthenticated && memberView === 'discovery')
+    activeView === 'home' ||
+    activeView === 'discovery' ||
+    (memberSession.isAuthenticated && (memberView === 'discovery' || memberView === 'dashboard'))
   const savedSourceUrls = new Set(savedSourceState.data.savedSources.map((source) => source.sourceUrl))
   const savedSourceCount = savedSourceState.data.savedSources.length
   const savedDealUrls = new Set(savedDealState.data.savedDeals.map((deal) => deal.productUrl))
@@ -864,7 +867,11 @@ function App() {
 
       <main id="top">
         {activeView === 'home' && (
-          <HomeView onOpen={(destination: HomeDestination) => setActiveView(destination)} />
+          <HomeView
+            isCheckingStaples={isDiscovering}
+            onOpen={(destination: HomeDestination) => setActiveView(destination)}
+            stapleDeals={pickStapleDeals(discoveryState.data.discovery.deals)}
+          />
         )}
 
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => setActiveView('sources')} />}

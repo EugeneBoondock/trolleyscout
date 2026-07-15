@@ -152,6 +152,12 @@ export type MemberPlanId = 'free' | 'scout' | 'household'
 
 export type MemberPlanStatus = 'active' | 'billing_not_configured' | 'checkout_required'
 
+export interface MemberPlanLimits {
+  savedSources: number
+  savedDeals: number
+  basketItems: number
+}
+
 export interface MemberPlan {
   id: MemberPlanId
   name: string
@@ -160,6 +166,7 @@ export interface MemberPlan {
   isPaid: boolean
   statusText: string
   features: string[]
+  limits: MemberPlanLimits
 }
 
 export interface MemberAccount {
