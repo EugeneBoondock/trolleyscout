@@ -24,4 +24,23 @@ describe('external retailer scouting', () => {
       retailerName: 'Kit Kat Cash & Carry',
     })
   })
+
+  it('trusts branch-catalogue PDFs with no keyword for trustAllPdfs targets', () => {
+    const frontline = externalRetailerTargets.find((candidate) => candidate.retailerId === 'frontline')!
+
+    expect(frontline.trustAllPdfs).toBe(true)
+
+    // Frontline lists store-branch catalogues named by branch, no "specials".
+    const html = `
+      <div itemprop="name">Cosmo</div>
+      <a href="https://files.sitebuilder.1-grid.com/b1/61/b1619084.pdf" class="image-link">View</a>
+      <a href="https://frontlinesa.co.za/privacy-policy.pdf">Privacy</a>
+    `
+
+    const leaflets = extractRetailerLeafletsFromHtml(frontline, html, '2026-07-16T00:00:00.000Z')
+
+    expect(leaflets).toHaveLength(1)
+    expect(leaflets[0].documentUrl).toBe('https://files.sitebuilder.1-grid.com/b1/61/b1619084.pdf')
+    expect(leaflets[0].retailerName).toBe('Frontline Hyper')
+  })
 })

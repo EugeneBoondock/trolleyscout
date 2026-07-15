@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { StoreLeaflet } from '../../src/types'
-import { selectUnscannedLeaflets } from './catalogueScout'
+import {
+  flippingBookPageUrls,
+  flippingBookPagerUrl,
+  selectUnscannedLeaflets,
+} from './catalogueScout'
 
 const capturedAt = '2026-07-15T12:00:00.000Z'
 
@@ -56,6 +60,25 @@ describe('selectUnscannedLeaflets', () => {
     expect(selected.map((item) => item.documentUrl)).toEqual([
       'https://retailer.test/new.pdf',
       'https://kitkat.test/current.pdf',
+    ])
+  })
+
+  it('builds catalogue page images from a FlippingBook pager', () => {
+    const interactive = leaflet({
+      url: 'https://specials.shoprite.co.za/deals/current/index.html',
+    })
+    const pager = {
+      pages: {
+        structure: ['1', '2', '3'],
+      },
+    }
+
+    expect(flippingBookPagerUrl(interactive)).toBe(
+      'https://specials.shoprite.co.za/deals/current/files/assets/pager.js',
+    )
+    expect(flippingBookPageUrls(interactive, pager, 2)).toEqual([
+      'https://specials.shoprite.co.za/deals/current/files/assets/flash/pages/page0001_w.webp',
+      'https://specials.shoprite.co.za/deals/current/files/assets/flash/pages/page0002_w.webp',
     ])
   })
 })

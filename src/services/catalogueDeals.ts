@@ -16,6 +16,8 @@ interface PriceMatch {
 }
 
 const pricePattern = /\b(?:R|ZAR)\s*([0-9]+(?:[\s,][0-9]{3})*(?:[.,][0-9]{2})?)\b/gi
+const barePricePattern = /\b([0-9]{1,6}[.,][0-9]{2})\b/g
+const invalidVisionTitles = /^(?:save|saving|deal|special|from|only|each|price|promotion|discount)s?[!:.\s-]*$/i
 
 export function extractCatalogueDeals(
   input: CatalogueDealInput,
@@ -42,7 +44,9 @@ export function extractCatalogueDeals(
     }
 
     const inlineTitle = cleanProductTitle(line.slice(0, prices[0].index))
-    const title = isProductText(inlineTitle) ? inlineTitle : priorText
+    // A title carried over from a prior line still needs the same cleanup
+    // (trailing commas, leading articles) that inline titles get.
+    const title = isProductText(inlineTitle) ? inlineTitle : cleanProductTitle(priorText)
     priorText = ''
 
     if (!isProductText(title)) {
@@ -80,6 +84,97 @@ export function extractCatalogueDeals(
   return deals
 }
 
+export function extractVisionCatalogueDeals(
+  input: CatalogueDealInput,
+  limit = 80,
+): DiscoveredDeal[] {
+  const payload = parseVisionPayload(input.markdown)
+
+  if (!payload) {
+    return []
+  }
+
+  const deals: DiscoveredDeal[] = []
+  const seen = new Set<string>()
+
+  for (const item of payload.deals) {
+    if (deals.length >= limit || !isRecord(item)) {
+      break
+    }
+
+    const title = typeof item.title === 'string'
+      ? cleanProductTitle(item.title)
+      : ''
+    const priceText = normalizeVisionPrice(item.price)
+    const previousPriceText = normalizeVisionPrice(item.previousPrice)
+
+    if (!isProductText(title) || invalidVisionTitles.test(title) || !priceText) {
+      continue
+    }
+
+    const key = `${title.toLowerCase()}::${priceText}`
+
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    deals.push({
+      capturedAt: input.capturedAt,
+      evidenceText: JSON.stringify(item),
+      id: `${input.retailerId}-catalogue-${hashString(key)}`,
+      imageUrl: input.imageUrl,
+      previousPriceText,
+      priceText,
+      productUrl: input.sourceUrl,
+      retailerId: input.retailerId,
+      retailerName: input.retailerName,
+      sourceLabel: 'Catalogue scan',
+      sourceUrl: input.sourceUrl,
+      title,
+    })
+  }
+
+  return deals
+}
+
+function parseVisionPayload(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+
+  try {
+    const parsed: unknown = JSON.parse(normalized)
+
+    if (Array.isArray(parsed)) {
+      return { deals: parsed }
+    }
+
+    if (isRecord(parsed) && Array.isArray(parsed.deals)) {
+      return { deals: parsed.deals }
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
+
+function normalizeVisionPrice(value: unknown) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return undefined
+  }
+
+  const match = String(value).match(/(?:R|ZAR)?\s*([0-9]+(?:[\s,][0-9]{3})*(?:[.,][0-9]{1,2})?)/i)
+
+  return match ? normalizeRandPrice(match[1]) : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function extractPrices(line: string): PriceMatch[] {
   const prices: PriceMatch[] = []
   let match: RegExpExecArray | null
@@ -91,6 +186,18 @@ function extractPrices(line: string): PriceMatch[] {
       index: match.index,
       text: normalizeRandPrice(match[1]),
     })
+  }
+
+  if (prices.length === 0 && /\bprice|priced\b|\bfor\b/i.test(line)) {
+    barePricePattern.lastIndex = 0
+
+    while ((match = barePricePattern.exec(line)) !== null) {
+      prices.push({
+        end: match.index + match[0].length,
+        index: match.index,
+        text: normalizeRandPrice(match[1]),
+      })
+    }
   }
 
   return prices
@@ -118,8 +225,14 @@ function cleanCatalogueText(value: string) {
 
 function cleanProductTitle(value: string) {
   return cleanCatalogueText(value)
+    .replace(/^[^:]{2,24}:\s*(?=(?:a|an|two|various)\b)/i, '')
+    .replace(/\b(?:priced?|available)\s+(?:at|for)\s*$/i, '')
+    .replace(/^an?\s+.*?\bpromotion for (?:a|an|the)\s+/i, '')
+    .replace(/^an?\s+(?:bag|pack|bottle|box|jar|case)\s+of\s+/i, '')
+    .replace(/^an?\s+/i, '')
     .replace(/\b(?:now|only|each|per pack|special)\s*$/i, '')
-    .replace(/[-:]+$/g, '')
+    // Strip trailing punctuation even when whitespace trails it (e.g. "Beans, ").
+    .replace(/[\s,;:.–—-]+$/g, '')
     .trim()
 }
 

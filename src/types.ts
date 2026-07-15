@@ -19,6 +19,7 @@ export type RetailerId =
   | 'kit-kat'
   | 'president-hyper'
   | 'roots-butchery'
+  | 'frontline'
 
 export type SourceKind = 'specials' | 'loyalty' | 'app' | 'store-finder'
 

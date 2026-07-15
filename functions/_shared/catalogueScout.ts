@@ -1,4 +1,7 @@
-import { extractCatalogueDeals } from '../../src/services/catalogueDeals'
+import {
+  extractCatalogueDeals,
+  extractVisionCatalogueDeals,
+} from '../../src/services/catalogueDeals'
 import {
   externalRetailerTargets,
   extractRetailerLeafletsFromHtml,
@@ -12,9 +15,22 @@ import {
 import type { TrolleyScoutEnv } from './env'
 
 const MAX_DOCUMENT_BYTES = 18 * 1024 * 1024
-const MAX_DOCUMENTS_PER_RUN = 6
+const MAX_PAGE_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_DOCUMENTS_PER_RUN = 4
+const MAX_PAGES_PER_CATALOGUE = 1
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const CATALOGUE_VISION_PROMPT = `Read this South African supermarket catalogue page and return only valid JSON in this exact shape:
+{"deals":[{"title":"Brand and product with size","price":"R0.00","previousPrice":"R0.00"}]}
+
+Rules:
+- Include only a clearly named product with its selling price.
+- Preserve the brand, product name, pack size and quantity when visible.
+- Treat large SAVE, discount, percentage and loyalty saving figures as banners, never as prices.
+- Omit previousPrice when no normal or previous price is printed.
+- Exclude headings, dates, terms, category labels and generic words such as SAVE, FROM, DEAL or SPECIAL.
+- Never guess obscured text or a price.
+- Return at most 30 deals and no prose outside the JSON.`
 
 export interface CatalogueScoutResult {
   dealCount: number
@@ -54,6 +70,42 @@ export function selectUnscannedLeaflets(
   })
 }
 
+export function flippingBookPagerUrl(leaflet: StoreLeaflet) {
+  try {
+    const url = new URL(leaflet.url)
+
+    if (!url.pathname.toLowerCase().endsWith('/index.html')) {
+      return undefined
+    }
+
+    return new URL('files/assets/pager.js', url).toString()
+  } catch {
+    return undefined
+  }
+}
+
+export function flippingBookPageUrls(
+  leaflet: StoreLeaflet,
+  pager: unknown,
+  limit = MAX_PAGES_PER_CATALOGUE,
+) {
+  const pagerUrl = flippingBookPagerUrl(leaflet)
+  const pages = recordValue(pager, 'pages')
+  const structure = recordValue(pages, 'structure')
+
+  if (!pagerUrl || !Array.isArray(structure)) {
+    return []
+  }
+
+  return structure.slice(0, limit).map((_page, index) => {
+    const pageNumber = String(index + 1).padStart(4, '0')
+    return new URL(
+      `flash/pages/page${pageNumber}_w.webp`,
+      pagerUrl,
+    ).toString()
+  })
+}
+
 export async function runCatalogueScout(
   env: TrolleyScoutEnv,
   leaflets: StoreLeaflet[],
@@ -67,12 +119,18 @@ export async function runCatalogueScout(
     discoverExternalRetailerLeaflets(),
   ])
   const selected = selectUnscannedLeaflets(
-    [...externalLeaflets, ...leaflets],
+    [
+      ...leaflets.filter((leaflet) => flippingBookPagerUrl(leaflet)),
+      ...externalLeaflets,
+      ...leaflets.filter((leaflet) => !flippingBookPagerUrl(leaflet)),
+    ],
     snapshots,
   )
-  const scans = await Promise.all(
-    selected.map((leaflet) => scanCatalogueDocument(env.AI!, leaflet, env.SCOUT_DEBUG === 'true')),
-  )
+  const scans = []
+
+  for (const leaflet of selected) {
+    scans.push(await scanCatalogueDocument(env.AI, leaflet, env.SCOUT_DEBUG === 'true'))
+  }
   const entries = scans
     .filter((scan) => scan.deals.length > 0)
     .map((scan) => ({
@@ -122,6 +180,12 @@ async function scanCatalogueDocument(ai: Ai, leaflet: StoreLeaflet, debug: boole
   const documentUrl = catalogueDocumentUrl(leaflet)!
 
   try {
+    const pageDeals = await scanInteractiveCatalogue(ai, leaflet, checkedAt, debug)
+
+    if (pageDeals.length > 0) {
+      return { checkedAt, deals: pageDeals, leaflet }
+    }
+
     const response = await fetch(documentUrl, {
       headers: {
         accept: 'application/pdf',
@@ -198,6 +262,147 @@ async function scanCatalogueDocument(ai: Ai, leaflet: StoreLeaflet, debug: boole
   }
 }
 
+async function scanInteractiveCatalogue(
+  ai: Ai,
+  leaflet: StoreLeaflet,
+  checkedAt: string,
+  debug: boolean,
+) {
+  const pagerUrl = flippingBookPagerUrl(leaflet)
+
+  if (!pagerUrl) {
+    return []
+  }
+
+  try {
+    const pagerResponse = await fetch(pagerUrl, {
+      headers: {
+        accept: 'application/json,text/javascript',
+        'user-agent': BROWSER_USER_AGENT,
+      },
+    })
+
+    if (!pagerResponse.ok) {
+      return []
+    }
+
+    const pageUrls = flippingBookPageUrls(leaflet, await pagerResponse.json())
+    const pages = (
+      await Promise.all(
+        pageUrls.map(async (pageUrl, index) => {
+          try {
+            const response = await fetch(pageUrl, {
+              headers: {
+                accept: 'image/webp,image/jpeg,image/png',
+                'user-agent': BROWSER_USER_AGENT,
+              },
+            })
+            const declaredSize = Number(response.headers.get('content-length') ?? 0)
+
+            if (!response.ok || (declaredSize > 0 && declaredSize > MAX_PAGE_IMAGE_BYTES)) {
+              return undefined
+            }
+
+            const image = await response.arrayBuffer()
+
+            if (image.byteLength === 0 || image.byteLength > MAX_PAGE_IMAGE_BYTES) {
+              return undefined
+            }
+
+            return {
+              bytes: new Uint8Array(image),
+              blob: new Blob([image], {
+                type: response.headers.get('content-type') ?? 'image/webp',
+              }),
+              name: `page-${index + 1}.webp`,
+              pageUrl,
+            }
+          } catch {
+            return undefined
+          }
+        }),
+      )
+    ).filter((page): page is NonNullable<typeof page> => Boolean(page))
+
+    if (pages.length === 0) {
+      return []
+    }
+
+    const visionDeals = (
+      await Promise.all(
+        pages.map(async (page) => {
+          try {
+            const output = await ai.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+              image: Array.from(page.bytes),
+              max_tokens: 2400,
+              prompt: CATALOGUE_VISION_PROMPT,
+              temperature: 0.1,
+            })
+
+            return extractVisionCatalogueDeals({
+              capturedAt: checkedAt,
+              imageUrl: page.pageUrl,
+              markdown: output.response ?? '',
+              retailerId: leaflet.retailerId,
+              retailerName: leaflet.retailerName,
+              sourceUrl: leaflet.documentUrl ?? leaflet.url,
+            })
+          } catch {
+            return []
+          }
+        }),
+      )
+    ).flat()
+
+    if (visionDeals.length > 0) {
+      debugCatalogue(debug, leaflet, {
+        dealCount: visionDeals.length,
+        eventStage: 'page_vision',
+        pageCount: pages.length,
+      })
+      return visionDeals
+    }
+
+    const conversions = await ai.toMarkdown(
+      pages.map(({ blob, name }) => ({ blob, name })),
+      { conversionOptions: { image: { descriptionLanguage: 'en' } } },
+    )
+    const fallbackDeals = conversions.flatMap((conversion, index) => {
+      if (conversion.format !== 'markdown') {
+        return []
+      }
+
+      return extractCatalogueDeals({
+        capturedAt: checkedAt,
+        imageUrl: pages[index]?.pageUrl ?? leaflet.imageUrl,
+        markdown: conversion.data,
+        retailerId: leaflet.retailerId,
+        retailerName: leaflet.retailerName,
+        sourceUrl: leaflet.documentUrl ?? leaflet.url,
+      })
+    })
+
+    debugCatalogue(debug, leaflet, {
+      dealCount: fallbackDeals.length,
+      eventStage: 'page_markdown_fallback',
+      pageCount: pages.length,
+      sample: conversions
+        .filter((conversion) => conversion.format === 'markdown')
+        .map((conversion) => conversion.format === 'markdown' ? conversion.data : '')
+        .join('\n')
+        .slice(0, 2400),
+    })
+
+    return fallbackDeals
+  } catch (error) {
+    debugCatalogue(debug, leaflet, {
+      error: error instanceof Error ? error.message : String(error),
+      eventStage: 'page_images',
+    })
+    return []
+  }
+}
+
 function debugCatalogue(
   enabled: boolean,
   leaflet: StoreLeaflet,
@@ -246,4 +451,10 @@ function isPublicDocumentUrl(value: string) {
   } catch {
     return false
   }
+}
+
+function recordValue(value: unknown, key: string) {
+  return typeof value === 'object' && value !== null && key in value
+    ? (value as Record<string, unknown>)[key]
+    : undefined
 }

@@ -9,6 +9,7 @@ import {
   CreditCard,
   HandCoins,
   HouseLine,
+  Info,
   LinkSimple,
   List,
   MagnifyingGlass,
@@ -97,6 +98,7 @@ import type {
 } from './services/apiClient'
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
+import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { MoneyHelpView } from './views/MoneyHelpView'
 import { ToolkitView } from './views/ToolkitView'
@@ -108,6 +110,7 @@ type ActiveView =
   | 'tools'
   | 'sources'
   | 'discovery'
+  | 'about'
   | 'offers'
   | 'scanner'
   | 'rules'
@@ -120,6 +123,7 @@ type MemberView =
   | 'savedDeals'
   | 'basket'
   | 'saved'
+  | 'about'
   | 'offers'
   | 'scanner'
   | 'subscription'
@@ -132,6 +136,7 @@ const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Money help', value: 'help' },
   { label: 'Tools', value: 'tools' },
   { label: 'Stores', value: 'sources' },
+  { label: 'Help', value: 'about' },
 ]
 
 const dataDeskOptions: Array<{ label: string; value: ActiveView }> = [
@@ -153,6 +158,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <ShieldCheck size={20} />, label: 'Scanner', value: 'scanner' },
   { icon: <CreditCard size={20} />, label: 'Subscription', value: 'subscription' },
   { icon: <UserCircle size={20} />, label: 'Profile', value: 'profile' },
+  { icon: <Info size={20} />, label: 'About & help', value: 'about' },
   { icon: <ClipboardText size={20} />, label: 'Rules', value: 'rules' },
 ]
 
@@ -973,6 +979,10 @@ function App() {
 
         {activeView === 'tools' && <ToolkitView />}
 
+        {activeView === 'about' && (
+          <AboutView onOpen={(destination: AboutDestination) => setActiveView(destination)} />
+        )}
+
         {(activeView === 'sources' || activeView === 'discovery' || activeView === 'offers' || activeView === 'scanner') && (
           <RuntimeBanner retailerState={retailerState} offerState={offerState} />
         )}
@@ -1378,6 +1388,10 @@ function MemberShell({
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => onSetView('sources')} />}
 
         {activeView === 'tools' && <ToolkitView />}
+
+        {activeView === 'about' && (
+          <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
+        )}
 
         {activeView === 'sources' && (
           <>

@@ -4,6 +4,9 @@ export interface ExternalRetailerTarget {
   retailerId: RetailerId
   retailerName: string
   sourceUrl: string
+  // Some retailers publish ONLY catalogue PDFs on the target page (branch
+  // catalogues named by store, no "specials" keyword). Trust every PDF there.
+  trustAllPdfs?: boolean
 }
 
 export const externalRetailerTargets: ExternalRetailerTarget[] = [
@@ -21,6 +24,12 @@ export const externalRetailerTargets: ExternalRetailerTarget[] = [
     retailerId: 'president-hyper',
     retailerName: 'President Hyper',
     sourceUrl: 'https://www.presidenthyper.co.za/weekly-specials/',
+  },
+  {
+    retailerId: 'frontline',
+    retailerName: 'Frontline Hyper',
+    sourceUrl: 'https://frontlinesa.co.za/',
+    trustAllPdfs: true,
   },
 ]
 
@@ -41,11 +50,13 @@ export function extractRetailerLeafletsFromHtml(
     const context = html.slice(Math.max(0, match.index - 1200), Math.min(html.length, match.index + 400))
     const searchable = `${rawPath} ${stripHtml(context)}`.toLowerCase()
 
+    const looksPromotional = /special|promotion|deal|catalog|leaflet|weekly|citizen/.test(searchable)
+
     if (
       !documentUrl ||
       seen.has(documentUrl) ||
       /privacy|policy|terms|paia|manual/.test(rawPath.toLowerCase()) ||
-      !/special|promotion|deal|catalog|leaflet|weekly|citizen/.test(searchable)
+      (!target.trustAllPdfs && !looksPromotional)
     ) {
       continue
     }

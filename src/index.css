@@ -645,10 +645,126 @@ main {
 
 .home-view,
 .help-view,
-.toolkit-view {
+.toolkit-view,
+.about-view {
   display: grid;
   gap: clamp(1.8rem, 3.5vw, 3rem);
   padding: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+.about-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+.about-step-card {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  padding: 1.3rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+}
+
+.about-step-card > svg {
+  color: var(--red);
+}
+
+.about-step-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.about-step-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.about-step-card .ghost-button {
+  justify-self: start;
+  margin-top: 0.3rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.about-promise {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  padding: 1.1rem 1.3rem;
+  border: 2px solid var(--green);
+  background: var(--surface);
+}
+
+.about-promise svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--green);
+}
+
+.about-promise p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.about-promise strong {
+  color: var(--ink);
+}
+
+.faq-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.faq-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.faq-card {
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.faq-card summary {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+}
+
+.faq-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-caret {
+  flex-shrink: 0;
+  color: var(--faint);
+  transition: transform 0.15s ease;
+}
+
+.faq-card[open] .faq-caret {
+  transform: rotate(180deg);
+}
+
+.faq-card p {
+  margin: 0;
+  padding: 0 1.2rem 1.1rem;
+  color: var(--muted);
+}
+
+.about-footnote {
+  max-width: 52rem;
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.85rem;
 }
 
 .home-hero {
@@ -2682,7 +2798,8 @@ main {
 
 @media (max-width: 1120px) {
   .home-paths,
-  .staple-grid {
+  .staple-grid,
+  .about-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2747,6 +2864,7 @@ main {
   .plan-usage-grid,
   .staple-grid,
   .home-paths,
+  .about-steps,
   .home-promises,
   .unit-pack-fields,
   .vat-grid,

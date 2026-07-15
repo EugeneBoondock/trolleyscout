@@ -40,11 +40,8 @@ export async function runScheduledScout(
 }
 
 export default {
-  async scheduled(_controller, env, context) {
-    context.waitUntil(
-      runScheduledScout(env).then((result) => {
-        console.log(JSON.stringify({ event: 'deal_scout_completed', ...result }))
-      }),
-    )
+  async scheduled(_controller, env) {
+    const result = await runScheduledScout(env)
+    console.log(JSON.stringify({ event: 'deal_scout_completed', ...result }))
   },
 } satisfies ExportedHandler<ScoutEnv>
