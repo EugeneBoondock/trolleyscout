@@ -908,6 +908,9 @@ function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#top">
+        Skip to content
+      </a>
       <header className="topbar">
         <a className="brand-mark" href="#top" aria-label="Trolley Scout home">
           <img src="/assets/brand-mark.png" alt="" />
@@ -1149,7 +1152,7 @@ function MemberAuthScreen({
               />
             </label>
             {(notice || memberState.status === 'error') && (
-              <div className="write-notice">{notice ?? memberState.message}</div>
+              <div className="write-notice" role="status">{notice ?? memberState.message}</div>
             )}
             <div className="scanner-actions">
               <button className="primary-button" disabled={isStarting} type="submit">
@@ -1300,6 +1303,9 @@ function MemberShell({
 
   return (
     <div className="member-shell">
+      <a className="skip-link" href="#member-main">
+        Skip to content
+      </a>
       <header className="member-topbar">
         <button className="icon-button" id="member-menu" onClick={onToggleSidebar} type="button" aria-label="Menu">
           <List size={20} />
@@ -1770,7 +1776,7 @@ function SavedDealsPanel({
   return (
     <section className="empty-panel" aria-label="Saved deals">
       {savedDealState.status === 'loading' && <LoadingStrip label="Checking saved deals" />}
-      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
       {savedDeals.length > 0 ? (
         <div className="saved-source-list">
           {savedDeals.map((deal) => {
@@ -1861,7 +1867,7 @@ function BasketPanel({
       </div>
 
       {basketState.status === 'loading' && <LoadingStrip label="Checking basket" />}
-      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
 
       {hasItems ? (
         <>
@@ -1986,7 +1992,7 @@ function SavedSourcesPanel({
   return (
     <section className="empty-panel" aria-label="Saved sources">
       {savedSourceState.status === 'loading' && <LoadingStrip label="Checking saved sources" />}
-      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
       {savedSources.length > 0 ? (
         <div className="saved-source-list">
           {savedSources.map((source) => (
@@ -2053,7 +2059,7 @@ function SubscriptionPanel({
         </div>
         <span className="plan-pill">{subscriptionState.data.billingReady ? 'Billing ready' : 'Billing setup needed'}</span>
       </div>
-      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
 
       <div className="billing-toggle" role="group" aria-label="Billing cycle">
         <button
@@ -2147,7 +2153,7 @@ function MemberProfilePanel({
           <p>{account.email}</p>
         </div>
       </div>
-      {memberNotice && <div className="write-notice">{memberNotice}</div>}
+      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
       <div className="profile-grid">
         <ProfileRow label="Plan" value={account.planName} />
         <ProfileRow label="Plan status" value={planStatusText(account.planStatus)} />
@@ -2579,7 +2585,7 @@ function DiscoveryPanel({
       </div>
 
       {state.status === 'loading' && <LoadingStrip label="Checking official deal pages" />}
-      {state.status === 'error' && <div className="write-notice">{state.message}</div>}
+      {state.status === 'error' && <div className="write-notice" role="status">{state.message}</div>}
 
       <div className="discovery-summary">
         <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
@@ -2697,7 +2703,7 @@ function OffersPanel({
   return (
     <section className="empty-panel" aria-label="Verified offers">
       {state.status === 'loading' && <LoadingStrip label="Checking offer board" />}
-      {writeNotice && <div className="write-notice">{writeNotice}</div>}
+      {writeNotice && <div className="write-notice" role="status">{writeNotice}</div>}
       {offers.length > 0 ? (
         <OfferList deletingOfferId={deletingOfferId} offers={offers} onDelete={onDelete} />
       ) : (
@@ -2962,7 +2968,7 @@ function ScannerResult({
           </button>
         </div>
       )}
-      {writeNotice && <div className="write-notice">{writeNotice}</div>}
+      {writeNotice && <div className="write-notice" role="status">{writeNotice}</div>}
     </aside>
   )
 }

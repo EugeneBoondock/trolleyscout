@@ -70,7 +70,9 @@ export async function runCatalogueScout(
     [...externalLeaflets, ...leaflets],
     snapshots,
   )
-  const scans = await Promise.all(selected.map((leaflet) => scanCatalogueDocument(env.AI!, leaflet)))
+  const scans = await Promise.all(
+    selected.map((leaflet) => scanCatalogueDocument(env.AI!, leaflet, env.SCOUT_DEBUG === 'true')),
+  )
   const entries = scans
     .filter((scan) => scan.deals.length > 0)
     .map((scan) => ({
@@ -115,7 +117,7 @@ async function discoverExternalRetailerLeaflets() {
   return settled.flat()
 }
 
-async function scanCatalogueDocument(ai: Ai, leaflet: StoreLeaflet) {
+async function scanCatalogueDocument(ai: Ai, leaflet: StoreLeaflet, debug: boolean) {
   const checkedAt = new Date().toISOString()
   const documentUrl = catalogueDocumentUrl(leaflet)!
 
@@ -163,23 +165,51 @@ async function scanCatalogueDocument(ai: Ai, leaflet: StoreLeaflet) {
     )
 
     if (conversion.format !== 'markdown') {
+      debugCatalogue(debug, leaflet, {
+        error: conversion.error,
+        format: conversion.format,
+      })
       return { checkedAt, deals: [], leaflet }
     }
 
+    const deals = extractCatalogueDeals({
+      capturedAt: checkedAt,
+      imageUrl: leaflet.imageUrl,
+      markdown: conversion.data,
+      retailerId: leaflet.retailerId,
+      retailerName: leaflet.retailerName,
+      sourceUrl: documentUrl,
+    })
+
+    debugCatalogue(debug, leaflet, {
+      dealCount: deals.length,
+      format: conversion.format,
+      markdownLength: conversion.data.length,
+      sample: conversion.data.slice(0, 1600),
+    })
+
     return {
       checkedAt,
-      deals: extractCatalogueDeals({
-        capturedAt: checkedAt,
-        imageUrl: leaflet.imageUrl,
-        markdown: conversion.data,
-        retailerId: leaflet.retailerId,
-        retailerName: leaflet.retailerName,
-        sourceUrl: documentUrl,
-      }),
+      deals,
       leaflet,
     }
   } catch {
     return { checkedAt, deals: [], leaflet }
+  }
+}
+
+function debugCatalogue(
+  enabled: boolean,
+  leaflet: StoreLeaflet,
+  details: Record<string, unknown>,
+) {
+  if (enabled) {
+    console.log(JSON.stringify({
+      event: 'catalogue_debug',
+      leaflet: leaflet.name,
+      retailer: leaflet.retailerName,
+      ...details,
+    }))
   }
 }
 

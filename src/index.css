@@ -14,7 +14,8 @@
   --surface-soft: #ece4cd;
   --ink: #1c1710;
   --muted: #5d5546;
-  --faint: #8b8170;
+  /* 4.6:1 on --bg: keeps small print readable (WCAG AA). */
+  --faint: #6f6753;
   --line: #1c1710;
   --line-soft: #d4c9ac;
   --red: #c9271b;
@@ -45,7 +46,8 @@
   --surface-soft: #2c251c;
   --ink: #f3ecd9;
   --muted: #baae95;
-  --faint: #877d68;
+  /* 5:1 on dark --bg for small print. */
+  --faint: #988d75;
   --line: #f3ecd9;
   --line-soft: #423a2d;
   --red: #ff6a57;
@@ -151,6 +153,25 @@ mark {
   width: min(1360px, 100%);
   min-height: 100svh;
   margin: 0 auto;
+}
+
+/* Keyboard users jump straight past the masthead. */
+.skip-link {
+  position: fixed;
+  top: -100%;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  border: 2px solid var(--line);
+  background: var(--yellow);
+  color: #1c1710;
+  font-weight: 800;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.skip-link:focus-visible {
+  top: 1rem;
 }
 
 /* ---------------------------------------------------------------

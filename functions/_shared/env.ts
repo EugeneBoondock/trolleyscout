@@ -6,4 +6,5 @@ export interface TrolleyScoutEnv {
   PAYFAST_MERCHANT_KEY?: string
   PAYFAST_MODE?: 'sandbox' | 'live'
   PAYFAST_PASSPHRASE?: string
+  SCOUT_DEBUG?: string
 }
