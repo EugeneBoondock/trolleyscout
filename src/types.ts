@@ -113,6 +113,8 @@ export interface DiscoverySourceResult {
 
 export interface DiscoveryRun {
   deals: DiscoveredDeal[]
+  refreshedAt?: string
+  served?: 'snapshot' | 'live'
   sources: DiscoverySourceResult[]
   summary: {
     checkedSourceCount: number

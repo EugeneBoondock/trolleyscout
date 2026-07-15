@@ -285,9 +285,12 @@ export function getInitialBasketState(): ResourceState<BasketResource> {
   }
 }
 
-export async function loadDiscovery(signal?: AbortSignal): Promise<ResourceState<DiscoveryResource>> {
+export async function loadDiscovery(
+  signal?: AbortSignal,
+  options: { forceLive?: boolean } = {},
+): Promise<ResourceState<DiscoveryResource>> {
   try {
-    const response = await fetch('/api/discovery', {
+    const response = await fetch(options.forceLive ? '/api/discovery?refresh=1' : '/api/discovery', {
       headers: {
         accept: 'application/json',
       },

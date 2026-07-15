@@ -13,6 +13,7 @@ import {
 } from '../../src/services/dealDiscovery'
 import type { DiscoveredDeal, DiscoverySourceResult } from '../../src/types'
 import {
+  type DealSnapshot,
   readDealSnapshots,
   saveDealSnapshots,
   snapshotKey,
@@ -24,20 +25,51 @@ const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
+// How old the newest snapshot may get before a background refresh is kicked.
+const STALE_AFTER_MS = 60 * 60 * 1000
+
+interface SourceCheck {
+  deals: DiscoveredDeal[]
+  source: DiscoverySourceResult
+}
+
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method)
   }
 
-  const targets = getDiscoveryTargets()
-  const [settled, snapshots] = await Promise.all([
-    Promise.all(targets.map((target) => checkSource(target))),
-    readDealSnapshots(env),
-  ])
+  const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
+  const snapshots = await readDealSnapshots(env)
 
-  // Live rows refresh the per-source snapshots; sources that failed or came
-  // back empty fall back to their last snapshot so the board never goes dark
-  // because one retailer had a bad morning.
+  // Instant path: serve the last stored snapshot without waiting on any
+  // retailer. A background refresh keeps it fresh so the next visitor still
+  // sees current prices — the page never blocks on 13 live fetches.
+  if (!forceLive && snapshots.size > 0) {
+    const newestCheckedAt = newestSnapshotTime(snapshots)
+    const isStale = !newestCheckedAt || Date.now() - Date.parse(newestCheckedAt) > STALE_AFTER_MS
+
+    if (isStale) {
+      waitUntil(refreshAllSources(env))
+    }
+
+    return respond(buildSnapshotChecks(snapshots), newestCheckedAt, true)
+  }
+
+  // Live path: explicit "Check now", or a cold store with nothing to serve.
+  const settled = await refreshAllSources(env, snapshots)
+  return respond(settled, new Date().toISOString(), false)
+}
+
+// Runs every source, saves fresh rows to D1, and returns the merged results
+// (live rows where available, last snapshot where a source failed).
+async function refreshAllSources(
+  env: TrolleyScoutEnv,
+  priorSnapshotsInput?: Map<string, DealSnapshot>,
+): Promise<SourceCheck[]> {
+  const targets = getDiscoveryTargets()
+  const priorSnapshots = priorSnapshotsInput ?? (await readDealSnapshots(env))
+  const settled = await Promise.all(targets.map((target) => checkSource(target)))
+
   const freshEntries: Array<{
     retailerId: string
     sourceLabel: string
@@ -56,7 +88,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       continue
     }
 
-    const snapshot = snapshots.get(snapshotKey(result.source.retailerId, result.source.sourceLabel))
+    const snapshot = priorSnapshots.get(snapshotKey(result.source.retailerId, result.source.sourceLabel))
 
     if (snapshot) {
       result.deals = snapshot.deals
@@ -69,14 +101,19 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     }
   }
 
-  waitUntil(saveDealSnapshots(env, freshEntries))
+  await saveDealSnapshots(env, freshEntries)
+  return settled
+}
 
+function respond(settled: SourceCheck[], refreshedAt: string | undefined, fromCache: boolean) {
   const deals = dedupeByProductUrl(settled.flatMap((result) => result.deals))
   const sources = settled.map((result) => result.source)
 
   return json(
     {
       deals,
+      refreshedAt,
+      served: fromCache ? 'snapshot' : 'live',
       sources,
       summary: {
         checkedSourceCount: sources.length,
@@ -89,6 +126,57 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       headers: privateHeaders,
     },
   )
+}
+
+function newestSnapshotTime(snapshots: Map<string, DealSnapshot>): string | undefined {
+  let newest: string | undefined
+
+  for (const snapshot of snapshots.values()) {
+    if (!newest || snapshot.checkedAt > newest) {
+      newest = snapshot.checkedAt
+    }
+  }
+
+  return newest
+}
+
+// Reconstructs the discovery board from stored snapshots alone — one "found"
+// source row per snapshotted feed, plus a "pending" row for feeds not yet
+// captured, so the instant response matches the live response shape.
+function buildSnapshotChecks(snapshots: Map<string, DealSnapshot>): SourceCheck[] {
+  return getDiscoveryTargets().map((target) => {
+    const snapshot = snapshots.get(snapshotKey(target.retailer.id, target.source.label))
+    const base = {
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+    }
+
+    if (!snapshot) {
+      return {
+        deals: [],
+        source: {
+          ...base,
+          checkedAt: new Date(0).toISOString(),
+          itemCount: 0,
+          status: 'checked_no_static_rows',
+          statusText: 'Not captured yet. Check now to fetch this source.',
+        },
+      }
+    }
+
+    return {
+      deals: snapshot.deals,
+      source: {
+        ...base,
+        checkedAt: snapshot.checkedAt,
+        itemCount: snapshot.deals.length,
+        status: 'found',
+        statusText: `Captured ${snapshot.checkedAt.slice(0, 10)}.`,
+      },
+    }
+  })
 }
 
 // Overlapping feeds (e.g. Clicks all-promotions vs a category feed) can

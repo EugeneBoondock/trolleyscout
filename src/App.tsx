@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
@@ -170,6 +170,7 @@ function App() {
     getInitialDiscoveryState,
   )
   const [discoveryKey, setDiscoveryKey] = useState(0)
+  const forceLiveDiscoveryRef = useRef(false)
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -388,14 +389,17 @@ function App() {
       return () => controller.abort()
     }
 
+    const forceLive = forceLiveDiscoveryRef.current
+    forceLiveDiscoveryRef.current = false
+
     setIsDiscovering(true)
     setDiscoveryState((current) => ({
       ...current,
-      message: 'Checking deal sources.',
+      message: forceLive ? 'Checking every source now.' : 'Loading latest deals.',
       status: 'loading',
     }))
 
-    loadDiscovery(controller.signal)
+    loadDiscovery(controller.signal, { forceLive })
       .then(setDiscoveryState)
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -413,6 +417,7 @@ function App() {
   }
 
   function runDiscovery() {
+    forceLiveDiscoveryRef.current = true
     setDiscoveryKey((current) => current + 1)
   }
 
@@ -2074,6 +2079,31 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
   return 'Active'
 }
 
+function describeFreshness(refreshedAt?: string): string {
+  if (!refreshedAt) {
+    return 'Live from official store pages.'
+  }
+
+  const ageMs = Date.now() - Date.parse(refreshedAt)
+
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return 'Updated just now.'
+  }
+
+  const minutes = Math.round(ageMs / 60000)
+
+  if (minutes < 1) {
+    return 'Updated just now.'
+  }
+
+  if (minutes < 60) {
+    return `Updated ${minutes} minute${minutes === 1 ? '' : 's'} ago.`
+  }
+
+  const hours = Math.round(minutes / 60)
+  return `Updated ${hours} hour${hours === 1 ? '' : 's'} ago.`
+}
+
 function formatRand(cents: number) {
   return new Intl.NumberFormat('en-ZA', {
     currency: 'ZAR',
@@ -2210,6 +2240,7 @@ function DiscoveryPanel({
         <div>
           <p className="eyebrow">Deal finder</p>
           <h2>Source-backed specials</h2>
+          <p className="freshness-line">{describeFreshness(discovery.refreshedAt)}</p>
         </div>
         <button className="primary-button" disabled={isDiscovering} onClick={onRunDiscovery} type="button">
           <ArrowClockwise size={18} className={clsx(isDiscovering && 'is-spinning')} />

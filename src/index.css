@@ -336,6 +336,12 @@ main {
   color: var(--red);
 }
 
+.freshness-line {
+  margin: 0.3rem 0 0;
+  color: var(--faint);
+  font-size: 0.82rem;
+}
+
 .primary-button,
 .ghost-button {
   display: inline-flex;
