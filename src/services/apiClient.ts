@@ -1098,11 +1098,13 @@ export async function deleteBasketItemForMember(
 function emptyDiscoveryRun(): DiscoveryRun {
   return {
     deals: [] satisfies DiscoveredDeal[],
+    leaflets: [],
     sources: [],
     summary: {
       checkedSourceCount: 0,
       dataPolicy: 'Discovery rows require official source pages and extracted source text.',
       foundDealCount: 0,
+      leafletCount: 0,
       unavailableSourceCount: 0,
     },
   }

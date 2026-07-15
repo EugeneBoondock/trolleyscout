@@ -73,6 +73,7 @@ import type {
   Retailer,
   SourceKind,
   DiscoveredDeal,
+  StoreLeaflet,
   VerifiedOffer,
 } from './types'
 import type {
@@ -2079,6 +2080,64 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
   return 'Active'
 }
 
+function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
+  return (
+    <div className="leaflet-board" aria-label="Store leaflets">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Big-store catalogues</p>
+          <h3>This week’s specials leaflets</h3>
+          <p className="freshness-line">
+            Shoprite, Checkers, and Boxer publish catalogues, not per-item prices. Open the official
+            leaflet to see every special.
+          </p>
+        </div>
+      </div>
+      <div className="leaflet-grid">
+        {leaflets.map((leaflet) => (
+          <article className="leaflet-card" key={leaflet.id}>
+            <p className="leaflet-retailer">{leaflet.retailerName}</p>
+            <h4>{leaflet.name}</h4>
+            {(leaflet.validFrom || leaflet.validTo) && (
+              <p className="leaflet-dates">{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</p>
+            )}
+            <a href={leaflet.url} rel="noreferrer" target="_blank">
+              View leaflet
+              <LinkSimple size={14} />
+            </a>
+          </article>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function describeLeafletDates(validFrom?: string, validTo?: string): string {
+  const format = (iso?: string) => {
+    if (!iso) {
+      return ''
+    }
+
+    const date = new Date(`${iso}T00:00:00`)
+
+    if (Number.isNaN(date.getTime())) {
+      return iso
+    }
+
+    return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+  }
+
+  if (validFrom && validTo) {
+    return `Valid ${format(validFrom)} – ${format(validTo)}`
+  }
+
+  if (validTo) {
+    return `Valid until ${format(validTo)}`
+  }
+
+  return `From ${format(validFrom)}`
+}
+
 function describeFreshness(refreshedAt?: string): string {
   if (!refreshedAt) {
     return 'Live from official store pages.'
@@ -2233,6 +2292,7 @@ function DiscoveryPanel({
 }) {
   const discovery = state.data.discovery
   const deals = discovery.deals
+  const leaflets = discovery.leaflets ?? []
 
   return (
     <section className="discovery-panel" aria-label="Deal finder">
@@ -2254,8 +2314,10 @@ function DiscoveryPanel({
       <div className="discovery-summary">
         <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
         <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
-        <Metric icon={<ReceiptX size={22} />} label="Unread sources" value={`${discovery.summary.unavailableSourceCount}`} />
+        <Metric icon={<Storefront size={22} />} label="Store leaflets" value={`${leaflets.length}`} />
       </div>
+
+      {leaflets.length > 0 && <LeafletBoard leaflets={leaflets} />}
 
       {discovery.sources.length > 0 && (
         <div className="discovery-source-grid" aria-label="Checked sources">

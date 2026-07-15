@@ -11,11 +11,20 @@ import {
   getDiscoveryTargets,
   type ResolvedDiscoveryTarget,
 } from '../../src/services/dealDiscovery'
-import type { DiscoveredDeal, DiscoverySourceResult } from '../../src/types'
+import {
+  buildLeafletApiUrl,
+  extractBoxerLeaflets,
+  extractSixtyLeaflets,
+  leafletTargets,
+  type LeafletTarget,
+} from '../../src/services/leafletDiscovery'
+import type { DiscoveredDeal, DiscoverySourceResult, StoreLeaflet } from '../../src/types'
 import {
   type DealSnapshot,
   readDealSnapshots,
+  readLeafletSnapshot,
   saveDealSnapshots,
+  saveLeafletSnapshot,
   snapshotKey,
 } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
@@ -39,7 +48,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   }
 
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
-  const snapshots = await readDealSnapshots(env)
+  const [snapshots, leafletSnapshot] = await Promise.all([
+    readDealSnapshots(env),
+    readLeafletSnapshot(env),
+  ])
 
   // Instant path: serve the last stored snapshot without waiting on any
   // retailer. A background refresh keeps it fresh so the next visitor still
@@ -49,15 +61,81 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     const isStale = !newestCheckedAt || Date.now() - Date.parse(newestCheckedAt) > STALE_AFTER_MS
 
     if (isStale) {
-      waitUntil(refreshAllSources(env))
+      waitUntil(Promise.all([refreshAllSources(env), refreshAllLeaflets(env)]))
     }
 
-    return respond(buildSnapshotChecks(snapshots), newestCheckedAt, true)
+    return respond(buildSnapshotChecks(snapshots), leafletSnapshot?.leaflets ?? [], newestCheckedAt, true)
   }
 
   // Live path: explicit "Check now", or a cold store with nothing to serve.
-  const settled = await refreshAllSources(env, snapshots)
-  return respond(settled, new Date().toISOString(), false)
+  const [settled, leaflets] = await Promise.all([
+    refreshAllSources(env, snapshots),
+    refreshAllLeaflets(env, leafletSnapshot?.leaflets),
+  ])
+  return respond(settled, leaflets, new Date().toISOString(), false)
+}
+
+// Fetches current specials leaflets for the big grocers that publish
+// catalogues rather than per-product API rows, and snapshots them.
+async function refreshAllLeaflets(
+  env: TrolleyScoutEnv,
+  priorLeaflets?: StoreLeaflet[],
+): Promise<StoreLeaflet[]> {
+  const checkedAt = new Date().toISOString()
+  const settled = await Promise.all(leafletTargets.map((target) => fetchLeaflets(target, checkedAt)))
+  const leaflets = settled.flat()
+
+  if (leaflets.length === 0) {
+    return priorLeaflets ?? []
+  }
+
+  await saveLeafletSnapshot(env, leaflets, checkedAt)
+  return leaflets
+}
+
+async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<StoreLeaflet[]> {
+  try {
+    if (target.kind === 'sixty60-api' && target.apiBase && target.storeId) {
+      // These public leaflet endpoints reject non-browser user-agents with a
+      // 403, so a standard browser UA is required to read the free catalogue.
+      const response = await fetch(buildLeafletApiUrl(target.apiBase), {
+        body: JSON.stringify({ posSiteCode: target.storeId }),
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          referer: `${target.apiBase}/`,
+          'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        },
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        return []
+      }
+
+      return extractSixtyLeaflets(target, await response.json(), checkedAt)
+    }
+
+    if (target.kind === 'html-list' && target.pageUrl) {
+      const response = await fetch(target.pageUrl, {
+        headers: {
+          accept: 'text/html',
+          'user-agent': 'TrolleyScoutSourceCheck/1.0',
+        },
+      })
+
+      if (!response.ok) {
+        return []
+      }
+
+      return extractBoxerLeaflets(target, await response.text(), checkedAt)
+    }
+  } catch {
+    // A single retailer's leaflet fetch failing must not sink the board.
+  }
+
+  return []
 }
 
 // Runs every source, saves fresh rows to D1, and returns the merged results
@@ -105,13 +183,19 @@ async function refreshAllSources(
   return settled
 }
 
-function respond(settled: SourceCheck[], refreshedAt: string | undefined, fromCache: boolean) {
+function respond(
+  settled: SourceCheck[],
+  leaflets: StoreLeaflet[],
+  refreshedAt: string | undefined,
+  fromCache: boolean,
+) {
   const deals = dedupeByProductUrl(settled.flatMap((result) => result.deals))
   const sources = settled.map((result) => result.source)
 
   return json(
     {
       deals,
+      leaflets,
       refreshedAt,
       served: fromCache ? 'snapshot' : 'live',
       sources,
@@ -119,6 +203,7 @@ function respond(settled: SourceCheck[], refreshedAt: string | undefined, fromCa
         checkedSourceCount: sources.length,
         dataPolicy,
         foundDealCount: deals.length,
+        leafletCount: leaflets.length,
         unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
       },
     },

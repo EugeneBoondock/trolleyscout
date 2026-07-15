@@ -5,5 +5,5 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "trolley-scout"
-database_id = "local-trolley-scout"
+database_id = "2c43ec07-75b4-4d1f-aacb-ea0b112f36e3"
 migrations_dir = "migrations"

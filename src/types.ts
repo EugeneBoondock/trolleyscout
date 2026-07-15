@@ -111,8 +111,20 @@ export interface DiscoverySourceResult {
   statusText: string
 }
 
+export interface StoreLeaflet {
+  id: string
+  retailerId: RetailerId
+  retailerName: string
+  name: string
+  validFrom?: string
+  validTo?: string
+  url: string
+  capturedAt: string
+}
+
 export interface DiscoveryRun {
   deals: DiscoveredDeal[]
+  leaflets?: StoreLeaflet[]
   refreshedAt?: string
   served?: 'snapshot' | 'live'
   sources: DiscoverySourceResult[]
@@ -120,6 +132,7 @@ export interface DiscoveryRun {
     checkedSourceCount: number
     dataPolicy: string
     foundDealCount: number
+    leafletCount?: number
     unavailableSourceCount: number
   }
 }
