@@ -3,6 +3,57 @@ import { bytesToHex } from '@noble/hashes/utils.js'
 
 export type PayFastMode = 'sandbox' | 'live'
 
+export interface PayFastConfig {
+  merchantId: string
+  merchantKey: string
+  passphrase?: string
+  mode: PayFastMode
+}
+
+interface PayFastEnvLike {
+  PAYFAST_MERCHANT_ID?: string
+  PAYFAST_MERCHANT_KEY?: string
+  PAYFAST_PASSPHRASE?: string
+  PAYFAST_MODE?: string
+}
+
+// PayFast's public sandbox merchant. Lets checkout work end-to-end for testing
+// before live credentials are set. Live mode always requires the real secrets.
+const SANDBOX_MERCHANT_ID = '10000100'
+const SANDBOX_MERCHANT_KEY = '46f0cd694581a'
+const SANDBOX_PASSPHRASE = 'jt7NOE43FZPn'
+
+// Resolves the PayFast credentials to use. In sandbox (the default when
+// PAYFAST_MODE is unset) it falls back to the public sandbox merchant so the
+// flow is testable immediately. Passphrase is optional — PayFast accounts can
+// run without one, so we never block checkout on a missing passphrase.
+export function resolvePayFastConfig(env: PayFastEnvLike): PayFastConfig | undefined {
+  const mode: PayFastMode = env.PAYFAST_MODE === 'live' ? 'live' : 'sandbox'
+
+  if (mode === 'live') {
+    if (!env.PAYFAST_MERCHANT_ID || !env.PAYFAST_MERCHANT_KEY) {
+      return undefined
+    }
+
+    return {
+      merchantId: env.PAYFAST_MERCHANT_ID,
+      merchantKey: env.PAYFAST_MERCHANT_KEY,
+      mode,
+      passphrase: env.PAYFAST_PASSPHRASE || undefined,
+    }
+  }
+
+  const usingPublicSandbox = !env.PAYFAST_MERCHANT_ID
+  const passphrase = env.PAYFAST_PASSPHRASE || (usingPublicSandbox ? SANDBOX_PASSPHRASE : undefined)
+
+  return {
+    merchantId: env.PAYFAST_MERCHANT_ID || SANDBOX_MERCHANT_ID,
+    merchantKey: env.PAYFAST_MERCHANT_KEY || SANDBOX_MERCHANT_KEY,
+    mode,
+    passphrase,
+  }
+}
+
 export function createPayFastParameterString(fields: URLSearchParams, passphrase?: string) {
   const pairs: string[] = []
 
@@ -39,6 +90,9 @@ export function getPayFastEndpoints(mode: PayFastMode) {
   return {
     engineUrl: `https://${host}/onsite/engine.js`,
     onsiteUrl: `https://${host}/onsite/process`,
+    // Classic redirect checkout — works for any account, used as the fallback
+    // when onsite payments are not enabled on the merchant account.
+    processUrl: `https://${host}/eng/process`,
     validationUrl: `https://${host}/eng/query/validate`,
   }
 }

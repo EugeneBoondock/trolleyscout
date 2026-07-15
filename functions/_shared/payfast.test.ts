@@ -3,6 +3,7 @@ import {
   createPayFastParameterString,
   createPayFastSignature,
   getPayFastEndpoints,
+  resolvePayFastConfig,
   verifyPayFastSignature,
 } from './payfast'
 
@@ -43,8 +44,31 @@ describe('payfast', () => {
     expect(getPayFastEndpoints('sandbox')).toEqual({
       engineUrl: 'https://sandbox.payfast.co.za/onsite/engine.js',
       onsiteUrl: 'https://sandbox.payfast.co.za/onsite/process',
+      processUrl: 'https://sandbox.payfast.co.za/eng/process',
       validationUrl: 'https://sandbox.payfast.co.za/eng/query/validate',
     })
     expect(getPayFastEndpoints('live').onsiteUrl).toBe('https://www.payfast.co.za/onsite/process')
+  })
+
+  it('falls back to the public sandbox merchant when no creds are set', () => {
+    const config = resolvePayFastConfig({})
+
+    expect(config).toEqual({
+      merchantId: '10000100',
+      merchantKey: '46f0cd694581a',
+      mode: 'sandbox',
+      passphrase: 'jt7NOE43FZPn',
+    })
+  })
+
+  it('requires real credentials in live mode', () => {
+    expect(resolvePayFastConfig({ PAYFAST_MODE: 'live' })).toBeUndefined()
+    expect(
+      resolvePayFastConfig({
+        PAYFAST_MODE: 'live',
+        PAYFAST_MERCHANT_ID: '123',
+        PAYFAST_MERCHANT_KEY: 'abc',
+      }),
+    ).toMatchObject({ merchantId: '123', mode: 'live' })
   })
 })

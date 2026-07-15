@@ -664,6 +664,13 @@ function App() {
 
       const { checkout } = result.data
 
+      // Fallback: accounts without onsite payments get PayFast's classic
+      // redirect checkout — a POST form submission to PayFast.
+      if (checkout.redirectUrl && checkout.redirectFields) {
+        submitPayFastRedirect(checkout.redirectUrl, checkout.redirectFields)
+        return
+      }
+
       // PayFast onsite: open the secure payment modal in place rather than
       // redirecting away, so the member never leaves Trolley Scout.
       if (checkout.onsiteUuid && checkout.engineUrl) {
@@ -2426,6 +2433,25 @@ function describeLeafletDates(validFrom?: string, validTo?: string): string {
   }
 
   return `From ${format(validFrom)}`
+}
+
+// PayFast's classic checkout is a POST form submission. Build a hidden form
+// and submit it so the browser navigates to PayFast to complete payment.
+function submitPayFastRedirect(actionUrl: string, fields: Record<string, string>) {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = actionUrl
+
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = name
+    input.value = value
+    form.appendChild(input)
+  }
+
+  document.body.appendChild(form)
+  form.submit()
 }
 
 function describeFreshness(refreshedAt?: string): string {

@@ -1,4 +1,5 @@
 import { hasMemberStore } from '../_shared/memberStore'
+import { resolvePayFastConfig } from '../_shared/payfast'
 import { processPayFastNotification } from '../_shared/payfastNotification'
 import { createPayFastBillingRepository } from '../_shared/payfastStore'
 import { json, methodNotAllowed } from '../_shared/respond'
@@ -13,12 +14,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return methodNotAllowed(request.method, 'POST')
   }
 
-  if (
-    !hasMemberStore(env) ||
-    !env.PAYFAST_MERCHANT_ID ||
-    !env.PAYFAST_PASSPHRASE ||
-    (env.PAYFAST_MODE !== 'sandbox' && env.PAYFAST_MODE !== 'live')
-  ) {
+  const payfast = resolvePayFastConfig(env)
+
+  if (!hasMemberStore(env) || !payfast) {
     return json(
       { message: 'Payment notifications are not configured.', received: false },
       { headers: privateHeaders, status: 503 },
@@ -38,9 +36,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   const result = await processPayFastNotification({
     fields: new URLSearchParams(payload),
-    merchantId: env.PAYFAST_MERCHANT_ID,
-    mode: env.PAYFAST_MODE,
-    passphrase: env.PAYFAST_PASSPHRASE,
+    merchantId: payfast.merchantId,
+    mode: payfast.mode,
+    passphrase: payfast.passphrase ?? '',
     repository: createPayFastBillingRepository(env.DB),
   })
 

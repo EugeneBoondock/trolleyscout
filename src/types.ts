@@ -313,5 +313,7 @@ export interface SubscriptionCheckoutResult {
   onsiteUuid?: string
   planId: MemberPlanId
   provider: 'payfast'
+  redirectFields?: Record<string, string>
+  redirectUrl?: string
   status: MemberPlanStatus
 }

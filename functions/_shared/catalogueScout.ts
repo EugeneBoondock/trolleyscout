@@ -314,6 +314,7 @@ async function scanInteractiveCatalogue(
               blob: new Blob([image], {
                 type: response.headers.get('content-type') ?? 'image/webp',
               }),
+              contentType: response.headers.get('content-type') ?? 'image/webp',
               name: `page-${index + 1}.webp`,
               pageUrl,
             }
@@ -332,22 +333,67 @@ async function scanInteractiveCatalogue(
       await Promise.all(
         pages.map(async (page) => {
           try {
-            const output = await ai.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-              image: Array.from(page.bytes),
-              max_tokens: 2400,
-              prompt: CATALOGUE_VISION_PROMPT,
+            const output = await ai.run('@cf/google/gemma-4-26b-a4b-it', {
+              max_completion_tokens: 2400,
+              messages: [
+                {
+                  content: [
+                    { text: CATALOGUE_VISION_PROMPT, type: 'text' },
+                    {
+                      image_url: {
+                        detail: 'high',
+                        url: imageDataUrl(page.bytes, page.contentType),
+                      },
+                      type: 'image_url',
+                    },
+                  ],
+                  role: 'user',
+                },
+              ],
+              response_format: {
+                json_schema: {
+                  name: 'catalogue_deals',
+                  schema: {
+                    additionalProperties: false,
+                    properties: {
+                      deals: {
+                        items: {
+                          additionalProperties: false,
+                          properties: {
+                            previousPrice: { type: 'string' },
+                            price: { type: 'string' },
+                            title: { type: 'string' },
+                          },
+                          required: ['title', 'price'],
+                          type: 'object',
+                        },
+                        maxItems: 30,
+                        type: 'array',
+                      },
+                    },
+                    required: ['deals'],
+                    type: 'object',
+                  },
+                  strict: true,
+                },
+                type: 'json_schema',
+              },
               temperature: 0.1,
             })
 
             return extractVisionCatalogueDeals({
               capturedAt: checkedAt,
               imageUrl: page.pageUrl,
-              markdown: output.response ?? '',
+              markdown: output.choices[0]?.message.content ?? '',
               retailerId: leaflet.retailerId,
               retailerName: leaflet.retailerName,
               sourceUrl: leaflet.documentUrl ?? leaflet.url,
             })
-          } catch {
+          } catch (error) {
+            debugCatalogue(debug, leaflet, {
+              error: error instanceof Error ? error.message : String(error),
+              eventStage: 'page_vision',
+            })
             return []
           }
         }),
@@ -416,6 +462,17 @@ function debugCatalogue(
       ...details,
     }))
   }
+}
+
+function imageDataUrl(bytes: Uint8Array, contentType: string) {
+  let binary = ''
+  const chunkSize = 0x8000
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+
+  return `data:${contentType};base64,${btoa(binary)}`
 }
 
 function catalogueDocumentUrl(leaflet: StoreLeaflet) {

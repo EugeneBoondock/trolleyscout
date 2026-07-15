@@ -17,7 +17,7 @@ import type {
 import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
-import { getPayFastEndpoints } from './payfast'
+import { getPayFastEndpoints, resolvePayFastConfig } from './payfast'
 import {
   createPayFastCheckoutFields,
   requestPayFastOnsitePayment,
@@ -103,14 +103,7 @@ export function getSubscriptionPlans() {
 }
 
 export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {
-  const hasPayFastSecrets = Boolean(
-    env.PAYFAST_MERCHANT_ID &&
-      env.PAYFAST_MERCHANT_KEY &&
-      env.PAYFAST_PASSPHRASE &&
-      (env.PAYFAST_MODE === 'sandbox' || env.PAYFAST_MODE === 'live'),
-  )
-
-  return planId === 'free' ? true : hasPayFastSecrets
+  return planId === 'free' ? true : Boolean(resolvePayFastConfig(env))
 }
 
 export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
@@ -695,15 +688,9 @@ export async function startSubscriptionCheckout(
   }
 
   const billingOption = getPlanBillingOption(planId, billingCycle)
+  const payfast = resolvePayFastConfig(env)
 
-  if (
-    !billingOption ||
-    !isBillingReady(env, planId) ||
-    !env.PAYFAST_MERCHANT_ID ||
-    !env.PAYFAST_MERCHANT_KEY ||
-    !env.PAYFAST_PASSPHRASE ||
-    (env.PAYFAST_MODE !== 'sandbox' && env.PAYFAST_MODE !== 'live')
-  ) {
+  if (!billingOption || !payfast) {
     return {
       billingCycle,
       billingReady: false,
@@ -740,25 +727,28 @@ export async function startSubscriptionCheckout(
   const fields = createPayFastCheckoutFields({
     account,
     attemptId,
-    merchantId: env.PAYFAST_MERCHANT_ID,
-    merchantKey: env.PAYFAST_MERCHANT_KEY,
+    merchantId: payfast.merchantId,
+    merchantKey: payfast.merchantKey,
     notifyUrl: new URL('/api/payfast-itn', origin).toString(),
     option: billingOption,
-    passphrase: env.PAYFAST_PASSPHRASE,
+    passphrase: payfast.passphrase ?? '',
   })
 
   let onsiteUuid: string | undefined
 
   try {
-    onsiteUuid = await requestPayFastOnsitePayment(fields, env.PAYFAST_MODE)
+    onsiteUuid = await requestPayFastOnsitePayment(fields, payfast.mode)
   } catch {
     onsiteUuid = undefined
   }
 
   if (!onsiteUuid) {
+    // Onsite payments may not be enabled on the account. Fall back to the
+    // classic redirect checkout, which works for any PayFast account (including
+    // the public sandbox), so a payment can still be completed.
     await env.DB.prepare(
       `UPDATE billing_attempts
-        SET status = 'provider_error', updated_at = ?
+        SET status = 'pending', updated_at = ?
         WHERE id = ?`,
     )
       .bind(new Date().toISOString(), attemptId)
@@ -767,9 +757,11 @@ export async function startSubscriptionCheckout(
     return {
       billingCycle,
       billingReady: true,
-      message: 'PayFast checkout could not be created. Please try again.',
+      message: 'Redirecting to PayFast to complete your payment.',
       planId,
       provider: 'payfast' as const,
+      redirectFields: Object.fromEntries(fields),
+      redirectUrl: getPayFastEndpoints(payfast.mode).processUrl,
       status: 'checkout_required' as MemberPlanStatus,
     }
   }
@@ -785,7 +777,7 @@ export async function startSubscriptionCheckout(
   return {
     billingCycle,
     billingReady: true,
-    engineUrl: getPayFastEndpoints(env.PAYFAST_MODE).engineUrl,
+    engineUrl: getPayFastEndpoints(payfast.mode).engineUrl,
     message: 'PayFast checkout is ready.',
     onsiteUuid,
     planId,
