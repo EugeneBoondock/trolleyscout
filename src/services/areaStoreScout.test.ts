@@ -46,6 +46,12 @@ describe('candidateNameFromTitle', () => {
     )
   })
 
+  it('strips a trailing "in <Area>" clause', () => {
+    expect(candidateNameFromTitle('Frontline Hyper in Edenvale | July Specials & Deals | Tiendeo')).toBe(
+      'Frontline Hyper',
+    )
+  })
+
   it('rejects category listing titles', () => {
     expect(candidateNameFromTitle('Supermarkets And Hypermarkets in Edenvale, ZA')).toBeUndefined()
     expect(candidateNameFromTitle('10 Best Supermarkets in Edenvale - NetPages')).toBeUndefined()
@@ -124,14 +130,15 @@ describe('extractAreaName', () => {
 describe('mapGeocodedStore', () => {
   const fallback = { area: 'Edenvale', lat: -26.14, lon: 28.15 }
 
-  it('uses precise coordinates and address for a real POI hit', () => {
+  it('uses precise coordinates and address for a POI hit named after the store', () => {
     const payload = {
       features: [
         {
           properties: {
-            formatted: '13 Van Riebeeck Ave, Edenvale',
+            formatted: 'Frontline Hyper, 13 Van Riebeeck Ave, Edenvale',
             lat: -26.1411,
             lon: 28.1522,
+            name: 'Frontline Hyper',
             result_type: 'amenity',
           },
         },
@@ -141,8 +148,30 @@ describe('mapGeocodedStore', () => {
     const store = mapGeocodedStore('Frontline Hyper', payload, fallback)
 
     expect(store.lat).toBe(-26.1411)
-    expect(store.address).toBe('13 Van Riebeeck Ave, Edenvale')
+    expect(store.address).toBe('Frontline Hyper, 13 Van Riebeeck Ave, Edenvale')
     expect(store.placeId).toBe('area-scout:frontline-hyper:edenvale')
+  })
+
+  it('treats a fuzzy match on a different store as approximate', () => {
+    // Geoapify matches "Frontline Hyper Edenvale" to the Checkers Hyper POI.
+    const payload = {
+      features: [
+        {
+          properties: {
+            formatted: 'Checkers Hyper, Hyperama Link Road, Meadowbrook, Germiston',
+            lat: -26.1618,
+            lon: 28.1712,
+            name: 'Checkers Hyper',
+            result_type: 'amenity',
+          },
+        },
+      ],
+    }
+
+    const store = mapGeocodedStore('Frontline Hyper', payload, fallback)
+
+    expect(store.address).toBe('Edenvale (location approximate)')
+    expect(store.lat).toBe(fallback.lat)
   })
 
   it('marks a locality-level hit as approximate', () => {
@@ -153,7 +182,7 @@ describe('mapGeocodedStore', () => {
     const store = mapGeocodedStore('Frontline Hyper', payload, fallback)
 
     expect(store.address).toBe('Edenvale (location approximate)')
-    expect(store.lat).toBe(-26.13)
+    expect(store.lat).toBe(fallback.lat)
   })
 
   it('falls back to the search centre when geocoding finds nothing', () => {

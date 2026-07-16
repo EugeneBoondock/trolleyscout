@@ -229,18 +229,22 @@ export async function shouldScoutStore(
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export async function recordStoreScout(
   env: TrolleyScoutEnv,
   store: NearbyStore,
   promotionCount: number,
   nowMs: number,
+  // Once a day normally; callers pass something shorter after a transient
+  // failure (e.g. the search proxy was rate-limited) so the tile recovers.
+  nextScoutMs: number = DAY_MS,
 ): Promise<void> {
   if (!hasDb(env)) {
     return
   }
 
-  // Re-scout a store's website at most once a day.
-  const nextScoutAt = new Date(nowMs + 24 * 60 * 60 * 1000).toISOString()
+  const nextScoutAt = new Date(nowMs + nextScoutMs).toISOString()
 
   try {
     await env.DB.prepare(

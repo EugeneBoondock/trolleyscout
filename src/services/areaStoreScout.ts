@@ -90,7 +90,9 @@ export function candidateNameFromTitle(title: string): string | undefined {
     .map((part) => part.trim())
     .filter((part) => part && !CHROME_SEGMENT.test(part))
 
-  const name = dashParts[0]
+  // "Frontline Hyper in Edenvale" → "Frontline Hyper"; the area is appended
+  // back at geocoding time anyway.
+  const name = dashParts[0]?.replace(/\s+in\s+[A-Z][a-zA-Z\s]{2,30}$/, '')
 
   if (
     !name ||
@@ -106,7 +108,9 @@ export function candidateNameFromTitle(title: string): string | undefined {
 }
 
 export function buildGeoapifyReverseUrl(lat: number, lon: number, apiKey: string): string {
-  const params = new URLSearchParams({ apiKey, lat: String(lat), lon: String(lon), type: 'city' })
+  // No `type` filter: the full result carries the suburb, which is the area a
+  // shopper would actually search by ("Edenvale", not the metro municipality).
+  const params = new URLSearchParams({ apiKey, lat: String(lat), lon: String(lon) })
   return `https://api.geoapify.com/v1/geocode/reverse?${params.toString()}`
 }
 
@@ -151,15 +155,21 @@ export function mapGeocodedStore(
   const lat = Number(props.lat)
   const lon = Number(props.lon)
   const resultType = firstString(props.result_type)
-  const isPrecise = Boolean(resultType && PRECISE_RESULT_TYPES.has(resultType))
-  const hasCoordinates = isValidCoordinate(lat, lon)
+  // A hit only counts as this store if the matched place is actually named
+  // after it — Geoapify happily fuzzy-matches "Frontline Hyper" to a nearby
+  // "Checkers Hyper" POI otherwise.
+  const brand = brandToken(normalizeName(name))
+  const matchedText = normalizeName(`${firstString(props.name) ?? ''} ${firstString(props.formatted) ?? ''}`)
+  const isPrecise = Boolean(
+    resultType && PRECISE_RESULT_TYPES.has(resultType) && brand && matchedText.includes(brand),
+  )
 
   return {
     address: isPrecise
       ? (firstString(props.formatted) ?? fallback.area)
       : `${fallback.area} (location approximate)`,
-    lat: hasCoordinates ? lat : fallback.lat,
-    lon: hasCoordinates ? lon : fallback.lon,
+    lat: isPrecise && isValidCoordinate(lat, lon) ? lat : fallback.lat,
+    lon: isPrecise && isValidCoordinate(lat, lon) ? lon : fallback.lon,
     name,
     placeId: `area-scout:${slugify(name)}:${slugify(fallback.area)}`,
     retailerId: matchKnownRetailer(name),
@@ -209,6 +219,7 @@ function slugify(value: string): string {
 interface GeocodeFeatureProps {
   lat?: unknown
   lon?: unknown
+  name?: unknown
   formatted?: unknown
   result_type?: unknown
   suburb?: unknown

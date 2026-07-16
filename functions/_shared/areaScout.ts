@@ -14,11 +14,14 @@ import {
   mergeStores,
 } from '../../src/services/areaStoreScout'
 import type { NearbyStore } from '../../src/services/nearbyStores'
-import { buildDuckDuckGoUrl, extractSearchResults } from '../../src/services/webSearch'
 import type { TrolleyScoutEnv } from './env'
 import { recordStoreScout, shouldScoutStore, writeCachedStores } from './locationStore'
+import { searchWeb } from './searchWeb'
 
 const MAX_GEOCODES_PER_RUN = 4
+// After a transient failure (reverse geocode down, search proxy rate-limited)
+// retry within the hour instead of losing the tile for a whole day.
+const RETRY_SOON_MS = 60 * 60 * 1000
 
 export async function scoutAreaStores(
   env: TrolleyScoutEnv,
@@ -42,17 +45,21 @@ export async function scoutAreaStores(
   const area = extractAreaName(await fetchJson(buildGeoapifyReverseUrl(lat, lon, env.GEOAPIFY_API_KEY)))
 
   if (!area) {
-    await recordStoreScout(env, areaMarker, 0, nowMs)
+    await recordStoreScout(env, areaMarker, 0, nowMs, RETRY_SOON_MS)
     return
   }
 
-  const searchHtml = await fetchText(buildDuckDuckGoUrl(buildAreaStoresQuery(area)))
-  const candidates = searchHtml
-    ? extractCandidateStoreNames(
-        extractSearchResults(searchHtml),
-        existingStores.map((store) => store.name),
-      )
-    : []
+  const searchResults = await searchWeb(buildAreaStoresQuery(area), env.JINA_API_KEY)
+
+  if (searchResults.length === 0) {
+    await recordStoreScout(env, areaMarker, 0, nowMs, RETRY_SOON_MS)
+    return
+  }
+
+  const candidates = extractCandidateStoreNames(
+    searchResults,
+    existingStores.map((store) => store.name),
+  )
 
   const found: NearbyStore[] = []
 
@@ -74,23 +81,6 @@ async function fetchJson(url: string): Promise<unknown> {
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' } })
     return response.ok ? await response.json() : undefined
-  } catch {
-    return undefined
-  }
-}
-
-async function fetchText(url: string): Promise<string | undefined> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        accept: 'text/html',
-        'user-agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      },
-      redirect: 'follow',
-    })
-
-    return response.ok ? (await response.text()).slice(0, 1_500_000) : undefined
   } catch {
     return undefined
   }

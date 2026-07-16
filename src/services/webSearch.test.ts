@@ -1,11 +1,52 @@
 import { describe, expect, test } from 'vitest'
 import {
   buildDuckDuckGoUrl,
+  buildJinaReaderUrl,
   buildStoreSpecialsQuery,
   extractSearchResults,
+  extractSearchResultsFromMarkdown,
   extractValidDates,
   pickCatalogueSource,
 } from './webSearch'
+
+// Shape of a real r.jina.ai render of a DuckDuckGo results page: each result
+// has a title link, a favicon image link, and a bare-URL link to the same
+// uddg-encoded target.
+const READER_MARKDOWN = `
+Title: supermarkets Edenvale at DuckDuckGo
+
+[Frontline Hyper in Edenvale | July Specials & Deals | Tiendeo](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.tiendeo.co.za%2Fedenvale%2Ffrontline&rut=7add02f2)
+[![Image 1](https://external-content.duckduckgo.com/ip3/www.tiendeo.co.za.ico)
+[www.tiendeo.co.za/edenvale/frontline](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.tiendeo.co.za%2Fedenvale%2Ffrontline&rut=7add02f2)
+[Home - Devland Cash and Carry](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.devland.co.za%2F&rut=409c4791)
+[Frontline Hyper Edenvale | Germiston - Facebook](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.facebook.com%2Ffrontlinehyperedenvale%2F&rut=3d57bf01)
+`
+
+describe('extractSearchResultsFromMarkdown', () => {
+  test('decodes uddg targets and keeps one entry per URL with the real title', () => {
+    const results = extractSearchResultsFromMarkdown(READER_MARKDOWN)
+
+    expect(results[0]).toEqual({
+      title: 'Frontline Hyper in Edenvale | July Specials & Deals | Tiendeo',
+      url: 'https://www.tiendeo.co.za/edenvale/frontline',
+    })
+    expect(results.filter((r) => r.url.includes('tiendeo'))).toHaveLength(1)
+  })
+
+  test('drops junk hosts and favicon image links', () => {
+    const results = extractSearchResultsFromMarkdown(READER_MARKDOWN)
+
+    expect(results.some((r) => r.url.includes('facebook'))).toBe(false)
+    expect(results.some((r) => r.url.includes('external-content'))).toBe(false)
+    expect(results.map((r) => r.title)).toContain('Home - Devland Cash and Carry')
+  })
+
+  test('builds a reader-proxy URL', () => {
+    expect(buildJinaReaderUrl('https://html.duckduckgo.com/html/?q=x')).toBe(
+      'https://r.jina.ai/https://html.duckduckgo.com/html/?q=x',
+    )
+  })
+})
 
 describe('buildDuckDuckGoUrl / query', () => {
   test('builds a keyless HTML search URL', () => {

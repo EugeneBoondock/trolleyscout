@@ -1,12 +1,11 @@
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import {
-  buildDuckDuckGoUrl,
   buildStoreSpecialsQuery,
-  extractSearchResults,
   extractValidDates,
   pickCatalogueSource,
 } from '../../src/services/webSearch'
+import { searchWeb } from './searchWeb'
 import type { StoreLeaflet } from '../../src/types'
 import type { TrolleyScoutEnv } from './env'
 import {
@@ -70,7 +69,7 @@ export async function scoutNearbyStores(
     let promotions = store.website ? await scoutStoreWebsite(store, nowMs) : []
 
     if (promotions.length === 0) {
-      promotions = await searchStoreCatalogue(store, nowMs)
+      promotions = await searchStoreCatalogue(store, nowMs, env.JINA_API_KEY)
     }
 
     await saveStorePromotions(env, promotions, nowMs)
@@ -81,15 +80,15 @@ export async function scoutNearbyStores(
 // Searches the open web for a store's current catalogue and turns the best
 // result into a promotion. Reads the found page (when it is not a PDF) to pick
 // up any printed valid-until date so it still expires correctly.
-async function searchStoreCatalogue(store: NearbyStore, nowMs: number): Promise<StorePromotion[]> {
+async function searchStoreCatalogue(
+  store: NearbyStore,
+  nowMs: number,
+  jinaApiKey?: string,
+): Promise<StorePromotion[]> {
   const area = store.address ? cityFromAddress(store.address) : undefined
-  const searchHtml = await fetchText(buildDuckDuckGoUrl(buildStoreSpecialsQuery(store.name, area)))
-
-  if (!searchHtml) {
-    return []
-  }
-
-  const source = pickCatalogueSource(extractSearchResults(searchHtml), store.name)
+  // searchWeb falls back to a reader proxy when DuckDuckGo blocks Worker IPs.
+  const results = await searchWeb(buildStoreSpecialsQuery(store.name, area), jinaApiKey)
+  const source = pickCatalogueSource(results, store.name)
 
   if (!source) {
     return []

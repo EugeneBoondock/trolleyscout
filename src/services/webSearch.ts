@@ -35,6 +35,45 @@ const JUNK_HOSTS = [
   'duckduckgo.com',
 ]
 
+// DuckDuckGo blocks direct fetches from datacenter IPs (Workers), so we retry
+// through the r.jina.ai reader proxy, which fetches from its own network and
+// returns the page as markdown. Keyless; our volume is a handful a day.
+export function buildJinaReaderUrl(url: string): string {
+  return `https://r.jina.ai/${url}`
+}
+
+// Parses search results out of a reader-proxied DDG page. Result links look
+// like "[Title](https://duckduckgo.com/l/?uddg=<encoded>&rut=…)"; every result
+// also has an image link and a bare-URL link pointing at the same target,
+// which dedupe (first wins) and the URL-shaped-title check discard.
+export function extractSearchResultsFromMarkdown(markdown: string, limit = 12): SearchResult[] {
+  const results: SearchResult[] = []
+  const seen = new Set<string>()
+  const pattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(markdown)) !== null && results.length < limit) {
+    const title = stripTags(match[1])
+    const url = decodeDuckDuckGoHref(match[2])
+
+    if (
+      !url ||
+      seen.has(url) ||
+      isJunkHost(url) ||
+      !title ||
+      title.startsWith('![') ||
+      /^(?:https?:\/\/|www\.)/i.test(title)
+    ) {
+      continue
+    }
+
+    seen.add(url)
+    results.push({ title, url })
+  }
+
+  return results
+}
+
 export function extractSearchResults(html: string, limit = 12): SearchResult[] {
   const results: SearchResult[] = []
   const seen = new Set<string>()
