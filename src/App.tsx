@@ -15,6 +15,7 @@ import {
   MagnifyingGlass,
   Minus,
   MoonStars,
+  NavigationArrow,
   Plus,
   ReceiptX,
   ShieldCheck,
@@ -107,10 +108,12 @@ import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { MoneyHelpView } from './views/MoneyHelpView'
 import { ToolkitView } from './views/ToolkitView'
+import { NearMeView } from './views/NearMeView'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveView =
   | 'home'
+  | 'near'
   | 'help'
   | 'tools'
   | 'sources'
@@ -121,6 +124,7 @@ type ActiveView =
   | 'rules'
 type MemberView =
   | 'dashboard'
+  | 'near'
   | 'help'
   | 'tools'
   | 'sources'
@@ -139,6 +143,7 @@ type MemberView =
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Home', value: 'home' },
   { label: 'Deals', value: 'discovery' },
+  { label: 'Near me', value: 'near' },
   { label: 'Money help', value: 'help' },
   { label: 'Tools', value: 'tools' },
   { label: 'Stores', value: 'sources' },
@@ -157,6 +162,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
+  { icon: <NavigationArrow size={20} />, label: 'Near me', value: 'near' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
   { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
@@ -997,6 +1003,8 @@ function App() {
           />
         )}
 
+        {activeView === 'near' && <NearMeView />}
+
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => setActiveView('sources')} />}
 
         {activeView === 'tools' && <ToolkitView />}
@@ -1449,6 +1457,8 @@ function MemberShell({
             verifiedOfferCount={offerState.data.summary.verifiedOfferCount}
           />
         )}
+
+        {activeView === 'near' && <NearMeView />}
 
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => onSetView('sources')} />}
 

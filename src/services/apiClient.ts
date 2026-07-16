@@ -43,6 +43,7 @@ import type {
   SavedDeal,
   SavedDealDraft,
   SourceKind,
+  StoreLeaflet,
   SubscriptionCheckoutRequest,
   VerifiedOffer,
 } from '../types'
@@ -801,6 +802,80 @@ export async function startSubscriptionCheckout(
       },
       status: 'error',
     }
+  }
+}
+
+export interface NearbyStoreResult {
+  placeId: string
+  name: string
+  address?: string
+  lat: number
+  lon: number
+  website?: string
+  distanceM?: number
+  retailerId?: string
+  deals: DiscoveredDeal[]
+  leaflets: StoreLeaflet[]
+  promotions: Array<{
+    id: string
+    kind: 'deal' | 'catalogue'
+    title: string
+    priceText?: string
+    previousPriceText?: string
+    savingText?: string
+    sourceUrl: string
+    productUrl?: string
+    imageUrl?: string
+    validFrom?: string
+    validTo?: string
+  }>
+}
+
+export interface NearbyStoresState {
+  status: 'idle' | 'locating' | 'loading' | 'ready' | 'error'
+  message: string
+  servedFrom?: 'cache' | 'live'
+  stores: NearbyStoreResult[]
+  summary?: { storeCount: number; knownChainCount: number; withDealsCount: number }
+}
+
+export async function loadNearbyStores(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal,
+): Promise<NearbyStoresState> {
+  try {
+    const response = await fetch(
+      `/api/nearby-stores?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      { headers: { accept: 'application/json' }, signal },
+    )
+
+    if (!response.ok) {
+      return { message: 'Could not find stores near you.', status: 'error', stores: [] }
+    }
+
+    const envelope = (await response.json()) as {
+      data: {
+        servedFrom?: 'cache' | 'live'
+        stores: NearbyStoreResult[]
+        summary?: NearbyStoresState['summary']
+        message?: string
+      }
+    }
+
+    return {
+      message: envelope.data.message ?? 'Stores near you.',
+      servedFrom: envelope.data.servedFrom,
+      status: 'ready',
+      stores: envelope.data.stores ?? [],
+      summary: envelope.data.summary,
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return { message: 'Store discovery is unavailable.', status: 'error', stores: [] }
   }
 }
 

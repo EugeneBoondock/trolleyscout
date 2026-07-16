@@ -1,5 +1,6 @@
 import { runCatalogueScout } from '../functions/_shared/catalogueScout'
 import type { TrolleyScoutEnv } from '../functions/_shared/env'
+import { purgeExpired } from '../functions/_shared/locationStore'
 import type { DiscoveryRun } from '../src/types'
 
 export interface ScoutEnv extends TrolleyScoutEnv {
@@ -30,9 +31,14 @@ export async function runScheduledScout(
   const discovery = envelope.data
   const catalogue = await runCatalogueScout(env, discovery?.leaflets ?? [])
 
+  // Enforce the expiry rule: remove any store promotions and location caches
+  // whose date has passed, so no shopper is ever shown an out-of-date special.
+  const expiredRemoved = await purgeExpired(env, new Date().toISOString())
+
   return {
     catalogueDealCount: catalogue.dealCount,
     discoveredLeafletCount: catalogue.discoveredLeafletCount,
+    expiredRemoved,
     refreshedDealCount: discovery?.summary.foundDealCount ?? 0,
     refreshedSourceCount: discovery?.summary.checkedSourceCount ?? 0,
     scannedDocumentCount: catalogue.scannedDocumentCount,

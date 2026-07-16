@@ -2,6 +2,7 @@ export interface TrolleyScoutEnv {
   AI?: Ai
   DB?: D1Database
   APP_URL?: string
+  GEOAPIFY_API_KEY?: string
   PAYFAST_MERCHANT_ID?: string
   PAYFAST_MERCHANT_KEY?: string
   PAYFAST_MODE?: 'sandbox' | 'live'
