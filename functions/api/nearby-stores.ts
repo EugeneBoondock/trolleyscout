@@ -17,7 +17,10 @@ import {
 import { scoutNearbyStores } from '../_shared/storeScout'
 import { json, methodNotAllowed } from '../_shared/respond'
 
+// Public, cookieless data — safe to allow any origin so the mobile app (and
+// any future client) can read it cross-origin.
 const privateHeaders = {
+  'access-control-allow-origin': '*',
   'cache-control': 'private, no-store',
 }
 

@@ -37,7 +37,9 @@ import {
 import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
+// Public, cookieless data — allow any origin so the mobile app can read it.
 const privateHeaders = {
+  'access-control-allow-origin': '*',
   'cache-control': 'private, no-store',
 }
 
