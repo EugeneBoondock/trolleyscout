@@ -53,6 +53,7 @@ import {
   getInitialSavedSourceState,
   getInitialSubscriptionState,
   loadMemberSession,
+  changeAccountPassword,
   loadAdminOverview,
   loadDiscovery,
   loadBasket,
@@ -64,6 +65,7 @@ import {
   saveDealForMember,
   startMemberSession,
   startSubscriptionCheckout,
+  updateAccountProfile,
   updateBasketItemForMember,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
@@ -2239,12 +2241,141 @@ function MemberProfilePanel({
         <ProfileRow label="Saved sources" value={`${savedSourceCount}`} />
         <ProfileRow label="Member since" value={account.createdAt.slice(0, 10)} />
       </div>
+      <AccountSettings account={account} />
       <DealLearningControls />
       <button className="ghost-button" onClick={onSignOut} type="button">
         <SignOut size={18} />
         Sign out
       </button>
     </section>
+  )
+}
+
+// Account management: change your display name and set your own password.
+// The password never leaves this form — it goes straight to /api/account,
+// which hashes it server-side.
+function AccountSettings({ account }: { account: NonNullable<MemberSession['account']> }) {
+  const [displayName, setDisplayName] = useState(account.displayName)
+  const [isSavingName, setIsSavingName] = useState(false)
+  const [nameNotice, setNameNotice] = useState<string>()
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [passwordNotice, setPasswordNotice] = useState<string>()
+
+  async function saveName() {
+    setIsSavingName(true)
+    setNameNotice(undefined)
+
+    try {
+      const result = await updateAccountProfile(displayName)
+      setNameNotice(result.message)
+    } finally {
+      setIsSavingName(false)
+    }
+  }
+
+  async function savePassword() {
+    if (newPassword !== confirmPassword) {
+      setPasswordNotice('The new passwords do not match.')
+      return
+    }
+
+    setIsSavingPassword(true)
+    setPasswordNotice(undefined)
+
+    try {
+      const result = await changeAccountPassword(currentPassword, newPassword)
+      setPasswordNotice(result.message)
+
+      if (result.ok) {
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+      }
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }
+
+  return (
+    <div className="account-settings">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h2>Your details</h2>
+        </div>
+      </div>
+
+      <form
+        className="account-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void saveName()
+        }}
+      >
+        <label className="field">
+          Display name
+          <input
+            autoComplete="name"
+            onChange={(event) => setDisplayName(event.target.value)}
+            value={displayName}
+          />
+        </label>
+        <button className="ghost-button" disabled={isSavingName} type="submit">
+          {isSavingName ? 'Saving' : 'Save name'}
+        </button>
+        {nameNotice && <p className="account-notice" role="status">{nameNotice}</p>}
+      </form>
+
+      <form
+        className="account-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void savePassword()
+        }}
+      >
+        <label className="field">
+          Current password
+          <input
+            autoComplete="current-password"
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+            type="password"
+            value={currentPassword}
+          />
+        </label>
+        <label className="field">
+          New password
+          <input
+            autoComplete="new-password"
+            minLength={8}
+            onChange={(event) => setNewPassword(event.target.value)}
+            placeholder="At least 8 characters"
+            required
+            type="password"
+            value={newPassword}
+          />
+        </label>
+        <label className="field">
+          Confirm new password
+          <input
+            autoComplete="new-password"
+            minLength={8}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            required
+            type="password"
+            value={confirmPassword}
+          />
+        </label>
+        <button className="ghost-button" disabled={isSavingPassword} type="submit">
+          {isSavingPassword ? 'Saving' : 'Change password'}
+        </button>
+        {passwordNotice && <p className="account-notice" role="status">{passwordNotice}</p>}
+      </form>
+    </div>
   )
 }
 
