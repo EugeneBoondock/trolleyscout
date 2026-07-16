@@ -1,10 +1,22 @@
 import { retailers } from '../data/retailers'
 import type { RetailerId } from '../types'
 
-// Grocery-ish Geoapify categories. Supermarkets first, then value grocers,
-// wholesalers, and marketplaces that also run specials.
-export const STORE_CATEGORIES =
-  'commercial.supermarket,commercial.marketplace,commercial.convenience,commercial.department_store'
+// Grocery-ish Geoapify categories: supermarkets, grocers, marketplaces,
+// department stores, chemists (Clicks/Dis-Chem), and general commercial (to
+// catch independents like Frontline that OSM tags loosely).
+export const STORE_CATEGORIES = [
+  'commercial.supermarket',
+  'commercial.marketplace',
+  'commercial.convenience',
+  'commercial.department_store',
+  'commercial.health_and_beauty.pharmacy',
+  'commercial.food_and_drink',
+].join(',')
+
+// Names that get tagged commercial but are not stores a shopper wants specials
+// from (tax office, banks, petrol-station kiosks).
+const NON_STORE_NAMES =
+  /\b(sars|home affairs|municipality|bank|absa|fnb|nedbank|capitec|standard bank|post office|clinic|hospital|school|church)\b/i
 
 export interface NearbyStore {
   placeId: string
@@ -71,7 +83,7 @@ interface GeoapifyFeature {
   }
 }
 
-export function mapGeoapifyStores(payload: unknown, limit = 24): NearbyStore[] {
+export function mapGeoapifyStores(payload: unknown, limit = 40): NearbyStore[] {
   const features = (payload as { features?: unknown })?.features
 
   if (!Array.isArray(features)) {
@@ -92,7 +104,7 @@ export function mapGeoapifyStores(payload: unknown, limit = 24): NearbyStore[] {
     const lat = Number(props.lat)
     const lon = Number(props.lon)
 
-    if (!name || !isValidCoordinate(lat, lon)) {
+    if (!name || !isValidCoordinate(lat, lon) || NON_STORE_NAMES.test(name)) {
       continue
     }
 

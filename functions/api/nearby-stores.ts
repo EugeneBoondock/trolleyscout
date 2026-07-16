@@ -90,9 +90,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     promotions: promotionsByPlace.get(store.placeId) ?? [],
   }))
 
-  // In the background, scout independent stores (unknown chains with a website)
-  // whose promotions we do not yet have — saved globally for the next visitor.
-  waitUntil(scoutNearbyStores(env, stores, nowMs))
+  // In the background, scout every store that has nothing to show yet — an
+  // independent OR a big chain we have no live feed for — by finding its
+  // catalogue on the web. Saved globally so the next visitor gets it instantly.
+  const storesNeedingDeals = results
+    .filter((store) => store.deals.length === 0 && store.leaflets.length === 0 && store.promotions.length === 0)
+    .map(({ deals: _deals, leaflets: _leaflets, promotions: _promotions, ...store }) => store)
+
+  waitUntil(scoutNearbyStores(env, storesNeedingDeals, nowMs))
 
   return json(
     {

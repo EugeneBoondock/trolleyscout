@@ -98,4 +98,18 @@ describe('mapGeoapifyStores', () => {
   test('returns empty for a non-feature payload', () => {
     expect(mapGeoapifyStores({ error: 'nope' })).toEqual([])
   })
+
+  test('filters out non-store commercial places like SARS and banks', () => {
+    const payload = {
+      features: [
+        { properties: { place_id: 's', name: 'SARS', lat: -26.13, lon: 28.14 } },
+        { properties: { place_id: 'b', name: 'Absa Bank', lat: -26.13, lon: 28.14 } },
+        { properties: { place_id: 'f', name: 'Frontline Hyper', lat: -26.13, lon: 28.15 } },
+      ],
+    }
+
+    const stores = mapGeoapifyStores(payload)
+
+    expect(stores.map((store) => store.name)).toEqual(['Frontline Hyper'])
+  })
 })
