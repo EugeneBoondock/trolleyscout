@@ -27,19 +27,31 @@ const SANDBOX_PASSPHRASE = 'jt7NOE43FZPn'
 // PAYFAST_MODE is unset) it falls back to the public sandbox merchant so the
 // flow is testable immediately. Passphrase is optional — PayFast accounts can
 // run without one, so we never block checkout on a missing passphrase.
+// A PayFast merchant id is numeric and the key is alphanumeric. Terminals can
+// silently capture a control character instead of a pasted value (a Ctrl+V
+// keystroke arrives as \x16), which would otherwise send real shoppers to a
+// broken PayFast page. Reject anything that is not a plausible credential.
+function isPlausibleMerchantId(value: string | undefined): value is string {
+  return typeof value === 'string' && /^\d{5,20}$/.test(value.trim())
+}
+
+function isPlausibleMerchantKey(value: string | undefined): value is string {
+  return typeof value === 'string' && /^[a-z0-9]{8,40}$/i.test(value.trim())
+}
+
 export function resolvePayFastConfig(env: PayFastEnvLike): PayFastConfig | undefined {
   const mode: PayFastMode = env.PAYFAST_MODE === 'live' ? 'live' : 'sandbox'
 
   if (mode === 'live') {
-    if (!env.PAYFAST_MERCHANT_ID || !env.PAYFAST_MERCHANT_KEY) {
+    if (!isPlausibleMerchantId(env.PAYFAST_MERCHANT_ID) || !isPlausibleMerchantKey(env.PAYFAST_MERCHANT_KEY)) {
       return undefined
     }
 
     return {
-      merchantId: env.PAYFAST_MERCHANT_ID,
-      merchantKey: env.PAYFAST_MERCHANT_KEY,
+      merchantId: env.PAYFAST_MERCHANT_ID.trim(),
+      merchantKey: env.PAYFAST_MERCHANT_KEY.trim(),
       mode,
-      passphrase: env.PAYFAST_PASSPHRASE || undefined,
+      passphrase: env.PAYFAST_PASSPHRASE?.trim() || undefined,
     }
   }
 

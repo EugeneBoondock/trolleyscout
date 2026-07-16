@@ -61,14 +61,51 @@ describe('payfast', () => {
     })
   })
 
+  // A terminal can capture the Ctrl+V keystroke (\x16) instead of the pasted
+  // text, so a secret can hold one control character. Live mode must refuse
+  // that rather than send shoppers to PayFast with a junk merchant id.
+  it('refuses live credentials that are not plausible', () => {
+    expect(
+      resolvePayFastConfig({
+        PAYFAST_MODE: 'live',
+        PAYFAST_MERCHANT_ID: '\x16',
+        PAYFAST_MERCHANT_KEY: '\x16',
+      }),
+    ).toBeUndefined()
+
+    expect(
+      resolvePayFastConfig({
+        PAYFAST_MODE: 'live',
+        PAYFAST_MERCHANT_ID: 'not-numeric',
+        PAYFAST_MERCHANT_KEY: 'y0xyozwvmdwr1',
+      }),
+    ).toBeUndefined()
+  })
+
+  it('accepts and trims real live credentials', () => {
+    expect(
+      resolvePayFastConfig({
+        PAYFAST_MODE: 'live',
+        PAYFAST_MERCHANT_ID: ' 34909133 ',
+        PAYFAST_MERCHANT_KEY: ' y0xyozwvmdwr1 ',
+        PAYFAST_PASSPHRASE: ' secret-phrase ',
+      }),
+    ).toEqual({
+      merchantId: '34909133',
+      merchantKey: 'y0xyozwvmdwr1',
+      mode: 'live',
+      passphrase: 'secret-phrase',
+    })
+  })
+
   it('requires real credentials in live mode', () => {
     expect(resolvePayFastConfig({ PAYFAST_MODE: 'live' })).toBeUndefined()
     expect(
       resolvePayFastConfig({
         PAYFAST_MODE: 'live',
-        PAYFAST_MERCHANT_ID: '123',
-        PAYFAST_MERCHANT_KEY: 'abc',
+        PAYFAST_MERCHANT_ID: '10012345',
+        PAYFAST_MERCHANT_KEY: 'abcdef123456',
       }),
-    ).toMatchObject({ merchantId: '123', mode: 'live' })
+    ).toMatchObject({ merchantId: '10012345', mode: 'live' })
   })
 })
