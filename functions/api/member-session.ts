@@ -1,10 +1,11 @@
 import type { MemberSessionDraft } from '../../src/types'
 import {
   clearMemberCookie,
-  createMemberSession,
   deleteMemberSession,
   getMemberSession,
+  logInMember,
   setMemberCookie,
+  signUpMember,
 } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
@@ -44,12 +45,20 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    const result = await createMemberSession(env, draft)
+    // "signup" creates the account with a password; "login" verifies one.
+    const result =
+      draft.intent === 'signup'
+        ? await signUpMember(env, {
+            displayName: draft.displayName ?? '',
+            email: draft.email ?? '',
+            password: draft.password ?? '',
+          })
+        : await logInMember(env, { email: draft.email ?? '', password: draft.password ?? '' })
 
-    if (!result.account || !result.token) {
+    if (!('account' in result)) {
       return json(
         {
-          issues: result.issues ?? ['Member session could not be started.'],
+          issues: result.issues,
           session: {
             isAuthenticated: false,
           },

@@ -25,9 +25,11 @@ import type {
   SubscriptionResponse,
 } from '../api/contracts'
 import type {
+  AdminOverview,
   Basket,
   BasketItemDraft,
   BasketQuantityDraft,
+  MemberAccount,
   MemberPlan,
   MemberSession,
   MemberSessionDraft,
@@ -799,6 +801,63 @@ export async function startSubscriptionCheckout(
       },
       status: 'error',
     }
+  }
+}
+
+export async function loadAdminOverview(
+  signal?: AbortSignal,
+): Promise<{ data?: AdminOverview; message: string; status: 'ready' | 'error' }> {
+  try {
+    const response = await fetch('/api/admin', {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+
+    if (!response.ok) {
+      return {
+        message: response.status === 403 ? 'Admin access is required.' : 'Admin data unavailable.',
+        status: 'error',
+      }
+    }
+
+    const envelope = (await response.json()) as { data: AdminOverview }
+
+    return { data: envelope.data, message: 'Admin data loaded.', status: 'ready' }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return { message: 'Admin data unavailable.', status: 'error' }
+  }
+}
+
+export async function updateAccountProfile(displayName: string) {
+  return postAccount({ action: 'profile', displayName })
+}
+
+export async function changeAccountPassword(currentPassword: string, newPassword: string) {
+  return postAccount({ action: 'password', currentPassword, newPassword })
+}
+
+async function postAccount(body: Record<string, string>) {
+  try {
+    const response = await fetch('/api/account', {
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { account?: MemberAccount; issues?: string[]; message?: string }
+    }
+
+    return {
+      account: envelope.data?.account,
+      message: envelope.data?.message ?? envelope.data?.issues?.[0] ?? 'Could not update account.',
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Account API unavailable.', ok: false }
   }
 }
 

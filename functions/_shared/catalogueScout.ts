@@ -336,7 +336,7 @@ async function scanInteractiveCatalogue(
 
     const visionDeals = (
       await Promise.all(
-        pages.map(async (page) => {
+        pages.map(async (page, pageIndex) => {
           try {
             // Mistral Small 3.1 is a vision model that emits the structured
             // JSON directly. (Gemma 4 is a reasoning model that spends the whole
@@ -400,6 +400,7 @@ async function scanInteractiveCatalogue(
               capturedAt: checkedAt,
               imageUrl: page.pageUrl,
               markdown: output.choices?.[0]?.message?.content ?? '',
+              pageNumber: pageIndex + 1,
               retailerId: leaflet.retailerId,
               retailerName: leaflet.retailerName,
               sourceUrl: leaflet.documentUrl ?? leaflet.url,

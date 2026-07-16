@@ -4,6 +4,9 @@ export interface CatalogueDealInput {
   capturedAt: string
   imageUrl?: string
   markdown: string
+  // 1-based catalogue page these deals were read from, so the board can list
+  // them in the order a shopper would page through the leaflet.
+  pageNumber?: number
   retailerId: DiscoveredDeal['retailerId']
   retailerName: string
   sourceUrl: string
@@ -79,6 +82,7 @@ export function extractCatalogueDeals(
       evidenceText: line,
       id: `${input.retailerId}-catalogue-${hashString(key)}`,
       imageUrl: input.imageUrl,
+      pageNumber: input.pageNumber,
       previousPriceText,
       priceText,
       productUrl: input.sourceUrl,
@@ -139,6 +143,7 @@ export function extractVisionCatalogueDeals(
       evidenceText: JSON.stringify(item),
       id: `${input.retailerId}-catalogue-${hashString(key)}`,
       imageUrl: input.imageUrl,
+      pageNumber: input.pageNumber,
       previousPriceText,
       priceText,
       productUrl: input.sourceUrl,

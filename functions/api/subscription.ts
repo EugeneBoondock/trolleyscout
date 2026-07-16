@@ -99,8 +99,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       body.planId,
       body.billingCycle,
     )
+    // A checkout is successful when the plan is free, PayFast returned an
+    // onsite session, or we fell back to the classic redirect checkout.
+    // Only a genuine provider failure (billing configured but no usable
+    // checkout at all) is a 502; unconfigured billing is a 503.
+    const hasUsableCheckout = Boolean(checkout.onsiteUuid || checkout.redirectUrl)
     const status =
-      body.planId === 'free' || checkout.onsiteUuid
+      body.planId === 'free' || hasUsableCheckout
         ? 200
         : checkout.billingReady
           ? 502

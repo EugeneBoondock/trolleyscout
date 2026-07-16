@@ -27,6 +27,7 @@ import {
   Trash,
   UserCircle,
   Wallet,
+  X,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
@@ -52,6 +53,7 @@ import {
   getInitialSavedSourceState,
   getInitialSubscriptionState,
   loadMemberSession,
+  loadAdminOverview,
   loadDiscovery,
   loadBasket,
   loadSavedDeals,
@@ -85,6 +87,7 @@ import type {
   Retailer,
   SourceKind,
   DiscoveredDeal,
+  AdminOverview,
   StoreLeaflet,
   VerifiedOffer,
 } from './types'
@@ -128,6 +131,7 @@ type MemberView =
   | 'scanner'
   | 'subscription'
   | 'profile'
+  | 'admin'
   | 'rules'
 
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
@@ -161,6 +165,13 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Info size={20} />, label: 'About & help', value: 'about' },
   { icon: <ClipboardText size={20} />, label: 'Rules', value: 'rules' },
 ]
+
+// Only rendered for accounts with the admin role.
+const adminViewOption: { icon: ReactNode; label: string; value: MemberView } = {
+  icon: <ShieldCheck size={20} />,
+  label: 'Admin console',
+  value: 'admin',
+}
 
 const sourceLabels: Record<SourceKind | 'all', string> = {
   all: 'All',
@@ -212,6 +223,8 @@ function App() {
   const [memberDraft, setMemberDraft] = useState<MemberSessionDraft>({
     displayName: '',
     email: '',
+    intent: 'signup',
+    password: '',
   })
   const [memberNotice, setMemberNotice] = useState<string | undefined>()
   const [isStartingMemberSession, setIsStartingMemberSession] = useState(false)
@@ -1113,6 +1126,8 @@ function MemberAuthScreen({
   onUpdate: (field: keyof MemberSessionDraft, value: string) => void
   theme: ThemeMode
 }) {
+  const isSignup = draft.intent !== 'login'
+
   return (
     <div className="app-shell auth-shell">
       <header className="topbar">
@@ -1135,10 +1150,11 @@ function MemberAuthScreen({
         <section className="auth-panel" aria-label="Member sign in">
           <div className="auth-copy">
             <p className="eyebrow">Member workspace</p>
-            <h1>Trolley Scout account</h1>
+            <h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1>
             <p>
-              Start a member session to save official source pages, manage plan state, and use the
-              dashboard view.
+              {isSignup
+                ? 'Sign up free to save deals and sources, plan a basket, and keep your lists across devices. No card needed.'
+                : 'Log in to your saved deals, sources, and basket.'}
             </p>
           </div>
 
@@ -1149,23 +1165,60 @@ function MemberAuthScreen({
               void onSubmit()
             }}
           >
-            <label className="field">
-              Display name
-              <input
-                autoComplete="name"
-                onChange={(event) => onUpdate('displayName', event.target.value)}
-                placeholder="Your name"
-                value={draft.displayName}
-              />
-            </label>
+            <div className="auth-toggle" role="tablist" aria-label="Sign up or log in">
+              <button
+                aria-selected={isSignup}
+                className={clsx('auth-toggle-button', isSignup && 'is-active')}
+                onClick={() => onUpdate('intent', 'signup')}
+                role="tab"
+                type="button"
+              >
+                Sign up
+              </button>
+              <button
+                aria-selected={!isSignup}
+                className={clsx('auth-toggle-button', !isSignup && 'is-active')}
+                onClick={() => onUpdate('intent', 'login')}
+                role="tab"
+                type="button"
+              >
+                Log in
+              </button>
+            </div>
+
+            {isSignup && (
+              <label className="field">
+                Display name
+                <input
+                  autoComplete="name"
+                  onChange={(event) => onUpdate('displayName', event.target.value)}
+                  placeholder="Your name"
+                  required
+                  value={draft.displayName}
+                />
+              </label>
+            )}
             <label className="field">
               Email
               <input
                 autoComplete="email"
                 onChange={(event) => onUpdate('email', event.target.value)}
                 placeholder="you@example.com"
+                required
                 type="email"
                 value={draft.email}
+              />
+            </label>
+            <label className="field">
+              Password
+              <input
+                autoComplete={isSignup ? 'new-password' : 'current-password'}
+                minLength={8}
+                onChange={(event) => onUpdate('password', event.target.value)}
+                placeholder={isSignup ? 'At least 8 characters' : 'Your password'}
+                required
+                type="password"
+                value={draft.password ?? ''}
               />
             </label>
             {(notice || memberState.status === 'error') && (
@@ -1174,7 +1227,7 @@ function MemberAuthScreen({
             <div className="scanner-actions">
               <button className="primary-button" disabled={isStarting} type="submit">
                 <UserCircle size={18} />
-                {isStarting ? 'Starting' : 'Start session'}
+                {isStarting ? 'Please wait' : isSignup ? 'Create account' : 'Log in'}
               </button>
               <button className="ghost-button" onClick={onBack} type="button">
                 Back
@@ -1358,7 +1411,10 @@ function MemberShell({
           </div>
         </button>
         <nav className="member-nav" aria-label="Member navigation">
-          {memberViewOptions.map((item) => (
+          {(account.role === 'admin'
+            ? [...memberViewOptions, adminViewOption]
+            : memberViewOptions
+          ).map((item) => (
             <button
               className={clsx('member-nav-button', activeView === item.value && 'is-active')}
               key={item.value}
@@ -1518,6 +1574,8 @@ function MemberShell({
             savedSourceCount={savedSourceCount}
           />
         )}
+
+        {activeView === 'admin' && account.role === 'admin' && <AdminConsole />}
 
         {activeView === 'rules' && <RulesPanel />}
       </main>
@@ -2366,7 +2424,132 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
   return 'Active'
 }
 
+// Admin-only operations view. The API enforces the role server-side; this
+// component only renders what that endpoint returns.
+function AdminConsole() {
+  const [overview, setOverview] = useState<AdminOverview | undefined>()
+  const [message, setMessage] = useState('Loading admin data.')
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    loadAdminOverview(controller.signal)
+      .then((result) => {
+        setOverview(result.data)
+        setMessage(result.data ? '' : result.message)
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
+
+    return () => controller.abort()
+  }, [])
+
+  return (
+    <section className="admin-console" aria-label="Admin console">
+      <div className="member-section-head">
+        <div>
+          <p className="eyebrow">Admin</p>
+          <h1>Console</h1>
+          <p className="section-lede">Accounts, plans, and scout health.</p>
+        </div>
+      </div>
+
+      {message && <div className="write-notice" role="status">{message}</div>}
+
+      {overview && (
+        <>
+          <div className="member-metrics">
+            <Metric
+              icon={<UserCircle size={22} />}
+              label="Accounts"
+              value={`${overview.summary.accountCount}`}
+            />
+            <Metric icon={<Tag size={22} />} label="Stored deals" value={`${overview.scout.dealCount}`} />
+            <Metric
+              icon={<Storefront size={22} />}
+              label="Leaflets"
+              value={`${overview.scout.leafletCount}`}
+            />
+            <Metric
+              icon={<ArrowClockwise size={22} />}
+              label="Last scout"
+              value={
+                overview.scout.lastScoutedAt
+                  ? new Date(overview.scout.lastScoutedAt).toLocaleString('en-ZA', {
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      month: 'short',
+                    })
+                  : 'Never'
+              }
+            />
+          </div>
+
+          <div className="admin-plans">
+            {Object.entries(overview.summary.planCounts).map(([planId, total]) => (
+              <span className="admin-plan-tag" key={planId}>
+                {planId}: <strong>{total}</strong>
+              </span>
+            ))}
+          </div>
+
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Members</p>
+              <h2>Recent accounts</h2>
+            </div>
+          </div>
+
+          <div className="admin-table" role="table" aria-label="Member accounts">
+            <div className="admin-row admin-row-head" role="row">
+              <span role="columnheader">Member</span>
+              <span role="columnheader">Plan</span>
+              <span role="columnheader">Role</span>
+              <span role="columnheader">Joined</span>
+            </div>
+            {overview.accounts.map((member) => (
+              <div className="admin-row" key={member.id} role="row">
+                <span role="cell">
+                  <strong>{member.displayName}</strong>
+                  <small>{member.email}</small>
+                </span>
+                <span role="cell">{member.planName}</span>
+                <span role="cell">
+                  {member.role === 'admin' ? <mark>admin</mark> : 'member'}
+                </span>
+                <span role="cell">{member.createdAt.slice(0, 10)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
+  const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+
+  // Close on Escape while the leaflet viewer is open.
+  useEffect(() => {
+    if (!openLeaflet) {
+      return
+    }
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpenLeaflet(undefined)
+      }
+    }
+
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [openLeaflet])
+
   return (
     <div className="leaflet-board" aria-label="Store leaflets">
       <div className="section-heading">
@@ -2398,12 +2581,76 @@ function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
             {(leaflet.validFrom || leaflet.validTo) && (
               <p className="leaflet-dates">{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</p>
             )}
-            <a href={leaflet.url} rel="noreferrer" target="_blank">
+            <button
+              className="leaflet-open"
+              onClick={() => setOpenLeaflet(leaflet)}
+              type="button"
+            >
               View leaflet
-              <LinkSimple size={14} />
-            </a>
+              <MagnifyingGlass size={14} />
+            </button>
           </article>
         ))}
+      </div>
+
+      {openLeaflet && (
+        <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
+      )}
+    </div>
+  )
+}
+
+// Opens the official leaflet in place. Retailer leaflet viewers usually block
+// framing, so we show the catalogue cover with the official link as the escape
+// hatch rather than a broken iframe.
+function LeafletViewer({ leaflet, onClose }: { leaflet: StoreLeaflet; onClose: () => void }) {
+  return (
+    <div
+      className="leaflet-modal-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      role="presentation"
+    >
+      <div aria-labelledby="leaflet-modal-title" aria-modal="true" className="leaflet-modal" role="dialog">
+        <header className="leaflet-modal-head">
+          <div>
+            <p className="leaflet-retailer">{leaflet.retailerName}</p>
+            <h3 id="leaflet-modal-title">{leaflet.name}</h3>
+            {(leaflet.validFrom || leaflet.validTo) && (
+              <p className="leaflet-dates">
+                {describeLeafletDates(leaflet.validFrom, leaflet.validTo)}
+              </p>
+            )}
+          </div>
+          <button aria-label="Close leaflet" className="icon-button" onClick={onClose} type="button">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="leaflet-modal-body">
+          {leaflet.imageUrl ? (
+            <img
+              alt={`${leaflet.retailerName} catalogue`}
+              referrerPolicy="no-referrer"
+              src={leaflet.imageUrl}
+            />
+          ) : (
+            <p>Open the official leaflet to see every special.</p>
+          )}
+        </div>
+
+        <footer className="leaflet-modal-foot">
+          <a className="primary-button" href={leaflet.url} rel="noreferrer" target="_blank">
+            Open full leaflet on {leaflet.retailerName}
+            <LinkSimple size={16} />
+          </a>
+          <button className="ghost-button" onClick={onClose} type="button">
+            Close
+          </button>
+        </footer>
       </div>
     </div>
   )
@@ -2452,6 +2699,22 @@ function submitPayFastRedirect(actionUrl: string, fields: Record<string, string>
 
   document.body.appendChild(form)
   form.submit()
+}
+
+// Lists deals the way a shopper reads a catalogue: grouped by retailer, then
+// in catalogue page order. Deals without a page (live API rows) keep their
+// existing order and sit after the paged catalogue rows for that retailer.
+function sortDealsByPage(deals: DiscoveredDeal[]): DiscoveredDeal[] {
+  return [...deals].sort((left, right) => {
+    if (left.retailerName !== right.retailerName) {
+      return left.retailerName.localeCompare(right.retailerName)
+    }
+
+    const leftPage = left.pageNumber ?? Number.MAX_SAFE_INTEGER
+    const rightPage = right.pageNumber ?? Number.MAX_SAFE_INTEGER
+
+    return leftPage - rightPage
+  })
 }
 
 function describeFreshness(refreshedAt?: string): string {
@@ -2607,7 +2870,7 @@ function DiscoveryPanel({
   state: ResourceState<DiscoveryResource>
 }) {
   const discovery = state.data.discovery
-  const deals = discovery.deals
+  const deals = sortDealsByPage(discovery.deals)
   const leaflets = discovery.leaflets ?? []
 
   return (
@@ -2674,7 +2937,12 @@ function DiscoveryPanel({
                   />
                 )}
                 <div>
-                  <p className="eyebrow">{deal.retailerName}</p>
+                  <p className="eyebrow">
+                    {deal.retailerName}
+                    {deal.pageNumber !== undefined && (
+                      <span className="deal-page-tag">Page {deal.pageNumber}</span>
+                    )}
+                  </p>
                   {deal.personalizationReason && (
                     <p className="personalization-reason">{deal.personalizationReason}</p>
                   )}

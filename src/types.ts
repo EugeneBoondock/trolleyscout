@@ -103,6 +103,8 @@ export interface DiscoveredDeal {
   savingText?: string
   evidenceText: string
   imageUrl?: string
+  // 1-based page in the source catalogue, when the deal came from a page scan.
+  pageNumber?: number
   personalizationReason?: string
 }
 
@@ -223,6 +225,8 @@ export interface MemberPlan {
   }
 }
 
+export type MemberRole = 'member' | 'admin'
+
 export interface MemberAccount {
   id: string
   email: string
@@ -231,8 +235,23 @@ export interface MemberAccount {
   planId: MemberPlanId
   planName: string
   planStatus: MemberPlanStatus
+  role: MemberRole
   createdAt: string
   updatedAt: string
+}
+
+export interface AdminOverview {
+  accounts: MemberAccount[]
+  scout: {
+    dealCount: number
+    leafletCount: number
+    lastScoutedAt?: string
+    sourceCount: number
+  }
+  summary: {
+    accountCount: number
+    planCounts: Record<string, number>
+  }
 }
 
 export interface MemberSession {
@@ -240,7 +259,11 @@ export interface MemberSession {
   isAuthenticated: boolean
 }
 
+export type AuthIntent = 'signup' | 'login'
+
 export interface MemberSessionDraft {
+  intent?: AuthIntent
+  password?: string
   displayName: string
   email: string
 }

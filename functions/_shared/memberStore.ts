@@ -17,6 +17,7 @@ import type {
 import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
+import { hashPassword, validatePassword, verifyPassword } from './password'
 import { getPayFastEndpoints, resolvePayFastConfig } from './payfast'
 import {
   createPayFastCheckoutFields,
@@ -31,9 +32,22 @@ interface MemberAccountRow {
   display_name: string
   email: string
   id: string
+  password_hash?: string | null
   plan_id: string
   plan_status: string
+  role?: string | null
   updated_at: string
+}
+
+// The account owner. Signing up (or logging in) with this address always
+// holds the admin role, so ownership survives a database reset.
+const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
+
+const ACCOUNT_COLUMNS =
+  'id, email, display_name, plan_id, plan_status, role, password_hash, created_at, updated_at'
+
+export function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.has(email.trim().toLowerCase())
 }
 
 interface SavedSourceRow {
@@ -84,6 +98,17 @@ interface BasketItemRow {
 export interface MemberSessionInput {
   displayName: string
   email: string
+}
+
+export interface MemberSignUpInput {
+  displayName: string
+  email: string
+  password: string
+}
+
+export interface MemberLogInInput {
+  email: string
+  password: string
 }
 
 export function hasMemberStore(env: TrolleyScoutEnv): env is TrolleyScoutEnv & { DB: D1Database } {
@@ -141,59 +166,12 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
   }
 }
 
-export async function createMemberSession(env: TrolleyScoutEnv, input: MemberSessionInput) {
-  if (!hasMemberStore(env)) {
-    return {
-      issues: ['Member storage is not configured.'],
-    }
-  }
-
-  const email = input.email.trim().toLowerCase()
-  const displayName = input.displayName.trim()
-  const issues = validateMemberInput(email, displayName)
-
-  if (issues.length > 0) {
-    return {
-      issues,
-    }
-  }
-
-  const timestamp = new Date().toISOString()
-  const existing = await env.DB.prepare(
-    `SELECT id, email, display_name, plan_id, plan_status, created_at, updated_at
-      FROM member_accounts
-      WHERE email = ?`,
-  )
-    .bind(email)
-    .first<MemberAccountRow>()
-
-  if (existing) {
-    await env.DB.prepare(
-      `UPDATE member_accounts
-        SET display_name = ?, updated_at = ?
-        WHERE id = ?`,
-    )
-      .bind(displayName, timestamp, existing.id)
-      .run()
-  } else {
-    await env.DB.prepare(
-      `INSERT INTO member_accounts (
-        id, email, display_name, plan_id, plan_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(`member-${crypto.randomUUID()}`, email, displayName, 'free', 'active', timestamp, timestamp)
-      .run()
-  }
-
-  const account = await getAccountByEmail(env, email)
-
-  if (!account) {
-    return {
-      issues: ['Member account could not be loaded.'],
-    }
-  }
-
+async function issueSession(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  account: MemberAccount,
+) {
   const token = createToken()
+  const timestamp = new Date().toISOString()
   const expiresAt = new Date(Date.now() + sessionMaxAgeSeconds * 1000).toISOString()
 
   await env.DB.prepare(
@@ -203,9 +181,217 @@ export async function createMemberSession(env: TrolleyScoutEnv, input: MemberSes
     .bind(token, account.id, timestamp, expiresAt)
     .run()
 
+  return { account, token }
+}
+
+export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInput) {
+  if (!hasMemberStore(env)) {
+    return { issues: ['Member storage is not configured.'] }
+  }
+
+  const email = input.email.trim().toLowerCase()
+  const displayName = input.displayName.trim()
+  const issues = validateMemberInput(email, displayName)
+  const passwordIssue = validatePassword(input.password ?? '')
+
+  if (passwordIssue) {
+    issues.push(passwordIssue)
+  }
+
+  if (issues.length > 0) {
+    return { issues }
+  }
+
+  const existing = await env.DB.prepare('SELECT id FROM member_accounts WHERE email = ?')
+    .bind(email)
+    .first<{ id: string }>()
+
+  if (existing) {
+    return { issues: ['An account with that email already exists. Log in instead.'] }
+  }
+
+  const timestamp = new Date().toISOString()
+
+  await env.DB.prepare(
+    `INSERT INTO member_accounts (
+      id, email, display_name, plan_id, plan_status, role, password_hash, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      `member-${crypto.randomUUID()}`,
+      email,
+      displayName,
+      'free',
+      'active',
+      isAdminEmail(email) ? 'admin' : 'member',
+      await hashPassword(input.password),
+      timestamp,
+      timestamp,
+    )
+    .run()
+
+  const account = await getAccountByEmail(env, email)
+
+  if (!account) {
+    return { issues: ['Member account could not be created.'] }
+  }
+
+  return issueSession(env, account)
+}
+
+export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput) {
+  if (!hasMemberStore(env)) {
+    return { issues: ['Member storage is not configured.'] }
+  }
+
+  const email = input.email.trim().toLowerCase()
+  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE email = ?`)
+    .bind(email)
+    .first<MemberAccountRow>()
+
+  // Always run a verification so a missing account and a wrong password take
+  // the same time and return the same message — no account enumeration.
+  const isValid = await verifyPassword(input.password ?? '', row?.password_hash ?? null)
+
+  if (!row || !isValid) {
+    return { issues: ['That email and password do not match an account.'] }
+  }
+
+  // Keep the owner's admin role correct even if the row predates roles.
+  if (isAdminEmail(email) && row.role !== 'admin') {
+    await env.DB.prepare('UPDATE member_accounts SET role = ?, updated_at = ? WHERE id = ?')
+      .bind('admin', new Date().toISOString(), row.id)
+      .run()
+  }
+
+  const account = await getAccountByEmail(env, email)
+
+  if (!account) {
+    return { issues: ['Member account could not be loaded.'] }
+  }
+
+  return issueSession(env, account)
+}
+
+export async function updateMemberProfile(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: { displayName: string },
+) {
+  if (!hasMemberStore(env) || !accountId) {
+    return { issues: ['Sign in before updating your profile.'] }
+  }
+
+  const displayName = input.displayName.trim()
+
+  if (displayName.length < 2 || displayName.length > 60) {
+    return { issues: ['Use a display name between 2 and 60 characters.'] }
+  }
+
+  await env.DB.prepare('UPDATE member_accounts SET display_name = ?, updated_at = ? WHERE id = ?')
+    .bind(displayName, new Date().toISOString(), accountId)
+    .run()
+
+  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+    .bind(accountId)
+    .first<MemberAccountRow>()
+
+  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+}
+
+export async function changeMemberPassword(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: { currentPassword: string; newPassword: string },
+) {
+  if (!hasMemberStore(env) || !accountId) {
+    return { issues: ['Sign in before changing your password.'] }
+  }
+
+  const passwordIssue = validatePassword(input.newPassword ?? '')
+
+  if (passwordIssue) {
+    return { issues: [passwordIssue] }
+  }
+
+  const row = await env.DB.prepare('SELECT password_hash FROM member_accounts WHERE id = ?')
+    .bind(accountId)
+    .first<{ password_hash: string | null }>()
+
+  if (!row || !(await verifyPassword(input.currentPassword ?? '', row.password_hash))) {
+    return { issues: ['Your current password is not correct.'] }
+  }
+
+  await env.DB.prepare('UPDATE member_accounts SET password_hash = ?, updated_at = ? WHERE id = ?')
+    .bind(await hashPassword(input.newPassword), new Date().toISOString(), accountId)
+    .run()
+
+  return { changed: true }
+}
+
+// Admin console data. Only ever called after the caller's admin role is
+// checked at the endpoint; never exposes password hashes.
+export async function getAdminOverview(env: TrolleyScoutEnv) {
+  if (!hasMemberStore(env)) {
+    return undefined
+  }
+
+  const [accounts, planRows, dealRows, leafletRow] = await Promise.all([
+    env.DB.prepare(
+      `SELECT id, email, display_name, plan_id, plan_status, role, created_at, updated_at
+        FROM member_accounts
+        ORDER BY created_at DESC
+        LIMIT 100`,
+    ).all<MemberAccountRow>(),
+    env.DB.prepare('SELECT plan_id, COUNT(*) AS total FROM member_accounts GROUP BY plan_id').all<{
+      plan_id: string
+      total: number
+    }>(),
+    env.DB.prepare(
+      "SELECT source_key, checked_at, deals_json FROM deal_snapshots WHERE source_key != '__leaflets__'",
+    ).all<{ source_key: string; checked_at: string; deals_json: string }>(),
+    env.DB.prepare(
+      "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__leaflets__'",
+    ).first<{ checked_at: string; deals_json: string }>(),
+  ])
+
+  let dealCount = 0
+  let newestCheckedAt: string | undefined
+
+  for (const row of dealRows.results) {
+    try {
+      dealCount += (JSON.parse(row.deals_json) as unknown[]).length
+    } catch {
+      // A corrupt row must not break the console.
+    }
+
+    if (!newestCheckedAt || row.checked_at > newestCheckedAt) {
+      newestCheckedAt = row.checked_at
+    }
+  }
+
+  let leafletCount = 0
+
+  if (leafletRow) {
+    try {
+      leafletCount = (JSON.parse(leafletRow.deals_json) as unknown[]).length
+    } catch {
+      leafletCount = 0
+    }
+  }
+
   return {
-    account,
-    token,
+    accounts: accounts.results.map(accountRowToMember),
+    scout: {
+      dealCount,
+      leafletCount,
+      lastScoutedAt: newestCheckedAt,
+      sourceCount: dealRows.results.length,
+    },
+    summary: {
+      accountCount: accounts.results.length,
+      planCounts: Object.fromEntries(planRows.results.map((row) => [row.plan_id, row.total])),
+    },
   }
 }
 
@@ -811,6 +997,7 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
     planId,
     planName: plan.name,
     planStatus: normalizePlanStatus(row.plan_status),
+    role: row.role === 'admin' || isAdminEmail(row.email) ? 'admin' : 'member',
     updatedAt: row.updated_at,
   }
 }

@@ -428,6 +428,191 @@ main {
   font-weight: 600;
 }
 
+/* Auth: sign up / log in toggle */
+
+.auth-toggle {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin-bottom: 0.4rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.auth-toggle-button {
+  padding: 0.45rem 1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.auth-toggle-button.is-active {
+  background: var(--yellow);
+  color: #1c1710;
+}
+
+/* Admin console */
+
+.admin-console {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.admin-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-plan-tag {
+  padding: 0.3rem 0.7rem;
+  border: 2px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: capitalize;
+}
+
+.admin-table {
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  overflow-x: auto;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.9rem;
+}
+
+.admin-row:last-child {
+  border-bottom: 0;
+}
+
+.admin-row-head {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.admin-row small {
+  display: block;
+  color: var(--faint);
+}
+
+@media (max-width: 760px) {
+  .admin-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.deal-page-tag {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1.5px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+/* Leaflet viewer modal */
+
+.leaflet-open {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  justify-self: start;
+  margin-top: 0.3rem;
+  padding: 0.4rem 0.75rem;
+  border: 2px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.leaflet-open:hover {
+  background: var(--yellow);
+  color: #1c1710;
+}
+
+.leaflet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.75rem, 3vw, 2rem);
+  background: rgb(0 0 0 / 0.6);
+}
+
+.leaflet-modal {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1rem;
+  width: min(56rem, 100%);
+  max-height: 90svh;
+  padding: 1.2rem;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+}
+
+.leaflet-modal-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.leaflet-modal-head h3 {
+  margin: 0.2rem 0 0;
+  font-family: var(--display);
+  font-size: 1.3rem;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.leaflet-modal-body {
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.leaflet-modal-body img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.leaflet-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 0.6rem;
+  border-top: 2px solid var(--line);
+}
+
+.leaflet-modal-foot .primary-button {
+  text-decoration: none;
+}
+
 .leaflet-card a {
   display: inline-flex;
   gap: 0.35rem;
