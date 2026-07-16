@@ -202,15 +202,41 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
     return { issues }
   }
 
-  const existing = await env.DB.prepare('SELECT id FROM member_accounts WHERE email = ?')
+  const existing = await env.DB.prepare(
+    'SELECT id, password_hash FROM member_accounts WHERE email = ?',
+  )
     .bind(email)
-    .first<{ id: string }>()
+    .first<{ id: string; password_hash: string | null }>()
 
-  if (existing) {
+  if (existing?.password_hash) {
     return { issues: ['An account with that email already exists. Log in instead.'] }
   }
 
   const timestamp = new Date().toISOString()
+
+  // Accounts created before passwords existed have no credential at all — the
+  // old flow let anyone start a session with any email. Let signup claim such
+  // an account by setting its first password, which closes that hole and keeps
+  // the member's existing plan and saved data.
+  if (existing) {
+    await env.DB.prepare(
+      `UPDATE member_accounts
+        SET display_name = ?, password_hash = ?, role = ?, updated_at = ?
+        WHERE id = ?`,
+    )
+      .bind(
+        displayName,
+        await hashPassword(input.password),
+        isAdminEmail(email) ? 'admin' : 'member',
+        timestamp,
+        existing.id,
+      )
+      .run()
+
+    const claimed = await getAccountByEmail(env, email)
+
+    return claimed ? issueSession(env, claimed) : { issues: ['Account could not be loaded.'] }
+  }
 
   await env.DB.prepare(
     `INSERT INTO member_accounts (

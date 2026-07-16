@@ -36,6 +36,16 @@ describe('password', () => {
     expect(await verifyPassword('anything', 'pbkdf2$0$xx$yy')).toBe(false)
   })
 
+  // Cloudflare Workers' WebCrypto throws NotSupportedError above 100k
+  // iterations. Local dev has no such cap, so only production broke — keep
+  // the stored iteration count within the platform limit.
+  it('stays within the Workers PBKDF2 iteration limit', async () => {
+    const stored = await hashPassword('any password')
+    const iterations = Number(stored.split('$')[1])
+
+    expect(iterations).toBeLessThanOrEqual(100_000)
+  })
+
   it('requires a minimum length', () => {
     expect(validatePassword('short')).toContain('at least 8')
     expect(validatePassword('longenough')).toBeUndefined()

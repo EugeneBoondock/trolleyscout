@@ -3,7 +3,10 @@
 //   pbkdf2$<iterations>$<saltBase64>$<hashBase64>
 // Verification is constant-time so a wrong password cannot be timed out.
 
-const ITERATIONS = 210_000
+// Cloudflare Workers' WebCrypto rejects PBKDF2 above 100k iterations
+// ("iteration counts above 100000 are not supported"), so this is the platform
+// maximum. Verification still accepts whatever count a stored hash records.
+const ITERATIONS = 100_000
 const KEY_LENGTH_BITS = 256
 const SALT_BYTES = 16
 
