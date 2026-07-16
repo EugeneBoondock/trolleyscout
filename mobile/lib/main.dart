@@ -4,6 +4,7 @@ import 'screens/home_screen.dart';
 import 'screens/money_help_screen.dart';
 import 'screens/near_me_screen.dart';
 import 'screens/deals_screen.dart';
+import 'screens/tools_screen.dart';
 import 'theme.dart';
 
 void main() => runApp(const TrolleyScoutApp());
@@ -40,6 +41,7 @@ class _RootShellState extends State<RootShell> {
       const MoneyHelpScreen(),
       NearMeScreen(api: _api),
       DealsScreen(api: _api),
+      const ToolsScreen(),
     ];
 
     return Scaffold(
@@ -70,6 +72,7 @@ class _RootShellState extends State<RootShell> {
             NavigationDestination(icon: Icon(Icons.volunteer_activism_outlined), selectedIcon: Icon(Icons.volunteer_activism), label: 'Money'),
             NavigationDestination(icon: Icon(Icons.near_me_outlined), selectedIcon: Icon(Icons.near_me), label: 'Near me'),
             NavigationDestination(icon: Icon(Icons.local_offer_outlined), selectedIcon: Icon(Icons.local_offer), label: 'Deals'),
+            NavigationDestination(icon: Icon(Icons.calculate_outlined), selectedIcon: Icon(Icons.calculate), label: 'Tools'),
           ],
         ),
       ),
