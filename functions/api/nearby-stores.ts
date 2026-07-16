@@ -14,6 +14,7 @@ import {
   writeCachedStores,
   type StorePromotion,
 } from '../_shared/locationStore'
+import { scoutAreaStores } from '../_shared/areaScout'
 import { scoutNearbyStores } from '../_shared/storeScout'
 import { json, methodNotAllowed } from '../_shared/respond'
 
@@ -101,6 +102,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     .map(({ deals: _deals, leaflets: _leaflets, promotions: _promotions, ...store }) => store)
 
   waitUntil(scoutNearbyStores(env, storesNeedingDeals, nowMs))
+
+  // Also sweep the area for stores OSM does not know (independents like
+  // Frontline Hyper) via keyless web search — rate-limited to once a day per
+  // tile inside the scout, and merged into the tile cache for the next visit.
+  waitUntil(scoutAreaStores(env, tileKey, lat, lon, stores, nowMs))
 
   return json(
     {
