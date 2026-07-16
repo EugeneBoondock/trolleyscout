@@ -3014,6 +3014,12 @@ function DiscoveryPanel({
   const deals = sortDealsByPage(discovery.deals)
   const leaflets = discovery.leaflets ?? []
 
+  const dealsPerPage = 24
+  const [page, setPage] = useState(0)
+  const pageCount = Math.max(1, Math.ceil(deals.length / dealsPerPage))
+  const safePage = Math.min(page, pageCount - 1)
+  const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
+
   return (
     <section className="discovery-panel" aria-label="Deal finder">
       <div className="section-heading">
@@ -3063,7 +3069,7 @@ function DiscoveryPanel({
 
       {deals.length > 0 ? (
         <div className="discovery-deal-list">
-          {deals.map((deal) => (
+          {pagedDeals.map((deal) => (
             <article className="discovery-deal-row" key={deal.id}>
               <div className="discovery-deal-main">
                 {deal.imageUrl && (
@@ -3120,6 +3126,30 @@ function DiscoveryPanel({
               </div>
             </article>
           ))}
+
+          {pageCount > 1 && (
+            <nav className="deal-pager" aria-label="Deal pages">
+              <button
+                className="ghost-button"
+                disabled={safePage === 0}
+                onClick={() => setPage(safePage - 1)}
+                type="button"
+              >
+                Previous
+              </button>
+              <span className="deal-pager-status">
+                Page {safePage + 1} of {pageCount} · {deals.length} deals
+              </span>
+              <button
+                className="ghost-button"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => setPage(safePage + 1)}
+                type="button"
+              >
+                Next
+              </button>
+            </nav>
+          )}
         </div>
       ) : (
         <div className="discovery-empty">

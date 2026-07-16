@@ -62,7 +62,7 @@ export function HomeView({
           <p className="hero-text">
             Groceries are brutal right now. Trolley Scout puts three things in your pocket: the
             money and help you are already entitled to, tools to pay less at the shelf, and real
-            specials from official store pages — never rumours.
+            specials from official store pages, never rumours.
           </p>
           <div className="hero-actions">
             <button className="primary-button" onClick={() => onOpen('help')} type="button">
@@ -158,14 +158,14 @@ export function HomeView({
         <HomePathCard
           icon={<HandCoins size={26} weight="duotone" />}
           title="Claim what is yours"
-          text="Every SASSA grant with current amounts, school fee exemptions, free basic electricity and water, UIF — with the free, official way to apply."
+          text="Every SASSA grant with current amounts, school fee exemptions, free basic electricity and water, UIF, with the free, official way to apply."
           actionLabel="Open money help"
           onClick={() => onOpen('help')}
         />
         <HomePathCard
           icon={<Calculator size={26} weight="duotone" />}
           title="Pay less at the shelf"
-          text="Type in two pack prices and see which is really cheaper per kilogram or litre. Works offline once loaded — use it right in the aisle."
+          text="Type in two pack prices and see which is really cheaper per kilogram or litre. Works offline once loaded, use it right in the aisle."
           actionLabel="Open tools"
           onClick={() => onOpen('tools')}
         />
@@ -179,7 +179,7 @@ export function HomeView({
         <HomePathCard
           icon={<Storefront size={26} weight="duotone" />}
           title="Go straight to the source"
-          text="Official specials, catalogue, and free loyalty sign-up pages for 17 major retailers — from Boxer and Usave to Woolworths."
+          text="Official specials, catalogue, and free loyalty sign-up pages for 17 major retailers, from Boxer and Usave to Woolworths."
           actionLabel="Browse stores"
           onClick={() => onOpen('sources')}
         />
