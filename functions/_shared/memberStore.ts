@@ -15,6 +15,7 @@ import type {
   SourceKind,
 } from '../../src/types'
 import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
+import { computeLineEconomics, parseMultibuy } from '../../src/services/multibuy'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
 import { hashPassword, validatePassword, verifyPassword } from './password'
@@ -1080,11 +1081,15 @@ function basketItemRowToItem(row: BasketItemRow): BasketItem {
   })
   const unitPriceCents = parseRandCents(deal.priceText)
   const previousUnitPriceCents = parseRandCents(deal.previousPriceText)
-  const linePriceCents = unitPriceCents === undefined ? undefined : unitPriceCents * row.basket_quantity
-  const lineSavingCents =
-    unitPriceCents === undefined || previousUnitPriceCents === undefined || previousUnitPriceCents <= unitPriceCents
-      ? undefined
-      : (previousUnitPriceCents - unitPriceCents) * row.basket_quantity
+  // Honour multi-buy promotions ("2 for R30", "buy 2 get 1 free") so the line
+  // cost and saving reflect what the shopper actually pays at the till.
+  const multibuy = parseMultibuy(deal.priceText, deal.savingText)
+  const { linePriceCents, lineSavingCents } = computeLineEconomics({
+    multibuy,
+    previousUnitPriceCents,
+    quantity: row.basket_quantity,
+    unitPriceCents,
+  })
 
   return {
     addedAt: row.basket_created_at,

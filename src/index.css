@@ -2856,6 +2856,117 @@ main {
   color: var(--specials-red, #c9271b);
 }
 
+.shop-compare {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) repeat(var(--shop-count, 2), 1fr);
+  gap: 0.5rem;
+  align-items: stretch;
+  overflow-x: auto;
+}
+
+.compare-row-contents,
+.compare-head,
+.compare-shop-name,
+.compare-item-cell,
+.compare-price,
+.compare-totals-label,
+.compare-total {
+  min-width: 0;
+}
+
+.compare-row-contents {
+  display: contents;
+}
+
+.compare-head,
+.compare-totals-label {
+  font-weight: 800;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  align-self: center;
+}
+
+.compare-shop-name {
+  border: 2px solid var(--line);
+  background: var(--surface);
+  font-weight: 800;
+  padding: 0.4rem 0.5rem;
+  text-align: center;
+}
+
+.compare-shop-name.is-cheapest,
+.compare-total.is-cheapest {
+  background: var(--trust-green, #0d6b3d);
+  color: #fff;
+  border-color: var(--trust-green, #0d6b3d);
+}
+
+.compare-item-cell {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.compare-item-cell input {
+  flex: 1;
+  min-width: 0;
+  border: 2px solid var(--line-soft, var(--line));
+  padding: 0.4rem 0.5rem;
+}
+
+.compare-price {
+  border: 2px solid var(--line-soft, var(--line));
+  padding: 0.4rem 0.5rem;
+  text-align: right;
+  min-width: 0;
+}
+
+.compare-price.is-cheapest {
+  border-color: var(--trust-green, #0d6b3d);
+  background: color-mix(in srgb, var(--trust-green, #0d6b3d) 12%, transparent);
+  font-weight: 800;
+}
+
+.compare-total {
+  border: 2px solid var(--line);
+  background: var(--surface-soft, #ece4cd);
+  padding: 0.5rem;
+  text-align: center;
+  font-weight: 900;
+  display: grid;
+  align-content: center;
+}
+
+.compare-total small {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.compare-total.is-cheapest small {
+  color: #fff;
+}
+
+.compare-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.compare-verdict {
+  border: 2px solid var(--trust-green, #0d6b3d);
+  background: color-mix(in srgb, var(--trust-green, #0d6b3d) 8%, var(--surface));
+  padding: 0.9rem 1.1rem;
+}
+
 .deal-tabs {
   display: flex;
   gap: 0.5rem;

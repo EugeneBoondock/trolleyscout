@@ -109,6 +109,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       SizedBox(
                         width: width,
                         child: MetricCard(
+                          label: 'total savings',
+                          value: formatRand(data.basket.summary.savingsCents),
+                          icon: Icons.savings_outlined,
+                          onTap: () => widget.onNavigate(AppDestination.basket),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
+                        child: MetricCard(
                           label: 'saved sources',
                           value: '${data.savedSources.length}',
                           icon: Icons.bookmark_outline,

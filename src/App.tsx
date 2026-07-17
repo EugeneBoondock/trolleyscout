@@ -1596,6 +1596,7 @@ function MemberShell({
             account={account}
             apiMode={apiMode}
             basketItemCount={basketItemCount}
+            basketSavings={formatRand(basketState.data.basket.summary.savingsCents)}
             basketTotal={formatRand(basketState.data.basket.summary.totalCents)}
             discoveryCount={discoveryState.data.discovery.summary.foundDealCount}
             onRefresh={onRefresh}
@@ -1890,6 +1891,7 @@ function MemberDashboard({
   account,
   apiMode,
   basketItemCount,
+  basketSavings,
   basketTotal,
   discoveryCount,
   onRefresh,
@@ -1902,6 +1904,7 @@ function MemberDashboard({
   account: NonNullable<MemberSession['account']>
   apiMode: string
   basketItemCount: number
+  basketSavings: string
   basketTotal: string
   discoveryCount: number
   onRefresh: () => void
@@ -1930,6 +1933,7 @@ function MemberDashboard({
         <Metric icon={<Tag size={22} />} label="Found deals" value={`${discoveryCount}`} />
         <Metric icon={<Wallet size={22} />} label="Saved deals" value={`${savedDealCount}`} />
         <Metric icon={<ShoppingCart size={22} />} label="Basket total" value={basketTotal} />
+        <Metric icon={<HandCoins size={22} />} label="Total savings" value={basketSavings} />
         <Metric icon={<ShoppingCart size={22} />} label="Basket items" value={`${basketItemCount}`} />
         <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
         <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
