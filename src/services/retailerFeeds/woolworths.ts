@@ -58,9 +58,16 @@ export function parseWoolworthsFeed(
     const path = textValue(data, 'url')
     const promotion = recordValue(data, 'promo')
     const promotionValue = data?.promo
-    const promotionId = typeof promotionValue === 'string' || typeof promotionValue === 'number'
-      ? String(promotionValue).trim()
-      : firstText(promotion, ['id', 'code', 'promotionId'])
+    // The live Constructor.io index carries promo as an array of shopper-facing
+    // strings, e.g. ["Buy any 2 save R10 Classic Veg Bags"].
+    const promotionText = Array.isArray(promotionValue)
+      ? promotionValue.find((entry) => typeof entry === 'string' && entry.trim())
+      : undefined
+    const promotionId = typeof promotionText === 'string'
+      ? promotionText.trim()
+      : typeof promotionValue === 'string' || typeof promotionValue === 'number'
+        ? String(promotionValue).trim()
+        : firstText(promotion, ['id', 'code', 'promotionId'])
     const prices = readPriceLists(data)
     const selectedPrice = prices.find((price) => price.listId === context.priceList) ?? prices[0]
     const validFrom = firstText(promotion, ['startDate', 'validFrom']) || undefined
@@ -96,7 +103,9 @@ export function parseWoolworthsFeed(
       productUrl: absoluteUrl(path, woolworthsOrigin) ?? path,
       promotionId,
       retailerId: woolworthsRetailerId,
-      savingText: firstText(promotion, ['description', 'name', 'text']) || undefined,
+      savingText: (typeof promotionText === 'string' ? promotionText.trim() : '') ||
+        firstText(promotion, ['description', 'name', 'text']) ||
+        undefined,
       scope: woolworthsScope,
       sourceKind: 'structured',
       sourceUrl: context.sourceUrl,

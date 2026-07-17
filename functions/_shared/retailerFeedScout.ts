@@ -1,6 +1,10 @@
 import { parseBuildersFeed } from '../../src/services/retailerFeeds/builders'
 import { parseClicksFeed } from '../../src/services/retailerFeeds/clicks'
-import { parseDischemFeed } from '../../src/services/retailerFeeds/dischem'
+import {
+  buildDischemKlevuUrl,
+  parseDischemKlevuCursor,
+  parseDischemKlevuFeed,
+} from '../../src/services/retailerFeeds/dischem'
 import { parseFoodLoversFeed } from '../../src/services/retailerFeeds/foodLovers'
 import {
   decodeMakroInitialState,
@@ -118,12 +122,20 @@ const structuredSources: readonly RetailerFeedSource[] = [
     buildRequest(cursor) {
       const offset = requireCursor(cursor, 'offset')
       const page = Math.floor(offset / PAGE_SIZE) + 1
-      const url = new URL('https://www.woolworths.co.za/browse/food-south-africa/all-savings')
+      // Woolworths' own storefront queries this public Constructor.io index
+      // (key ships in their client JS). The HTML route sits behind bot
+      // management and no longer embeds the product state, but this API is
+      // served to any client, including Workers.
+      const url = new URL('https://wpkmgeuco-zone.cnstrc.com/browse/group_id/cat606520')
+      url.searchParams.set('key', 'key_tw9hKe0fkfgEf36D')
+      url.searchParams.set('c', 'ciojs-client-2.62.2')
       url.searchParams.set('page', String(page))
       url.searchParams.set('num_results_per_page', String(PAGE_SIZE))
-      return { init: { headers: BROWSER_HEADERS }, url: url.toString() }
+      url.searchParams.set('sort_by', 'relevance')
+      url.searchParams.set('sort_order', 'descending')
+      return { init: { headers: { accept: 'application/json' } }, url: url.toString() }
     },
-    decode: decodeWoolworthsInitialState,
+    decode: (body) => JSON.parse(body) as unknown,
     initialCursor: { kind: 'offset', offset: 0 },
     key: 'woolworths::all-savings',
     parse({ capturedAt, cursor, payload, sourceUrl }) {
@@ -659,24 +671,25 @@ function makroSource(): RetailerFeedSource {
 }
 
 function dischemSource(): RetailerFeedSource {
+  // The Magento pages 403 Cloudflare egress, but Dis-Chem's own Klevu search
+  // index (public ticket in their client JS) serves promotions to any client.
   const sourceUrl = 'https://www.dischem.co.za/on-promotion'
 
   return {
     buildRequest(cursor) {
-      const page = requireCursor(cursor, 'page')
-      const url = new URL(sourceUrl)
-      if (page > 0) {
-        url.searchParams.set('p', String(page + 1))
+      const token = cursor.kind === 'token' ? cursor.token : undefined
+      return {
+        init: { headers: { accept: 'application/json' } },
+        url: buildDischemKlevuUrl(parseDischemKlevuCursor(token)),
       }
-      return { init: { headers: BROWSER_HEADERS }, url: url.toString() }
     },
-    decode: (body) => body,
-    initialCursor: { kind: 'page', page: 0 },
-    key: 'dis-chem::on-promotion',
+    decode: (body) => JSON.parse(body) as unknown,
+    initialCursor: { kind: 'token', token: '{"phase":"discover"}' },
+    key: 'dis-chem::klevu-promotions',
     parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
-      return parseDischemFeed(payload, {
+      return parseDischemKlevuFeed(payload, {
         capturedAt,
-        page: requireCursor(cursor, 'page'),
+        cursorToken: cursor.kind === 'token' ? cursor.token : undefined,
         sourceUrl: officialSourceUrl,
       })
     },

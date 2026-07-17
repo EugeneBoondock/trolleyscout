@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { parseDischemFeed } from './dischem'
+import {
+  buildDischemKlevuUrl,
+  parseDischemFeed,
+  parseDischemKlevuCursor,
+  parseDischemKlevuFeed,
+} from './dischem'
 
 const context = {
   capturedAt: '2026-07-17T08:00:00.000Z',
@@ -141,4 +146,128 @@ function card(options: {
       </div>
     </li>
   `
+}
+
+describe('Dis-Chem Klevu lane', () => {
+  it('discovers promo discount buckets and hands off a page cursor', () => {
+    const { parseDischemKlevuFeed } = klevuApi()
+    const page = parseDischemKlevuFeed(
+      {
+        filters: [
+          {
+            key: 'promo_discount_sap',
+            options: [
+              { name: '0', count: 15254 },
+              { name: '20', count: 524 },
+              { name: '89.99000', count: 172 },
+            ],
+          },
+        ],
+        meta: { totalResultsFound: 40814 },
+        result: [],
+      },
+      {
+        capturedAt: '2026-07-16T08:00:00.000Z',
+        cursorToken: '{"phase":"discover"}',
+        sourceUrl: 'https://www.dischem.co.za/on-promotion',
+      },
+    )
+
+    expect(page.candidates).toHaveLength(0)
+    expect(page.nextCursor?.kind).toBe('token')
+    const state = JSON.parse((page.nextCursor as { token: string }).token)
+    expect(state).toMatchObject({ phase: 'page', values: ['20', '89.99000'], valueIndex: 0, offset: 0 })
+  })
+
+  it('maps promoted rows with SAP validity windows and paginates buckets', () => {
+    const { parseDischemKlevuFeed } = klevuApi()
+    const token = JSON.stringify({ phase: 'page', values: ['20'], valueIndex: 0, offset: 0 })
+    const page = parseDischemKlevuFeed(
+      {
+        meta: { totalResultsFound: 443 },
+        result: [
+          {
+            name: 'Dermopal Sunscreen Spf30 100ml',
+            sku: '0060505',
+            url: 'https://www.dischem.co.za/dermopal-sunscreen-spf-30.html',
+            imageUrl: 'https://www.dischem.co.za/api/klevu_images/200X200/derm.jpg',
+            salePrice: '91.12',
+            oldPrice: '113.90',
+            basePrice: '113.90',
+            promo_number_sap: '100039531',
+            promo_category_sap: 'bsheet july health 14/07/26-09/08/26 s',
+            promo_discount_sap: '20',
+          },
+        ],
+      },
+      {
+        capturedAt: '2026-07-16T08:00:00.000Z',
+        cursorToken: token,
+        sourceUrl: 'https://www.dischem.co.za/on-promotion',
+      },
+    )
+
+    expect(page.candidates).toHaveLength(1)
+    expect(page.candidates[0]).toMatchObject({
+      priceCents: 9112,
+      previousPriceCents: 11390,
+      promotionId: '100039531',
+      retailerId: 'dis-chem',
+      savingText: '20% off',
+      title: 'Dermopal Sunscreen Spf30 100ml',
+      validFrom: '2026-07-14',
+      validTo: '2026-08-09',
+    })
+    const state = JSON.parse((page.nextCursor as { token: string }).token)
+    expect(state).toMatchObject({ phase: 'page', valueIndex: 0, offset: 1 })
+  })
+
+  it('drops rows whose SAP window has expired and ends after the last bucket', () => {
+    const { parseDischemKlevuFeed } = klevuApi()
+    const token = JSON.stringify({ phase: 'page', values: ['20'], valueIndex: 0, offset: 440 })
+    const page = parseDischemKlevuFeed(
+      {
+        meta: { totalResultsFound: 441 },
+        result: [
+          {
+            name: 'Expired Promo Item',
+            sku: 'x1',
+            url: 'https://www.dischem.co.za/expired.html',
+            salePrice: '50.00',
+            promo_category_sap: 'bsheet june 01/06/26-30/06/26 s',
+            promo_discount_sap: '20',
+          },
+        ],
+      },
+      {
+        capturedAt: '2026-07-16T08:00:00.000Z',
+        cursorToken: token,
+        sourceUrl: 'https://www.dischem.co.za/on-promotion',
+      },
+    )
+
+    expect(page.candidates).toHaveLength(0)
+    expect(page.nextCursor).toBeUndefined()
+  })
+
+  it('builds discover and filtered page URLs', () => {
+    const { buildDischemKlevuUrl, parseDischemKlevuCursor } = klevuApi()
+    const discover = buildDischemKlevuUrl(parseDischemKlevuCursor(undefined))
+    expect(discover).toContain('enableFilters=true')
+    expect(discover).toContain('ksearchnet.com')
+
+    const paged = buildDischemKlevuUrl(
+      parseDischemKlevuCursor('{"phase":"page","values":["20"],"valueIndex":0,"offset":100}'),
+    )
+    expect(paged).toContain('filterResults=promo_discount_sap%3A20')
+    expect(paged).toContain('paginationStartsFrom=100')
+  })
+})
+
+function klevuApi() {
+  return {
+    buildDischemKlevuUrl,
+    parseDischemKlevuCursor,
+    parseDischemKlevuFeed,
+  }
 }

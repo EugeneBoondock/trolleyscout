@@ -63,7 +63,7 @@ describe('structured retailer source decoders', () => {
       'game::savings',
       'builders::deals',
       'makro::catalogues-store',
-      'dis-chem::on-promotion',
+      'dis-chem::klevu-promotions',
     ])
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
   })
@@ -72,7 +72,7 @@ describe('structured retailer source decoders', () => {
     const sources = getStructuredRetailerSources()
     const builders = sources.find((source) => source.key === 'builders::deals')
     const makro = sources.find((source) => source.key === 'makro::catalogues-store')
-    const dischem = sources.find((source) => source.key === 'dis-chem::on-promotion')
+    const dischem = sources.find((source) => source.key === 'dis-chem::klevu-promotions')
 
     expect(builders).toBeDefined()
     expect(makro).toBeDefined()
@@ -94,12 +94,17 @@ describe('structured retailer source decoders', () => {
     expect(makro!.buildRequest({ kind: 'page', page: 0 }).url).toBe(
       'https://www.makro.co.za/catalogues-store',
     )
-    expect(dischem!.buildRequest({ kind: 'page', page: 0 }).url).toBe(
-      'https://www.dischem.co.za/on-promotion',
-    )
-    expect(dischem!.buildRequest({ kind: 'page', page: 1 }).url).toBe(
-      'https://www.dischem.co.za/on-promotion?p=2',
-    )
+    // Any non-token cursor falls back to a fresh Klevu discovery pass.
+    const discoverUrl = dischem!.buildRequest({ kind: 'page', page: 0 }).url
+    expect(discoverUrl).toContain('ksearchnet.com')
+    expect(discoverUrl).toContain('enableFilters=true')
+
+    const pagedUrl = dischem!.buildRequest({
+      kind: 'token',
+      token: '{"phase":"page","values":["20"],"valueIndex":0,"offset":100}',
+    }).url
+    expect(pagedUrl).toContain('filterResults=promo_discount_sap%3A20')
+    expect(pagedUrl).toContain('paginationStartsFrom=100')
   })
 })
 

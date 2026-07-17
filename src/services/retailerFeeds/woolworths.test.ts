@@ -203,6 +203,44 @@ describe('parseWoolworthsFeed', () => {
       validTo: '2026-07-20',
     })
   })
+
+  it('accepts the live Constructor.io shape where promo is an array of strings', () => {
+    // Mirrors the browse API response captured from wpkmgeuco-zone.cnstrc.com.
+    const page = parseWoolworthsFeed(
+      {
+        response: {
+          num_results: 1,
+          total_num_results: 8067,
+          results: [
+            {
+              value: 'Mixed Vegetables 400 g',
+              data: {
+                id: '20149116',
+                description: 'Mixed Vegetables 400 g',
+                url: 'prod/Food/Fresh-Vegetables/Mixed-Vegetables-400-g/_/A-20149116',
+                image_url: 'https://assets.woolworthsstatic.co.za/Mixed-Vegetables.jpg',
+                promo: ['Buy any 2 save R10 Classic Veg Bags'],
+                p10: 43.99,
+                p30: 43.99,
+                p60: 43.99,
+              },
+            },
+          ],
+        },
+      },
+      { capturedAt: '2026-07-16T08:00:00.000Z', offset: 0, sourceUrl: 'https://example.test' },
+    )
+
+    expect(page.candidates).toHaveLength(1)
+    expect(page.candidates[0]).toMatchObject({
+      promotionId: 'Buy any 2 save R10 Classic Veg Bags',
+      savingText: 'Buy any 2 save R10 Classic Veg Bags',
+      priceCents: 4399,
+      productUrl:
+        'https://www.woolworths.co.za/prod/Food/Fresh-Vegetables/Mixed-Vegetables-400-g/_/A-20149116',
+    })
+    expect(page.totalCount).toBe(8067)
+  })
 })
 
 function woolworthsContext(overrides: Partial<WoolworthsFeedContext> = {}): WoolworthsFeedContext {

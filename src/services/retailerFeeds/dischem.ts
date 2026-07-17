@@ -297,3 +297,210 @@ function decodeHtml(value: string) {
     .replace(/&#x([\da-f]+);/gi, (_match, code: string) =>
       String.fromCodePoint(Number.parseInt(code, 16)))
 }
+
+// ---------------------------------------------------------------------------
+// Klevu lane. Dis-Chem's own storefront queries this public search index
+// (the ticket ships in their client JS); unlike www.dischem.co.za it is not
+// WAF-blocked, so Workers can read promotions directly. The scout first
+// discovers the active promo discount buckets, then pages through each one.
+
+const KLEVU_SEARCH_URL = 'https://eucs7.ksearchnet.com/cloud-search/n-search/search'
+const KLEVU_TICKET = 'klevu-15264750100467933'
+const KLEVU_PAGE_SIZE = 100
+const KLEVU_MAX_DISCOUNT_BUCKETS = 25
+
+export interface DischemKlevuCursorState {
+  phase: 'discover' | 'page'
+  values?: string[]
+  valueIndex?: number
+  offset?: number
+}
+
+export function parseDischemKlevuCursor(token: string | undefined): DischemKlevuCursorState {
+  if (!token) {
+    return { phase: 'discover' }
+  }
+
+  try {
+    const parsed = JSON.parse(token) as DischemKlevuCursorState
+    if (parsed && (parsed.phase === 'discover' || parsed.phase === 'page')) {
+      return parsed
+    }
+  } catch {
+    // Fall through to a fresh discovery pass.
+  }
+
+  return { phase: 'discover' }
+}
+
+export function buildDischemKlevuUrl(state: DischemKlevuCursorState): string {
+  const url = new URL(KLEVU_SEARCH_URL)
+  url.searchParams.set('ticket', KLEVU_TICKET)
+  url.searchParams.set('term', '*')
+  url.searchParams.set('responseType', 'json')
+  url.searchParams.set('showOutOfStockProducts', 'false')
+
+  if (state.phase === 'discover') {
+    url.searchParams.set('noOfResults', '1')
+    url.searchParams.set('paginationStartsFrom', '0')
+    url.searchParams.set('enableFilters', 'true')
+    return url.toString()
+  }
+
+  const value = state.values?.[state.valueIndex ?? 0] ?? ''
+  url.searchParams.set('noOfResults', String(KLEVU_PAGE_SIZE))
+  url.searchParams.set('paginationStartsFrom', String(state.offset ?? 0))
+  url.searchParams.set('filterResults', `promo_discount_sap:${value}`)
+  return url.toString()
+}
+
+export interface DischemKlevuContext extends RetailerFeedContext {
+  cursorToken?: string
+}
+
+export function parseDischemKlevuFeed(
+  payload: unknown,
+  context: DischemKlevuContext,
+): RetailerFeedPage {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new TypeError('Invalid Dis-Chem Klevu response')
+  }
+
+  const body = payload as {
+    filters?: Array<{ key?: string; options?: Array<{ name?: string; count?: number }> }>
+    meta?: { totalResultsFound?: number }
+    result?: Array<Record<string, unknown>>
+  }
+  const state = parseDischemKlevuCursor(context.cursorToken)
+
+  if (state.phase === 'discover') {
+    const filter = (body.filters ?? []).find((entry) => entry.key === 'promo_discount_sap')
+    const values = (filter?.options ?? [])
+      .map((option) => String(option.name ?? '').trim())
+      .filter((name) => name && name !== '0')
+      .slice(0, KLEVU_MAX_DISCOUNT_BUCKETS)
+
+    return {
+      candidates: [],
+      catalogues: [],
+      nextCursor: values.length > 0
+        ? { kind: 'token', token: JSON.stringify({ phase: 'page', values, valueIndex: 0, offset: 0 }) }
+        : undefined,
+      totalCount: 0,
+    }
+  }
+
+  const rows = Array.isArray(body.result) ? body.result : []
+  const totalForBucket = body.meta?.totalResultsFound ?? rows.length
+  const candidates: RetailerDealCandidate[] = []
+
+  for (const row of rows) {
+    const candidate = klevuRowToCandidate(row, context)
+    if (candidate) {
+      candidates.push(candidate)
+    }
+  }
+
+  const values = state.values ?? []
+  const valueIndex = state.valueIndex ?? 0
+  const offset = (state.offset ?? 0) + rows.length
+  let nextState: DischemKlevuCursorState | undefined
+
+  if (rows.length > 0 && offset < totalForBucket) {
+    nextState = { phase: 'page', values, valueIndex, offset }
+  } else if (valueIndex + 1 < values.length) {
+    nextState = { phase: 'page', values, valueIndex: valueIndex + 1, offset: 0 }
+  }
+
+  return {
+    candidates,
+    catalogues: [],
+    nextCursor: nextState
+      ? { kind: 'token', token: JSON.stringify(nextState) }
+      : undefined,
+    totalCount: totalForBucket,
+  }
+}
+
+function klevuRowToCandidate(
+  row: Record<string, unknown>,
+  context: DischemKlevuContext,
+): RetailerDealCandidate | undefined {
+  const title = klevuText(row.name)
+  const productUrl = officialProductUrl(klevuText(row.url))
+  const productId = klevuText(row.sku) || klevuText(row.id)
+  const priceCents = moneyToCents(klevuText(row.salePrice) || klevuText(row.price))
+
+  if (!title || !productUrl || !productId || priceCents === undefined) {
+    return undefined
+  }
+
+  const oldCents = moneyToCents(klevuText(row.oldPrice))
+  const baseCents = moneyToCents(klevuText(row.basePrice))
+  const previousPriceCents = oldCents !== undefined && oldCents > priceCents
+    ? oldCents
+    : baseCents !== undefined && baseCents > priceCents
+      ? baseCents
+      : undefined
+
+  const promoWindow = klevuPromoWindow(klevuText(row.promo_category_sap))
+  const validFrom = promoWindow?.validFrom
+  const validTo = promoWindow?.validTo
+
+  if (!isStructuredDealActive({ capturedAt: context.capturedAt, validFrom, validTo })) {
+    return undefined
+  }
+
+  const discount = klevuText(row.promo_discount_sap)
+  const promotionId = klevuText(row.promo_number_sap) || `klevu-${discount || 'promo'}-${productId}`
+  const savingText = /^\d{1,2}$/.test(discount)
+    ? `${discount}% off`
+    : previousPriceCents !== undefined
+      ? `Save R${formatMoney(previousPriceCents - priceCents)}`
+      : 'On promotion'
+
+  return {
+    capturedAt: context.capturedAt,
+    evidenceText: buildRetailerEvidence({
+      priceCents,
+      previousPriceCents,
+      promotionMarker: promotionId,
+      scope: dischemScope,
+      sourceId: productId,
+      validFrom,
+      validTo,
+    }),
+    imageUrl: publicUrl(klevuText(row.imageUrl) || klevuText(row.image)) || undefined,
+    priceCents,
+    previousPriceCents,
+    productId,
+    productUrl,
+    promotionId,
+    retailerId: dischemRetailerId,
+    savingText,
+    scope: dischemScope,
+    sourceKind: 'structured',
+    sourceUrl: context.sourceUrl,
+    title,
+    validFrom,
+    validTo,
+  }
+}
+
+// "bsheet july health 14/07/26-09/08/26 s" -> 2026-07-14 .. 2026-08-09
+function klevuPromoWindow(text: string) {
+  const match = /(\d{2})\/(\d{2})\/(\d{2})\s*-\s*(\d{2})\/(\d{2})\/(\d{2})/.exec(text)
+
+  if (!match) {
+    return undefined
+  }
+
+  const validFrom = normalizeDate(`20${match[3]}-${match[2]}-${match[1]}`)
+  const validTo = normalizeDate(`20${match[6]}-${match[5]}-${match[4]}`)
+
+  return validFrom && validTo ? { validFrom, validTo } : undefined
+}
+
+function klevuText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : ''
+}
