@@ -15,6 +15,33 @@ export interface StorePriceMatch {
   isCheapest: boolean
 }
 
+// Two stores by default because "here or there?" is the common question; the
+// shopper can pick a third and beyond.
+export const DEFAULT_STORE_COUNT = 2
+
+// Only stores we can actually price against right now, named and sorted.
+export function storeOptionsFromDeals(
+  deals: DiscoveredDeal[],
+): Array<{ id: string; name: string }> {
+  const byId = new Map<string, string>()
+
+  for (const deal of deals) {
+    if (!byId.has(deal.retailerId)) {
+      byId.set(deal.retailerId, deal.retailerName)
+    }
+  }
+
+  return Array.from(byId.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function defaultStoreIds(deals: DiscoveredDeal[]): string[] {
+  return storeOptionsFromDeals(deals)
+    .slice(0, DEFAULT_STORE_COUNT)
+    .map((store) => store.id)
+}
+
 export interface AutoComparison {
   query: string
   matches: StorePriceMatch[]

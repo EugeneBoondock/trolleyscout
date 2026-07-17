@@ -9,7 +9,12 @@ import {
   type PackUnit,
 } from '../services/unitPrice'
 import { compareShops, formatCents, parsePriceInput } from '../services/shopCompare'
-import { autoComparePrices, type AutoComparison } from '../services/priceCompare'
+import {
+  autoComparePrices,
+  defaultStoreIds,
+  storeOptionsFromDeals,
+  type AutoComparison,
+} from '../services/priceCompare'
 import { loadDiscovery } from '../services/apiClient'
 import type { DiscoveredDeal } from '../types'
 
@@ -217,16 +222,14 @@ interface CompareRow {
 }
 
 // Auto compare: the shopper picks real stores we hold deals for, types an
-// item, and we search our own deal database for each store's price. Two stores
-// by default because that is the common "here or there?" question, but any
-// number can be compared.
-const DEFAULT_STORE_COUNT = 2
-
+// item, and we search our own deal database for each store's price.
 function AutoShopCompare() {
   const [deals, setDeals] = useState<DiscoveredDeal[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // undefined until the store list loads; [] afterwards is a real "none
+  // picked" choice, so deselecting every store must not resurrect defaults.
+  const [selectedIds, setSelectedIds] = useState<string[] | undefined>()
   const [result, setResult] = useState<AutoComparison | undefined>()
 
   useEffect(() => {
@@ -237,7 +240,9 @@ function AutoShopCompare() {
         if (controller.signal.aborted) {
           return
         }
-        setDeals(state.data?.discovery.deals ?? [])
+        const loaded = state.data?.discovery.deals ?? []
+        setDeals(loaded)
+        setSelectedIds((current) => current ?? defaultStoreIds(loaded))
         setIsLoading(false)
       })
       .catch(() => setIsLoading(false))
@@ -245,31 +250,13 @@ function AutoShopCompare() {
     return () => controller.abort()
   }, [])
 
-  // Only offer stores we can actually price against right now.
-  const storeOptions = Array.from(
-    deals
-      .reduce((map, deal) => {
-        if (!map.has(deal.retailerId)) {
-          map.set(deal.retailerId, deal.retailerName)
-        }
-        return map
-      }, new Map<string, string>())
-      .entries(),
-  )
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  // Preselect the first couple of stores so the tool is usable immediately.
-  const stores = selectedIds.length > 0
-    ? selectedIds
-    : storeOptions.slice(0, DEFAULT_STORE_COUNT).map((store) => store.id)
+  const storeOptions = storeOptionsFromDeals(deals)
+  const stores = selectedIds ?? []
 
   function toggleStore(id: string) {
     setResult(undefined)
     setSelectedIds((current) => {
-      const base = current.length > 0
-        ? current
-        : storeOptions.slice(0, DEFAULT_STORE_COUNT).map((store) => store.id)
+      const base = current ?? []
       return base.includes(id) ? base.filter((storeId) => storeId !== id) : [...base, id]
     })
   }

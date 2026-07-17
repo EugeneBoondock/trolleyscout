@@ -2,8 +2,10 @@ import { describe, expect, test } from 'vitest'
 import {
   autoComparePrices,
   dealMatchesQuery,
+  defaultStoreIds,
   extractPriceCents,
   findBestDealForQuery,
+  storeOptionsFromDeals,
 } from './priceCompare'
 import type { DiscoveredDeal } from '../types'
 
@@ -25,6 +27,32 @@ const RETAILERS = [
   { id: 'shoprite', name: 'Shoprite' },
   { id: 'woolworths', name: 'Woolworths' },
 ]
+
+describe('store options', () => {
+  const deals = [
+    deal({ retailerId: 'woolworths', retailerName: 'Woolworths', title: 'Bread' }),
+    deal({ retailerId: 'checkers', retailerName: 'Checkers', title: 'Bread' }),
+    deal({ retailerId: 'checkers', retailerName: 'Checkers', title: 'Milk' }),
+    deal({ retailerId: 'boxer', retailerName: 'Boxer', title: 'Rice' }),
+  ]
+
+  test('lists each store we hold deals for once, sorted by name', () => {
+    expect(storeOptionsFromDeals(deals)).toEqual([
+      { id: 'boxer', name: 'Boxer' },
+      { id: 'checkers', name: 'Checkers' },
+      { id: 'woolworths', name: 'Woolworths' },
+    ])
+  })
+
+  test('defaults to the first two stores', () => {
+    expect(defaultStoreIds(deals)).toEqual(['boxer', 'checkers'])
+  })
+
+  test('has no defaults when we hold no deals', () => {
+    expect(defaultStoreIds([])).toEqual([])
+    expect(storeOptionsFromDeals([])).toEqual([])
+  })
+})
 
 describe('extractPriceCents', () => {
   test('reads rand amounts out of free text', () => {
