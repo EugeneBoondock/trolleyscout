@@ -2863,6 +2863,86 @@ main {
   flex-wrap: wrap;
 }
 
+.near-me-history {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.near-me-history-list {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.near-me-history-chip {
+  display: flex;
+  align-items: stretch;
+  border: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.near-me-history-chip.is-active {
+  border-color: var(--trust-green, #0d6b3d);
+  background: color-mix(in srgb, var(--trust-green, #0d6b3d) 8%, var(--surface));
+}
+
+.near-me-history-chip > button:first-child {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  color: inherit;
+  text-align: left;
+}
+
+.near-me-history-label {
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.near-me-history-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.near-me-history-remove {
+  appearance: none;
+  border: none;
+  border-left: 2px solid var(--line-soft, var(--line));
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.5rem;
+  color: var(--faint, var(--muted));
+}
+
+.near-me-history-remove:hover {
+  color: var(--specials-red, #c9271b);
+}
+
+.store-view-deals {
+  appearance: none;
+  width: 100%;
+  border: 2px solid var(--line);
+  background: var(--marker-yellow, #ffd42e);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.7rem;
+  margin: 0.5rem 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
 .store-map-backdrop {
   position: fixed;
   inset: 0;

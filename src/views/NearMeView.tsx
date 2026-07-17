@@ -1,10 +1,16 @@
-import { useState } from 'react'
-import { LinkSimple, MapPin, NavigationArrow, Storefront, Tag } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, Clock, LinkSimple, MapPin, NavigationArrow, Storefront, Tag, Trash } from '@phosphor-icons/react'
 import {
   loadNearbyStores,
   type NearbyStoresState,
   type NearbyStoreResult,
 } from '../services/apiClient'
+import {
+  loadNearbyHistory,
+  removeNearbyHistoryEntry,
+  saveNearbyHistorySearch,
+  type NearbyHistoryEntry,
+} from '../services/nearbyHistory'
 import type { StoreLeaflet } from '../types'
 import { LeafletViewer } from '../components/LeafletViewer'
 import { ScoutMark } from '../components/ScoutMark'
@@ -15,9 +21,45 @@ const INITIAL: NearbyStoresState = {
   stores: [],
 }
 
-export function NearMeView() {
+export function NearMeView({
+  onViewStoreDeals,
+}: {
+  onViewStoreDeals?: (store: NearbyStoreResult) => void
+}) {
   const [state, setState] = useState<NearbyStoresState>(INITIAL)
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+  const [history, setHistory] = useState<NearbyHistoryEntry[]>([])
+  const [viewingLabel, setViewingLabel] = useState<string>()
+
+  // On first open, restore the most recent search so the page is never blank.
+  useEffect(() => {
+    const stored = loadNearbyHistory()
+    setHistory(stored)
+    if (stored.length > 0) {
+      const latest = stored[0]
+      setState({
+        message: `${latest.stores.length} stores from your last search near ${latest.locationLabel}.`,
+        status: 'ready',
+        stores: latest.stores,
+        summary: summariseStores(latest.stores),
+      })
+      setViewingLabel(latest.locationLabel)
+    }
+  }, [])
+
+  function showHistoryEntry(entry: NearbyHistoryEntry) {
+    setState({
+      message: `${entry.stores.length} stores near ${entry.locationLabel}.`,
+      status: 'ready',
+      stores: entry.stores,
+      summary: summariseStores(entry.stores),
+    })
+    setViewingLabel(entry.locationLabel)
+  }
+
+  function removeHistory(id: string) {
+    setHistory(removeNearbyHistoryEntry(id))
+  }
 
   function findNearby() {
     if (!('geolocation' in navigator)) {
@@ -32,7 +74,18 @@ export function NearMeView() {
         setState({ message: 'Checking stores near you…', status: 'loading', stores: [] })
 
         loadNearbyStores(position.coords.latitude, position.coords.longitude)
-          .then(setState)
+          .then((result) => {
+            setState(result)
+            if (result.stores.length > 0) {
+              const saved = saveNearbyHistorySearch(
+                position.coords.latitude,
+                position.coords.longitude,
+                result.stores,
+              )
+              setHistory(saved)
+              setViewingLabel(saved[0]?.locationLabel)
+            }
+          })
           .catch(() => {
             setState({ message: 'Store discovery is unavailable.', status: 'error', stores: [] })
           })
@@ -61,7 +114,7 @@ export function NearMeView() {
           <h1>Stores around you</h1>
           <p className="section-lede">
             Trolley Scout finds the supermarkets closest to you and pulls this week’s deals and
-            catalogues for each. Results from nearby shoppers help it load quickly.
+            catalogues for each. Tap a store to see its deals in Find deals.
           </p>
         </div>
         <button className="primary-button" disabled={isBusy} onClick={findNearby} type="button">
@@ -70,11 +123,41 @@ export function NearMeView() {
         </button>
       </section>
 
-      {state.status !== 'ready' && (
+      {(isBusy || state.status === 'error' || (state.status === 'idle' && history.length === 0)) && (
         <div className="near-me-hint" role="status">
           {isBusy ? <ScoutMark motion="spin" size={24} /> : <MapPin size={20} />}
           <p>{state.message}</p>
         </div>
+      )}
+
+      {history.length > 0 && (
+        <section className="near-me-history" aria-label="Past searches">
+          <p className="eyebrow">Your searches</p>
+          <div className="near-me-history-list">
+            {history.map((entry) => (
+              <div
+                className={`near-me-history-chip${viewingLabel === entry.locationLabel ? ' is-active' : ''}`}
+                key={entry.id}
+              >
+                <button onClick={() => showHistoryEntry(entry)} type="button">
+                  <MapPin size={14} />
+                  <span className="near-me-history-label">{entry.locationLabel}</span>
+                  <span className="near-me-history-meta">
+                    <Clock size={11} /> {formatWhen(entry.capturedAt)} · {entry.stores.length} stores
+                  </span>
+                </button>
+                <button
+                  aria-label={`Remove ${entry.locationLabel} from history`}
+                  className="near-me-history-remove"
+                  onClick={() => removeHistory(entry.id)}
+                  type="button"
+                >
+                  <Trash size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {state.status === 'ready' && state.summary && (
@@ -95,7 +178,12 @@ export function NearMeView() {
       {state.stores.length > 0 && (
         <div className="near-me-list">
           {state.stores.map((store) => (
-            <StoreCard key={store.placeId} onOpenLeaflet={setOpenLeaflet} store={store} />
+            <StoreCard
+              key={store.placeId}
+              onOpenLeaflet={setOpenLeaflet}
+              onViewDeals={onViewStoreDeals}
+              store={store}
+            />
           ))}
         </div>
       )}
@@ -107,15 +195,46 @@ export function NearMeView() {
   )
 }
 
+function summariseStores(stores: NearbyStoreResult[]): NonNullable<NearbyStoresState['summary']> {
+  return {
+    knownChainCount: stores.filter((store) => store.retailerId).length,
+    storeCount: stores.length,
+    withDealsCount: stores.filter(
+      (store) =>
+        store.deals.length > 0 || store.leaflets.length > 0 || store.promotions.length > 0,
+    ).length,
+  }
+}
+
+function formatWhen(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  const now = Date.now()
+  const mins = Math.round((now - date.getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
 function StoreCard({
   onOpenLeaflet,
+  onViewDeals,
   store,
 }: {
   onOpenLeaflet: (leaflet: StoreLeaflet) => void
+  onViewDeals?: (store: NearbyStoreResult) => void
   store: NearbyStoreResult
 }) {
   const dealCount = store.deals.length + store.promotions.filter((p) => p.kind === 'deal').length
   const catalogueCount = store.leaflets.length + store.promotions.filter((p) => p.kind === 'catalogue').length
+
+  const hasDeals =
+    store.deals.length > 0 || store.promotions.some((promotion) => promotion.kind === 'deal')
+  const canViewDeals = Boolean(onViewDeals) && hasDeals
 
   return (
     <article className="store-card">
@@ -136,6 +255,13 @@ function StoreCard({
           )}
         </div>
       </header>
+
+      {canViewDeals && (
+        <button className="store-view-deals" onClick={() => onViewDeals?.(store)} type="button">
+          See {store.name}’s deals in Find deals
+          <ArrowRight size={14} />
+        </button>
+      )}
 
       {dealCount === 0 && catalogueCount === 0 ? (
         <p className="store-empty">

@@ -247,6 +247,8 @@ function App() {
   const [isSavingOffer, setIsSavingOffer] = useState(false)
   const [deletingOfferId, setDeletingOfferId] = useState<string | undefined>()
   const [writeNotice, setWriteNotice] = useState<string | undefined>()
+  // Seeds the Find deals filters when a shopper taps a Near-me store card.
+  const [discoveryFilter, setDiscoveryFilter] = useState<{ retailerId?: string; query?: string }>()
   const [memberMode, setMemberMode] = useState(false)
   const [memberView, setMemberView] = useState<MemberView>('dashboard')
   const [memberReturnView, setMemberReturnView] = useState<MemberView>()
@@ -892,6 +894,17 @@ function App() {
     setActiveView('scanner')
   }
 
+  // Tapping a Near-me store jumps to Find deals, pre-filtered to that store's
+  // chain (or its name for an independent) so the shopper sees its deals.
+  function viewStoreDeals(store: NearbyStoreResult) {
+    setDiscoveryFilter(store.retailerId ? { retailerId: store.retailerId } : { query: store.name })
+    if (memberSession.isAuthenticated) {
+      setMemberView('discovery')
+    } else {
+      setActiveView('discovery')
+    }
+  }
+
   async function scanOfferDraft() {
     setIsScanning(true)
     setWriteNotice(undefined)
@@ -988,6 +1001,8 @@ function App() {
     return (
       <MemberShell
         activeView={memberView}
+        discoveryFilter={discoveryFilter}
+        onViewStoreDeals={viewStoreDeals}
         addingBasketDealId={addingBasketDealId}
         apiMode={apiMode}
         basketItemCount={basketItemCount}
@@ -1125,7 +1140,7 @@ function App() {
           />
         )}
 
-        {activeView === 'near' && <NearMeView />}
+        {activeView === 'near' && <NearMeView onViewStoreDeals={viewStoreDeals} />}
 
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => setActiveView('sources')} />}
 
@@ -1214,6 +1229,7 @@ function App() {
 
         {activeView === 'discovery' && (
           <DiscoveryPanel
+            initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
             onReviewDeal={reviewDiscoveredDeal}
             onRunDiscovery={runDiscovery}
@@ -1395,6 +1411,7 @@ function MemberShell({
   deletingOfferId,
   deletingDealId,
   deletingSourceId,
+  discoveryFilter,
   discoveryState,
   isDiscovering,
   isRefreshing,
@@ -1416,6 +1433,7 @@ function MemberShell({
   onRemoveVoucher,
   onReviewDeal,
   onRunDiscovery,
+  onViewStoreDeals,
   onResetScanner,
   onSaveOffer,
   onSaveDeal,
@@ -1460,6 +1478,7 @@ function MemberShell({
   deletingOfferId?: string
   deletingDealId?: string
   deletingSourceId?: string
+  discoveryFilter?: { retailerId?: string; query?: string }
   discoveryState: ResourceState<DiscoveryResource>
   isDiscovering: boolean
   isRefreshing: boolean
@@ -1481,6 +1500,7 @@ function MemberShell({
   onRemoveVoucher: (voucherId: string) => void | Promise<void>
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
+  onViewStoreDeals: (store: NearbyStoreResult) => void
   onResetScanner: () => void
   onSaveOffer: () => void
   onSaveDeal: (deal: DiscoveredDeal) => void
@@ -1609,7 +1629,7 @@ function MemberShell({
           />
         )}
 
-        {activeView === 'near' && <NearMeView />}
+        {activeView === 'near' && <NearMeView onViewStoreDeals={onViewStoreDeals} />}
 
         {activeView === 'help' && <MoneyHelpView onOpenSources={() => onSetView('sources')} />}
 
@@ -1663,6 +1683,7 @@ function MemberShell({
         {activeView === 'discovery' && (
           <DiscoveryPanel
             canWatchItems
+            initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
             onReviewDeal={onReviewDeal}
             onRunDiscovery={onRunDiscovery}
@@ -3448,6 +3469,7 @@ function SourcePanel({
 
 function DiscoveryPanel({
   canWatchItems = false,
+  initialFilter,
   isDiscovering,
   onReviewDeal,
   onRunDiscovery,
@@ -3457,6 +3479,7 @@ function DiscoveryPanel({
   state,
 }: {
   canWatchItems?: boolean
+  initialFilter?: { retailerId?: string; query?: string }
   isDiscovering: boolean
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
@@ -3468,7 +3491,7 @@ function DiscoveryPanel({
   const discovery = state.data.discovery
   const allDeals = sortDealsByPage(discovery.deals)
   const leaflets = discovery.leaflets ?? []
-  const [dealQuery, setDealQuery] = useState('')
+  const [dealQuery, setDealQuery] = useState(initialFilter?.query ?? '')
   const [watchNotice, setWatchNotice] = useState('')
   const [isWatching, setIsWatching] = useState(false)
 
@@ -3490,7 +3513,7 @@ function DiscoveryPanel({
       setIsWatching(false)
     }
   }
-  const [retailerId, setRetailerId] = useState('all')
+  const [retailerId, setRetailerId] = useState(initialFilter?.retailerId ?? 'all')
   const [sourceLabel, setSourceLabel] = useState('all')
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
@@ -3524,6 +3547,16 @@ function DiscoveryPanel({
     () => setPage(0),
     [dealQuery, retailerId, sourceLabel, imagesOnly, savingsOnly, category, foodSubcategory],
   )
+
+  // When a Near-me store card sends a new filter, apply it and jump to Deals.
+  useEffect(() => {
+    if (!initialFilter) {
+      return
+    }
+    setRetailerId(initialFilter.retailerId ?? 'all')
+    setDealQuery(initialFilter.query ?? '')
+    setActiveTab('deals')
+  }, [initialFilter])
 
   return (
     <section className="discovery-panel" aria-label="Deal finder">
