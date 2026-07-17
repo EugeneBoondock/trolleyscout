@@ -7,9 +7,16 @@ import '../widgets/catalogue_reader.dart';
 import '../widgets/scout_mark.dart';
 
 class NearMeScreen extends StatefulWidget {
-  const NearMeScreen({super.key, required this.api, this.historyStore});
+  const NearMeScreen({
+    super.key,
+    required this.api,
+    this.historyStore,
+    this.onViewStoreDeals,
+  });
   final Api api;
   final NearbyHistoryStore? historyStore;
+  // Called when a shopper taps a store card to see its deals in Find deals.
+  final void Function(String? retailerId, String storeName)? onViewStoreDeals;
 
   @override
   State<NearMeScreen> createState() => _NearMeScreenState();
@@ -24,6 +31,8 @@ class _NearMeScreenState extends State<NearMeScreen> {
       'Find the supermarkets around you and this week’s specials for each.';
   List<NearbyStore> _stores = const [];
   DateTime? _capturedAt;
+  List<NearbyHistoryEntry> _history = const [];
+  String? _viewingId;
 
   @override
   void initState() {
@@ -32,16 +41,35 @@ class _NearMeScreenState extends State<NearMeScreen> {
   }
 
   Future<void> _restoreHistory() async {
-    final history = await _historyStore.load();
+    final entries = await _historyStore.loadEntries();
     if (!mounted) return;
     setState(() {
       _restoringHistory = false;
-      if (history != null) {
-        _stores = history.result.stores;
-        _capturedAt = history.capturedAt;
-        _message = '${_stores.length} stores from your last search.';
+      _history = entries;
+      if (entries.isNotEmpty) {
+        final latest = entries.first;
+        _stores = latest.result.stores;
+        _capturedAt = latest.capturedAt;
+        _viewingId = latest.id;
+        _message =
+            '${_stores.length} stores from your last search near ${latest.locationLabel}.';
       }
     });
+  }
+
+  void _showHistoryEntry(NearbyHistoryEntry entry) {
+    setState(() {
+      _stores = entry.result.stores;
+      _capturedAt = entry.capturedAt;
+      _viewingId = entry.id;
+      _message = '${_stores.length} stores near ${entry.locationLabel}.';
+    });
+  }
+
+  Future<void> _removeHistory(NearbyHistoryEntry entry) async {
+    final next = await _historyStore.removeEntry(entry.id);
+    if (!mounted) return;
+    setState(() => _history = next);
   }
 
   Future<void> _findNearby() async {
@@ -72,17 +100,21 @@ class _NearMeScreenState extends State<NearMeScreen> {
 
       final result = await widget.api.nearbyStores(pos.latitude, pos.longitude);
       final capturedAt = DateTime.now();
+      var entries = _history;
       if (result.stores.isNotEmpty) {
-        await _historyStore.save(result, capturedAt);
+        entries = await _historyStore.save(result, capturedAt,
+            lat: pos.latitude, lon: pos.longitude);
       }
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _history = entries;
         _stores = result.stores;
         _capturedAt = result.stores.isEmpty ? _capturedAt : capturedAt;
+        _viewingId = entries.isEmpty ? _viewingId : entries.first.id;
         _message = result.stores.isEmpty
             ? 'No supermarkets found within a few kilometres.'
-            : '${result.stores.length} stores near you.';
+            : '${result.stores.length} stores near ${entries.isNotEmpty ? entries.first.locationLabel : 'you'}.';
       });
     } catch (e) {
       setState(() {
@@ -154,6 +186,26 @@ class _NearMeScreenState extends State<NearMeScreen> {
               ],
             ),
           ),
+        if (_history.length > 1) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text('RECENT SEARCHES', style: TS.eyebrowOf(context)),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in _history)
+                _HistoryChip(
+                  entry: entry,
+                  selected: entry.id == _viewingId,
+                  onTap: () => _showHistoryEntry(entry),
+                  onRemove: () => _removeHistory(entry),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
         if (_capturedAt != null && _stores.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -168,15 +220,92 @@ class _NearMeScreenState extends State<NearMeScreen> {
               ),
             ),
           ),
-        for (final store in _stores) _StoreCard(store: store),
+        for (final store in _stores)
+          _StoreCard(
+            store: store,
+            onViewDeals: widget.onViewStoreDeals == null
+                ? null
+                : () => widget.onViewStoreDeals!(store.retailerId, store.name),
+          ),
       ],
     );
   }
 }
 
+class _HistoryChip extends StatelessWidget {
+  const _HistoryChip({
+    required this.entry,
+    required this.selected,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final NearbyHistoryEntry entry;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = entry.result.stores.length;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: selected ? TS.ink : TS.lineOf(context),
+            width: 2,
+          ),
+          color: selected ? TS.yellow : TS.surfaceOf(context),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.place_outlined,
+                size: 14, color: selected ? TS.ink : TS.mutedOf(context)),
+            const SizedBox(width: 5),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  entry.locationLabel,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: selected ? TS.ink : null,
+                  ),
+                ),
+                Text(
+                  '$count stores · ${_historyTime(entry.capturedAt)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: selected ? TS.ink : TS.mutedOf(context),
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.only(left: 6),
+              color: selected ? TS.ink : TS.mutedOf(context),
+              tooltip: 'Remove',
+              onPressed: onRemove,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StoreCard extends StatelessWidget {
-  const _StoreCard({required this.store});
+  const _StoreCard({required this.store, this.onViewDeals});
   final NearbyStore store;
+  final VoidCallback? onViewDeals;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +412,22 @@ class _StoreCard extends StatelessWidget {
                 ),
               ),
             ),
+          if (onViewDeals != null && store.hasSomething) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onViewDeals,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: TS.ink,
+                  side: const BorderSide(color: TS.ink, width: 2),
+                  shape: const RoundedRectangleBorder(),
+                ),
+                icon: const Icon(Icons.local_offer, size: 16),
+                label: Text('See ${store.name}’s deals in Find deals'),
+              ),
+            ),
+          ],
         ],
       ),
     );

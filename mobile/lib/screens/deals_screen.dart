@@ -18,11 +18,16 @@ class DealsScreen extends StatefulWidget {
     this.isAuthenticated = false,
     this.onWatchesChanged,
     this.onWantsAuth,
+    this.initialRetailerId,
+    this.initialQuery,
   });
   final Api api;
   final bool isAuthenticated;
   final VoidCallback? onWatchesChanged;
   final VoidCallback? onWantsAuth;
+  // When arriving from a Near-me store card, pre-filter to that store's deals.
+  final String? initialRetailerId;
+  final String? initialQuery;
 
   @override
   State<DealsScreen> createState() => _DealsScreenState();
@@ -41,6 +46,7 @@ class _DealsScreenState extends State<DealsScreen> {
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
   Timer? _searchDebounce;
+  final _searchController = TextEditingController();
   bool _creatingWatch = false;
   final _cacheStore = DiscoveryCache();
   CachedDiscovery? _cached;
@@ -49,13 +55,36 @@ class _DealsScreenState extends State<DealsScreen> {
   @override
   void initState() {
     super.initState();
+    _query = widget.initialQuery ?? '';
+    _retailerId = widget.initialRetailerId?.isNotEmpty == true
+        ? widget.initialRetailerId!
+        : 'all';
+    _searchController.text = _query;
     _restoreCache();
     _load();
   }
 
   @override
+  void didUpdateWidget(covariant DealsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A fresh Near-me tap re-seeds the filter even if the screen stayed mounted.
+    if (widget.initialRetailerId != oldWidget.initialRetailerId ||
+        widget.initialQuery != oldWidget.initialQuery) {
+      setState(() {
+        _query = widget.initialQuery ?? '';
+        _retailerId = widget.initialRetailerId?.isNotEmpty == true
+            ? widget.initialRetailerId!
+            : 'all';
+        _searchController.text = _query;
+        _page = 0;
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _searchDebounce?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -289,6 +318,7 @@ class _DealsScreenState extends State<DealsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
+            controller: _searchController,
             decoration: const InputDecoration(
               labelText: 'Search deals',
               prefixIcon: Icon(Icons.search),

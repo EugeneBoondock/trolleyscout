@@ -42,4 +42,78 @@ void main() {
 
     expect(await NearbyHistoryStore().load(), isNull);
   });
+
+  NearbyResult resultAt(String name, double lat, double lon) => NearbyResult(
+        stores: [
+          NearbyStore(
+            placeId: 'p-$name',
+            name: name,
+            address: '12 Main Rd, $name, South Africa',
+            lat: lat,
+            lon: lon,
+            distanceM: 120,
+            deals: const [
+              Deal(title: 'Bread', retailerName: 'Shop'),
+            ],
+          ),
+        ],
+      );
+
+  test('keeps distinct searches as separate labelled entries', () async {
+    final store = NearbyHistoryStore();
+
+    await store.save(resultAt('Edenvale', -26.14, 28.15),
+        DateTime.parse('2026-07-16T09:00:00.000Z'),
+        lat: -26.14, lon: 28.15);
+    final entries = await store.save(resultAt('Sandton', -26.10, 28.05),
+        DateTime.parse('2026-07-16T11:00:00.000Z'),
+        lat: -26.10, lon: 28.05);
+
+    expect(entries.length, 2);
+    expect(entries.first.locationLabel, 'Sandton');
+    expect(entries.last.locationLabel, 'Edenvale');
+  });
+
+  test('collapses repeat searches from essentially the same spot', () async {
+    final store = NearbyHistoryStore();
+
+    await store.save(resultAt('Edenvale', -26.14, 28.15),
+        DateTime.parse('2026-07-16T09:00:00.000Z'),
+        lat: -26.14, lon: 28.15);
+    final entries = await store.save(resultAt('Edenvale', -26.141, 28.151),
+        DateTime.parse('2026-07-16T09:05:00.000Z'),
+        lat: -26.141, lon: 28.151);
+
+    expect(entries.length, 1);
+    expect(entries.single.capturedAt,
+        DateTime.parse('2026-07-16T09:05:00.000Z'));
+  });
+
+  test('removeEntry drops the matching search by id', () async {
+    final store = NearbyHistoryStore();
+    await store.save(resultAt('Edenvale', -26.14, 28.15),
+        DateTime.parse('2026-07-16T09:00:00.000Z'),
+        lat: -26.14, lon: 28.15);
+    final entries = await store.save(resultAt('Sandton', -26.10, 28.05),
+        DateTime.parse('2026-07-16T11:00:00.000Z'),
+        lat: -26.10, lon: 28.05);
+
+    final remaining = await store.removeEntry(entries.first.id);
+
+    expect(remaining.length, 1);
+    expect(remaining.single.locationLabel, 'Edenvale');
+  });
+
+  test('deriveLocationLabel reads the suburb from the nearest address', () {
+    final label = deriveLocationLabel(const [
+      NearbyStore(
+        placeId: 'p',
+        name: 'Shop',
+        address: '12 Main Rd, Bryanston, South Africa',
+        distanceM: 90,
+      ),
+    ], null, null);
+
+    expect(label, 'Bryanston');
+  });
 }

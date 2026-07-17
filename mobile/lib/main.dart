@@ -84,6 +84,17 @@ class _RootShellState extends State<RootShell> {
   AppDestination _destination = AppDestination.home;
   int _primaryIndex = 0;
   String? _authIntent;
+  String? _dealsRetailerId;
+  String? _dealsQuery;
+
+  // Near-me store card → open Find deals pre-filtered to that store's deals.
+  void _viewStoreDeals(String? retailerId, String storeName) {
+    setState(() {
+      _dealsRetailerId = retailerId?.isNotEmpty == true ? retailerId : null;
+      _dealsQuery = retailerId?.isNotEmpty == true ? null : storeName;
+    });
+    _selectDestination(AppDestination.deals);
+  }
 
   static const _primaryDestinations = [
     AppDestination.home,
@@ -312,12 +323,15 @@ class _RootShellState extends State<RootShell> {
       AppDestination.home =>
         HomeScreen(onGoToDeals: () => _selectDestination(AppDestination.deals)),
       AppDestination.money => const MoneyHelpScreen(),
-      AppDestination.near => NearMeScreen(api: api),
+      AppDestination.near =>
+        NearMeScreen(api: api, onViewStoreDeals: _viewStoreDeals),
       AppDestination.deals => DealsScreen(
           api: api,
           isAuthenticated: widget.controller.session.isAuthenticated,
           onWatchesChanged: widget.controller.refreshWatches,
           onWantsAuth: () => _showAuth('login'),
+          initialRetailerId: _dealsRetailerId,
+          initialQuery: _dealsQuery,
         ),
       AppDestination.tools => const ToolsScreen(),
       AppDestination.dashboard => DashboardScreen(
