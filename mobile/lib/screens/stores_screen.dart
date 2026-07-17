@@ -5,6 +5,7 @@ import '../store_grouping.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/common.dart';
+import '../widgets/store_map_view.dart';
 
 class StoresScreen extends StatefulWidget {
   const StoresScreen(
@@ -245,7 +246,7 @@ class _StoresScreenState extends State<StoresScreen> {
         shape: const RoundedRectangleBorder(),
         builder: (_) => FractionallySizedBox(
           heightFactor: 0.92,
-          child: _StoreGroupSheet(group: group),
+          child: _StoreGroupSheet(group: group, api: widget.api),
         ),
       );
 }
@@ -288,9 +289,10 @@ class _StoreLogo extends StatelessWidget {
 }
 
 class _StoreGroupSheet extends StatelessWidget {
-  const _StoreGroupSheet({required this.group});
+  const _StoreGroupSheet({required this.group, required this.api});
 
   final StoreGroup group;
+  final Api api;
 
   @override
   Widget build(BuildContext context) {
@@ -332,7 +334,7 @@ class _StoreGroupSheet extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             itemCount: group.branches.length,
             itemBuilder: (context, index) =>
-                _BranchCard(branch: group.branches[index]),
+                _BranchCard(branch: group.branches[index], api: api),
           ),
         ),
       ],
@@ -341,9 +343,12 @@ class _StoreGroupSheet extends StatelessWidget {
 }
 
 class _BranchCard extends StatelessWidget {
-  const _BranchCard({required this.branch});
+  const _BranchCard({required this.branch, required this.api});
 
   final NearbyStore branch;
+  final Api api;
+
+  bool get _hasLocation => branch.lat != 0 && branch.lon != 0;
 
   @override
   Widget build(BuildContext context) {
@@ -362,6 +367,24 @@ class _BranchCard extends StatelessWidget {
           if (branch.distanceM != null)
             Text(_distance(branch.distanceM!),
                 style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
+          if (_hasLocation) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => StoreMapView.open(
+                  context,
+                  api: api,
+                  storeName: branch.name,
+                  lat: branch.lat.toDouble(),
+                  lon: branch.lon.toDouble(),
+                  storeAddress: branch.address,
+                ),
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('View on map'),
+              ),
+            ),
+          ],
           if (branch.deals.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text('Branch deals', style: TS.eyebrowOf(context)),

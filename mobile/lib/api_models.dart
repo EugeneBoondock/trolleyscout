@@ -994,3 +994,15 @@ Map<String, String> _stringMap(Object? value) => value is Map
 Map<String, int> _intMap(Object? value) => value is Map
     ? value.map((key, item) => MapEntry(key.toString(), _int(item)))
     : <String, int>{};
+
+class MapRoute {
+  const MapRoute({
+    required this.path,
+    required this.distanceMeters,
+    required this.durationSeconds,
+  });
+
+  final List<List<double>> path; // [lat, lon] pairs
+  final double distanceMeters;
+  final double durationSeconds;
+}

@@ -208,6 +208,29 @@ class Api {
     return SubscriptionCheckout.fromJson(_map(data['checkout']));
   }
 
+  Future<MapRoute?> mapRoute(
+      double fromLat, double fromLon, double toLat, double toLon) async {
+    try {
+      final data = await _request(
+        'GET',
+        '/api/map-route?fromLat=$fromLat&fromLon=$fromLon&toLat=$toLat&toLon=$toLon&profile=driving',
+      );
+      final path = (data['path'] as List?)
+              ?.whereType<List>()
+              .map((p) => [(p[0] as num).toDouble(), (p[1] as num).toDouble()])
+              .toList() ??
+          const [];
+      if (path.isEmpty) return null;
+      return MapRoute(
+        path: path,
+        distanceMeters: (data['distanceMeters'] as num?)?.toDouble() ?? 0,
+        durationSeconds: (data['durationSeconds'] as num?)?.toDouble() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<DealWatch>> dealWatches() async {
     final data = await _request('GET', '/api/deal-watches');
     return _maps(data['watches']).map(DealWatch.fromJson).toList();
