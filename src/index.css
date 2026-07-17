@@ -2356,8 +2356,20 @@ main {
 
 .unit-pack-fields {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
+  grid-template-columns: 1.2fr 1fr minmax(4.5rem, 0.8fr);
   gap: 0.6rem;
+}
+
+/* Inputs and selects have intrinsic minimum widths; without this they refuse
+   to shrink and the unit dropdown pokes out of the card. */
+.unit-pack-fields .field {
+  min-width: 0;
+}
+
+.unit-pack-fields .field input,
+.unit-pack-fields .field select {
+  width: 100%;
+  min-width: 0;
 }
 
 .unit-pack-result {
