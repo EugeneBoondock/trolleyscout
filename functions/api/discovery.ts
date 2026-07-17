@@ -16,6 +16,7 @@ import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
   extractFlippingBookViewerUrl,
+  extractViewerCoverImage,
   extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
@@ -440,12 +441,31 @@ async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLe
         }
 
         const viewerUrl = extractFlippingBookViewerUrl(await response.text())
-        return viewerUrl ? { ...leaflet, url: viewerUrl } : leaflet
+
+        if (!viewerUrl) {
+          return leaflet
+        }
+
+        // Its pages are signed and unreadable, so carry the public cover.
+        const cover = leaflet.imageUrl ?? (await fetchViewerCover(viewerUrl))
+        return { ...leaflet, imageUrl: cover, url: viewerUrl }
       } catch {
         return leaflet
       }
     }),
   )
+}
+
+async function fetchViewerCover(viewerUrl: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(viewerUrl, {
+      headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
+    })
+
+    return response.ok ? extractViewerCoverImage(await response.text()) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // Sitebuilder chains link their weekly leaflet PDF from the nav of the home

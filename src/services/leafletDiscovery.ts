@@ -266,6 +266,20 @@ export function extractFlippingBookViewerUrl(html: string): string | undefined {
   return match ? `https://online.flippingbook.com/view/${match[1]}/index.html` : undefined
 }
 
+// The hosted viewer serves its page images from signed URLs we cannot read,
+// but it does publish a public cover. Surface that so the catalogue shows a
+// real cover rather than a blank card.
+export function extractViewerCoverImage(html: string): string | undefined {
+  const cover = /https?:\/\/[a-z0-9.-]*cloudfront\.net\/[A-Za-z0-9/]+\/cover\d*\.jpg/i.exec(html)
+
+  if (cover) {
+    return cover[0]
+  }
+
+  const ogImage = /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i.exec(html)
+  return ogImage ? ogImage[1].replace(/&amp;/g, '&') : undefined
+}
+
 function pdfLeafletName(retailerName: string, path: string): string {
   const month = path
     .toLowerCase()

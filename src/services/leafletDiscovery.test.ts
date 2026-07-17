@@ -3,6 +3,7 @@ import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
   extractFlippingBookViewerUrl,
+  extractViewerCoverImage,
   extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
@@ -151,5 +152,26 @@ describe('extractBoxerLeaflets', () => {
       validTo: '2026-07-22',
     })
     expect(leaflets[0].name).toContain('Mega Month')
+  })
+})
+
+describe('extractViewerCoverImage', () => {
+  test('prefers the public cloudfront cover the hosted viewer publishes', () => {
+    const html = `<img src="https://d17lvj5xn8sco6.cloudfront.net/89/41/61/98/006A1443/cover300.jpg">
+      <meta property="og:image" content="https://fbo-b.flippingbook.com/Thumb.aspx?hid=1&amp;v=x">`
+
+    expect(extractViewerCoverImage(html)).toBe(
+      'https://d17lvj5xn8sco6.cloudfront.net/89/41/61/98/006A1443/cover300.jpg',
+    )
+  })
+
+  test('falls back to og:image with entities decoded', () => {
+    const html = `<meta property="og:image" content="https://fbo-b.flippingbook.com/Thumb.aspx?hid=1&amp;v=x">`
+
+    expect(extractViewerCoverImage(html)).toBe('https://fbo-b.flippingbook.com/Thumb.aspx?hid=1&v=x')
+  })
+
+  test('returns undefined when the page publishes no cover', () => {
+    expect(extractViewerCoverImage('<p>nothing</p>')).toBeUndefined()
   })
 })
