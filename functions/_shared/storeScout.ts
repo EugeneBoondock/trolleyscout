@@ -19,6 +19,15 @@ import {
   runStructuredRetailerFeedScout,
 } from './retailerFeedScout'
 import {
+  buildKlevuBootstrapUrl,
+  buildKlevuDealsUrl,
+  detectDealPlatform,
+  extractKlevuSearchDomain,
+  parseKlevuDeals,
+  type KlevuDetection,
+  type PlatformDeal,
+} from '../../src/services/dealPlatform'
+import {
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
   saveStorePromotions,
@@ -406,6 +415,37 @@ function hashString(value: string): string {
 
 // Probes a store's website for a specials/catalogue page and turns any leaflet
 // links it finds into promotions, respecting whatever dates are printed.
+// Detects a hosted deal platform (Klevu, Constructor.io, Algolia) the big
+// chains use and, if found, queries it for on-promotion products — applied to
+// any store. Today it fetches Klevu (the uniform search API used by Dis-Chem
+// and many independent SA Magento stores); the detector also recognises
+// Constructor.io and Algolia for future generic fetchers.
+const MAX_PLATFORM_DEALS = 40
+
+function platformDealToPromotion(
+  store: NearbyStore,
+  deal: PlatformDeal,
+  sourceUrl: string,
+): StorePromotion {
+  return {
+    id: `${store.placeId}-platform-${hashString(deal.title + (deal.productUrl ?? ''))}`,
+    imageUrl: deal.imageUrl,
+    kind: 'deal',
+    placeId: store.placeId,
+    previousPriceText:
+      deal.previousPriceCents !== undefined
+        ? `R${(deal.previousPriceCents / 100).toFixed(2)}`
+        : undefined,
+    priceText: `R${(deal.priceCents / 100).toFixed(2)}`,
+    productUrl: deal.productUrl ?? sourceUrl,
+    retailerId: store.retailerId,
+    savingText: deal.promoLabel,
+    sourceUrl: deal.productUrl ?? sourceUrl,
+    storeName: store.name,
+    title: deal.title,
+  }
+}
+
 async function scoutStoreWebsite(
   env: TrolleyScoutEnv,
   store: NearbyStore,
@@ -468,9 +508,68 @@ async function scoutStoreWebsite(
     if (leaflets.length > 0 || deals.length > 0) {
       return outcome('success', [...deals, ...leaflets])
     }
+
+    // The site's own extraction found nothing, but it may run a hosted deal
+    // platform (Klevu et al.) the big chains also use — detect it from this
+    // page's HTML (which we already have) and query its deals API.
+    const detection = detectDealPlatform(page.text)
+    if (detection?.platform === 'klevu') {
+      const platform = await scoutKlevuPlatform(store, detection, origin)
+      if (platform.promotions.length > 0) {
+        return platform
+      }
+    }
   }
 
   return outcome('empty')
+}
+
+// Queries a detected Klevu store for on-promotion products and maps them to
+// promotions tied to this store. Same method Dis-Chem uses, applied generically.
+async function scoutKlevuPlatform(
+  store: NearbyStore,
+  detection: KlevuDetection,
+  origin: string,
+): Promise<ScoutOutcome> {
+  // The search cluster is often only in Klevu's external bootstrap JS, not the
+  // page HTML — resolve it from the deterministic bootstrap URL when missing.
+  let searchDomain = detection.searchDomain
+  if (!searchDomain) {
+    const bootstrap = await fetchText(buildKlevuBootstrapUrl(detection.apiKey))
+    if (bootstrap.status === 'transient_failure') {
+      return outcome('transient_failure')
+    }
+    searchDomain = bootstrap.status === 'success' && bootstrap.text
+      ? extractKlevuSearchDomain(bootstrap.text)
+      : undefined
+    if (!searchDomain) {
+      return outcome('empty')
+    }
+  }
+
+  const response = await fetchText(buildKlevuDealsUrl({ ...detection, searchDomain }))
+
+  if (response.status === 'transient_failure') {
+    return outcome('transient_failure')
+  }
+  if (response.status !== 'success' || !response.text) {
+    return outcome('empty')
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(response.text)
+  } catch {
+    return outcome('empty')
+  }
+
+  const deals = parseKlevuDeals(payload, safeHost(origin)).slice(0, MAX_PLATFORM_DEALS)
+
+  if (deals.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome('success', deals.map((deal) => platformDealToPromotion(store, deal, origin)))
 }
 
 async function readStorePathCursor(
