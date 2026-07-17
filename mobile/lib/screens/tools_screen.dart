@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import '../api.dart';
 import '../theme.dart';
 import '../unit_price.dart';
+import '../widgets/auto_compare_tool.dart';
 import '../widgets/shop_compare_tool.dart';
 
 /// “Pay less at the shelf” is a unit-price checker. Shoppers punch in the price
 /// and size of two or more packs and instantly see which is genuinely cheaper
 /// per kg / L / unit, cutting through misleading pack sizes.
 class ToolsScreen extends StatefulWidget {
-  const ToolsScreen({super.key});
+  const ToolsScreen({super.key, this.api});
+
+  /// When provided, the automatic store-price comparison is offered too.
+  final Api? api;
 
   @override
   State<ToolsScreen> createState() => _ToolsScreenState();
@@ -108,6 +113,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
               'Fill in at least two packs to see which is cheaper per unit.',
               TS.lineOf(context)),
         const SizedBox(height: 32),
+        if (widget.api != null) AutoCompareTool(api: widget.api!),
         const ShopCompareTool(),
       ],
     );

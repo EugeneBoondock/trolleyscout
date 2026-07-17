@@ -333,7 +333,7 @@ class _RootShellState extends State<RootShell> {
           initialRetailerId: _dealsRetailerId,
           initialQuery: _dealsQuery,
         ),
-      AppDestination.tools => const ToolsScreen(),
+      AppDestination.tools => ToolsScreen(api: api),
       AppDestination.dashboard => DashboardScreen(
           api: api,
           session: widget.controller.session,

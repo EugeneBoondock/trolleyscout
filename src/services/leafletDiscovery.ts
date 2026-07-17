@@ -217,6 +217,9 @@ export function extractPdfLeaflets(
 
     leaflets.push({
       capturedAt,
+      // The link IS the leaflet PDF, so record it as the document too: readers
+      // open documentUrl, and without it these leaflets cannot be viewed.
+      documentUrl: url,
       id: leafletId(target.retailerId, path),
       name: pdfLeafletName(target.retailerName, path),
       retailerId: target.retailerId,
@@ -251,6 +254,16 @@ const LEAFLET_SECTIONS: Record<string, string> = {
   grocer: 'Grocer',
   liquor: 'Liquor',
   urban: '',
+}
+
+// Boxer's promotion pages embed a hosted FlippingBook viewer rather than a
+// PDF. Its /index.html exposes the same files/assets/pager.js manifest as the
+// self-hosted viewers, so pointing the leaflet there makes the catalogue both
+// readable in-app and scannable into deals.
+export function extractFlippingBookViewerUrl(html: string): string | undefined {
+  const match = /https?:\/\/online\.flippingbook\.com\/view\/(\d+)\/?/i.exec(html)
+
+  return match ? `https://online.flippingbook.com/view/${match[1]}/index.html` : undefined
 }
 
 function pdfLeafletName(retailerName: string, path: string): string {

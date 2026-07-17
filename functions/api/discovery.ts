@@ -15,6 +15,7 @@ import {
 import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
+  extractFlippingBookViewerUrl,
   extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
@@ -401,9 +402,12 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
       }
 
       const html = await response.text()
-      return target.kind === 'html-pdf'
-        ? extractPdfLeaflets(target, html, checkedAt)
-        : extractBoxerLeaflets(target, html, checkedAt)
+
+      if (target.kind === 'html-pdf') {
+        return extractPdfLeaflets(target, html, checkedAt)
+      }
+
+      return await resolveEmbeddedViewers(extractBoxerLeaflets(target, html, checkedAt))
     }
 
     if (target.kind === 'sitebuilder-pdf' && target.pageUrls) {
@@ -414,6 +418,34 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
   }
 
   return []
+}
+
+// A leaflet whose link is an HTML promotion page cannot be read or scanned.
+// Follow each one and, when it embeds a hosted FlippingBook viewer, point the
+// leaflet at the viewer's index.html so its pages can be built and scanned.
+async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLeaflet[]> {
+  return await Promise.all(
+    leaflets.map(async (leaflet) => {
+      if (leaflet.documentUrl || leaflet.url.toLowerCase().endsWith('/index.html')) {
+        return leaflet
+      }
+
+      try {
+        const response = await fetch(leaflet.url, {
+          headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
+        })
+
+        if (!response.ok) {
+          return leaflet
+        }
+
+        const viewerUrl = extractFlippingBookViewerUrl(await response.text())
+        return viewerUrl ? { ...leaflet, url: viewerUrl } : leaflet
+      } catch {
+        return leaflet
+      }
+    }),
+  )
 }
 
 // Sitebuilder chains link their weekly leaflet PDF from the nav of the home

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
+  extractFlippingBookViewerUrl,
   extractPdfLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
@@ -70,6 +71,8 @@ describe('extractPdfLeaflets', () => {
     )
     expect(leaflets[0].retailerId).toBe('usave')
     expect(leaflets[0].name).toBe('Usave specials (July)')
+    // Readers open documentUrl; without it the leaflet cannot be viewed.
+    expect(leaflets[0].documentUrl).toBe(leaflets[0].url)
   })
 
   test('surfaces every regional OK Foods leaflet with a readable region name', () => {
@@ -94,6 +97,23 @@ describe('extractPdfLeaflets', () => {
     expect(leaflets[0].url).toBe(
       'https://www.okfoods.co.za/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf',
     )
+  })
+})
+
+describe('extractFlippingBookViewerUrl', () => {
+  test('turns an embedded hosted viewer into a pager-resolvable index.html', () => {
+    // Boxer's promotion page embeds the viewer via an EmbedScriptUrl redirect.
+    const html = `
+      <script src="https://online.flippingbook.com/EmbedScriptUrl.aspx?m=redir&hid=53977247"></script>
+      <a href="https://online.flippingbook.com/view/53977247/">Open</a>`
+
+    expect(extractFlippingBookViewerUrl(html)).toBe(
+      'https://online.flippingbook.com/view/53977247/index.html',
+    )
+  })
+
+  test('returns undefined when no viewer is embedded', () => {
+    expect(extractFlippingBookViewerUrl('<p>No catalogue here</p>')).toBeUndefined()
   })
 })
 
