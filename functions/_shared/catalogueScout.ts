@@ -480,8 +480,15 @@ export async function runCatalogueScout(
   }
   const externalLeaflets = await dependencies.discoverExternalLeaflets(dependencies.fetcher)
   const databaseEnv = env as TrolleyScoutEnv & { DB: D1Database }
+  // Leaflets with a page manifest are read page-by-page through the vision
+  // path, which is the only route that reliably yields deals: image-only PDFs
+  // extract no text, and store-scouted pages are mostly dead links (404/302).
+  // Give those first claim on every run, or the rotating queue spends its
+  // whole budget on candidates that can never produce a deal.
+  const pagerLeaflets = uniqueCatalogueLeaflets(
+    leaflets.filter((leaflet) => flippingBookPagerUrl(leaflet)),
+  )
   const candidates = uniqueCatalogueLeaflets([
-    ...leaflets.filter((leaflet) => flippingBookPagerUrl(leaflet)),
     ...externalLeaflets,
     ...leaflets.filter((leaflet) => !flippingBookPagerUrl(leaflet)),
   ])
@@ -494,7 +501,11 @@ export async function runCatalogueScout(
   } catch {
     // A rollout without cursor storage still scans the first bounded window.
   }
-  const selected = selectCatalogueWindow(candidates, queueStart, MAX_DOCUMENTS_PER_RUN)
+  const priority = pagerLeaflets.slice(0, MAX_DOCUMENTS_PER_RUN)
+  const selected = [
+    ...priority,
+    ...selectCatalogueWindow(candidates, queueStart, MAX_DOCUMENTS_PER_RUN - priority.length),
+  ]
   let dealCount = 0
   let scannedDocumentCount = 0
 
@@ -531,7 +542,9 @@ export async function runCatalogueScout(
       await dependencies.writeSourceCursor(env, {
         cursor: {
           kind: 'page',
-          page: (queueStart + selected.length) % candidates.length,
+          // Advance only past the rotated candidates: the priority leaflets are
+          // taken every run and are not part of this queue.
+          page: (queueStart + (selected.length - priority.length)) % candidates.length,
         },
         sourceKey: CATALOGUE_QUEUE_CURSOR_KEY,
         updatedAt: dependencies.now(),
@@ -1168,10 +1181,13 @@ async function defaultRunVision(ai: Ai | undefined, page: DownloadedPage) {
   if (!ai) {
     throw new Error('Catalogue vision requires an AI binding')
   }
-  const runVision = ai.run as unknown as (
+  // Must stay bound to the binding: calling a detached ai.run leaves `this`
+  // undefined and the Ai class throws "Cannot set properties of undefined
+  // (setting '#options')" before it ever reaches the model.
+  const runVision = (ai.run as unknown as (
     model: string,
     input: unknown,
-  ) => Promise<VisionChatResponse>
+  ) => Promise<VisionChatResponse>).bind(ai)
   const output = await runVision('@cf/mistralai/mistral-small-3.1-24b-instruct', {
     max_completion_tokens: 2400,
     messages: [{
