@@ -1,0 +1,51 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://trolleyscout.co.za/",
+      "service-desc": [
+        {
+          "href": "https://trolleyscout.co.za/api/discovery",
+          "title": "Current South African grocery deals and leaflet catalogues across retailers (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/retailers",
+          "title": "Retailer registry: slugs and display names (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/nearby-stores{?lat,lon}",
+          "title": "Supermarkets near a coordinate with each store's current deals and catalogues (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/offers",
+          "title": "Community-submitted local offers (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/vouchers",
+          "title": "Current voucher deals (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/health",
+          "title": "Service liveness (JSON)",
+          "type": "application/json"
+        }
+      ],
+      "describedby": [
+        {
+          "href": "https://trolleyscout.co.za/llms.txt",
+          "title": "Agent-friendly overview of Trolley Scout",
+          "type": "text/plain"
+        },
+        {
+          "href": "https://trolleyscout.co.za/index.md",
+          "title": "Site overview in markdown",
+          "type": "text/markdown"
+        }
+      ]
+    }
+  ]
+}

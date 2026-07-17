@@ -42,5 +42,22 @@ describe('external retailer scouting', () => {
     expect(leaflets).toHaveLength(1)
     expect(leaflets[0].documentUrl).toBe('https://files.sitebuilder.1-grid.com/b1/61/b1619084.pdf')
     expect(leaflets[0].retailerName).toBe('Frontline Hyper')
+    // "View" is link chrome and the filename is a UUID — never surface either.
+    expect(leaflets[0].name).toBe('Frontline Hyper promotions leaflet')
+  })
+
+  it('names sitebuilder leaflets from the anchor text (live Frontline shape)', () => {
+    const frontline = externalRetailerTargets.find((candidate) => candidate.retailerId === 'frontline')!
+
+    // The live frontlinesa.co.za nav links its promo PDF as plain anchor text.
+    const html = `
+      <li><a href="https://frontlinesa.co.za/">Home</a></li>
+      <li><a data-testid="link" href="https://files.sitebuilder.1-grid.com/b1/61/b1619084-32bd-4514-a9d1-698681d25cb2.pdf">Promotions</a></li>
+    `
+
+    const leaflets = extractRetailerLeafletsFromHtml(frontline, html, '2026-07-17T00:00:00.000Z')
+
+    expect(leaflets).toHaveLength(1)
+    expect(leaflets[0].name).toBe('Promotions')
   })
 })

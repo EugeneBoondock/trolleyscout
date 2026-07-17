@@ -183,7 +183,7 @@ export function extractPdfLeaflets(
   target: LeafletTarget,
   html: string,
   capturedAt: string,
-  limit = 1,
+  limit = 6,
 ): StoreLeaflet[] {
   const leaflets: StoreLeaflet[] = []
   const seen = new Set<string>()
@@ -217,6 +217,29 @@ export function extractPdfLeaflets(
   return leaflets
 }
 
+// Filename codes on OK Foods/Usave leaflet PDFs: region prefix + section,
+// e.g. "WC-urban.pdf" or "CEN-Foods.pdf".
+const LEAFLET_REGIONS: Record<string, string> = {
+  cen: 'Central',
+  ec: 'Eastern Cape',
+  fs: 'Free State',
+  gn: 'Gauteng',
+  kzn: 'KwaZulu-Natal',
+  lim: 'Limpopo',
+  mp: 'Mpumalanga',
+  nc: 'Northern Cape',
+  nor: 'North',
+  rsa: 'National',
+  wc: 'Western Cape',
+}
+
+const LEAFLET_SECTIONS: Record<string, string> = {
+  foods: 'Foods',
+  grocer: 'Grocer',
+  liquor: 'Liquor',
+  urban: '',
+}
+
 function pdfLeafletName(retailerName: string, path: string): string {
   const month = path
     .toLowerCase()
@@ -224,7 +247,20 @@ function pdfLeafletName(retailerName: string, path: string): string {
     .map((segment) => MONTHS[segment])
     .find(Boolean)
 
-  return month ? `${retailerName} specials: ${month}` : `${retailerName} specials leaflet`
+  const filename = path.toLowerCase().split('/').pop() ?? ''
+  const fileMatch = /^([a-z]+)-([a-z]+)\.pdf$/.exec(filename)
+  const region = fileMatch ? LEAFLET_REGIONS[fileMatch[1]] : undefined
+  const section = fileMatch ? LEAFLET_SECTIONS[fileMatch[2]] : undefined
+
+  const parts = [region, section].filter(Boolean).join(' ')
+  const scope = parts ? `: ${parts}` : ''
+  const when = month ? ` (${month})` : ''
+
+  if (scope || when) {
+    return `${retailerName} specials${scope}${when}`
+  }
+
+  return `${retailerName} specials leaflet`
 }
 
 function boxerLeafletName(text: string, path: string): string {

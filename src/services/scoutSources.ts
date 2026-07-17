@@ -67,7 +67,7 @@ export function extractRetailerLeafletsFromHtml(
       continue
     }
 
-    const name = nearestHeading(context) || documentName(documentUrl)
+    const name = leafletName(target.retailerName, html, match.index, context, documentUrl)
     const imageUrl = nearestImage(context, target.sourceUrl)
     seen.add(documentUrl)
     leaflets.push({
@@ -83,6 +83,37 @@ export function extractRetailerLeafletsFromHtml(
   }
 
   return leaflets
+}
+
+// Sitebuilder pages (e.g. Frontline's 1-grid site) name their leaflet links in
+// the anchor text with no nearby heading, and their PDF filenames are UUIDs —
+// so prefer anchor text, then a heading, and never surface a UUID as a name.
+function leafletName(
+  retailerName: string,
+  html: string,
+  matchIndex: number,
+  context: string,
+  documentUrl: string,
+) {
+  const candidate =
+    anchorText(html, matchIndex) || nearestHeading(context) || documentName(documentUrl)
+  const uuidLike = /^[0-9a-f]{6,}(?:[\s-]+[0-9a-f]+)*$/i.test(candidate)
+  return uuidLike ? `${retailerName} promotions leaflet` : candidate
+}
+
+const GENERIC_LINK_CHROME = /^(view|download|open|read more|click here|here|pdf|leaflet)$/i
+
+function anchorText(html: string, matchIndex: number) {
+  const closing = html.indexOf('</a>', matchIndex)
+  if (closing < 0 || closing - matchIndex > 500) {
+    return ''
+  }
+  const opening = html.indexOf('>', matchIndex)
+  if (opening < 0 || opening >= closing) {
+    return ''
+  }
+  const text = cleanText(html.slice(opening + 1, closing))
+  return GENERIC_LINK_CHROME.test(text) ? '' : text
 }
 
 function nearestHeading(context: string) {

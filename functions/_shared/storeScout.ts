@@ -19,11 +19,17 @@ import {
   runStructuredRetailerFeedScout,
 } from './retailerFeedScout'
 import {
+  buildAlgoliaDealsRequest,
+  buildConstructorDealsUrl,
   buildKlevuBootstrapUrl,
   buildKlevuDealsUrl,
   detectDealPlatform,
   extractKlevuSearchDomain,
+  parseAlgoliaDeals,
+  parseConstructorDeals,
   parseKlevuDeals,
+  type AlgoliaDetection,
+  type ConstructorDetection,
   type KlevuDetection,
   type PlatformDeal,
 } from '../../src/services/dealPlatform'
@@ -417,9 +423,7 @@ function hashString(value: string): string {
 // links it finds into promotions, respecting whatever dates are printed.
 // Detects a hosted deal platform (Klevu, Constructor.io, Algolia) the big
 // chains use and, if found, queries it for on-promotion products — applied to
-// any store. Today it fetches Klevu (the uniform search API used by Dis-Chem
-// and many independent SA Magento stores); the detector also recognises
-// Constructor.io and Algolia for future generic fetchers.
+// any store, however small, so "no deals" means every method was tried.
 const MAX_PLATFORM_DEALS = 40
 
 function platformDealToPromotion(
@@ -513,8 +517,13 @@ async function scoutStoreWebsite(
     // platform (Klevu et al.) the big chains also use — detect it from this
     // page's HTML (which we already have) and query its deals API.
     const detection = detectDealPlatform(page.text)
-    if (detection?.platform === 'klevu') {
-      const platform = await scoutKlevuPlatform(store, detection, origin)
+    if (detection) {
+      const platform =
+        detection.platform === 'klevu'
+          ? await scoutKlevuPlatform(store, detection, origin)
+          : detection.platform === 'constructor'
+            ? await scoutConstructorPlatform(store, detection, origin)
+            : await scoutAlgoliaPlatform(store, detection, origin)
       if (platform.promotions.length > 0) {
         return platform
       }
@@ -570,6 +579,83 @@ async function scoutKlevuPlatform(
   }
 
   return outcome('success', deals.map((deal) => platformDealToPromotion(store, deal, origin)))
+}
+
+// Queries a detected Constructor.io store (Woolworths' platform) for
+// discounted products via its public search API.
+async function scoutConstructorPlatform(
+  store: NearbyStore,
+  detection: ConstructorDetection,
+  origin: string,
+): Promise<ScoutOutcome> {
+  const response = await fetchText(
+    buildConstructorDealsUrl(detection),
+    { accept: 'application/json' },
+    true,
+  )
+
+  if (response.status === 'transient_failure') {
+    return outcome('transient_failure')
+  }
+  if (response.status !== 'success' || !response.text) {
+    return outcome('empty')
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(response.text)
+  } catch {
+    return outcome('empty')
+  }
+
+  const deals = parseConstructorDeals(payload, safeHost(origin)).slice(0, MAX_PLATFORM_DEALS)
+
+  if (deals.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome('success', deals.map((deal) => platformDealToPromotion(store, deal, origin)))
+}
+
+// Queries a detected Algolia store for discounted products. Only possible when
+// the page HTML surfaced the app id, a public search key, and an index name.
+async function scoutAlgoliaPlatform(
+  store: NearbyStore,
+  detection: AlgoliaDetection,
+  origin: string,
+): Promise<ScoutOutcome> {
+  const request = buildAlgoliaDealsRequest(detection)
+
+  if (!request) {
+    return outcome('empty')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(request.url, { ...request.init, signal: controller.signal })
+
+    if (response.status >= 500 || response.status === 429) {
+      return outcome('transient_failure')
+    }
+    if (!response.ok) {
+      return outcome('empty')
+    }
+
+    const deals = parseAlgoliaDeals(await response.json(), safeHost(origin))
+      .slice(0, MAX_PLATFORM_DEALS)
+
+    if (deals.length === 0) {
+      return outcome('empty')
+    }
+
+    return outcome('success', deals.map((deal) => platformDealToPromotion(store, deal, origin)))
+  } catch {
+    return outcome('transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function readStorePathCursor(

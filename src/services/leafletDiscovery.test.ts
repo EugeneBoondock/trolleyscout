@@ -69,7 +69,31 @@ describe('extractPdfLeaflets', () => {
       'https://www.usave.co.za/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf',
     )
     expect(leaflets[0].retailerId).toBe('usave')
-    expect(leaflets[0].name).toBe('Usave specials: July')
+    expect(leaflets[0].name).toBe('Usave specials (July)')
+  })
+
+  test('surfaces every regional OK Foods leaflet with a readable region name', () => {
+    const okFoods = leafletTargets.find((target) => target.retailerId === 'ok-foods')!
+    // Live shape: one PDF per region/section for the current week.
+    const html = `
+      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf"></div>
+      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/KZN-urban.pdf"></div>
+      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/CEN-Foods.pdf"></div>
+      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/RSA-Liquor.pdf"></div>
+      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf"></div>`
+
+    const leaflets = extractPdfLeaflets(okFoods, html, '2026-07-17T10:00:00.000Z')
+
+    expect(leaflets).toHaveLength(4)
+    expect(leaflets.map((leaflet) => leaflet.name)).toEqual([
+      'OK Foods specials: Western Cape (July)',
+      'OK Foods specials: KwaZulu-Natal (July)',
+      'OK Foods specials: Central Foods (July)',
+      'OK Foods specials: National Liquor (July)',
+    ])
+    expect(leaflets[0].url).toBe(
+      'https://www.okfoods.co.za/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf',
+    )
   })
 })
 

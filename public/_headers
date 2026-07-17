@@ -1,0 +1,13 @@
+# Agent discoverability: advertise the API catalog and llms.txt on every
+# response (RFC 8288 Link headers, checked by Cloudflare's Agent Readiness).
+/*
+  Link: <https://trolleyscout.co.za/.well-known/api-catalog>; rel="api-catalog", <https://trolleyscout.co.za/llms.txt>; rel="llms-txt"
+
+/.well-known/api-catalog
+  Content-Type: application/linkset+json
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/index.md
+  Content-Type: text/markdown; charset=utf-8

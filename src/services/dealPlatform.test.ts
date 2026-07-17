@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAlgoliaDealsRequest,
+  buildConstructorDealsUrl,
   buildKlevuDealsUrl,
   detectDealPlatform,
+  parseAlgoliaDeals,
+  parseConstructorDeals,
   parseKlevuDeals,
 } from './dealPlatform'
 
@@ -18,10 +22,11 @@ describe('detectDealPlatform', () => {
     })
   })
 
-  it('detects a Constructor.io store', () => {
+  it('detects a Constructor.io store and remembers its cluster host', () => {
     const html = `fetch("https://ac.cnstrc.com/search"); var k = "key_tw9hKe0fkfgEf36D";`
     expect(detectDealPlatform(html)).toEqual({
       apiKey: 'key_tw9hKe0fkfgEf36D',
+      host: 'ac.cnstrc.com',
       platform: 'constructor',
     })
   })
@@ -117,5 +122,104 @@ describe('parseKlevuDeals', () => {
 
   it('returns empty for a non-Klevu payload', () => {
     expect(parseKlevuDeals({ foo: 'bar' })).toEqual([])
+  })
+})
+
+describe('Constructor.io generic querying', () => {
+  it('builds a search URL against the detected cluster host', () => {
+    const url = buildConstructorDealsUrl({
+      apiKey: 'key_abc123def456',
+      host: 'xyz-zone.cnstrc.com',
+      platform: 'constructor',
+    })
+
+    expect(url).toContain('https://xyz-zone.cnstrc.com/search/special?')
+    expect(url).toContain('key=key_abc123def456')
+  })
+
+  it('falls back to the shared cluster when no host was detected', () => {
+    const url = buildConstructorDealsUrl({ apiKey: 'key_abc123def456', platform: 'constructor' })
+
+    expect(url).toContain('https://ac.cnstrc.com/search/special?')
+  })
+
+  it('keeps only results whose sale price undercuts the regular price', () => {
+    const payload = {
+      response: {
+        results: [
+          {
+            value: 'White Bread 700g',
+            data: {
+              image_url: '/media/bread.jpg',
+              price: 21.99,
+              sale_price: 17.99,
+              url: '/products/white-bread',
+            },
+          },
+          { value: 'Full-price Milk 2L', data: { price: 39.99, url: '/products/milk' } },
+        ],
+      },
+    }
+
+    const deals = parseConstructorDeals(payload, 'shop.example.co.za')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      imageUrl: 'https://shop.example.co.za/media/bread.jpg',
+      previousPriceCents: 2199,
+      priceCents: 1799,
+      promoLabel: 'Save R4.00',
+      title: 'White Bread 700g',
+    })
+  })
+})
+
+describe('Algolia generic querying', () => {
+  it('builds a POST query request only when an index name surfaced', () => {
+    const request = buildAlgoliaDealsRequest({
+      apiKey: '0123456789abcdef0123456789abcdef',
+      appId: 'ABCD1234EF',
+      index: 'prod_products',
+      platform: 'algolia',
+    })
+
+    expect(request?.url).toBe(
+      'https://abcd1234ef-dsn.algolia.net/1/indexes/prod_products/query',
+    )
+    expect(request?.init.method).toBe('POST')
+    expect(request?.init.headers['x-algolia-application-id']).toBe('ABCD1234EF')
+
+    expect(
+      buildAlgoliaDealsRequest({
+        apiKey: '0123456789abcdef0123456789abcdef',
+        appId: 'ABCD1234EF',
+        platform: 'algolia',
+      }),
+    ).toBeUndefined()
+  })
+
+  it('keeps only discounted hits across common price field names', () => {
+    const payload = {
+      hits: [
+        {
+          name: 'Sunflower Oil 2L',
+          special_price: 89.99,
+          price: 119.99,
+          image: 'https://cdn.example.com/oil.jpg',
+          url: 'https://shop.example.co.za/oil',
+        },
+        { name: 'Full-price Rice 2kg', price: 54.99 },
+      ],
+    }
+
+    const deals = parseAlgoliaDeals(payload, 'shop.example.co.za')
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      previousPriceCents: 11999,
+      priceCents: 8999,
+      promoLabel: 'Save R30.00',
+      title: 'Sunflower Oil 2L',
+    })
   })
 })
