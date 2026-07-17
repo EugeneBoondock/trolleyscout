@@ -45,9 +45,12 @@ describe('Near Me normalized deal selection', () => {
       item('online-only', 'coffee', 8_000, { type: 'online' }),
     ]
 
+    // Online/delivery-wide deals apply to every branch and now surface last,
+    // below branch and national specials.
     expect(selectNormalizedDealsForStore(items, store).map((deal) => deal.id)).toEqual([
       'rice-store',
       'milk-national',
+      'online-only',
     ])
   })
 

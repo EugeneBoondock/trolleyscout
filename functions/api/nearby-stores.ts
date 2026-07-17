@@ -291,6 +291,9 @@ export function buildNearMeDealQueries(stores: NearbyStore[]): Array<{
     }
 
     queries.push({ retailerId, scope: { type: 'national' } })
+    // Structured feeds (Woolworths, Dis-Chem, Clicks...) publish online-scoped
+    // deals; surface them on the chain's nearby branches too.
+    queries.push({ retailerId, scope: { type: 'online' } })
   }
   return queries
 }
@@ -356,6 +359,12 @@ function scopePriorityForStore(item: StoredDealItem, store: NearbyStore): number
   }
   if (scope.type === 'national') {
     return 2
+  }
+  // Online/delivery-wide deals (Woolworths, Dis-Chem, Clicks structured feeds)
+  // apply to every branch of the chain — lowest priority, below a real
+  // branch/province/national special, but still surfaced.
+  if (scope.type === 'online') {
+    return 3
   }
   return Number.POSITIVE_INFINITY
 }
