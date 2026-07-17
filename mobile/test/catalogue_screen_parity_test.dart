@@ -19,6 +19,12 @@ void main() {
     await tester.pumpWidget(_wrap(DealsScreen(api: _CatalogueApi())));
     await tester.pumpAndSettle();
 
+    // Catalogues now live on their own tab, deduped by retailer.
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Winter savings'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Winter savings'));
     await tester.pumpAndSettle();
 

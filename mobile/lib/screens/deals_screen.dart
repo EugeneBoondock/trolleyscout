@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
+import '../deal_categories.dart';
 import '../deal_filters.dart';
 import '../discovery_cache.dart';
 import '../theme.dart';
@@ -37,6 +38,8 @@ class _DealsScreenState extends State<DealsScreen> {
   String _sourceLabel = 'all';
   bool _imagesOnly = false;
   bool _savingsOnly = false;
+  DealCategory? _category;
+  FoodSubcategory? _foodSubcategory;
   Timer? _searchDebounce;
   bool _creatingWatch = false;
   final _cacheStore = DiscoveryCache();
@@ -169,6 +172,8 @@ class _DealsScreenState extends State<DealsScreen> {
       sourceLabel: _sourceLabel,
       imagesOnly: _imagesOnly,
       savingsOnly: _savingsOnly,
+      category: _category,
+      foodSubcategory: _foodSubcategory,
     );
     if (deals.isEmpty) {
       return _dealBoard(result, deals, retailers, sources, const [], 0, 0,
@@ -203,6 +208,77 @@ class _DealsScreenState extends State<DealsScreen> {
     int pageCount, {
     String? staleNote,
   }) {
+    final catalogueGroups = _groupCatalogues(result.catalogues);
+
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('DEAL FINDER', style: TS.eyebrowOf(context)),
+                const SizedBox(height: 4),
+                const Text('Source-backed specials',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+                if (staleNote != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: TS.mutedOf(context)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(staleNote,
+                            style: TextStyle(
+                                color: TS.mutedOf(context),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          TabBar(
+            labelColor: TS.inkOf(context),
+            unselectedLabelColor: TS.mutedOf(context),
+            indicatorColor: TS.redOf(context),
+            tabs: [
+              Tab(text: 'Deals (${deals.length})'),
+              Tab(text: 'Catalogues (${catalogueGroups.length})'),
+              const Tab(text: 'Overview'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _dealsTab(deals, retailers, sources, slice, page, pageCount),
+                _cataloguesTab(catalogueGroups),
+                _overviewTab(result, catalogueGroups.length),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dealsTab(
+    List<Deal> deals,
+    Map<String, String> retailers,
+    List<String> sources,
+    List<Deal> slice,
+    int page,
+    int pageCount,
+  ) {
     return RefreshIndicator(
       color: TS.redOf(context),
       onRefresh: () async => setState(() {
@@ -212,31 +288,6 @@ class _DealsScreenState extends State<DealsScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('DEAL FINDER', style: TS.eyebrowOf(context)),
-          const SizedBox(height: 4),
-          const Text('Source-backed specials',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
-          if (staleNote != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: TS.mutedOf(context)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(staleNote,
-                      style: TextStyle(
-                          color: TS.mutedOf(context),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ),
-          const SizedBox(height: 12),
           TextField(
             decoration: const InputDecoration(
               labelText: 'Search deals',
@@ -287,6 +338,13 @@ class _DealsScreenState extends State<DealsScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          _categoryChips(),
+          if (_category == DealCategory.food) ...[
+            const SizedBox(height: 6),
+            _foodSubcategoryChips(),
+          ],
+          const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             children: [
@@ -308,23 +366,7 @@ class _DealsScreenState extends State<DealsScreen> {
               ),
             ],
           ),
-          if (result.catalogues.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('Current catalogues',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 176,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: result.catalogues.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (context, index) =>
-                    _CatalogueCard(catalogue: result.catalogues[index]),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+          const SizedBox(height: 10),
           Text('${deals.length} matching deals', style: TS.eyebrowOf(context)),
           const SizedBox(height: 8),
           if (deals.isEmpty)
@@ -404,6 +446,197 @@ class _DealsScreenState extends State<DealsScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _categoryChips() {
+    return SizedBox(
+      height: 38,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _chip('All', _category == null, () => setState(() {
+                _category = null;
+                _foodSubcategory = null;
+                _page = 0;
+              })),
+          for (final option in categoryOptions)
+            _chip('${option.icon} ${option.label}', _category == option.id,
+                () => setState(() {
+                  _category = option.id;
+                  _foodSubcategory = null;
+                  _page = 0;
+                })),
+        ],
+      ),
+    );
+  }
+
+  Widget _foodSubcategoryChips() {
+    return SizedBox(
+      height: 34,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _chip('All food', _foodSubcategory == null,
+              () => setState(() {
+                _foodSubcategory = null;
+                _page = 0;
+              }), small: true),
+          for (final option in foodSubcategoryOptions)
+            _chip(option.label, _foodSubcategory == option.id,
+                () => setState(() {
+                  _foodSubcategory = option.id;
+                  _page = 0;
+                }), small: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool active, VoidCallback onTap,
+      {bool small = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () {
+          uxTap();
+          onTap();
+        },
+        child: Container(
+          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(horizontal: small ? 10 : 12),
+          decoration: BoxDecoration(
+            color: active ? TS.inkOf(context) : TS.surfaceOf(context),
+            border: Border.all(color: TS.lineSoftOf(context), width: 2),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  color: active
+                      ? TS.surfaceOf(context)
+                      : TS.inkOf(context),
+                  fontWeight: FontWeight.w700,
+                  fontSize: small ? 12 : 13)),
+        ),
+      ),
+    );
+  }
+
+  Widget _cataloguesTab(List<_CatalogueGroup> groups) {
+    if (groups.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No store catalogues loaded yet. Open Near me so the scouts find catalogues around you.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: TS.mutedOf(context)),
+          ),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.72,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: groups.length,
+      itemBuilder: (context, index) => _CatalogueGroupCard(
+        group: groups[index],
+        onTap: () => _openCatalogueGroup(groups[index]),
+      ),
+    );
+  }
+
+  Widget _overviewTab(DiscoveryResult result, int catalogueRetailers) {
+    final stats = <List<String>>[
+      ['Live deals found', '${result.foundDealCount}'],
+      ['Sources checked', '${result.checkedSourceCount}'],
+      ['Store leaflets', '${result.leafletCount}'],
+      ['Catalogue retailers', '$catalogueRetailers'],
+    ];
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final stat in stats)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: TS.card(context),
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(stat[0].toUpperCase(), style: TS.eyebrowOf(context)),
+                Text(stat[1],
+                    style: const TextStyle(
+                        fontSize: 24, fontWeight: FontWeight.w900)),
+              ],
+            ),
+          ),
+        Text(
+          'Deals come from official retailer feeds and store catalogues. '
+          'Big chains publish weekly catalogues, not per-item prices, so open '
+          'a catalogue to see every special.',
+          style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  // One entry per retailer; multiple branch catalogues collapse into it.
+  List<_CatalogueGroup> _groupCatalogues(List<Catalogue> catalogues) {
+    final byRetailer = <String, _CatalogueGroup>{};
+    for (final catalogue in catalogues) {
+      final name = catalogue.retailerName ?? catalogue.name;
+      final key = name.toLowerCase();
+      byRetailer.putIfAbsent(key, () => _CatalogueGroup(name, []));
+      byRetailer[key]!.catalogues.add(catalogue);
+    }
+    final groups = byRetailer.values.toList()
+      ..sort((a, b) => a.retailerName.compareTo(b.retailerName));
+    return groups;
+  }
+
+  void _openCatalogueGroup(_CatalogueGroup group) {
+    if (group.catalogues.length == 1) {
+      showCatalogueReader(context, group.catalogues.first);
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: TS.bgOf(context),
+      shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('${group.retailerName} catalogues',
+                style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 12),
+            for (final catalogue in group.catalogues)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.menu_book_outlined,
+                    color: TS.redOf(context)),
+                title: Text(catalogue.name),
+                subtitle: catalogue.validTo != null
+                    ? Text('Until ${catalogue.validTo!.substring(0, 10)}')
+                    : null,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showCatalogueReader(context, catalogue);
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -602,16 +835,27 @@ class _DealImage extends StatelessWidget {
   }
 }
 
-class _CatalogueCard extends StatelessWidget {
-  const _CatalogueCard({required this.catalogue});
-  final Catalogue catalogue;
+class _CatalogueGroup {
+  _CatalogueGroup(this.retailerName, this.catalogues);
+  final String retailerName;
+  final List<Catalogue> catalogues;
+}
+
+class _CatalogueGroupCard extends StatelessWidget {
+  const _CatalogueGroupCard({required this.group, required this.onTap});
+  final _CatalogueGroup group;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final cover = group.catalogues
+        .map((catalogue) => catalogue.imageUrl)
+        .firstWhere((url) => url != null, orElse: () => null);
+    final count = group.catalogues.length;
+
     return InkWell(
-      onTap: () => showCatalogueReader(context, catalogue),
+      onTap: onTap,
       child: Container(
-        width: 132,
         decoration: TS.card(context, width: 2),
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -620,28 +864,31 @@ class _CatalogueCard extends StatelessWidget {
             Expanded(
               child: SizedBox(
                 width: double.infinity,
-                child: catalogue.imageUrl == null
+                child: cover == null
                     ? ColoredBox(
                         color: TS.surfaceOf(context),
-                        child: const Icon(Icons.menu_book_outlined),
+                        child: const Icon(Icons.menu_book_outlined, size: 34),
                       )
-                    : Image.network(catalogue.imageUrl!,
+                    : Image.network(cover,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => ColoredBox(
                               color: TS.surfaceOf(context),
-                              child: const Icon(Icons.menu_book_outlined),
+                              child:
+                                  const Icon(Icons.menu_book_outlined, size: 34),
                             )),
               ),
             ),
             const SizedBox(height: 6),
-            Text(catalogue.retailerName ?? catalogue.name,
+            Text(group.retailerName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w900)),
-            Text(catalogue.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12)),
+            Text(
+              count == 1 ? group.catalogues.first.name : '$count catalogues',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: TS.mutedOf(context)),
+            ),
           ],
         ),
       ),
