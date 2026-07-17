@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Calculator, Plus, Trash, WifiSlash } from '@phosphor-icons/react'
+import { Calculator, MagnifyingGlass, Plus, Trash, WifiSlash } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import {
   compareUnitPrices,
@@ -9,6 +9,9 @@ import {
   type PackUnit,
 } from '../services/unitPrice'
 import { compareShops, formatCents, parsePriceInput } from '../services/shopCompare'
+import { autoComparePrices, type AutoComparison } from '../services/priceCompare'
+import { loadDiscovery } from '../services/apiClient'
+import type { DiscoveredDeal } from '../types'
 
 const unitOptions: Array<{ label: string; value: PackUnit }> = [
   { label: 'g', value: 'g' },
@@ -183,6 +186,7 @@ export function ToolkitView() {
         </div>
       </section>
 
+      <AutoShopCompare />
       <ShopCompare />
 
       <section className="shelf-tips" aria-label="Shelf tips">
@@ -210,6 +214,185 @@ interface CompareRow {
   id: string
   name: string
   prices: string[]
+}
+
+// Auto compare: the shopper picks real stores we hold deals for, types an
+// item, and we search our own deal database for each store's price. Two stores
+// by default because that is the common "here or there?" question, but any
+// number can be compared.
+const DEFAULT_STORE_COUNT = 2
+
+function AutoShopCompare() {
+  const [deals, setDeals] = useState<DiscoveredDeal[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [result, setResult] = useState<AutoComparison | undefined>()
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    loadDiscovery(controller.signal)
+      .then((state) => {
+        if (controller.signal.aborted) {
+          return
+        }
+        setDeals(state.data?.discovery.deals ?? [])
+        setIsLoading(false)
+      })
+      .catch(() => setIsLoading(false))
+
+    return () => controller.abort()
+  }, [])
+
+  // Only offer stores we can actually price against right now.
+  const storeOptions = Array.from(
+    deals
+      .reduce((map, deal) => {
+        if (!map.has(deal.retailerId)) {
+          map.set(deal.retailerId, deal.retailerName)
+        }
+        return map
+      }, new Map<string, string>())
+      .entries(),
+  )
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  // Preselect the first couple of stores so the tool is usable immediately.
+  const stores = selectedIds.length > 0
+    ? selectedIds
+    : storeOptions.slice(0, DEFAULT_STORE_COUNT).map((store) => store.id)
+
+  function toggleStore(id: string) {
+    setResult(undefined)
+    setSelectedIds((current) => {
+      const base = current.length > 0
+        ? current
+        : storeOptions.slice(0, DEFAULT_STORE_COUNT).map((store) => store.id)
+      return base.includes(id) ? base.filter((storeId) => storeId !== id) : [...base, id]
+    })
+  }
+
+  function compare() {
+    const chosen = storeOptions.filter((store) => stores.includes(store.id))
+    setResult(autoComparePrices(deals, query, chosen))
+  }
+
+  const canCompare = query.trim().length > 1 && stores.length >= 2
+
+  return (
+    <section className="shop-compare auto-compare" aria-label="Automatic price comparison">
+      <div className="member-section-head">
+        <div>
+          <p className="eyebrow">Tools</p>
+          <h1>Compare a product across stores</h1>
+          <p className="section-lede">
+            Pick the stores you shop at, type what you are buying, and we check our deal
+            database for each store's price. Compare two stores or as many as you like.
+          </p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="section-lede">Loading the stores we have prices for…</p>
+      ) : storeOptions.length === 0 ? (
+        <p className="section-lede">No store prices are loaded right now. Try again shortly.</p>
+      ) : (
+        <>
+          <fieldset className="auto-compare-stores">
+            <legend>Stores to compare ({stores.length} picked)</legend>
+            {storeOptions.map((store) => (
+              <label
+                className={clsx('auto-compare-store', stores.includes(store.id) && 'is-picked')}
+                key={store.id}
+              >
+                <input
+                  checked={stores.includes(store.id)}
+                  onChange={() => toggleStore(store.id)}
+                  type="checkbox"
+                />
+                {store.name}
+              </label>
+            ))}
+          </fieldset>
+
+          <div className="auto-compare-controls">
+            <input
+              aria-label="Item to compare"
+              className="auto-compare-query"
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setResult(undefined)
+              }}
+              placeholder="e.g. white bread"
+              value={query}
+            />
+            <button
+              className="primary-button"
+              disabled={!canCompare}
+              onClick={compare}
+              type="button"
+            >
+              <MagnifyingGlass size={16} weight="bold" /> Compare
+            </button>
+          </div>
+
+          {stores.length < 2 && (
+            <p className="section-lede">Pick at least two stores to compare.</p>
+          )}
+
+          {result && <AutoCompareResult result={result} />}
+        </>
+      )}
+    </section>
+  )
+}
+
+function AutoCompareResult({ result }: { result: AutoComparison }) {
+  if (result.foundCount === 0) {
+    return (
+      <p className="compare-verdict">
+        No current deals match “{result.query}” at the stores you picked. Try a simpler word, or
+        add it to your watchlist and we will tell you when it goes on special.
+      </p>
+    )
+  }
+
+  const cheapest = result.matches.find((match) => match.retailerId === result.cheapestRetailerId)
+
+  return (
+    <div className="auto-compare-result">
+      <ul className="auto-compare-list">
+        {result.matches.map((match) => (
+          <li
+            className={clsx('auto-compare-row', match.isCheapest && 'is-cheapest')}
+            key={match.retailerId}
+          >
+            <span className="auto-compare-store-name">{match.retailerName}</span>
+            {match.priceCents === undefined ? (
+              <span className="auto-compare-missing">No match found</span>
+            ) : (
+              <>
+                <span className="auto-compare-title">{match.deal?.title}</span>
+                <span className="auto-compare-price">{formatCents(match.priceCents)}</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {cheapest && (
+        <p className="compare-verdict">
+          <strong>{cheapest.retailerName}</strong> is cheapest for “{result.query}”
+          {result.savingsCents > 0 && <>, saving you {formatCents(result.savingsCents)}</>}.
+          {result.missingCount > 0 && (
+            <> We hold no match at {result.missingCount} of the stores you picked.</>
+          )}
+        </p>
+      )}
+    </div>
+  )
 }
 
 const DEFAULT_SHOPS = ['Shop A', 'Shop B']

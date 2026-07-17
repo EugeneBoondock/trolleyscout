@@ -97,6 +97,20 @@ describe('extractPdfLeaflets', () => {
   })
 })
 
+describe('frontline sitebuilder leaflets', () => {
+  test('is registered to fetch the home page and every branch page', () => {
+    const frontline = leafletTargets.find((target) => target.retailerId === 'frontline')!
+
+    expect(frontline.kind).toBe('sitebuilder-pdf')
+    // The weekly leaflet is linked from the nav on the home page; Springs is a
+    // separate branch page that carries its own copy.
+    expect(frontline.pageUrls).toEqual([
+      'https://frontlinesa.co.za/',
+      'https://frontlinesa.co.za/springs',
+    ])
+  })
+})
+
 describe('extractBoxerLeaflets', () => {
   test('reads promotion name, valid dates, and absolute leaflet URL', () => {
     const html = `

@@ -4531,3 +4531,99 @@ main {
     justify-content: center;
   }
 }
+
+/* Auto compare: pick real stores, type an item, we price it from our data. */
+.auto-compare-stores {
+  border: 2px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px 12px;
+}
+
+.auto-compare-stores legend {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.auto-compare-store {
+  align-items: center;
+  border: 2px solid var(--line);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+  padding: 5px 9px;
+}
+
+.auto-compare-store.is-picked {
+  background: var(--yellow);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.auto-compare-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.auto-compare-query {
+  flex: 1;
+}
+
+.auto-compare-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.auto-compare-row {
+  align-items: center;
+  border: 2px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(90px, 1fr) 2fr auto;
+  padding: 8px 10px;
+}
+
+.auto-compare-row.is-cheapest {
+  border-color: var(--ink);
+  box-shadow: inset 4px 0 0 var(--green);
+}
+
+.auto-compare-store-name {
+  font-weight: 900;
+}
+
+.auto-compare-title {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auto-compare-price {
+  font-weight: 900;
+}
+
+.auto-compare-missing {
+  color: var(--muted);
+  font-size: 13px;
+  grid-column: 2 / -1;
+}
+
+@media (max-width: 560px) {
+  .auto-compare-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .auto-compare-title {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+}

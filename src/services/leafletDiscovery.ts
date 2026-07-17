@@ -7,13 +7,16 @@ import type { RetailerId, StoreLeaflet } from '../types'
 export interface LeafletTarget {
   retailerId: RetailerId
   retailerName: string
-  kind: 'sixty60-api' | 'html-list' | 'html-pdf'
+  kind: 'sixty60-api' | 'html-list' | 'html-pdf' | 'sitebuilder-pdf'
   // For sixty60-api: the leaflet API base + a representative national store id.
   apiBase?: string
   storeId?: string
   // For html-list / html-pdf: the specials page to parse and its origin.
   pageUrl?: string
   origin?: string
+  // For sitebuilder-pdf: every page that may link a leaflet PDF (a chain's
+  // home page plus each branch page). Results are deduped by document URL.
+  pageUrls?: string[]
 }
 
 export const leafletTargets: LeafletTarget[] = [
@@ -50,6 +53,16 @@ export const leafletTargets: LeafletTarget[] = [
     pageUrl: 'https://www.okfoods.co.za/specials.html',
     retailerId: 'ok-foods',
     retailerName: 'OK Foods',
+  },
+  {
+    // Frontline Hyper runs a 1-grid sitebuilder site: its weekly leaflet is a
+    // PDF linked as "Promotions" in the nav, and each branch page repeats or
+    // adds its own. Fetch the home page and every branch page, then dedupe.
+    kind: 'sitebuilder-pdf',
+    origin: 'https://frontlinesa.co.za',
+    pageUrls: ['https://frontlinesa.co.za/', 'https://frontlinesa.co.za/springs'],
+    retailerId: 'frontline',
+    retailerName: 'Frontline Hyper',
   },
 ]
 

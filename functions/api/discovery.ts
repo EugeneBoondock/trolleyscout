@@ -20,6 +20,7 @@ import {
   leafletTargets,
   type LeafletTarget,
 } from '../../src/services/leafletDiscovery'
+import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import type {
   DiscoveredDeal,
   DiscoverySourceResult,
@@ -404,11 +405,62 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
         ? extractPdfLeaflets(target, html, checkedAt)
         : extractBoxerLeaflets(target, html, checkedAt)
     }
+
+    if (target.kind === 'sitebuilder-pdf' && target.pageUrls) {
+      return await fetchSitebuilderLeaflets(target, target.pageUrls, checkedAt)
+    }
   } catch {
     // A single retailer's leaflet fetch failing must not sink the board.
   }
 
   return []
+}
+
+// Sitebuilder chains link their weekly leaflet PDF from the nav of the home
+// page and repeat or extend it per branch page. Fetch every page, reuse the
+// store-scout PDF extractor, and dedupe by document so a leaflet shared across
+// branches is listed once.
+async function fetchSitebuilderLeaflets(
+  target: LeafletTarget,
+  pageUrls: string[],
+  checkedAt: string,
+): Promise<StoreLeaflet[]> {
+  const pages = await Promise.all(
+    pageUrls.map(async (pageUrl) => {
+      try {
+        const response = await fetch(pageUrl, {
+          headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
+        })
+
+        if (!response.ok) {
+          return []
+        }
+
+        return extractRetailerLeafletsFromHtml(
+          {
+            retailerId: target.retailerId,
+            retailerName: target.retailerName,
+            sourceUrl: pageUrl,
+            trustAllPdfs: true,
+          },
+          await response.text(),
+          checkedAt,
+        )
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  const seen = new Set<string>()
+  return pages.flat().filter((leaflet) => {
+    const key = leaflet.documentUrl ?? leaflet.url
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
 }
 
 // Runs every source, saves fresh rows to D1, and returns the merged results
