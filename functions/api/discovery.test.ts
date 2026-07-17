@@ -445,3 +445,22 @@ function fakeDiscoveryDatabase(item: StoredDealItem) {
     },
   } as unknown as D1Database
 }
+
+describe('catalogue-scanned deals in the feed', () => {
+  it('names the source "Catalogue scan" instead of the key fingerprint', () => {
+    // Catalogue source keys end in a content fingerprint. The generic
+    // last-segment rule surfaced that raw hash to shoppers as the deal source.
+    const checks = buildNormalizedDiscoveryChecks([
+      storedItem({
+        id: 'catalogue-deal',
+        productId: 'catalogue-9f2c',
+        scope: { type: 'national' },
+        sourceKey: `catalogue::shoprite::${'b'.repeat(64)}`,
+      }),
+    ])
+
+    expect(checks).toHaveLength(1)
+    expect(checks[0].source.sourceLabel).toBe('Catalogue scan')
+    expect(checks[0].deals[0].sourceLabel).toBe('Catalogue scan')
+  })
+})

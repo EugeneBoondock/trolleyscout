@@ -11,7 +11,10 @@ binding = "AI"
 SCOUT_ORIGIN = "https://trolleyscout.co.za"
 
 [triggers]
-crons = ["17 */6 * * *"]
+# Catalogues are read one page per run and resume via a cursor, so coverage is
+# paced by how often this fires. Every 6h took days to finish a leaflet — longer
+# than the weekly specials it was reading. Hourly keeps pace with them.
+crons = ["17 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

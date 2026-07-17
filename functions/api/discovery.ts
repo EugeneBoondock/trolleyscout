@@ -966,6 +966,12 @@ function readableSlug(value: string) {
 }
 
 function readableSourceKey(sourceKey: string) {
+  // Catalogue keys end in a content fingerprint, so the generic "last segment"
+  // rule showed shoppers a raw hash as the deal's source.
+  if (sourceKey.startsWith('catalogue::')) {
+    return 'Catalogue scan'
+  }
+
   return readableSlug(sourceKey.split('::').at(-1) ?? 'structured-feed')
 }
 
