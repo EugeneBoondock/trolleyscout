@@ -1228,7 +1228,7 @@ async function defaultRunVision(ai: Ai | undefined, page: DownloadedPage) {
   return output.choices?.[0]?.message?.content ?? ''
 }
 
-async function defaultPdfMarkdown(
+export async function defaultPdfMarkdown(
   ai: Ai | undefined,
   document: ArrayBuffer,
   name: string,
@@ -1236,12 +1236,18 @@ async function defaultPdfMarkdown(
   if (!ai) {
     throw new Error('Catalogue PDF conversion requires an AI binding')
   }
+  // Image conversion rasterises every page and blows the Worker's 128MB limit
+  // for any real leaflet — measured OOM even on a 1.1MB PDF with
+  // maxConvertedImages: 1. An OOM kills the whole isolate, so it took the
+  // entire scheduled scout down with it and almost no deals were ever stored.
+  // Text extraction is cheap and safe; catalogues that are pure images yield
+  // nothing here and are scanned page-by-page through the vision path instead.
   const conversion = await ai.toMarkdown(
     { blob: new Blob([document], { type: 'application/pdf' }), name },
     {
       conversionOptions: {
         pdf: {
-          images: { convert: true, descriptionLanguage: 'en', maxConvertedImages: 12 },
+          images: { convert: false },
           metadata: false,
         },
       },

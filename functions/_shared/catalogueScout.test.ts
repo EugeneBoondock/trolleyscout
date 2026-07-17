@@ -6,6 +6,7 @@ import { Miniflare } from 'miniflare'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StoreLeaflet } from '../../src/types'
 import {
+  defaultPdfMarkdown,
   buildFlippingBookPages,
   claimCatalogueScanLease,
   catalogueLeaseOwnerToken,
@@ -701,3 +702,23 @@ function webpHeader(width: number, height: number) {
   write24(27, height - 1)
   return bytes
 }
+
+describe('defaultPdfMarkdown', () => {
+  it('never asks the converter to rasterise images', async () => {
+    // Measured against real leaflets on Workers AI: pdf.images.convert = true
+    // exceeds the Worker's 128MB memory limit even for a 1.1MB PDF with
+    // maxConvertedImages: 1. The OOM kills the isolate and takes the whole
+    // scheduled scout down, so almost no catalogue deals were ever stored.
+    // Image-only catalogues are read page-by-page through the vision path.
+    const toMarkdown = vi.fn(async () => ({ data: '# leaflet', format: 'markdown' }))
+    const ai = { toMarkdown } as unknown as Parameters<typeof defaultPdfMarkdown>[0]
+
+    await defaultPdfMarkdown(ai, new ArrayBuffer(8), 'leaflet.pdf')
+
+    const options = toMarkdown.mock.calls[0][1] as {
+      conversionOptions: { pdf: { images: { convert: boolean } } }
+    }
+    expect(options.conversionOptions.pdf.images.convert).toBe(false)
+    expect(JSON.stringify(options)).not.toContain('maxConvertedImages')
+  })
+})
