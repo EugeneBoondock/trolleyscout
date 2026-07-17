@@ -22,15 +22,18 @@
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.3.2",
     "clsx": "^2.1.1",
+    "leaflet": "^1.9.4",
     "motion": "^12.42.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-leaflet": "^5.0.0",
     "tailwindcss": "^4.3.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260701.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

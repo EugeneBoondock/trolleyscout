@@ -37,6 +37,7 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
+import { StoreMap } from './components/StoreMap'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -3114,6 +3115,7 @@ export function DiscoveredStoreDirectory({
   const groups = groupDiscoveredStores(discovered.stores)
   const [openGroup, setOpenGroup] = useState<DiscoveredStoreGroup | undefined>()
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+  const [mapBranch, setMapBranch] = useState<NearbyStoreResult | undefined>()
 
   useEffect(() => {
     if (!openGroup) {
@@ -3224,12 +3226,22 @@ export function DiscoveredStoreDirectory({
                       {branch.address && <p>{cleanUiPunctuation(branch.address)}</p>}
                       {branch.lastSeenAt && <small>Last seen {formatStoreSeenDate(branch.lastSeenAt)}</small>}
                     </div>
-                    {branch.website && (
-                      <a href={branch.website} rel="noreferrer" target="_blank">
-                        Store website
-                        <LinkSimple size={14} />
-                      </a>
-                    )}
+                    <div className="store-location-actions">
+                      <button
+                        className="ghost-button"
+                        onClick={() => setMapBranch(branch)}
+                        type="button"
+                      >
+                        <NavigationArrow size={14} />
+                        Map
+                      </button>
+                      {branch.website && (
+                        <a href={branch.website} rel="noreferrer" target="_blank">
+                          Store website
+                          <LinkSimple size={14} />
+                        </a>
+                      )}
+                    </div>
                   </div>
 
                   {(branch.promotions ?? []).length > 0 ? (
@@ -3291,6 +3303,16 @@ export function DiscoveredStoreDirectory({
 
       {openLeaflet && (
         <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
+      )}
+
+      {mapBranch && (
+        <StoreMap
+          lat={mapBranch.lat}
+          lon={mapBranch.lon}
+          onClose={() => setMapBranch(undefined)}
+          storeAddress={mapBranch.address ? cleanUiPunctuation(mapBranch.address) : undefined}
+          storeName={cleanUiPunctuation(mapBranch.name)}
+        />
       )}
     </div>
   )
