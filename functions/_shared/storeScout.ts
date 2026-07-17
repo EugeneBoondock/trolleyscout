@@ -15,6 +15,10 @@ import type { TrolleyScoutEnv } from './env'
 import { readSourceCursor, writeSourceCursor } from './dealItemStore'
 import { matchPendingWatches } from './dealWatchStore'
 import {
+  getStructuredRetailerSources,
+  runStructuredRetailerFeedScout,
+} from './retailerFeedScout'
+import {
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
   saveStorePromotions,
@@ -98,10 +102,26 @@ export async function scoutNearbyStores(
   }
 
   const nowIso = new Date(nowMs).toISOString()
+
+  // First, for every known chain among the nearby stores, run that retailer's
+  // structured deal feed (Woolworths Constructor.io, Dis-Chem Klevu, Game,
+  // Clicks, Makro, Builders, Food Lover's...). One call covers the whole chain
+  // and lands deals in deal_items, which the Near-me endpoint reads for known
+  // chains. This is why a chain store rarely shows empty: its own API is tried
+  // before we ever fall back to website scraping or web search.
+  const feedRetailersScouted = await scoutStructuredFeedsForStores(env, storesNeedingDeals)
+
   const candidates: NearbyStore[] = []
   const limit = Math.max(0, Math.floor(maxStores))
 
   if (limit === 0) {
+    if (feedRetailersScouted) {
+      try {
+        await matchPendingWatches(env)
+      } catch {
+        // Best-effort.
+      }
+    }
     return
   }
 
@@ -139,15 +159,69 @@ export async function scoutNearbyStores(
     }
   }
 
-  // New deals just landed from this shopper's area: see whether they answer
-  // anything other members are watching for.
-  if (savedAnyPromotions) {
+  // New deals just landed from this shopper's area (structured feeds and/or
+  // scouted promotions): see whether they answer anything members watch for.
+  if (savedAnyPromotions || feedRetailersScouted) {
     try {
       await matchPendingWatches(env)
     } catch {
       // Alerts are best-effort; the cron sweep retries every pending watch.
     }
   }
+}
+
+// Runs the structured deal feed for each distinct known chain among the nearby
+// stores, deduped so ten Woolworths branches trigger one Woolworths fetch.
+// Returns how many retailers produced deals. Each retailer's feed is a queued
+// fallback method: if a chain has a structured API we use it here, and the
+// per-store website/search scout below only runs for what still has nothing.
+async function scoutStructuredFeedsForStores(
+  env: TrolleyScoutEnv,
+  stores: NearbyStore[],
+): Promise<number> {
+  if (!env.DB) {
+    return 0
+  }
+
+  const sources = getStructuredRetailerSources()
+  const sourcesByRetailer = new Map<string, typeof sources>()
+
+  for (const source of sources) {
+    const list = sourcesByRetailer.get(source.retailerId) ?? []
+    sourcesByRetailer.set(source.retailerId, [...list, source])
+  }
+
+  const retailersNearby = new Set<string>()
+  for (const store of stores) {
+    if (store.retailerId && sourcesByRetailer.has(store.retailerId)) {
+      retailersNearby.add(store.retailerId)
+    }
+  }
+
+  let retailersWithDeals = 0
+
+  for (const retailerId of retailersNearby) {
+    const retailerSources = sourcesByRetailer.get(retailerId)
+    if (!retailerSources) {
+      continue
+    }
+
+    try {
+      // Bounded: a near-me search advances the retailer's feed by a couple of
+      // requests, not a full re-crawl (the cron sweep does the deep pass).
+      const result = await runStructuredRetailerFeedScout(env, {
+        requestCap: 2,
+        sources: retailerSources,
+      })
+      if (result.acceptedDealCount > 0) {
+        retailersWithDeals += 1
+      }
+    } catch {
+      // A single retailer feed failing must not stop the others.
+    }
+  }
+
+  return retailersWithDeals
 }
 
 async function scoutStore(
