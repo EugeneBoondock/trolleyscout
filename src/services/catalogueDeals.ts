@@ -1,9 +1,11 @@
-import type { DiscoveredDeal } from '../types'
+import type { DiscoveredDeal, ImageCrop } from '../types'
 
 export interface CatalogueDealInput {
   capturedAt: string
+  documentFingerprint?: string
   imageUrl?: string
   markdown: string
+  pageDeepLink?: string
   // 1-based catalogue page these deals were read from, so the board can list
   // them in the order a shopper would page through the leaflet.
   pageNumber?: number
@@ -120,13 +122,15 @@ export function extractVisionCatalogueDeals(
       : ''
     const priceText = normalizeVisionPrice(item.price)
     const previousPriceText = normalizeVisionPrice(item.previousPrice)
+    const imageCrop = normalizeImageCrop(item.box)
 
     if (
       !isProductText(title) ||
       invalidVisionTitles.test(title) ||
       describedVisionTitle.test(title) ||
       bannerFragmentTitle.test(title) ||
-      !priceText
+      !priceText ||
+      !imageCrop
     ) {
       continue
     }
@@ -139,9 +143,12 @@ export function extractVisionCatalogueDeals(
 
     seen.add(key)
     deals.push({
+      catalogueDeepLink: input.pageDeepLink,
+      catalogueFingerprint: input.documentFingerprint,
       capturedAt: input.capturedAt,
       evidenceText: JSON.stringify(item),
       id: `${input.retailerId}-catalogue-${hashString(key)}`,
+      imageCrop,
       imageUrl: input.imageUrl,
       pageNumber: input.pageNumber,
       previousPriceText,
@@ -156,6 +163,44 @@ export function extractVisionCatalogueDeals(
   }
 
   return deals
+}
+
+function normalizeImageCrop(value: unknown): ImageCrop | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  const fields = ['x', 'y', 'width', 'height'] as const
+  const numbers = Object.fromEntries(fields.map((field) => [field, value[field]])) as Record<
+    typeof fields[number],
+    unknown
+  >
+  if (fields.some((field) => typeof numbers[field] !== 'number' || !Number.isFinite(numbers[field]))) {
+    return undefined
+  }
+
+  const epsilon = 0.000001
+  const clampEdge = (number: number) => number < 0 && number >= -epsilon
+    ? 0
+    : number > 1 && number <= 1 + epsilon
+      ? 1
+      : number
+  const crop = {
+    height: clampEdge(numbers.height as number),
+    width: clampEdge(numbers.width as number),
+    x: clampEdge(numbers.x as number),
+    y: clampEdge(numbers.y as number),
+  }
+  if (
+    crop.x < 0 || crop.y < 0 || crop.width < 0.02 || crop.height < 0.02 ||
+    crop.x > 1 || crop.y > 1 ||
+    crop.x + crop.width > 1 + epsilon || crop.y + crop.height > 1 + epsilon ||
+    crop.width * crop.height < 0.001
+  ) {
+    return undefined
+  }
+  crop.width = Math.min(crop.width, 1 - crop.x)
+  crop.height = Math.min(crop.height, 1 - crop.y)
+  return crop
 }
 
 function parseVisionPayload(value: string) {

@@ -62,7 +62,7 @@ export function MoneyHelpView({ onOpenSources }: { onOpenSources: () => void }) 
 
         <p className="source-stamp">
           Amounts effective {GRANTS_EFFECTIVE_FROM} · checked against the Department of Social
-          Development on {GRANTS_CHECKED_ON} · amounts change every April — always confirm on{' '}
+          Development on {GRANTS_CHECKED_ON} · amounts change every April. Always confirm on{' '}
           <a href="https://www.sassa.gov.za/" rel="noreferrer" target="_blank">
             sassa.gov.za
           </a>
@@ -147,7 +147,7 @@ export function MoneyHelpView({ onOpenSources }: { onOpenSources: () => void }) 
 
       <p className="help-disclaimer">
         Trolley Scout summarises public information to make it easier to find. It is not legal or
-        financial advice, and amounts change — the official links above are always the final word.
+        financial advice, and amounts change. The official links above are always the final word.
       </p>
     </div>
   )

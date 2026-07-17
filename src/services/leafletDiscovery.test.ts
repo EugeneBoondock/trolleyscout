@@ -42,6 +42,7 @@ describe('extractSixtyLeaflets', () => {
     expect(leaflets[0]).toMatchObject({
       imageUrl: 'https://www.shoprite.co.za/medias/GN-Checkers.jpg',
       name: 'Shoprite Low Price Lowduuuma Gauteng 13 July - 22 July',
+      priceScope: { storeIds: ['1080'], type: 'store' },
       retailerId: 'shoprite',
       url: 'https://specials.shoprite.co.za/deals/gnlowprice13jul/index.html',
       validFrom: '2026-07-12',
@@ -68,7 +69,7 @@ describe('extractPdfLeaflets', () => {
       'https://www.usave.co.za/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf',
     )
     expect(leaflets[0].retailerId).toBe('usave')
-    expect(leaflets[0].name).toBe('Usave specials — July')
+    expect(leaflets[0].name).toBe('Usave specials: July')
   })
 })
 

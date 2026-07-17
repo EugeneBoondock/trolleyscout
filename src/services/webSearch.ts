@@ -12,9 +12,14 @@ export function buildDuckDuckGoUrl(query: string): string {
   return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
 }
 
-export function buildStoreSpecialsQuery(storeName: string, area?: string): string {
+export function buildStoreSpecialsQuery(
+  storeName: string,
+  area?: string,
+  verifiedHost?: string,
+): string {
   const place = area ? ` ${area}` : ''
-  return `${storeName}${place} specials catalogue South Africa`
+  const site = verifiedHost ? `site:${normalizeHost(verifiedHost)} ` : ''
+  return `${site}${storeName}${place} specials catalogue South Africa`
 }
 
 // Reputable SA catalogue aggregators — trusted as a fallback when the store's
@@ -95,32 +100,42 @@ export function extractSearchResults(html: string, limit = 12): SearchResult[] {
   return results
 }
 
-// Picks the best specials source for a store from search results. Preference:
-//   1. A direct catalogue PDF.
-//   2. The store's own website (host contains a word from the store name).
-//   3. A reputable aggregator's page for that store.
+// A PDF is evidence only after its host has been verified as the store's own
+// site. With no verified host, return an HTML candidate so the caller can
+// verify store identity before following any catalogue links.
 export function pickCatalogueSource(
   results: SearchResult[],
   storeName: string,
-): { url: string; title: string; kind: 'pdf' | 'official' | 'aggregator' } | undefined {
+  verifiedHost?: string,
+): { url: string; title: string; kind: 'pdf' | 'official' } | undefined {
   const nameTokens = storeNameTokens(storeName)
+  const officialHost = verifiedHost ? normalizeHost(verifiedHost) : undefined
 
-  const pdf = results.find((result) => /\.pdf(?:$|\?)/i.test(result.url))
-  if (pdf) {
-    return { kind: 'pdf', title: pdf.title, url: pdf.url }
+  if (officialHost) {
+    if (isAggregator(officialHost)) {
+      return undefined
+    }
+    const officialResults = results.filter((result) => sameHost(hostOf(result.url), officialHost))
+    const pdf = officialResults.find((result) => /\.pdf(?:$|\?)/i.test(result.url))
+    if (pdf) {
+      return { kind: 'pdf', title: pdf.title, url: pdf.url }
+    }
+
+    const page = officialResults.find((result) => !isAggregator(hostOf(result.url)))
+    return page ? { kind: 'official', title: page.title, url: page.url } : undefined
   }
 
   const official = results.find((result) => {
     const host = hostOf(result.url)
-    return host && !isAggregator(host) && nameTokens.some((token) => host.includes(token))
+    return (
+      host &&
+      !isAggregator(host) &&
+      !/\.pdf(?:$|\?)/i.test(result.url) &&
+      nameTokens.some((token) => host.includes(token))
+    )
   })
   if (official) {
     return { kind: 'official', title: official.title, url: official.url }
-  }
-
-  const aggregator = results.find((result) => isAggregator(hostOf(result.url)))
-  if (aggregator) {
-    return { kind: 'aggregator', title: aggregator.title, url: aggregator.url }
   }
 
   return undefined
@@ -203,10 +218,18 @@ function storeNameTokens(storeName: string): string[] {
 
 function hostOf(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./, '').toLowerCase()
+    return normalizeHost(new URL(url).hostname)
   } catch {
     return ''
   }
+}
+
+function normalizeHost(host: string): string {
+  return host.trim().replace(/^www\./, '').toLowerCase()
+}
+
+function sameHost(left: string, right: string): boolean {
+  return normalizeHost(left) === normalizeHost(right)
 }
 
 function isAggregator(host: string): boolean {

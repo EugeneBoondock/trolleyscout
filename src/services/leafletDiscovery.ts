@@ -115,6 +115,9 @@ export function extractSixtyLeaflets(
       id: leafletId(target.retailerId, url),
       imageUrl,
       name,
+      priceScope: target.storeId
+        ? { storeIds: [target.storeId], type: 'store' }
+        : undefined,
       retailerId: target.retailerId,
       retailerName: target.retailerName,
       url,
@@ -221,7 +224,7 @@ function pdfLeafletName(retailerName: string, path: string): string {
     .map((segment) => MONTHS[segment])
     .find(Boolean)
 
-  return month ? `${retailerName} specials — ${month}` : `${retailerName} specials leaflet`
+  return month ? `${retailerName} specials: ${month}` : `${retailerName} specials leaflet`
 }
 
 function boxerLeafletName(text: string, path: string): string {

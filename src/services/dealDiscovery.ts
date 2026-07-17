@@ -868,6 +868,9 @@ function objectImageUrl(value: unknown, baseUrl: string) {
     typeof nestedImage === 'string' ? nestedImage : '',
     stringValue(nestedImage, 'url'),
     stringValue(nestedImage, 'src'),
+    // Amazon nests renditions as {lowRes|hiRes: {baseUrl, extension}}.
+    amazonRenditionUrl(recordValue(nestedImage, 'lowRes')),
+    amazonRenditionUrl(recordValue(nestedImage, 'hiRes')),
   ].find(Boolean)
 
   if (!path) {
@@ -876,6 +879,16 @@ function objectImageUrl(value: unknown, baseUrl: string) {
 
   const imageUrl = absoluteUrl(path, baseUrl)
   return /^https:\/\//.test(imageUrl) ? imageUrl : undefined
+}
+
+function amazonRenditionUrl(rendition: unknown) {
+  const base = stringValue(rendition, 'baseUrl')
+
+  if (!base) {
+    return ''
+  }
+
+  return `${base}.${stringValue(rendition, 'extension') || 'jpg'}`
 }
 
 function firstClassText(html: string, className: string) {

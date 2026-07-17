@@ -8,6 +8,7 @@ interface OfferRow {
   captured_at: string
   created_at: string
   id: string
+  image_url: string | null
   price_text: string
   retailer_id: VerifiedOffer['retailerId']
   saving_text: string | null
@@ -30,7 +31,7 @@ export async function listStoredOffers(env: TrolleyScoutEnv) {
 
   const result = await env.DB.prepare(
     `SELECT id, retailer_id, title, source_url, captured_at, valid_from, valid_to,
-      price_text, saving_text, terms_text, created_at, updated_at
+      price_text, saving_text, terms_text, image_url, created_at, updated_at
       FROM verified_offers
       ORDER BY updated_at DESC, created_at DESC`,
   ).all<OfferRow>()
@@ -45,7 +46,7 @@ export async function getStoredOffer(env: TrolleyScoutEnv, id: string) {
 
   const row = await env.DB.prepare(
     `SELECT id, retailer_id, title, source_url, captured_at, valid_from, valid_to,
-      price_text, saving_text, terms_text, created_at, updated_at
+      price_text, saving_text, terms_text, image_url, created_at, updated_at
       FROM verified_offers
       WHERE id = ?`,
   )
@@ -92,8 +93,8 @@ export async function saveOfferDraft(env: TrolleyScoutEnv, draft: OfferDraft) {
   await env.DB.prepare(
     `INSERT INTO verified_offers (
       id, retailer_id, title, source_url, captured_at, valid_from, valid_to,
-      price_text, saving_text, terms_text, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      price_text, saving_text, terms_text, image_url, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       retailer_id = excluded.retailer_id,
       title = excluded.title,
@@ -104,6 +105,7 @@ export async function saveOfferDraft(env: TrolleyScoutEnv, draft: OfferDraft) {
       price_text = excluded.price_text,
       saving_text = excluded.saving_text,
       terms_text = excluded.terms_text,
+      image_url = COALESCE(excluded.image_url, verified_offers.image_url),
       updated_at = excluded.updated_at`,
   )
     .bind(
@@ -117,6 +119,7 @@ export async function saveOfferDraft(env: TrolleyScoutEnv, draft: OfferDraft) {
       offer.priceText ?? '',
       offer.savingText ?? null,
       offer.termsText ?? '',
+      offer.imageUrl ?? null,
       timestamp,
       timestamp,
     )
@@ -154,6 +157,7 @@ function rowToOffer(row: OfferRow): VerifiedOffer {
     capturedAt: row.captured_at,
     createdAt: row.created_at,
     id: row.id,
+    imageUrl: row.image_url ?? undefined,
     priceText: row.price_text,
     retailerId: row.retailer_id,
     savingText: row.saving_text ?? undefined,

@@ -60,6 +60,12 @@ describe('buildDuckDuckGoUrl / query', () => {
       'Frontline Hyper Edenvale specials catalogue South Africa',
     )
   })
+
+  test('restricts fallback discovery to a verified official host', () => {
+    expect(buildStoreSpecialsQuery('Frontline Hyper', 'Edenvale', 'frontlinesa.co.za')).toBe(
+      'site:frontlinesa.co.za Frontline Hyper Edenvale specials catalogue South Africa',
+    )
+  })
 })
 
 describe('extractSearchResults', () => {
@@ -86,10 +92,41 @@ describe('pickCatalogueSource', () => {
     { title: 'Direct PDF', url: 'https://frontlinesa.co.za/uploads/frontline-national.pdf' },
   ]
 
-  test('prefers a direct PDF, then official site, then aggregator', () => {
-    expect(pickCatalogueSource(results, 'Frontline Hyper')?.kind).toBe('pdf')
+  test('accepts a direct PDF only after its host matches the verified official host', () => {
+    const withOffDomainPdf = [
+      { title: 'Copied PDF', url: 'https://files.example/catalogues/frontline.pdf' },
+      ...results,
+    ]
+
+    expect(
+      pickCatalogueSource(withOffDomainPdf, 'Frontline Hyper', 'frontlinesa.co.za'),
+    ).toEqual({
+      kind: 'pdf',
+      title: 'Direct PDF',
+      url: 'https://frontlinesa.co.za/uploads/frontline-national.pdf',
+    })
+  })
+
+  test('rejects off-domain PDFs and catalogue aggregators', () => {
+    expect(
+      pickCatalogueSource(
+        [{ title: 'Copied PDF', url: 'https://files.example/frontline.pdf' }],
+        'Frontline Hyper',
+        'frontlinesa.co.za',
+      ),
+    ).toBeUndefined()
+    expect(pickCatalogueSource(results.slice(0, 2), 'Frontline Hyper')).toBeUndefined()
+    expect(
+      pickCatalogueSource(
+        [{ title: 'Aggregator PDF', url: 'https://www.guzzle.co.za/frontline.pdf' }],
+        'Frontline Hyper',
+        'guzzle.co.za',
+      ),
+    ).toBeUndefined()
+  })
+
+  test('keeps an unverified official page candidate available for identity checks', () => {
     expect(pickCatalogueSource(results.slice(0, 3), 'Frontline Hyper')?.kind).toBe('official')
-    expect(pickCatalogueSource(results.slice(0, 2), 'Frontline Hyper')?.kind).toBe('aggregator')
   })
 
   test('returns undefined when nothing usable is found', () => {

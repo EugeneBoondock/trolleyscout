@@ -241,9 +241,10 @@ describe('dealDiscovery', () => {
 
     expect(target).toBeDefined()
 
+    // Image shape mirrors the live page: renditions as {baseUrl, extension}.
     const html = `
       <script>
-        {"asin":"B0FQFW7P4S","title":"Apple iPhone 17 Pro Max 512GB","link":"/Apple-iPhone-17-Pro-Max/dp/B0FQFW7P4S","price":{"priceToPay":{"label":"Deal Price:","price":"31999.0","strikethrough":false},"basisPrice":{"label":"List:","price":"35399.0","strikethrough":true}},"dealBadge":{"label":{"content":{"fragments":[{"text":"10% off"}]}}}}
+        {"asin":"B0FQFW7P4S","title":"Apple iPhone 17 Pro Max 512GB","link":"/Apple-iPhone-17-Pro-Max/dp/B0FQFW7P4S","image":{"altText":"Apple iPhone 17 Pro Max","hiRes":{"baseUrl":"https://m.media-amazon.com/images/I/71hiRes","extension":"jpg","width":2394,"height":2560},"lowRes":{"baseUrl":"https://m.media-amazon.com/images/I/41lowRes","extension":"jpg","width":468,"height":500},"variant":"MAIN"},"price":{"priceToPay":{"label":"Deal Price:","price":"31999.0","strikethrough":false},"basisPrice":{"label":"List:","price":"35399.0","strikethrough":true}},"dealBadge":{"label":{"content":{"fragments":[{"text":"10% off"}]}}}}
       </script>
     `
 
@@ -251,6 +252,7 @@ describe('dealDiscovery', () => {
 
     expect(deals).toHaveLength(1)
     expect(deals[0]).toMatchObject({
+      imageUrl: 'https://m.media-amazon.com/images/I/41lowRes.jpg',
       previousPriceText: expect.stringContaining('List'),
       priceText: expect.stringContaining('Deal Price'),
       retailerId: 'amazon-za',

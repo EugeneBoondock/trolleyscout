@@ -12,3 +12,9 @@ export interface TrolleyScoutEnv {
   PAYFAST_PASSPHRASE?: string
   SCOUT_DEBUG?: string
 }
+
+export type TrolleyScoutD1Env = TrolleyScoutEnv & { DB: D1Database }
+
+export function hasTrolleyScoutDatabase(env: TrolleyScoutEnv): env is TrolleyScoutD1Env {
+  return Boolean(env.DB)
+}

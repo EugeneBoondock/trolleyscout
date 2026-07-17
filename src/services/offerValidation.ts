@@ -166,6 +166,8 @@ function normalizeOffer(draft: OfferDraft, sourceUrl: string): VerifiedOffer {
       draft.capturedAt,
       draft.priceText,
     ].join('|'))}`,
+    // Optional; kept only when it is a real HTTPS URL, never an error.
+    imageUrl: draft.imageUrl ? parseHttpsUrl(draft.imageUrl)?.toString() : undefined,
     priceText: draft.priceText.trim(),
     retailerId: draft.retailerId,
     savingText: draft.savingText?.trim() || undefined,

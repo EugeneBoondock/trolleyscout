@@ -157,43 +157,43 @@ export const moneyGuides: MoneyGuide[] = [
     ],
     officialLinks: [
       {
-        label: 'Department of Basic Education — school fees and exemption',
+        label: 'Department of Basic Education: school fees and exemption',
         url: 'https://www.education.gov.za/Informationfor/ParentsandGuardians/SchoolFees.aspx',
       },
-      { label: 'Legal Aid SA — school fees help', url: 'https://legal-aid.co.za/school-fees/' },
+      { label: 'Legal Aid SA: school fees help', url: 'https://legal-aid.co.za/school-fees/' },
     ],
   },
   {
     id: 'free-basic-services',
     title: 'Free basic electricity and water',
     summary:
-      'Most municipalities give registered low-income (indigent) households free basic services every month — typically 50 kWh of electricity and 6 kilolitres of water. Many eligible households have never registered.',
+      'Most municipalities give registered low-income (indigent) households free basic services every month, typically 50 kWh of electricity and 6 kilolitres of water. Many eligible households have never registered.',
     steps: [
       'Go to your municipal offices and ask to register on the indigent register. It is free to register.',
       'Take your ID, proof of address, and proof of income (or an affidavit if you have no income).',
       'Once registered, free basic electricity is loaded monthly against your prepaid meter number, and rates or water charges may be reduced or written off.',
-      'Registration usually needs to be renewed — ask your municipality how often.',
+      'Registration usually needs to be renewed. Ask your municipality how often.',
     ],
     officialLinks: [
       {
-        label: 'GOV.ZA — free basic services',
+        label: 'GOV.ZA: free basic services',
         url: 'https://www.gov.za/faq/government-services/how-do-i-access-free-basic-municipal-services',
       },
     ],
   },
   {
     id: 'loyalty-free',
-    title: 'Loyalty cards are free — and they are real discounts',
+    title: 'Loyalty cards are free, and they are real discounts',
     summary:
       'Checkers/Shoprite Xtra Savings, Pick n Pay Smart Shopper, Woolworths WRewards, Clicks ClubCard, Dis-Chem Benefit, and SPAR Rewards all cost nothing to join. The member price on the shelf is only yours if you have the (free) card.',
     steps: [
-      'Sign up in-store or on the retailer’s official site or app — never through a link someone sends you.',
+      'Sign up in-store or on the retailer’s official site or app. Never use a link someone sends you.',
       'You do not need a bank account or a smartphone for most programmes; a till-point card works.',
       'Check the shelf for two prices: the ordinary price and the member price. The difference is often 10–30% on promoted lines.',
       'Use the Stores tab in this app for the official sign-up pages of every major retailer.',
     ],
     officialLinks: [
-      { label: 'Official retailer pages — Stores tab', url: '#stores' },
+      { label: 'Official retailer pages: Stores tab', url: '#stores' },
     ],
   },
   {
@@ -203,32 +203,32 @@ export const moneyGuides: MoneyGuide[] = [
       '22 basic foods carry no VAT. Building meals around them stretches a budget further, and stores may never add VAT to them.',
     steps: [
       'Staples like maize meal, rice, brown bread, dried beans, lentils, tinned pilchards, eggs, milk, amasi, vegetables, fruit, and vegetable oil are all zero-rated.',
-      'Sanitary pads are also zero-rated — no VAT may be charged.',
+      'Sanitary pads are also zero-rated. No VAT may be charged.',
       'Check your till slip: zero-rated items are usually marked with a * or 0%. If VAT was charged on them, query it with the store.',
     ],
     officialLinks: [
       {
-        label: 'SARS — VAT zero-rated foodstuffs',
+        label: 'SARS: VAT zero-rated foodstuffs',
         url: 'https://www.sars.gov.za/types-of-tax/value-added-tax/',
       },
     ],
   },
   {
     id: 'uif',
-    title: 'Lost your job? Claim UIF — it is your money',
+    title: 'Lost your job? Claim UIF. It is your money',
     summary:
       'If your employer deducted UIF from your pay, you can claim when you lose work, and also for maternity, illness, or reduced working hours. Claiming is free.',
     steps: [
       'Claim online at ufiling.labour.gov.za or at a Department of Employment and Labour office.',
-      'Apply as soon as possible after your last working day — there are time limits.',
+      'Apply as soon as possible after your last working day. There are time limits.',
       'You need your ID, a UI-19 form from your employer, and your banking details.',
       'Domestic workers are covered too: employers of domestic workers must register and contribute.',
       'Nobody may charge you a fee to process a UIF claim.',
     ],
     officialLinks: [
-      { label: 'uFiling — claim online', url: 'https://ufiling.labour.gov.za/' },
+      { label: 'uFiling: claim online', url: 'https://ufiling.labour.gov.za/' },
       {
-        label: 'Department of Employment and Labour — UIF',
+        label: 'Department of Employment and Labour: UIF',
         url: 'https://www.labour.gov.za/DocumentCenter/Pages/UIF.aspx',
       },
     ],
@@ -240,9 +240,9 @@ export const moneyGuides: MoneyGuide[] = [
       'The Household Affordability Index publishes what 44 basic foods actually cost each month in the shops where most South Africans buy. Use it to spot when your store is expensive.',
     steps: [
       'In June 2026 the average household food basket cost R5,502.42 (PMBEJD).',
-      'The index is measured in Johannesburg, Durban, Cape Town, Pietermaritzburg, Mtubatuba, and Springbok — in supermarkets serving low-income households.',
+      'The index is measured in Johannesburg, Durban, Cape Town, Pietermaritzburg, Mtubatuba, and Springbok, in supermarkets serving low-income households.',
       'Compare your own till slips month to month. If a staple jumps in price, check a value grocer (Boxer, Usave, Shoprite) before restocking.',
-      'Use the unit price checker in the Tools tab to compare pack sizes — the biggest pack is not always the cheapest per kilogram.',
+      'Use the unit price checker in the Tools tab to compare pack sizes. The biggest pack is not always the cheapest per kilogram.',
     ],
     officialLinks: [
       {
@@ -259,7 +259,7 @@ export const moneyGuides: MoneyGuide[] = [
     steps: [
       'SASSA never asks for money to process, unblock, or speed up a grant.',
       'Never share your SASSA card PIN or your ID number with people who phone or message you.',
-      'Only use sassa.gov.za and srd.sassa.gov.za — not links from social media or SMS.',
+      'Only use sassa.gov.za and srd.sassa.gov.za. Avoid links from social media or SMS.',
       'Report grant fraud free on 0800 601 011.',
     ],
     officialLinks: [

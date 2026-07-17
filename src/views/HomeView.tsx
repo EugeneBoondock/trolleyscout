@@ -107,12 +107,12 @@ export function HomeView({
 
       <section className="benchmark-band" aria-label="Food basket benchmark">
         <div>
-          <p className="eyebrow">{foodBasketBenchmark.sourceName}</p>
+          <p className="eyebrow">{withoutEmDash(foodBasketBenchmark.sourceName)}</p>
           <h2>
-            {foodBasketBenchmark.label}, {foodBasketBenchmark.month}:{' '}
+            {withoutEmDash(foodBasketBenchmark.label)}, {withoutEmDash(foodBasketBenchmark.month)}:{' '}
             <span className="benchmark-figure">{formatRandShort(foodBasketBenchmark.totalCents)}</span>
           </h2>
-          <p>{foodBasketBenchmark.note}</p>
+          <p>{withoutEmDash(foodBasketBenchmark.note)}</p>
         </div>
         <a className="benchmark-link" href={foodBasketBenchmark.sourceUrl} rel="noreferrer" target="_blank">
           See the monthly index
@@ -137,13 +137,13 @@ export function HomeView({
             <ul className="staple-grid">
               {stapleDeals.map((deal) => (
                 <li className="staple-card" key={deal.id}>
-                  <p className="staple-retailer">{deal.retailerName}</p>
+                  <p className="staple-retailer">{withoutEmDash(deal.retailerName)}</p>
                   <a href={deal.productUrl} rel="noreferrer" target="_blank">
-                    {deal.title}
+                    {withoutEmDash(deal.title)}
                   </a>
                   <p className="staple-price">
-                    <strong>{deal.priceText}</strong>
-                    {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
+                    <strong>{withoutEmDash(deal.priceText)}</strong>
+                    {deal.previousPriceText && <span>{withoutEmDash(deal.previousPriceText)}</span>}
                   </p>
                 </li>
               ))}
@@ -245,4 +245,8 @@ function formatRandShort(cents: number): string {
     maximumFractionDigits: hasCents ? 2 : 0,
     minimumFractionDigits: hasCents ? 2 : 0,
   })}`
+}
+
+function withoutEmDash(value: string | undefined): string {
+  return value?.replace(/\s*\u2014\s*/g, ': ') ?? ''
 }

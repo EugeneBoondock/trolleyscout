@@ -29,6 +29,8 @@ import type {
   Basket,
   BasketItemDraft,
   BasketQuantityDraft,
+  DealWatch,
+  DealWatchMatch,
   MemberAccount,
   MemberPlan,
   MemberSession,
@@ -814,6 +816,10 @@ export interface NearbyStoreResult {
   website?: string
   distanceM?: number
   retailerId?: string
+  logoUrl?: string
+  firstSeenAt?: string
+  lastSeenAt?: string
+  promotionCount?: number
   deals: DiscoveredDeal[]
   leaflets: StoreLeaflet[]
   promotions: Array<{
@@ -829,6 +835,43 @@ export interface NearbyStoreResult {
     validFrom?: string
     validTo?: string
   }>
+}
+
+export interface DiscoveredStoresResource {
+  stores: NearbyStoreResult[]
+  summary: {
+    areaCount: number
+    knownChainCount: number
+    storeCount: number
+    withPromotionsCount: number
+  }
+}
+
+export async function loadDiscoveredStores(
+  signal?: AbortSignal,
+): Promise<DiscoveredStoresResource> {
+  try {
+    const response = await fetch('/api/discovered-stores', {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`)
+    }
+
+    const envelope = (await response.json()) as { data: DiscoveredStoresResource }
+    return envelope.data
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return {
+      stores: [],
+      summary: { areaCount: 0, knownChainCount: 0, storeCount: 0, withPromotionsCount: 0 },
+    }
+  }
 }
 
 export interface NearbyStoresState {
@@ -1229,6 +1272,78 @@ export async function deleteBasketItemForMember(
       status: 'error',
     }
   }
+}
+
+export interface DealWatchListResult {
+  watches: DealWatch[]
+  alertCount: number
+}
+
+export interface DealWatchCreateResult {
+  watches: DealWatch[]
+  matches: DealWatchMatch[]
+  message: string
+  issue?: string
+}
+
+export async function loadDealWatches(signal?: AbortSignal): Promise<DealWatchListResult> {
+  const response = await fetch('/api/deal-watches', {
+    headers: { accept: 'application/json' },
+    signal,
+  })
+
+  if (!response.ok) {
+    return { alertCount: 0, watches: [] }
+  }
+
+  const envelope = (await response.json()) as {
+    data?: { watches?: DealWatch[]; alertCount?: number }
+  }
+
+  return {
+    alertCount: envelope.data?.alertCount ?? 0,
+    watches: envelope.data?.watches ?? [],
+  }
+}
+
+export async function createDealWatch(query: string): Promise<DealWatchCreateResult> {
+  const response = await fetch('/api/deal-watches', {
+    body: JSON.stringify({ query }),
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    method: 'POST',
+  })
+
+  const envelope = (await response.json()) as {
+    data?: { watches?: DealWatch[]; matches?: DealWatchMatch[]; message?: string; issues?: string[] }
+  }
+
+  return {
+    issue: response.ok ? undefined : (envelope.data?.issues?.[0] ?? 'Could not save the watch.'),
+    matches: envelope.data?.matches ?? [],
+    message: envelope.data?.message ?? '',
+    watches: envelope.data?.watches ?? [],
+  }
+}
+
+export async function markDealWatchSeen(id: string): Promise<DealWatch[]> {
+  const response = await fetch('/api/deal-watches', {
+    body: JSON.stringify({ id }),
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    method: 'PATCH',
+  })
+
+  const envelope = (await response.json()) as { data?: { watches?: DealWatch[] } }
+  return envelope.data?.watches ?? []
+}
+
+export async function deleteDealWatch(id: string): Promise<DealWatch[]> {
+  const response = await fetch(`/api/deal-watches?id=${encodeURIComponent(id)}`, {
+    headers: { accept: 'application/json' },
+    method: 'DELETE',
+  })
+
+  const envelope = (await response.json()) as { data?: { watches?: DealWatch[] } }
+  return envelope.data?.watches ?? []
 }
 
 function emptyDiscoveryRun(): DiscoveryRun {

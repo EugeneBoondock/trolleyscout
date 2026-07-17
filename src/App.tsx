@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
+  Bell,
+  BellRinging,
   BookmarkSimple,
   Calculator,
   CheckCircle,
@@ -25,6 +27,7 @@ import {
   Storefront,
   Sun,
   Tag,
+  Ticket,
   Trash,
   UserCircle,
   Wallet,
@@ -32,15 +35,20 @@ import {
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
+import { ScoutMark } from './components/ScoutMark'
+import { LeafletViewer } from './components/LeafletViewer'
 import {
   addBasketItemForMember,
   getInitialOfferState,
   getInitialRetailerState,
   loadOffers,
   loadRetailers,
+  loadDiscoveredStores,
   type ResourceState,
   type OfferResource,
   type RetailerResource,
+  type DiscoveredStoresResource,
+  type NearbyStoreResult,
   createVerifiedOffer,
   deleteVerifiedOffer,
   deleteBasketItemForMember,
@@ -68,6 +76,10 @@ import {
   startSubscriptionCheckout,
   updateAccountProfile,
   updateBasketItemForMember,
+  createDealWatch,
+  deleteDealWatch,
+  loadDealWatches,
+  markDealWatchSeen,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
 import {
@@ -82,6 +94,7 @@ import type {
   BillingCycle,
   DealActivity,
   DealLearningState,
+  DealWatch,
   MemberSession,
   MemberPlanId,
   MemberSessionDraft,
@@ -104,11 +117,20 @@ import type {
 } from './services/apiClient'
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
+import { filterDiscoveryDeals } from './services/dealFilters'
+import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/storeGroups'
 import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { MoneyHelpView } from './views/MoneyHelpView'
 import { ToolkitView } from './views/ToolkitView'
 import { NearMeView } from './views/NearMeView'
+import { VouchersView } from './views/VouchersView'
+import {
+  claimVoucher,
+  loadVouchers,
+  removeVoucherClaim,
+} from './services/vouchers/voucherApi'
+import type { Voucher } from './services/vouchers/types'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveView =
@@ -118,6 +140,7 @@ type ActiveView =
   | 'tools'
   | 'sources'
   | 'discovery'
+  | 'vouchers'
   | 'about'
   | 'offers'
   | 'scanner'
@@ -129,6 +152,7 @@ type MemberView =
   | 'tools'
   | 'sources'
   | 'discovery'
+  | 'vouchers'
   | 'savedDeals'
   | 'basket'
   | 'saved'
@@ -147,6 +171,7 @@ const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Money help', value: 'help' },
   { label: 'Tools', value: 'tools' },
   { label: 'Stores', value: 'sources' },
+  { label: 'Vouchers', value: 'vouchers' },
   { label: 'Help', value: 'about' },
 ]
 
@@ -162,6 +187,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
+  { icon: <Ticket size={20} />, label: 'Vouchers', value: 'vouchers' },
   { icon: <NavigationArrow size={20} />, label: 'Near me', value: 'near' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
@@ -216,6 +242,7 @@ function App() {
   const [writeNotice, setWriteNotice] = useState<string | undefined>()
   const [memberMode, setMemberMode] = useState(false)
   const [memberView, setMemberView] = useState<MemberView>('dashboard')
+  const [memberReturnView, setMemberReturnView] = useState<MemberView>()
   const [isMemberSidebarOpen, setIsMemberSidebarOpen] = useState(false)
   const [memberState, setMemberState] = useState<ResourceState<MemberResource>>(getInitialMemberState)
   const [savedSourceState, setSavedSourceState] = useState<ResourceState<SavedSourceResource>>(
@@ -245,6 +272,8 @@ function App() {
   const [deletingBasketItemId, setDeletingBasketItemId] = useState<string | undefined>()
   const [updatingBasketItemId, setUpdatingBasketItemId] = useState<string | undefined>()
   const [checkoutPlanId, setCheckoutPlanId] = useState<MemberPlanId | undefined>()
+  const [vouchers, setVouchers] = useState<Voucher[]>([])
+  const [vouchersLoading, setVouchersLoading] = useState(true)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -335,6 +364,37 @@ function App() {
 
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+
+    setVouchersLoading(true)
+    loadVouchers({ signal: controller.signal })
+      .then((rows) => {
+        if (active) {
+          setVouchers(rows)
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+        if (active) {
+          setVouchers([])
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setVouchersLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [memberState.data.session.isAuthenticated])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -475,11 +535,49 @@ function App() {
 
       if (result.data.session.isAuthenticated) {
         setMemberMode(true)
-        setMemberView('dashboard')
+        setMemberView(memberReturnView ?? 'dashboard')
+        setMemberReturnView(undefined)
       }
     } finally {
       setIsStartingMemberSession(false)
     }
+  }
+
+  async function saveVoucher(voucherId: string) {
+    try {
+      const claimed = await claimVoucher(voucherId)
+      if (claimed) {
+        setVouchers((current) => current.map((voucher) =>
+          voucher.id === voucherId ? { ...voucher, claimed: true } : voucher,
+        ))
+        return
+      }
+      throw new Error('This voucher could not be saved.')
+    } catch (error) {
+      setMemberNotice(error instanceof Error ? error.message : 'Could not save this voucher.')
+      throw error
+    }
+  }
+
+  async function removeSavedVoucher(voucherId: string) {
+    try {
+      const removed = await removeVoucherClaim(voucherId)
+      if (removed) {
+        setVouchers((current) => current.map((voucher) =>
+          voucher.id === voucherId ? { ...voucher, claimed: false } : voucher,
+        ))
+        return
+      }
+      throw new Error('This saved voucher could not be removed.')
+    } catch (error) {
+      setMemberNotice(error instanceof Error ? error.message : 'Could not remove this voucher.')
+      throw error
+    }
+  }
+
+  function requireVoucherAuthentication() {
+    setMemberReturnView('vouchers')
+    setMemberMode(true)
   }
 
   async function signOutMemberMode() {
@@ -759,10 +857,16 @@ function App() {
   }
 
   function reviewDiscoveredDeal(deal: DiscoveredDeal) {
+    const directoryRetailer = initialRetailers.find((retailer) => retailer.id === deal.retailerId)
+    if (!directoryRetailer) {
+      setWriteNotice('This discovered supermarket is not in the scanner directory yet.')
+      return
+    }
+
     setScannerDraft({
       capturedAt: deal.capturedAt.slice(0, 10),
       priceText: deal.priceText ?? '',
-      retailerId: deal.retailerId,
+      retailerId: directoryRetailer.id,
       savingText: deal.savingText ?? '',
       sourceUrl: deal.productUrl || deal.sourceUrl,
       termsText: deal.evidenceText,
@@ -912,6 +1016,8 @@ function App() {
         onScan={scanOfferDraft}
         onSetView={setMemberView}
         onSignOut={signOutMemberMode}
+        onClaimVoucher={saveVoucher}
+        onRemoveVoucher={removeSavedVoucher}
         onThemeToggle={() => setTheme(theme === 'light' ? 'dark' : 'light')}
         onToggleSidebar={() => setIsMemberSidebarOpen((current) => !current)}
         onUpdateBasketQuantity={updateBasketQuantity}
@@ -935,6 +1041,8 @@ function App() {
         subscriptionState={subscriptionState}
         theme={theme}
         updatingBasketItemId={updatingBasketItemId}
+        vouchers={vouchers}
+        vouchersLoading={vouchersLoading}
         writeNotice={writeNotice}
       />
     )
@@ -947,7 +1055,7 @@ function App() {
       </a>
       <header className="topbar">
         <a className="brand-mark" href="#top" aria-label="Trolley Scout home">
-          <img src="/assets/brand-mark.png" alt="" />
+          <ScoutMark motion="scout" />
           <span>Trolley Scout</span>
         </a>
 
@@ -965,7 +1073,14 @@ function App() {
         </nav>
 
         <div className="topbar-actions">
-          <button className="member-button" onClick={() => setMemberMode(true)} type="button">
+          <button
+            className="member-button"
+            onClick={() => {
+              setMemberReturnView(undefined)
+              setMemberMode(true)
+            }}
+            type="button"
+          >
             <UserCircle size={18} />
             Sign in
           </button>
@@ -1009,6 +1124,17 @@ function App() {
 
         {activeView === 'tools' && <ToolkitView />}
 
+        {activeView === 'vouchers' && (
+          <VouchersView
+            isAuthenticated={memberSession.isAuthenticated}
+            isLoading={vouchersLoading}
+            onClaim={saveVoucher}
+            onRemove={removeSavedVoucher}
+            onRequireAuth={requireVoucherAuthentication}
+            vouchers={vouchers}
+          />
+        )}
+
         {activeView === 'about' && (
           <AboutView onOpen={(destination: AboutDestination) => setActiveView(destination)} />
         )}
@@ -1025,7 +1151,7 @@ function App() {
                 <h1>Stores</h1>
                 <p className="section-lede">
                   Specials pages, catalogues, and free loyalty sign-ups for {retailerCount}{' '}
-                  retailers with {officialSourceCount} official links — so you never have to trust
+                  retailers with {officialSourceCount} official links, so you never have to trust
                   a forwarded screenshot.
                 </p>
               </div>
@@ -1142,7 +1268,7 @@ function MemberAuthScreen({
     <div className="app-shell auth-shell">
       <header className="topbar">
         <button className="brand-mark brand-button" onClick={onBack} type="button">
-          <img src="/assets/brand-mark.png" alt="" />
+          <ScoutMark motion="scout" />
           <span>Trolley Scout</span>
         </button>
         <div />
@@ -1271,6 +1397,7 @@ function MemberShell({
   memberState,
   offerState,
   onAddToBasket,
+  onClaimVoucher,
   onCheckout,
   onCloseSidebar,
   onDeleteBasketItem,
@@ -1279,6 +1406,7 @@ function MemberShell({
   onDeleteSource,
   onQueryChange,
   onRefresh,
+  onRemoveVoucher,
   onReviewDeal,
   onRunDiscovery,
   onResetScanner,
@@ -1310,6 +1438,8 @@ function MemberShell({
   subscriptionState,
   theme,
   updatingBasketItemId,
+  vouchers,
+  vouchersLoading,
   writeNotice,
 }: {
   activeView: MemberView
@@ -1332,6 +1462,7 @@ function MemberShell({
   memberState: ResourceState<MemberResource>
   offerState: ResourceState<OfferResource>
   onAddToBasket: (savedDealId: string) => void
+  onClaimVoucher: (voucherId: string) => void | Promise<void>
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
   onCloseSidebar: () => void
   onDeleteBasketItem: (id: string) => void
@@ -1340,6 +1471,7 @@ function MemberShell({
   onDeleteSource: (id: string) => void
   onQueryChange: (value: string) => void
   onRefresh: () => void
+  onRemoveVoucher: (voucherId: string) => void | Promise<void>
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
   onResetScanner: () => void
@@ -1371,6 +1503,8 @@ function MemberShell({
   subscriptionState: ResourceState<SubscriptionResource>
   theme: ThemeMode
   updatingBasketItemId?: string
+  vouchers: Voucher[]
+  vouchersLoading: boolean
   writeNotice?: string
 }) {
   const account = memberState.data.session.account
@@ -1387,15 +1521,24 @@ function MemberShell({
         Skip to content
       </a>
       <header className="member-topbar">
-        <button className="icon-button" id="member-menu" onClick={onToggleSidebar} type="button" aria-label="Menu">
+        <button
+          aria-controls="member-sidebar"
+          aria-expanded={sidebarOpen}
+          aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+          className="icon-button member-menu-toggle"
+          id="member-menu"
+          onClick={onToggleSidebar}
+          type="button"
+        >
           <List size={20} />
         </button>
         <a className="brand-mark" href="#member-main" aria-label="Trolley Scout dashboard">
-          <img src="/assets/brand-mark.png" alt="" />
+          <ScoutMark motion="scout" />
           <span>Trolley Scout</span>
         </a>
         <div className="member-topbar-actions">
           <span className="plan-pill">{account.planName}</span>
+          <DealWatchBell />
           <button
             className="icon-button"
             onClick={onThemeToggle}
@@ -1464,6 +1607,17 @@ function MemberShell({
 
         {activeView === 'tools' && <ToolkitView />}
 
+        {activeView === 'vouchers' && (
+          <VouchersView
+            isAuthenticated
+            isLoading={vouchersLoading}
+            onClaim={onClaimVoucher}
+            onRemove={onRemoveVoucher}
+            onRequireAuth={() => undefined}
+            vouchers={vouchers}
+          />
+        )}
+
         {activeView === 'about' && (
           <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
         )}
@@ -1500,6 +1654,7 @@ function MemberShell({
 
         {activeView === 'discovery' && (
           <DiscoveryPanel
+            canWatchItems
             isDiscovering={isDiscovering}
             onReviewDeal={onReviewDeal}
             onRunDiscovery={onRunDiscovery}
@@ -1718,7 +1873,7 @@ function PlanUsage({
       {nearLimit && plan.id !== 'household' && (
         <p className="plan-usage-nudge">
           Running low on space. {plan.id === 'free' ? 'Scout' : 'Household'} gives you far more
-          room — and keeps the free money help running for everyone.
+          room and keeps the free money help running for everyone.
         </p>
       )}
     </section>
@@ -1989,6 +2144,15 @@ function BasketPanel({
 
               return (
                 <article className="basket-row" key={item.id}>
+                  {item.deal.imageUrl && (
+                    <img
+                      alt=""
+                      className="basket-product-image"
+                      loading="lazy"
+                      onError={(event) => { event.currentTarget.hidden = true }}
+                      src={item.deal.imageUrl}
+                    />
+                  )}
                   <div className="basket-row-main">
                     <p className="eyebrow">{item.deal.retailerName}</p>
                     <h3>{item.deal.title}</h3>
@@ -2598,7 +2762,11 @@ function AdminConsole() {
         </div>
       </div>
 
-      {message && <div className="write-notice" role="status">{message}</div>}
+      {message === 'Loading admin data.' ? (
+        <LoadingStrip label="Loading admin data" />
+      ) : (
+        message && <div className="write-notice" role="status">{message}</div>
+      )}
 
       {overview && (
         <>
@@ -2675,22 +2843,6 @@ function AdminConsole() {
 function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
 
-  // Close on Escape while the leaflet viewer is open.
-  useEffect(() => {
-    if (!openLeaflet) {
-      return
-    }
-
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setOpenLeaflet(undefined)
-      }
-    }
-
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [openLeaflet])
-
   return (
     <div className="leaflet-board" aria-label="Store leaflets">
       <div className="section-heading">
@@ -2741,62 +2893,6 @@ function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
   )
 }
 
-// Opens the official leaflet in place. Retailer leaflet viewers usually block
-// framing, so we show the catalogue cover with the official link as the escape
-// hatch rather than a broken iframe.
-function LeafletViewer({ leaflet, onClose }: { leaflet: StoreLeaflet; onClose: () => void }) {
-  return (
-    <div
-      className="leaflet-modal-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose()
-        }
-      }}
-      role="presentation"
-    >
-      <div aria-labelledby="leaflet-modal-title" aria-modal="true" className="leaflet-modal" role="dialog">
-        <header className="leaflet-modal-head">
-          <div>
-            <p className="leaflet-retailer">{leaflet.retailerName}</p>
-            <h3 id="leaflet-modal-title">{leaflet.name}</h3>
-            {(leaflet.validFrom || leaflet.validTo) && (
-              <p className="leaflet-dates">
-                {describeLeafletDates(leaflet.validFrom, leaflet.validTo)}
-              </p>
-            )}
-          </div>
-          <button aria-label="Close leaflet" className="icon-button" onClick={onClose} type="button">
-            <X size={20} />
-          </button>
-        </header>
-
-        <div className="leaflet-modal-body">
-          {leaflet.imageUrl ? (
-            <img
-              alt={`${leaflet.retailerName} catalogue`}
-              referrerPolicy="no-referrer"
-              src={leaflet.imageUrl}
-            />
-          ) : (
-            <p>Open the official leaflet to see every special.</p>
-          )}
-        </div>
-
-        <footer className="leaflet-modal-foot">
-          <a className="primary-button" href={leaflet.url} rel="noreferrer" target="_blank">
-            Open full leaflet on {leaflet.retailerName}
-            <LinkSimple size={16} />
-          </a>
-          <button className="ghost-button" onClick={onClose} type="button">
-            Close
-          </button>
-        </footer>
-      </div>
-    </div>
-  )
-}
-
 function describeLeafletDates(validFrom?: string, validTo?: string): string {
   const format = (iso?: string) => {
     if (!iso) {
@@ -2826,9 +2922,13 @@ function describeLeafletDates(validFrom?: string, validTo?: string): string {
 // PayFast's classic checkout is a POST form submission. Build a hidden form
 // and submit it so the browser navigates to PayFast to complete payment.
 function submitPayFastRedirect(actionUrl: string, fields: Record<string, string>) {
+  if (!window.confirm('Continue to PayFast? Your secure payment will open in a separate tab.')) {
+    return
+  }
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = actionUrl
+  form.target = '_blank'
 
   for (const [name, value] of Object.entries(fields)) {
     const input = document.createElement('input')
@@ -2917,6 +3017,233 @@ function RuntimeBanner({
   )
 }
 
+export function DiscoveredStoreDirectory({
+  discovered,
+}: {
+  discovered: DiscoveredStoresResource
+}) {
+  const groups = groupDiscoveredStores(discovered.stores)
+  const [openGroup, setOpenGroup] = useState<DiscoveredStoreGroup | undefined>()
+  const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+
+  useEffect(() => {
+    if (!openGroup) {
+      return
+    }
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      setOpenGroup(undefined)
+    }
+
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [openGroup])
+
+  function openCatalogue(branch: NearbyStoreResult, promotion: NearbyStoreResult['promotions'][number]) {
+    setOpenGroup(undefined)
+    setOpenLeaflet(cataloguePromotionToLeaflet(branch, promotion))
+  }
+
+  return (
+    <div className="discovered-store-directory" aria-label="Stores found near shoppers">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">National store directory</p>
+          <h3>Stores found near shoppers</h3>
+          <p>
+            {discovered.summary.storeCount} permanent store records across {discovered.summary.areaCount} searched areas.
+          </p>
+        </div>
+        <Storefront size={26} />
+      </div>
+
+      {groups.length > 0 ? (
+        <div className="discovered-store-grid">
+          {groups.map((group) => (
+            <button
+              aria-label={`${cleanUiPunctuation(group.displayName)}, ${group.branchCount} ${group.branchCount === 1 ? 'location' : 'locations'}, ${group.promotionCount} live promotions`}
+              className="discovered-store-card"
+              key={group.id}
+              onClick={() => setOpenGroup(group)}
+              type="button"
+            >
+              {group.logoUrl ? (
+                <img alt="" className="store-logo" loading="lazy" src={group.logoUrl} />
+              ) : (
+                <span className="store-logo-fallback"><Storefront size={22} /></span>
+              )}
+              <span className="discovered-store-card-copy">
+                <strong>{cleanUiPunctuation(group.displayName)}</strong>
+                <span>{group.branchCount} {group.branchCount === 1 ? 'location' : 'locations'}</span>
+                <span>
+                  {group.promotionCount} live promotion{group.promotionCount === 1 ? '' : 's'}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="directory-empty">Use Near me to add the first stores in a searched area.</p>
+      )}
+
+      {openGroup && (
+        <div
+          className="store-directory-modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setOpenGroup(undefined)
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            aria-labelledby="store-locations-title"
+            aria-modal="true"
+            className="store-directory-modal"
+            role="dialog"
+          >
+            <header className="store-directory-modal-head">
+              <div>
+                <p className="eyebrow">Locations and local specials</p>
+                <h3 id="store-locations-title">{cleanUiPunctuation(openGroup.displayName)} locations</h3>
+                <p>
+                  {openGroup.branchCount} {openGroup.branchCount === 1 ? 'branch' : 'branches'}.{' '}
+                  Specials stay with the location that published them.
+                </p>
+              </div>
+              <button
+                aria-label="Close store locations"
+                autoFocus
+                className="icon-button"
+                onClick={() => setOpenGroup(undefined)}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </header>
+
+            <div className="store-location-list">
+              {openGroup.branches.map((branch) => (
+                <section className="store-location-section" key={branch.placeId}>
+                  <div className="store-location-head">
+                    <div>
+                      <h4>{cleanUiPunctuation(branch.name)}</h4>
+                      {branch.address && <p>{cleanUiPunctuation(branch.address)}</p>}
+                      {branch.lastSeenAt && <small>Last seen {formatStoreSeenDate(branch.lastSeenAt)}</small>}
+                    </div>
+                    {branch.website && (
+                      <a href={branch.website} rel="noreferrer" target="_blank">
+                        Store website
+                        <LinkSimple size={14} />
+                      </a>
+                    )}
+                  </div>
+
+                  {(branch.promotions ?? []).length > 0 ? (
+                    <div className="store-location-promotions">
+                      {branch.promotions.map((promotion) => (
+                        <article className="store-location-promotion" key={promotion.id}>
+                          {promotion.imageUrl && (
+                            <img
+                              alt=""
+                              decoding="async"
+                              loading="lazy"
+                              onError={(event) => { event.currentTarget.hidden = true }}
+                              referrerPolicy="no-referrer"
+                              src={promotion.imageUrl}
+                            />
+                          )}
+                          <div>
+                            <span className="promotion-kind">
+                              {promotion.kind === 'catalogue' ? 'Catalogue' : 'Deal'}
+                            </span>
+                            <h5>{cleanUiPunctuation(promotion.title)}</h5>
+                            {(promotion.priceText || promotion.previousPriceText || promotion.savingText) && (
+                              <p className="store-location-price">
+                                {promotion.priceText && <strong>{cleanUiPunctuation(promotion.priceText)}</strong>}
+                                {promotion.previousPriceText && <s>{cleanUiPunctuation(promotion.previousPriceText)}</s>}
+                                {promotion.savingText && <span>{cleanUiPunctuation(promotion.savingText)}</span>}
+                              </p>
+                            )}
+                            {(promotion.validFrom || promotion.validTo) && (
+                              <p className="leaflet-dates">
+                                {describeLeafletDates(promotion.validFrom, promotion.validTo)}
+                              </p>
+                            )}
+                            <div className="store-promotion-actions">
+                              {promotion.kind === 'catalogue' && (
+                                <button onClick={() => openCatalogue(branch, promotion)} type="button">
+                                  Read {cleanUiPunctuation(promotion.title)} here
+                                  <MagnifyingGlass size={14} />
+                                </button>
+                              )}
+                              <a href={promotion.sourceUrl} rel="noreferrer" target="_blank">
+                                Official source
+                                <LinkSimple size={14} />
+                              </a>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="directory-empty">No current location-specific promotions.</p>
+                  )}
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {openLeaflet && (
+        <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
+      )}
+    </div>
+  )
+}
+
+function cataloguePromotionToLeaflet(
+  branch: NearbyStoreResult,
+  promotion: NearbyStoreResult['promotions'][number],
+): StoreLeaflet {
+  return {
+    capturedAt: branch.lastSeenAt ?? new Date().toISOString(),
+    documentUrl: promotion.productUrl ?? promotion.sourceUrl,
+    id: promotion.id,
+    imageUrl: promotion.imageUrl,
+    name: cleanUiPunctuation(promotion.title),
+    retailerId: branch.retailerId ?? branch.placeId,
+    retailerName: cleanUiPunctuation(branch.name),
+    sourceLabel: 'Official catalogue',
+    url: promotion.sourceUrl,
+    validFrom: promotion.validFrom,
+    validTo: promotion.validTo,
+  }
+}
+
+function formatStoreSeenDate(value: string): string {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 10)
+  }
+
+  return date.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function cleanUiPunctuation(value: string | undefined): string {
+  return value?.replace(/\s*\u2014\s*/g, ': ') ?? ''
+}
+
 function SourcePanel({
   retailers: sourceRetailers,
   isLoading,
@@ -2932,6 +3259,17 @@ function SourcePanel({
   savedSourceUrls?: Set<string>
   savingSourceUrl?: string
 }) {
+  const [discovered, setDiscovered] = useState<DiscoveredStoresResource>({
+    stores: [],
+    summary: { areaCount: 0, knownChainCount: 0, storeCount: 0, withPromotionsCount: 0 },
+  })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    loadDiscoveredStores(controller.signal).then(setDiscovered).catch(() => undefined)
+    return () => controller.abort()
+  }, [])
+
   return (
     <section className="source-panel" aria-label="Official source watchlist">
       <div className="section-heading">
@@ -2942,6 +3280,7 @@ function SourcePanel({
         <CheckCircle size={28} weight="duotone" />
       </div>
       {isLoading && <LoadingStrip label="Refreshing source directory" />}
+      <DiscoveredStoreDirectory discovered={discovered} />
       <div className="source-grid">
         {sourceRetailers.map((retailer, index) => (
           <motion.article
@@ -2955,7 +3294,10 @@ function SourcePanel({
             <div className="source-card-body">
               <div className="source-card-head">
                 <span className="retailer-pill">{retailer.group}</span>
-                <h3>{retailer.name}</h3>
+                <div className="retailer-title-row">
+                  {retailer.logoUrl && <img alt="" className="store-logo" loading="lazy" src={retailer.logoUrl} />}
+                  <h3>{retailer.name}</h3>
+                </div>
                 <p>{retailer.sourceNote}</p>
               </div>
               <div className="source-meta">
@@ -2994,6 +3336,7 @@ function SourcePanel({
 }
 
 function DiscoveryPanel({
+  canWatchItems = false,
   isDiscovering,
   onReviewDeal,
   onRunDiscovery,
@@ -3002,6 +3345,7 @@ function DiscoveryPanel({
   savingDealUrl,
   state,
 }: {
+  canWatchItems?: boolean
   isDiscovering: boolean
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
@@ -3011,14 +3355,53 @@ function DiscoveryPanel({
   state: ResourceState<DiscoveryResource>
 }) {
   const discovery = state.data.discovery
-  const deals = sortDealsByPage(discovery.deals)
+  const allDeals = sortDealsByPage(discovery.deals)
   const leaflets = discovery.leaflets ?? []
+  const [dealQuery, setDealQuery] = useState('')
+  const [watchNotice, setWatchNotice] = useState('')
+  const [isWatching, setIsWatching] = useState(false)
+
+  const watchCurrentQuery = async () => {
+    setIsWatching(true)
+    setWatchNotice('')
+
+    try {
+      const result = await createDealWatch(dealQuery)
+      setWatchNotice(
+        result.issue ??
+          (result.matches.length > 0
+            ? `${result.message} Check your alerts bell.`
+            : result.message),
+      )
+    } catch {
+      setWatchNotice('Could not save the watch. Try again.')
+    } finally {
+      setIsWatching(false)
+    }
+  }
+  const [retailerId, setRetailerId] = useState('all')
+  const [sourceLabel, setSourceLabel] = useState('all')
+  const [imagesOnly, setImagesOnly] = useState(false)
+  const [savingsOnly, setSavingsOnly] = useState(false)
+  const deals = filterDiscoveryDeals(allDeals, {
+    imagesOnly,
+    query: dealQuery,
+    retailerId,
+    savingsOnly,
+    sourceLabel,
+  })
+  const retailers = Array.from(
+    new Map(allDeals.map((deal) => [deal.retailerId, deal.retailerName])).entries(),
+  )
+  const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
 
   const dealsPerPage = 24
   const [page, setPage] = useState(0)
   const pageCount = Math.max(1, Math.ceil(deals.length / dealsPerPage))
   const safePage = Math.min(page, pageCount - 1)
   const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
+
+  useEffect(() => setPage(0), [dealQuery, retailerId, sourceLabel, imagesOnly, savingsOnly])
 
   return (
     <section className="discovery-panel" aria-label="Deal finder">
@@ -3041,6 +3424,40 @@ function DiscoveryPanel({
         <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
         <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
         <Metric icon={<Storefront size={22} />} label="Store leaflets" value={`${leaflets.length}`} />
+      </div>
+
+      <div className="deal-filter-bar" aria-label="Deal filters">
+        <label>
+          Search deals
+          <input
+            onChange={(event) => setDealQuery(event.target.value)}
+            placeholder="Product, retailer, or source"
+            type="search"
+            value={dealQuery}
+          />
+        </label>
+        <label>
+          Retailer
+          <select onChange={(event) => setRetailerId(event.target.value)} value={retailerId}>
+            <option value="all">All retailers</option>
+            {retailers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+        <label>
+          Source
+          <select onChange={(event) => setSourceLabel(event.target.value)} value={sourceLabel}>
+            <option value="all">All sources</option>
+            {sourceLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+          </select>
+        </label>
+        <label className="deal-filter-check">
+          <input checked={imagesOnly} onChange={(event) => setImagesOnly(event.target.checked)} type="checkbox" />
+          Has image
+        </label>
+        <label className="deal-filter-check">
+          <input checked={savingsOnly} onChange={(event) => setSavingsOnly(event.target.checked)} type="checkbox" />
+          Shows savings
+        </label>
       </div>
 
       {leaflets.length > 0 && <LeafletBoard leaflets={leaflets} />}
@@ -3155,11 +3572,35 @@ function DiscoveryPanel({
         <div className="discovery-empty">
           <Tag size={46} />
           <p className="eyebrow">No deal rows yet</p>
-          <h3>Run a source check</h3>
+          <h3>{allDeals.length > 0 ? 'No deals match those filters' : 'Run a source check'}</h3>
           <p>
             The finder only shows rows extracted from official pages. Script-rendered pages are reported as checked,
             with no product rows copied.
           </p>
+          {allDeals.length > 0 && dealQuery.trim().length >= 3 ? (
+            canWatchItems ? (
+              <div className="watch-prompt">
+                <p>
+                  No deal for &ldquo;{dealQuery.trim()}&rdquo; yet. Watch it and the scouts will
+                  alert you the moment one appears anywhere.
+                </p>
+                <button
+                  className="primary-button"
+                  disabled={isWatching}
+                  onClick={watchCurrentQuery}
+                  type="button"
+                >
+                  {isWatching ? 'Saving watch' : 'Watch this item'}
+                </button>
+                {watchNotice ? <p className="watch-prompt-notice">{watchNotice}</p> : null}
+              </div>
+            ) : (
+              <p className="watch-prompt-notice">
+                Log in and Trolley Scout can watch this item for you, then alert you the moment a
+                deal appears.
+              </p>
+            )
+          ) : null}
         </div>
       )}
     </section>
@@ -3215,6 +3656,131 @@ function OffersPanel({
   )
 }
 
+// The alerts bell: matched watches the member has not dismissed yet. Watches
+// are created from the Find deals empty state when a searched item has no
+// deal anywhere on the platform.
+function DealWatchBell() {
+  const [watches, setWatches] = useState<DealWatch[]>([])
+  const [isOpen, setIsOpen] = useState(false)
+  const alertCount = watches.filter((watch) => watch.matchedAt && !watch.seenAt).length
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    loadDealWatches(controller.signal)
+      .then((result) => setWatches(result.watches))
+      .catch(() => {})
+
+    return () => controller.abort()
+  }, [])
+
+  const dismiss = async (watch: DealWatch) => {
+    // Optimistic: the badge clears immediately, the server catches up.
+    setWatches((current) =>
+      current.map((candidate) =>
+        candidate.id === watch.id
+          ? { ...candidate, seenAt: new Date().toISOString() }
+          : candidate,
+      ),
+    )
+
+    try {
+      setWatches(await markDealWatchSeen(watch.id))
+    } catch {
+      // Optimistic state stands; the next load reconciles.
+    }
+  }
+
+  const remove = async (watch: DealWatch) => {
+    setWatches((current) => current.filter((candidate) => candidate.id !== watch.id))
+
+    try {
+      setWatches(await deleteDealWatch(watch.id))
+    } catch {
+      // Optimistic state stands; the next load reconciles.
+    }
+  }
+
+  return (
+    <div className="watch-bell">
+      <button
+        aria-expanded={isOpen}
+        aria-label={
+          alertCount > 0 ? `${alertCount} deal alerts waiting` : 'Watched items'
+        }
+        className="icon-button"
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        {alertCount > 0 ? <BellRinging size={20} /> : <Bell size={20} />}
+        {alertCount > 0 ? <span className="watch-bell-badge">{alertCount}</span> : null}
+      </button>
+      {isOpen ? (
+        <div className="watch-panel" role="dialog" aria-label="Watched items">
+          <div className="watch-panel-heading">
+            <p className="eyebrow">Watched items</p>
+            <button
+              aria-label="Close watched items"
+              className="icon-button"
+              onClick={() => setIsOpen(false)}
+              type="button"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {watches.length === 0 ? (
+            <p className="watch-panel-empty">
+              Search an item under Find deals. If it has no special yet, watch it and the
+              scouts will alert you here the moment one appears.
+            </p>
+          ) : (
+            watches.map((watch) => (
+              <article
+                className={clsx('watch-row', watch.matchedAt && !watch.seenAt && 'is-alert')}
+                key={watch.id}
+              >
+                <div className="watch-row-heading">
+                  <h4>{watch.queryText}</h4>
+                  {watch.matchedAt && !watch.seenAt ? <mark>Deal found</mark> : null}
+                  <button
+                    aria-label={`Stop watching ${watch.queryText}`}
+                    className="icon-button"
+                    onClick={() => remove(watch)}
+                    type="button"
+                  >
+                    <Trash size={14} />
+                  </button>
+                </div>
+                {!watch.matchedAt ? (
+                  <p>Still scouting. You will see an alert here the moment a deal appears.</p>
+                ) : null}
+                {watch.matches.map((match) => (
+                  <a
+                    className="watch-match"
+                    href={match.productUrl ?? '#'}
+                    key={`${watch.id}-${match.title}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {match.imageUrl ? <img alt="" loading="lazy" src={match.imageUrl} /> : null}
+                    <span className="watch-match-title">{match.title}</span>
+                    {match.priceText ? <strong>{match.priceText}</strong> : null}
+                  </a>
+                ))}
+                {watch.matchedAt && !watch.seenAt ? (
+                  <button className="ghost-button" onClick={() => dismiss(watch)} type="button">
+                    Got it
+                  </button>
+                ) : null}
+              </article>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function OfferList({
   deletingOfferId,
   offers,
@@ -3228,6 +3794,9 @@ function OfferList({
     <div className="offer-list">
       {offers.map((offer) => (
         <article className="offer-row" key={offer.id}>
+          {offer.imageUrl ? (
+            <img alt="" className="offer-image" loading="lazy" src={offer.imageUrl} />
+          ) : null}
           <div>
             <p className="eyebrow">Verified offer</p>
             <h3>{offer.title}</h3>
@@ -3452,10 +4021,10 @@ function ScannerResult({
   )
 }
 
-function LoadingStrip({ label }: { label: string }) {
+export function LoadingStrip({ label }: { label: string }) {
   return (
     <div className="loading-strip" role="status">
-      <span />
+      <ScoutMark motion="spin" size={28} />
       {label}
     </div>
   )

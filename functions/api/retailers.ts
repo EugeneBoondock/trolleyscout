@@ -1,6 +1,7 @@
 import { getStaticRetailersPayload } from '../../src/api/staticData'
 import { filterRetailers } from '../../src/services/sourceEngine'
-import type { SourceKind } from '../../src/types'
+import { retailerLogoUrl } from '../../src/services/storeLogos'
+import type { Retailer, SourceKind } from '../../src/types'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const sourceKinds: Array<SourceKind | 'all'> = ['all', 'app', 'loyalty', 'specials', 'store-finder']
@@ -19,7 +20,14 @@ export const onRequest: PagesFunction = async ({ request }) => {
   const payload = getStaticRetailersPayload()
 
   return json({
-    retailers: filterRetailers(payload.retailers, { query, sourceKind }),
+    retailers: addRetailerLogos(filterRetailers(payload.retailers, { query, sourceKind })),
     summary: payload.summary,
   })
+}
+
+export function addRetailerLogos(retailers: Retailer[]): Retailer[] {
+  return retailers.map((retailer) => ({
+    ...retailer,
+    logoUrl: retailerLogoUrl(retailer),
+  }))
 }

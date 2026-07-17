@@ -1,3 +1,5 @@
+import type { RetailerDealScope } from './services/retailerFeeds/types'
+
 export type RetailerId =
   | 'pick-n-pay'
   | 'checkers'
@@ -21,6 +23,10 @@ export type RetailerId =
   | 'roots-butchery'
   | 'frontline'
   | 'walmart'
+
+// Discovery also represents validated supermarkets found outside the fixed
+// directory. Directory records themselves remain restricted to RetailerId.
+export type DiscoveryRetailerId = RetailerId | (string & {})
 
 export type SourceKind = 'specials' | 'loyalty' | 'app' | 'store-finder'
 
@@ -50,6 +56,8 @@ export interface Retailer {
   verifiedOn: string
   accentColor: string
   sources: RetailerSource[]
+  // Computed from the retailer's own site favicon; never stored by hand.
+  logoUrl?: string
 }
 
 export interface VerifiedOffer {
@@ -63,6 +71,7 @@ export interface VerifiedOffer {
   priceText?: string
   savingText?: string
   termsText?: string
+  imageUrl?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -91,7 +100,7 @@ export interface DiscoverySourceTarget {
 
 export interface DiscoveredDeal {
   id: string
-  retailerId: RetailerId
+  retailerId: DiscoveryRetailerId
   retailerName: string
   sourceLabel: string
   sourceUrl: string
@@ -103,9 +112,25 @@ export interface DiscoveredDeal {
   savingText?: string
   evidenceText: string
   imageUrl?: string
+  imageCrop?: ImageCrop
+  catalogueDeepLink?: string
+  catalogueFingerprint?: string
+  expiresAt?: string
+  priceScope?: RetailerDealScope
+  productId?: string
+  promotionId?: string
+  validFrom?: string
+  validTo?: string
   // 1-based page in the source catalogue, when the deal came from a page scan.
   pageNumber?: number
   personalizationReason?: string
+}
+
+export interface ImageCrop {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 export type DealActivityEventType =
@@ -136,7 +161,7 @@ export interface DiscoverySourceResult {
   checkedAt: string
   httpStatus?: number
   itemCount: number
-  retailerId: RetailerId
+  retailerId: DiscoveryRetailerId
   retailerName: string
   sourceLabel: string
   sourceUrl: string
@@ -146,15 +171,26 @@ export interface DiscoverySourceResult {
 
 export interface StoreLeaflet {
   id: string
-  retailerId: RetailerId
+  retailerId: DiscoveryRetailerId
   retailerName: string
   name: string
   imageUrl?: string
   documentUrl?: string
+  pages?: CataloguePage[]
+  priceScope?: RetailerDealScope
+  sourceLabel?: string
   validFrom?: string
   validTo?: string
   url: string
   capturedAt: string
+}
+
+export interface CataloguePage {
+  pageNumber: number
+  imageUrl: string
+  width: number
+  height: number
+  fallbacks?: string[]
 }
 
 export interface DiscoveryRun {
@@ -172,6 +208,26 @@ export interface DiscoveryRun {
   }
 }
 
+// One deal that answered a watched item.
+export interface DealWatchMatch {
+  title: string
+  retailerName?: string
+  priceText?: string
+  productUrl?: string
+  imageUrl?: string
+}
+
+// An item a member searched for that had no deal yet; matched watches with no
+// seenAt are the member's unread alerts.
+export interface DealWatch {
+  id: string
+  queryText: string
+  createdAt: string
+  matchedAt?: string
+  seenAt?: string
+  matches: DealWatchMatch[]
+}
+
 export interface OfferDraft {
   retailerId: RetailerId
   title: string
@@ -182,6 +238,7 @@ export interface OfferDraft {
   priceText: string
   savingText?: string
   termsText: string
+  imageUrl?: string
 }
 
 export type OfferValidationSeverity = 'error' | 'warning'

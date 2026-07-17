@@ -39,6 +39,292 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.discovered-store-directory {
+  margin: 1rem 0 1.5rem;
+  padding: 1rem;
+  border: 2px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.discovered-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.discovered-store-card {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.discovered-store-card:hover,
+.discovered-store-card:focus-visible {
+  border-color: var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+.discovered-store-card-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.discovered-store-card-copy strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.discovered-store-card-copy > span,
+.directory-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.store-directory-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.65rem, 3vw, 2rem);
+  background: rgb(0 0 0 / 0.62);
+}
+
+.store-directory-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1rem;
+  width: min(68rem, 100%);
+  max-height: 92svh;
+  padding: clamp(0.9rem, 2vw, 1.35rem);
+  border: 3px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
+}
+
+.store-directory-modal-head,
+.store-location-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.store-directory-modal-head {
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.store-directory-modal-head h3,
+.store-directory-modal-head p,
+.store-location-head h4,
+.store-location-head p {
+  margin: 0;
+}
+
+.store-directory-modal-head h3 {
+  font-family: var(--display);
+  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.store-directory-modal-head > div > p:last-child,
+.store-location-head p,
+.store-location-head small {
+  color: var(--muted);
+}
+
+.store-location-list {
+  display: grid;
+  gap: 1rem;
+  overflow: auto;
+  padding: 0.1rem 0.35rem 0.35rem 0.1rem;
+}
+
+.store-location-section {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 2px solid var(--line-soft);
+  background: var(--bg);
+}
+
+.store-location-head a,
+.store-promotion-actions a,
+.store-promotion-actions button {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.store-location-head a:hover,
+.store-promotion-actions a:hover,
+.store-promotion-actions button:hover {
+  background: var(--yellow);
+  color: #1c1710;
+}
+
+.store-location-promotions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: 0.75rem;
+}
+
+.store-location-promotion {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.store-location-promotion > img {
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 1px solid var(--line-soft);
+  background: var(--bg);
+  object-fit: contain;
+}
+
+.store-location-promotion h5,
+.store-location-promotion p {
+  margin: 0.2rem 0;
+}
+
+.promotion-kind {
+  color: var(--red);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.store-location-price,
+.store-promotion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: baseline;
+}
+
+.store-location-price strong {
+  color: var(--red);
+}
+
+.store-location-price s,
+.store-location-price span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.store-promotion-actions {
+  margin-top: 0.55rem;
+}
+
+.store-logo,
+.store-logo-fallback {
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 2.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 0.35rem;
+  object-fit: contain;
+  background: var(--surface);
+}
+
+.store-logo-fallback {
+  display: grid;
+  place-items: center;
+}
+
+.retailer-title-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.deal-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 2fr) repeat(2, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.deal-filter-bar label:not(.deal-filter-check) {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.deal-filter-bar input[type="search"],
+.deal-filter-bar select {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.deal-filter-check {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.basket-product-image {
+  width: 5.25rem;
+  height: 5.25rem;
+  flex: 0 0 5.25rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 0.35rem;
+  object-fit: contain;
+  background: var(--surface);
+}
+
+.near-deal-image,
+.near-catalogue-image {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  border: 1px solid var(--line-soft);
+  object-fit: contain;
+  background: var(--surface);
+}
+
+@media (max-width: 760px) {
+  .deal-filter-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #191410;
@@ -209,6 +495,93 @@ mark {
   width: 2.4rem;
   height: 2.4rem;
   object-fit: contain;
+}
+
+.scout-mark {
+  --scout-mark-size: 38px;
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--scout-mark-size);
+  height: var(--scout-mark-size);
+  overflow: hidden;
+  border-radius: 22%;
+}
+
+.scout-mark img,
+.scout-mark svg,
+.brand-mark .scout-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.scout-mark img {
+  object-fit: contain;
+}
+
+.scout-mark svg {
+  overflow: visible;
+}
+
+.scout-mark-cover {
+  fill: #f4eedd;
+}
+
+.scout-mark-needle {
+  transform-box: view-box;
+  transform-origin: 256px 211px;
+}
+
+.scout-mark-needle-tail {
+  fill: #d91e18;
+}
+
+.scout-mark-needle-head {
+  fill: #ffd326;
+}
+
+.scout-mark-hub {
+  fill: #1c1710;
+}
+
+.scout-mark-hub-centre {
+  fill: #f4eedd;
+}
+
+.scout-mark.is-scouting .scout-mark-needle {
+  animation: scout-sweep 3.2s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.scout-mark.is-spinning .scout-mark-needle {
+  animation: scout-spin 0.9s linear infinite;
+}
+
+@keyframes scout-sweep {
+  0%,
+  12%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(-18deg);
+  }
+  52% {
+    transform: rotate(14deg);
+  }
+  70% {
+    transform: rotate(-7deg);
+  }
+  84% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes scout-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .brand-button {
@@ -551,14 +924,27 @@ main {
   display: inline-flex;
   gap: 0.35rem;
   align-items: center;
+  width: 100%;
+  padding: 0.35rem 0;
   color: var(--ink);
+  background: transparent;
   font-size: 0.85rem;
   font-weight: 700;
+  text-align: left;
   text-decoration-color: var(--red);
 }
 
 .store-catalogue:hover {
   color: var(--red);
+}
+
+.store-catalogue-action {
+  margin-left: auto;
+  color: var(--red);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .store-website {
@@ -755,12 +1141,14 @@ main {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 1rem;
-  width: min(56rem, 100%);
+  width: min(72rem, 100%);
   max-height: 90svh;
   padding: 1.2rem;
   border: 3px solid var(--line);
   background: var(--surface);
+  color: var(--ink);
   box-shadow: var(--shadow-hard);
+  overflow: hidden;
 }
 
 .leaflet-modal-head {
@@ -781,6 +1169,7 @@ main {
 }
 
 .leaflet-modal-body {
+  min-height: 0;
   overflow: auto;
   display: grid;
   place-items: center;
@@ -790,6 +1179,163 @@ main {
 .leaflet-modal-body img {
   width: 100%;
   height: auto;
+  object-fit: contain;
+}
+
+.leaflet-modal-body object {
+  width: 100%;
+  min-height: min(68svh, 48rem);
+  border: 0;
+  background: var(--surface);
+}
+
+.leaflet-reader {
+  display: grid;
+  grid-template-rows: auto minmax(18rem, 1fr) auto;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: min(60svh, 44rem);
+  padding: 0.65rem;
+  background: var(--bg);
+}
+
+.leaflet-reader-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.leaflet-page-controls,
+.leaflet-zoom-controls {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.leaflet-page-controls > span {
+  min-width: 7rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.leaflet-page-controls button,
+.leaflet-zoom-controls button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.35rem;
+  height: 2.35rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.leaflet-page-controls button:hover:not(:disabled),
+.leaflet-zoom-controls button:hover:not(:disabled) {
+  background: var(--yellow);
+  color: #1c1710;
+}
+
+.leaflet-page-controls button:disabled,
+.leaflet-zoom-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.leaflet-page-stage {
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 18rem;
+  padding: clamp(0.4rem, 2vw, 1rem);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+  overscroll-behavior: contain;
+}
+
+.leaflet-modal-body .leaflet-page-image {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin-inline: auto;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.leaflet-page-thumbnails {
+  overflow-x: auto;
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.25rem 0.1rem 0.45rem;
+  scrollbar-gutter: stable;
+}
+
+.leaflet-page-thumbnail {
+  position: relative;
+  display: grid;
+  flex: 0 0 4.5rem;
+  place-items: center;
+  width: 4.5rem;
+  height: 5.8rem;
+  padding: 0.2rem;
+  border: 2px solid var(--line-soft);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.leaflet-page-thumbnail[aria-current="page"] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
+}
+
+.leaflet-modal-body .leaflet-page-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.leaflet-page-thumbnail span {
+  position: absolute;
+  right: 0.15rem;
+  bottom: 0.15rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.2rem;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.leaflet-image-failure {
+  align-self: center;
+  max-width: 28rem;
+  padding: 1.2rem;
+  border: 2px dashed var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+}
+
+.leaflet-image-failure p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.leaflet-modal-body .leaflet-cover-only {
+  width: 100%;
+  max-height: 65svh;
   object-fit: contain;
 }
 
@@ -803,7 +1349,8 @@ main {
   border-top: 2px solid var(--line);
 }
 
-.leaflet-modal-foot .primary-button {
+.leaflet-modal-foot .primary-button,
+.leaflet-modal-foot .ghost-button {
   text-decoration: none;
 }
 
@@ -930,13 +1477,6 @@ main {
   color: var(--muted);
   font-size: 0.88rem;
   font-weight: 700;
-}
-
-.loading-strip span {
-  width: 0.7rem;
-  height: 0.7rem;
-  background: var(--red-bright);
-  animation: pulse 1s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -2178,6 +2718,148 @@ main {
   min-width: 0;
 }
 
+.offer-image {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+  border: 2px solid var(--line);
+  background: #fff;
+}
+
+.watch-bell {
+  position: relative;
+}
+
+.watch-bell > .icon-button {
+  position: relative;
+}
+
+.watch-bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-content: center;
+  background: var(--specials-red, #c9271b);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 900;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+}
+
+.watch-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: min(360px, 86vw);
+  max-height: 65vh;
+  overflow-y: auto;
+  z-index: 60;
+  padding: 1rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.watch-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.watch-panel-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.watch-row {
+  border: 2px solid var(--line-soft, var(--line));
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.watch-row.is-alert {
+  border-color: var(--trust-green, #0d6b3d);
+}
+
+.watch-row-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.watch-row-heading h4 {
+  margin: 0;
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.watch-row-heading mark {
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 0.1rem 0.35rem;
+}
+
+.watch-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.watch-match {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.watch-match img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  background: #fff;
+  border: 1.5px solid var(--line-soft, var(--line));
+}
+
+.watch-match-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-match strong {
+  color: var(--specials-red, #c9271b);
+}
+
+.watch-prompt {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+  margin-top: 0.75rem;
+}
+
+.watch-prompt p {
+  margin: 0;
+}
+
+.watch-prompt-notice {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 .deal-product-image {
   flex: 0 0 auto;
   width: 6.4rem;
@@ -2522,6 +3204,10 @@ main {
 
 .member-topbar .brand-mark {
   flex: 1;
+}
+
+#member-menu {
+  display: none;
 }
 
 .member-topbar-actions {
@@ -3166,6 +3852,11 @@ main {
    --------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
+  .scout-mark-needle {
+    animation: none !important;
+    transform: rotate(0deg) !important;
+  }
+
   *,
   *::before,
   *::after {
@@ -3208,6 +3899,10 @@ main {
 }
 
 @media (max-width: 760px) {
+  #member-menu {
+    display: inline-grid;
+  }
+
   .topbar {
     grid-template-columns: 1fr auto;
   }
@@ -3336,5 +4031,72 @@ main {
 
   .source-link-group {
     flex-wrap: wrap;
+  }
+
+  .store-directory-modal {
+    max-height: 95svh;
+    padding: 0.8rem;
+  }
+
+  .store-directory-modal-head,
+  .store-location-head {
+    align-items: flex-start;
+  }
+
+  .store-location-head {
+    flex-direction: column;
+  }
+
+  .store-location-section {
+    padding: 0.75rem;
+  }
+
+  .store-location-promotion {
+    grid-template-columns: 1fr;
+  }
+
+  .leaflet-modal-backdrop {
+    padding: 0.35rem;
+  }
+
+  .leaflet-modal {
+    gap: 0.6rem;
+    max-height: 97svh;
+    padding: 0.7rem;
+  }
+
+  .leaflet-modal-head h3 {
+    font-size: 1.08rem;
+  }
+
+  .leaflet-reader {
+    grid-template-rows: auto minmax(14rem, 1fr) auto;
+    min-height: min(65svh, 38rem);
+    padding: 0.4rem;
+  }
+
+  .leaflet-reader-toolbar {
+    align-items: stretch;
+  }
+
+  .leaflet-page-controls,
+  .leaflet-zoom-controls {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .leaflet-page-stage {
+    min-height: 14rem;
+    padding: 0.35rem;
+  }
+
+  .leaflet-modal-foot {
+    justify-content: stretch;
+  }
+
+  .leaflet-modal-foot .primary-button,
+  .leaflet-modal-foot .ghost-button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 }

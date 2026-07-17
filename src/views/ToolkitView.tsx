@@ -63,7 +63,7 @@ export function ToolkitView() {
 
       <div className="offline-note" role="note">
         <WifiSlash size={18} />
-        <p>Works without signal once the page has loaded — use it right in the aisle.</p>
+        <p>Works without signal once the page has loaded. Use it right in the aisle.</p>
       </div>
 
       <section className="unit-checker" aria-label="Pack comparison">
@@ -186,7 +186,7 @@ export function ToolkitView() {
         <ul>
           <li>
             <strong>Read the small grey price.</strong> Most shelf labels already show a price per
-            kg or per 100g in small print — it is the only number that lets you compare fairly.
+            kg or per 100g in small print. It is the only number that lets you compare fairly.
           </li>
           <li>
             <strong>Check the member price.</strong> If the shelf shows two prices, the lower one

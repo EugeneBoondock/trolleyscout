@@ -1,30 +1,28 @@
-# Trolley Scout — mobile app (Flutter)
+# Trolley Scout mobile app (Flutter)
 
-Native Android/iOS app for Trolley Scout. It talks to the same live Cloudflare
-API as the website (https://trolleyscout.co.za), so there is no separate backend.
+Native Android and iOS app for Trolley Scout. It uses the same live Cloudflare API and member account as [trolleyscout.co.za](https://trolleyscout.co.za).
 
-## Screens
-- **Home** — the "money on the table" till slip: SASSA grant amounts a household
-  can claim, plus the grant-fraud warning.
-- **Money** — every SASSA grant with who qualifies, how to apply free, and a link
-  to the official page.
-- **Near me** — asks for device location and lists the supermarkets around you
-  with this week's deals and catalogues for each (reused globally, date-aware).
-- **Deals** — the source-backed specials board, sorted by retailer and catalogue
-  page, paginated 24 per page.
+## Features
+
+- Public: Home, Money help, Near me, Find deals, Tools, Stores, Verified offers, Scanner, About and help, and Rules.
+- Member: Log in, Sign up, Dashboard, Saved deals, Basket, Saved sources, Subscription, Profile, and sign out.
+- Admin: role-gated account, plan, source, deal, leaflet, and scout status.
+- Appearance: matching light and dark themes with a persistent theme choice.
+- Branding: one Trolley Scout mark across the app bar, Flutter web, Android, iOS, and the website.
 
 ## Run
-    cd mobile
-    flutter pub get
-    flutter run            # connected device / emulator
-    flutter run -d chrome  # or in the browser
 
-## Release APK (Android)
-The Android SDK is installed but its licenses must be accepted once:
-    flutter doctor --android-licenses
-    flutter build apk --release   # build/app/outputs/flutter-apk/app-release.apk
+```text
+cd mobile
+flutter pub get
+flutter run
+flutter run -d chrome
+```
 
 ## Verify
-    flutter analyze   # 0 issues
-    flutter test      # boots to home, shows the till slip
-    flutter build web --release
+
+```text
+flutter analyze
+flutter test
+flutter build web --release
+```

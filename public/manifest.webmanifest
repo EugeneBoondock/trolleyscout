@@ -4,8 +4,8 @@
   "description": "Stretch every rand: grants and money help, unit price tools, and source-backed grocery deals for South Africa.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f8f3",
-  "theme_color": "#157347",
+  "background_color": "#f4eedd",
+  "theme_color": "#1c1710",
   "icons": [
     {
       "src": "/assets/brand-mark.png",

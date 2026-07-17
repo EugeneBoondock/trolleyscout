@@ -1,0 +1,290 @@
+import 'package:flutter/material.dart';
+
+import '../api_models.dart';
+import '../theme.dart';
+import 'catalogue_pdf_view.dart';
+
+Future<void> showCatalogueReader(
+  BuildContext context,
+  Catalogue catalogue,
+) =>
+    showDialog<void>(
+      context: context,
+      useSafeArea: false,
+      builder: (_) => Dialog.fullscreen(
+        backgroundColor: TS.bgOf(context),
+        child: CatalogueReader(catalogue: catalogue),
+      ),
+    );
+
+class CatalogueReader extends StatefulWidget {
+  const CatalogueReader({super.key, required this.catalogue});
+
+  final Catalogue catalogue;
+
+  @override
+  State<CatalogueReader> createState() => _CatalogueReaderState();
+}
+
+class _CatalogueReaderState extends State<CatalogueReader> {
+  late final PageController _pageController;
+  int _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _showPage(int index) {
+    if (index < 0 || index >= widget.catalogue.pages.length) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final catalogue = widget.catalogue;
+    return Scaffold(
+      backgroundColor: TS.bgOf(context),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Close catalogue',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.close),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              catalogue.retailerName ?? 'Trolley Scout catalogue',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TS.eyebrowOf(context),
+            ),
+            Text(
+              catalogue.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: catalogue.pages.isNotEmpty
+            ? _imageReader(catalogue.pages)
+            : catalogue.isDirectPdf
+                ? CataloguePdfView(
+                    url: catalogue.url,
+                    label: catalogue.name,
+                    fallbackImageUrl: catalogue.coverImageUrl,
+                  )
+                : _CatalogueCoverFallback(catalogue: catalogue),
+      ),
+    );
+  }
+
+  Widget _imageReader(List<CataloguePage> pages) {
+    return Column(
+      children: [
+        Expanded(
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: pages.length,
+            onPageChanged: (index) => setState(() => _pageIndex = index),
+            itemBuilder: (context, index) => Semantics(
+              container: true,
+              image: true,
+              label:
+                  'Catalogue page ${pages[index].pageNumber} of ${pages.length}',
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 5,
+                boundaryMargin: const EdgeInsets.all(48),
+                child: SizedBox.expand(
+                  child: _CatalogueNetworkImage(
+                    urls: pages[index].imageUrls,
+                    fit: BoxFit.contain,
+                    fallbackIconSize: 52,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: TS.surfaceOf(context),
+            border: Border(top: BorderSide(color: TS.lineSoftOf(context))),
+          ),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Previous page',
+                onPressed:
+                    _pageIndex == 0 ? null : () => _showPage(_pageIndex - 1),
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Expanded(
+                child: Text(
+                  'Page ${pages[_pageIndex].pageNumber} of ${pages.length}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next page',
+                onPressed: _pageIndex >= pages.length - 1
+                    ? null
+                    : () => _showPage(_pageIndex + 1),
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 82,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            scrollDirection: Axis.horizontal,
+            itemCount: pages.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final selected = index == _pageIndex;
+              return Semantics(
+                button: true,
+                selected: selected,
+                label: 'Go to catalogue page ${pages[index].pageNumber}',
+                child: InkWell(
+                  onTap: () => _showPage(index),
+                  child: Container(
+                    width: 52,
+                    decoration: BoxDecoration(
+                      color: TS.surfaceOf(context),
+                      border: Border.all(
+                        color: selected
+                            ? TS.redOf(context)
+                            : TS.lineSoftOf(context),
+                        width: selected ? 3 : 1.5,
+                      ),
+                    ),
+                    child: _CatalogueNetworkImage(
+                      urls: pages[index].imageUrls,
+                      fit: BoxFit.cover,
+                      fallbackIconSize: 20,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CatalogueNetworkImage extends StatelessWidget {
+  const _CatalogueNetworkImage({
+    required this.urls,
+    required this.fit,
+    required this.fallbackIconSize,
+  });
+
+  final List<String> urls;
+  final BoxFit fit;
+  final double fallbackIconSize;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+        child: _imageAt(context, 0),
+      );
+
+  Widget _imageAt(BuildContext context, int index) {
+    if (index >= urls.length) {
+      return ColoredBox(
+        color: TS.surfaceSoftOf(context),
+        child: Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: TS.mutedOf(context),
+            size: fallbackIconSize,
+          ),
+        ),
+      );
+    }
+    return Image.network(
+      urls[index],
+      fit: fit,
+      frameBuilder: (context, child, frame, loadedSynchronously) {
+        if (loadedSynchronously || frame != null) return child;
+        return ColoredBox(
+          color: TS.surfaceSoftOf(context),
+          child: Center(
+            child: CircularProgressIndicator(color: TS.redOf(context)),
+          ),
+        );
+      },
+      errorBuilder: (_, __, ___) => _imageAt(context, index + 1),
+    );
+  }
+}
+
+class _CatalogueCoverFallback extends StatelessWidget {
+  const _CatalogueCoverFallback({required this.catalogue});
+
+  final Catalogue catalogue;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = catalogue.coverImageUrl;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              image: true,
+              label: 'Cover for ${catalogue.name}',
+              child: SizedBox(
+                width: 260,
+                height: 340,
+                child: _CatalogueNetworkImage(
+                  urls: cover == null ? const [] : [cover],
+                  fit: BoxFit.contain,
+                  fallbackIconSize: 64,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Catalogue pages are being prepared.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'The cover stays available here while Trolley Scout prepares the full reader.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TS.mutedOf(context)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

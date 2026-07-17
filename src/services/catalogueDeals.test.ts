@@ -83,9 +83,10 @@ describe('extractVisionCatalogueDeals', () => {
       imageUrl: 'https://example.com/page.webp',
       markdown: JSON.stringify({
         deals: [
-          { title: 'SAVE', price: 'R50' },
-          { title: 'Ritebrand Mixed Chicken Portions 5kg', price: '199.99' },
+          { box: box(), title: 'SAVE', price: 'R50' },
+          { box: box(), title: 'Ritebrand Mixed Chicken Portions 5kg', price: '199.99' },
           {
+            box: box(0.52, 0.2),
             previousPrice: 'R89.99',
             price: 'R69.99',
             title: 'Sunfoil Pure Sunflower Oil 2L',
@@ -116,11 +117,11 @@ describe('extractVisionCatalogueDeals', () => {
       imageUrl: 'https://example.com/page.webp',
       markdown: JSON.stringify({
         deals: [
-          { title: 'red boxed product is displayed at the top right', price: 'R69.99' },
-          { title: 'green bag of mixed vegetables is shown on the left', price: 'R34.99' },
-          { title: 'Any 3 for', price: 'R290' },
-          { title: 'Various food or household items are shown', price: 'R110' },
-          { title: 'Huggies Baby Soft Diapers Size 4 44s', price: 'R179.99' },
+          { box: box(), title: 'red boxed product is displayed at the top right', price: 'R69.99' },
+          { box: box(), title: 'green bag of mixed vegetables is shown on the left', price: 'R34.99' },
+          { box: box(), title: 'Any 3 for', price: 'R290' },
+          { box: box(), title: 'Various food or household items are shown', price: 'R110' },
+          { box: box(), title: 'Huggies Baby Soft Diapers Size 4 44s', price: 'R179.99' },
         ],
       }),
       retailerId: 'shoprite',
@@ -135,7 +136,7 @@ describe('extractVisionCatalogueDeals', () => {
   it('accepts JSON wrapped in a code fence', () => {
     const deals = extractVisionCatalogueDeals({
       capturedAt: '2026-07-15T00:00:00.000Z',
-      markdown: '```json\n{"deals":[{"title":"Albany Bread 700g","price":"R15.99"}]}\n```',
+      markdown: '```json\n{"deals":[{"title":"Albany Bread 700g","price":"R15.99","box":{"x":0.1,"y":0.1,"width":0.2,"height":0.2}}]}\n```',
       retailerId: 'checkers',
       retailerName: 'Checkers',
       sourceUrl: 'https://example.com/catalogue',
@@ -144,4 +145,53 @@ describe('extractVisionCatalogueDeals', () => {
     expect(deals).toHaveLength(1)
     expect(deals[0].title).toBe('Albany Bread 700g')
   })
+
+  it('keeps a meaningful normalized crop, clamps harmless error, and rejects unsafe boxes', () => {
+    const deals = extractVisionCatalogueDeals({
+      capturedAt: '2026-07-15T00:00:00.000Z',
+      documentFingerprint: 'f'.repeat(64),
+      imageUrl: 'https://example.com/page0002_3.webp',
+      markdown: JSON.stringify({
+        deals: [
+          {
+            box: { height: 0.25, width: 0.2, x: -0.0000001, y: 0.75 },
+            price: 'R15.99',
+            title: 'Albany Bread 700g',
+          },
+          {
+            box: { height: 0.01, width: 0.01, x: 0.2, y: 0.2 },
+            price: 'R20.00',
+            title: 'Tiny Product',
+          },
+          {
+            box: { height: 0.2, width: 0.2, x: 0.9, y: 0.2 },
+            price: 'R30.00',
+            title: 'Outside Product',
+          },
+          {
+            box: { height: 0.2, width: Number.NaN, x: 0.1, y: 0.1 },
+            price: 'R40.00',
+            title: 'Malformed Product',
+          },
+        ],
+      }),
+      pageDeepLink: 'https://example.com/catalogue/index.html#page=2',
+      pageNumber: 2,
+      retailerId: 'checkers',
+      retailerName: 'Checkers',
+      sourceUrl: 'https://example.com/catalogue/index.html',
+    })
+
+    expect(deals).toHaveLength(1)
+    expect(deals[0]).toMatchObject({
+      catalogueDeepLink: 'https://example.com/catalogue/index.html#page=2',
+      catalogueFingerprint: 'f'.repeat(64),
+      imageCrop: { height: 0.25, width: 0.2, x: 0, y: 0.75 },
+      pageNumber: 2,
+    })
+  })
 })
+
+function box(x = 0.1, y = 0.1) {
+  return { height: 0.2, width: 0.2, x, y }
+}

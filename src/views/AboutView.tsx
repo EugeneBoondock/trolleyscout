@@ -20,7 +20,7 @@ const faqs: Faq[] = [
   {
     question: 'Why don’t I see every product from every shop?',
     answer:
-      'Some big shops (Shoprite, Checkers) only publish a printed catalogue online, not a live product list. For those we show the current catalogue with its dates. For shops with a live product feed (Pick n Pay, Clicks, Dis-Chem and more) we show real prices and savings. We only ever show what comes from the shop’s own official page — never a guess.',
+      'Some big shops (Shoprite, Checkers) only publish a printed catalogue online, not a live product list. For those we show the current catalogue with its dates. For shops with a live product feed (Pick n Pay, Clicks, Dis-Chem and more) we show real prices and savings. We only ever show what comes from the shop’s own official page. We never guess.',
   },
   {
     question: 'Why did a price not match the shop?',
@@ -30,17 +30,17 @@ const faqs: Faq[] = [
   {
     question: 'Is it really free?',
     answer:
-      'Yes. All the money help, the price tools, live deals, and store catalogues are free and need no account. Paid plans only add bigger saved-deal and basket lists for power savers — and they help keep the essentials free for everyone.',
+      'Yes. All the money help, the price tools, live deals, and store catalogues are free and need no account. Paid plans only add bigger saved-deal and basket lists for power savers, which help keep the essentials free for everyone.',
   },
   {
     question: 'Which shops are covered?',
     answer:
-      'Live product prices: Pick n Pay, Clicks, Dis-Chem, Takealot, Amazon, Yuppiechef. Weekly catalogues: Shoprite, Checkers, Boxer, Usave, OK Foods, Frontline Hyper, President Hyper, Kit Kat, and more — and we keep adding. Ask for a shop and we’ll try to add it.',
+      'Live product prices: Pick n Pay, Clicks, Dis-Chem, Takealot, Amazon, Yuppiechef. Weekly catalogues: Shoprite, Checkers, Boxer, Usave, OK Foods, Frontline Hyper, President Hyper, Kit Kat, and more. We keep adding, so ask for a shop and we’ll try to add it.',
   },
   {
     question: 'How is my money help kept accurate?',
     answer:
-      'Every grant amount, exemption, and right links to the official government or retailer page it came from, with the date we checked it. Grant amounts change each April — always confirm on the official site before you act.',
+      'Every grant amount, exemption, and right links to the official government or retailer page it came from, with the date we checked it. Grant amounts change each April. Always confirm on the official site before you act.',
   },
 ]
 
@@ -62,7 +62,7 @@ export function AboutView({ onOpen }: { onOpen: (destination: AboutDestination) 
         <AboutStep
           icon={<HandCoins size={26} weight="duotone" />}
           title="1. Claim what is yours"
-          text="Open Money help for every SASSA grant, school-fee exemptions, free basic electricity, and UIF — with the free, official way to apply."
+          text="Open Money help for every SASSA grant, school-fee exemptions, free basic electricity, and UIF, with the free, official way to apply."
           actionLabel="Open money help"
           onClick={() => onOpen('help')}
         />
@@ -76,7 +76,7 @@ export function AboutView({ onOpen }: { onOpen: (destination: AboutDestination) 
         <AboutStep
           icon={<MagnifyingGlass size={26} weight="duotone" />}
           title="3. Pay less at the shelf"
-          text="Open Tools to compare pack sizes by price per kilogram or litre — the big pack is not always the cheaper one. Works offline once loaded."
+          text="Open Tools to compare pack sizes by price per kilogram or litre. The big pack is not always the cheaper one. Works offline once loaded."
           actionLabel="Open tools"
           onClick={() => onOpen('tools')}
         />
@@ -120,7 +120,7 @@ export function AboutView({ onOpen }: { onOpen: (destination: AboutDestination) 
       </section>
 
       <p className="about-footnote">
-        Missing a shop, or spotted a wrong price? That feedback is how the coverage grows — the
+        Missing a shop, or spotted a wrong price? That feedback is how the coverage grows. The
         goal is to be genuinely useful to every household, not to sell subscriptions.
       </p>
     </div>

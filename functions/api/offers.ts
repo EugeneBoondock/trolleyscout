@@ -1,4 +1,5 @@
 import { getStaticOffersPayload } from '../../src/api/staticData'
+import { extractPageImage } from '../../src/services/pageImage'
 import type { OfferDraft } from '../../src/types'
 import {
   buildStoredSummary,
@@ -41,6 +42,12 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         },
         { status: 400 },
       )
+    }
+
+    // Scanner entries rarely include a picture, so pull the product image
+    // straight from the offer's own source page (og:image) before saving.
+    if (!draft.imageUrl && typeof draft.sourceUrl === 'string') {
+      draft = { ...draft, imageUrl: await fetchSourcePageImage(draft.sourceUrl) }
     }
 
     const saveResult = await saveOfferDraft(env, draft)
@@ -96,4 +103,34 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   return methodNotAllowed(request.method, 'GET, POST, DELETE')
+}
+
+async function fetchSourcePageImage(sourceUrl: string): Promise<string | undefined> {
+  try {
+    const url = new URL(sourceUrl)
+
+    if (url.protocol !== 'https:') {
+      return undefined
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        accept: 'text/html',
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    })
+
+    if (!response.ok) {
+      return undefined
+    }
+
+    // og:image lives in <head>; the first chunk of the page is enough.
+    const html = (await response.text()).slice(0, 300_000)
+    return extractPageImage(html, url.toString())
+  } catch {
+    return undefined
+  }
 }

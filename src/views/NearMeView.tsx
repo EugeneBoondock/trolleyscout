@@ -5,6 +5,9 @@ import {
   type NearbyStoresState,
   type NearbyStoreResult,
 } from '../services/apiClient'
+import type { StoreLeaflet } from '../types'
+import { LeafletViewer } from '../components/LeafletViewer'
+import { ScoutMark } from '../components/ScoutMark'
 
 const INITIAL: NearbyStoresState = {
   message: 'Find the supermarkets around you and this week’s specials for each.',
@@ -14,6 +17,7 @@ const INITIAL: NearbyStoresState = {
 
 export function NearMeView() {
   const [state, setState] = useState<NearbyStoresState>(INITIAL)
+  const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
 
   function findNearby() {
     if (!('geolocation' in navigator)) {
@@ -57,18 +61,18 @@ export function NearMeView() {
           <h1>Stores around you</h1>
           <p className="section-lede">
             Trolley Scout finds the supermarkets closest to you and pulls this week’s deals and
-            catalogues for each — reused from other shoppers nearby so it loads fast.
+            catalogues for each. Results from nearby shoppers help it load quickly.
           </p>
         </div>
         <button className="primary-button" disabled={isBusy} onClick={findNearby} type="button">
-          <NavigationArrow size={18} className={isBusy ? 'is-spinning' : undefined} />
+          {isBusy ? <ScoutMark motion="spin" size={20} /> : <NavigationArrow size={18} />}
           {isBusy ? 'Searching' : 'Use my location'}
         </button>
       </section>
 
       {state.status !== 'ready' && (
         <div className="near-me-hint" role="status">
-          <MapPin size={20} />
+          {isBusy ? <ScoutMark motion="spin" size={24} /> : <MapPin size={20} />}
           <p>{state.message}</p>
         </div>
       )}
@@ -91,21 +95,36 @@ export function NearMeView() {
       {state.stores.length > 0 && (
         <div className="near-me-list">
           {state.stores.map((store) => (
-            <StoreCard key={store.placeId} store={store} />
+            <StoreCard key={store.placeId} onOpenLeaflet={setOpenLeaflet} store={store} />
           ))}
         </div>
+      )}
+
+      {openLeaflet && (
+        <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
       )}
     </div>
   )
 }
 
-function StoreCard({ store }: { store: NearbyStoreResult }) {
+function StoreCard({
+  onOpenLeaflet,
+  store,
+}: {
+  onOpenLeaflet: (leaflet: StoreLeaflet) => void
+  store: NearbyStoreResult
+}) {
   const dealCount = store.deals.length + store.promotions.filter((p) => p.kind === 'deal').length
   const catalogueCount = store.leaflets.length + store.promotions.filter((p) => p.kind === 'catalogue').length
 
   return (
     <article className="store-card">
       <header className="store-card-head">
+        {store.logoUrl ? (
+          <img alt="" className="store-logo" loading="lazy" src={store.logoUrl} />
+        ) : (
+          <span className="store-logo-fallback"><Storefront size={22} /></span>
+        )}
         <div>
           <h3>{store.name}</h3>
           {store.address && <p className="store-address">{store.address}</p>}
@@ -121,7 +140,7 @@ function StoreCard({ store }: { store: NearbyStoreResult }) {
       {dealCount === 0 && catalogueCount === 0 ? (
         <p className="store-empty">
           {store.retailerId
-            ? 'No current deals loaded for this chain yet — check back soon.'
+            ? 'No current deals loaded for this chain yet. Check back soon.'
             : store.website
               ? 'We’re checking this store’s specials. Come back shortly.'
               : 'No online specials page found for this store.'}
@@ -130,6 +149,7 @@ function StoreCard({ store }: { store: NearbyStoreResult }) {
         <>
           {store.deals.slice(0, 4).map((deal) => (
             <div className="store-deal" key={deal.id}>
+              {deal.imageUrl && <img alt="" className="near-deal-image" loading="lazy" src={deal.imageUrl} />}
               <span className="store-deal-title">{deal.title}</span>
               <span className="store-deal-price">
                 {deal.priceText}
@@ -138,37 +158,40 @@ function StoreCard({ store }: { store: NearbyStoreResult }) {
             </div>
           ))}
 
-          {store.leaflets.slice(0, 3).map((leaflet) => (
-            <a
+          {store.leaflets.map((leaflet) => (
+            <button
+              aria-label={`Read ${cleanUiText(leaflet.name)}`}
               className="store-catalogue"
-              href={leaflet.url}
               key={leaflet.id}
-              rel="noreferrer"
-              target="_blank"
+              onClick={() => onOpenLeaflet(leaflet)}
+              type="button"
             >
-              <Tag size={14} />
-              {leaflet.name}
+              {leaflet.imageUrl ? (
+                <img alt="" className="near-catalogue-image" loading="lazy" src={leaflet.imageUrl} />
+              ) : <Tag size={14} />}
+              {cleanUiText(leaflet.name)}
               {describeValid(leaflet.validFrom, leaflet.validTo)}
-              <LinkSimple size={12} />
-            </a>
+              <span className="store-catalogue-action">Read here</span>
+            </button>
           ))}
 
           {store.promotions
             .filter((promotion) => promotion.kind === 'catalogue')
-            .slice(0, 3)
             .map((promotion) => (
-              <a
+              <button
+                aria-label={`Read ${cleanUiText(promotion.title)}`}
                 className="store-catalogue"
-                href={promotion.productUrl ?? promotion.sourceUrl}
                 key={promotion.id}
-                rel="noreferrer"
-                target="_blank"
+                onClick={() => onOpenLeaflet(promotionToLeaflet(store, promotion))}
+                type="button"
               >
-                <Tag size={14} />
-                {promotion.title}
+                {promotion.imageUrl ? (
+                  <img alt="" className="near-catalogue-image" loading="lazy" src={promotion.imageUrl} />
+                ) : <Tag size={14} />}
+                {cleanUiText(promotion.title)}
                 {describeValid(promotion.validFrom, promotion.validTo)}
-                <LinkSimple size={12} />
-              </a>
+                <span className="store-catalogue-action">Read here</span>
+              </button>
             ))}
         </>
       )}
@@ -181,6 +204,25 @@ function StoreCard({ store }: { store: NearbyStoreResult }) {
       )}
     </article>
   )
+}
+
+function promotionToLeaflet(
+  store: NearbyStoreResult,
+  promotion: NearbyStoreResult['promotions'][number],
+): StoreLeaflet {
+  return {
+    capturedAt: store.lastSeenAt ?? new Date().toISOString(),
+    documentUrl: promotion.productUrl ?? promotion.sourceUrl,
+    id: promotion.id,
+    imageUrl: promotion.imageUrl,
+    name: cleanUiText(promotion.title),
+    retailerId: store.retailerId ?? store.placeId,
+    retailerName: cleanUiText(store.name),
+    sourceLabel: 'Official catalogue',
+    url: promotion.sourceUrl,
+    validFrom: promotion.validFrom,
+    validTo: promotion.validTo,
+  }
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -206,4 +248,8 @@ function describeValid(validFrom?: string, validTo?: string): string {
 
 function formatDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`
+}
+
+function cleanUiText(value: string): string {
+  return value.replace(/\s*\u2014\s*/g, ': ')
 }

@@ -5,13 +5,20 @@ import {
   mapGeoapifyStores,
   type NearbyStore,
 } from '../../src/services/nearbyStores'
+import { nearbyStoreLogoUrl } from '../../src/services/storeLogos'
 import type { DiscoveredDeal, StoreLeaflet } from '../../src/types'
 import { readDealSnapshots, readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import {
+  listActiveDealItems,
+  type DealItemScopeFilter,
+  type StoredDealItem,
+} from '../_shared/dealItemStore'
+import {
   readCachedStores,
   readStorePromotions,
   writeCachedStores,
+  writeDiscoveredStores,
   type StorePromotion,
 } from '../_shared/locationStore'
 import { scoutAreaStores } from '../_shared/areaScout'
@@ -33,6 +40,18 @@ interface StoreResult extends NearbyStore {
   deals: DiscoveredDeal[]
   leaflets: StoreLeaflet[]
   promotions: StorePromotion[]
+}
+
+interface NearbyStoreBackgroundDependencies {
+  scoutNearbyStores: typeof scoutNearbyStores
+  writeCachedStores: typeof writeCachedStores
+  writeDiscoveredStores: typeof writeDiscoveredStores
+}
+
+const nearbyStoreBackgroundDependencies: NearbyStoreBackgroundDependencies = {
+  scoutNearbyStores,
+  writeCachedStores,
+  writeDiscoveredStores,
 }
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
@@ -63,10 +82,6 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   if (!stores) {
     stores = await discoverStores(env, lat, lon, radius)
     servedFrom = 'live'
-
-    if (stores.length > 0) {
-      waitUntil(writeCachedStores(env, tileKey, stores, nowMs))
-    }
   }
 
   if (stores.length === 0) {
@@ -78,33 +93,49 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
 
   // Attach what we already know: known chains' live deals + valid leaflets, and
   // any promotions previously scouted for these stores (still within date).
-  const [snapshots, leafletSnapshot, promotionsByPlace] = await Promise.all([
+  const [snapshots, leafletSnapshot, promotionsByPlace, normalizedItems] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
     readStorePromotions(env, stores.map((store) => store.placeId), nowIso),
+    readNormalizedItemsForRetailers(env, stores, nowIso),
   ])
 
   const dealsByRetailer = groupDealsByRetailer(snapshots)
   const leafletsByRetailer = groupValidLeafletsByRetailer(leafletSnapshot?.leaflets ?? [], nowIso)
 
-  const results: StoreResult[] = stores.map((store) => ({
-    ...store,
-    deals: store.retailerId ? (dealsByRetailer.get(store.retailerId) ?? []).slice(0, MAX_DEALS_PER_STORE) : [],
-    leaflets: store.retailerId ? leafletsByRetailer.get(store.retailerId) ?? [] : [],
-    promotions: promotionsByPlace.get(store.placeId) ?? [],
-  }))
+  const results: StoreResult[] = stores.map((store) => {
+    const normalizedDeals = selectNormalizedDealsForStore(
+      normalizedItemsForStore(normalizedItems, store),
+      store,
+    ).map((item) => normalizedItemToDiscoveredDeal(item, store.name))
+    const snapshotDeals = store.retailerId ? dealsByRetailer.get(store.retailerId) ?? [] : []
 
-  // In the background, scout every store that has nothing to show yet — an
-  // independent OR a big chain we have no live feed for — by finding its
-  // catalogue on the web. Saved globally so the next visitor gets it instantly.
-  const storesNeedingDeals = results
-    .filter((store) => store.deals.length === 0 && store.leaflets.length === 0 && store.promotions.length === 0)
-    .map(({ deals: _deals, leaflets: _leaflets, promotions: _promotions, ...store }) => store)
+    return {
+      ...store,
+      deals: mergeNearMeDeals(normalizedDeals, snapshotDeals).slice(0, MAX_DEALS_PER_STORE),
+      leaflets: store.retailerId
+        ? selectLeafletsForStore(leafletsByRetailer.get(store.retailerId) ?? [], store)
+        : [],
+      promotions: promotionsByPlace.get(store.placeId) ?? [],
+      logoUrl: nearbyStoreLogoUrl(store),
+    }
+  })
 
-  waitUntil(scoutNearbyStores(env, storesNeedingDeals, nowMs))
+  // Queue every discovered branch. The scout's due-date check and run limit
+  // control cost, while national chain data never blocks a branch catalogue.
+  const storesToScout = selectStoresForAutomaticScouting(results)
+
+  waitUntil(persistAndScoutNearbyStores(
+    env,
+    stores,
+    storesToScout,
+    nowMs,
+    tileKey,
+    servedFrom,
+  ))
 
   // Also sweep the area for stores OSM does not know (independents like
-  // Frontline Hyper) via keyless web search — rate-limited to once a day per
+  // Frontline Hyper) via keyless web search, rate-limited to once a day per
   // tile inside the scout, and merged into the tile cache for the next visit.
   waitUntil(scoutAreaStores(env, tileKey, lat, lon, stores, nowMs))
 
@@ -122,6 +153,40 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     },
     { headers: privateHeaders },
   )
+}
+
+export function selectStoresForAutomaticScouting(
+  stores: Array<NearbyStore & {
+    deals?: unknown
+    leaflets?: unknown
+    promotions?: unknown
+  }>,
+): NearbyStore[] {
+  return stores.map(({
+    deals: _deals,
+    leaflets: _leaflets,
+    promotions: _promotions,
+    ...store
+  }) => store)
+}
+
+export async function persistAndScoutNearbyStores(
+  env: TrolleyScoutEnv,
+  stores: NearbyStore[],
+  storesNeedingDeals: NearbyStore[],
+  nowMs: number,
+  tileKey: string,
+  servedFrom: 'cache' | 'live',
+  dependencies: NearbyStoreBackgroundDependencies = nearbyStoreBackgroundDependencies,
+): Promise<void> {
+  if (servedFrom === 'live') {
+    await dependencies.writeCachedStores(env, tileKey, stores, nowMs)
+  }
+  const stored = await dependencies.writeDiscoveredStores(env, stores, nowMs, tileKey)
+  if (!stored) {
+    return
+  }
+  await dependencies.scoutNearbyStores(env, storesNeedingDeals, nowMs)
 }
 
 async function discoverStores(
@@ -165,6 +230,226 @@ function groupDealsByRetailer(
   return byRetailer
 }
 
+async function readNormalizedItemsForRetailers(
+  env: TrolleyScoutEnv,
+  stores: NearbyStore[],
+  now: string,
+): Promise<StoredDealItem[]> {
+  const pages = await Promise.all(buildNearMeDealQueries(stores).map(async (query) => {
+    try {
+      return await listActiveDealItems(env, {
+        limit: 200,
+        now,
+        ...(query.retailerId ? { retailerIds: [query.retailerId] } : {}),
+        scope: query.scope,
+      })
+    } catch {
+      // The older snapshot lane remains available during migration rollout.
+      return []
+    }
+  }))
+
+  return [...new Map(pages.flat().map((item) => [item.id, item])).values()]
+}
+
+export function buildNearMeDealQueries(stores: NearbyStore[]): Array<{
+  retailerId?: string
+  scope: DealItemScopeFilter
+}> {
+  const storesByRetailer = new Map<string, NearbyStore[]>()
+  const queries: Array<{ retailerId?: string; scope: DealItemScopeFilter }> = []
+  for (const store of stores) {
+    if (!store.retailerId) {
+      queries.push({ scope: { storeIds: [store.placeId], type: 'store' } })
+      continue
+    }
+    const group = storesByRetailer.get(store.retailerId) ?? []
+    group.push(store)
+    storesByRetailer.set(store.retailerId, group)
+  }
+
+  for (const [retailerId, retailerStores] of storesByRetailer) {
+    const seenStoreIds = new Set<string>()
+    const seenProvinces = new Set<string>()
+
+    for (const store of retailerStores) {
+      if (!seenStoreIds.has(store.placeId)) {
+        seenStoreIds.add(store.placeId)
+        queries.push({
+          retailerId,
+          scope: { storeIds: [store.placeId], type: 'store' },
+        })
+      }
+      const province = provinceIdFromAddress(store.address)
+      if (province && !seenProvinces.has(province)) {
+        seenProvinces.add(province)
+        queries.push({
+          retailerId,
+          scope: { regionIds: provinceRegionIds(province), type: 'province' },
+        })
+      }
+    }
+
+    queries.push({ retailerId, scope: { type: 'national' } })
+  }
+  return queries
+}
+
+export function normalizedItemsForStore(
+  items: StoredDealItem[],
+  store: NearbyStore,
+): StoredDealItem[] {
+  if (store.retailerId) {
+    return items.filter((item) => item.retailerId === store.retailerId)
+  }
+  return items.filter((item) =>
+    item.scope.type === 'store' && item.scope.storeIds.includes(store.placeId),
+  )
+}
+
+export function selectNormalizedDealsForStore(
+  items: StoredDealItem[],
+  store: NearbyStore,
+  limit = MAX_DEALS_PER_STORE,
+): StoredDealItem[] {
+  const selected = new Map<string, { item: StoredDealItem; priority: number }>()
+
+  for (const item of items) {
+    const priority = scopePriorityForStore(item, store)
+    if (!Number.isFinite(priority)) {
+      continue
+    }
+    const key = item.productId || item.id
+    const current = selected.get(key)
+    if (
+      !current ||
+      priority < current.priority ||
+      (priority === current.priority && item.capturedAt > current.item.capturedAt)
+    ) {
+      selected.set(key, { item, priority })
+    }
+  }
+
+  return [...selected.values()]
+    .sort((left, right) =>
+      left.priority - right.priority ||
+      left.item.title.localeCompare(right.item.title) ||
+      left.item.id.localeCompare(right.item.id),
+    )
+    .map(({ item }) => item)
+    .slice(0, Math.max(0, Math.floor(limit)))
+}
+
+function scopePriorityForStore(item: StoredDealItem, store: NearbyStore): number {
+  const scope = item.scope
+  if ('excludedStoreIds' in scope && scope.excludedStoreIds?.includes(store.placeId)) {
+    return Number.POSITIVE_INFINITY
+  }
+  if (scope.type === 'store') {
+    return scope.storeIds.includes(store.placeId) ? 0 : Number.POSITIVE_INFINITY
+  }
+  if (scope.type === 'province') {
+    const province = provinceIdFromAddress(store.address)
+    return province && scope.regionIds.some((regionId) => normalizeRegionId(regionId) === province)
+      ? 1
+      : Number.POSITIVE_INFINITY
+  }
+  if (scope.type === 'national') {
+    return 2
+  }
+  return Number.POSITIVE_INFINITY
+}
+
+function provinceIdFromAddress(address: string | undefined): string | undefined {
+  if (!address) {
+    return undefined
+  }
+  const normalized = normalizeRegionId(address)
+  return [
+    'eastern-cape',
+    'free-state',
+    'gauteng',
+    'kwazulu-natal',
+    'limpopo',
+    'mpumalanga',
+    'north-west',
+    'northern-cape',
+    'western-cape',
+  ].find((province) => normalized.includes(province))
+}
+
+function normalizeRegionId(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function provinceRegionIds(province: string): string[] {
+  const names: Record<string, string[]> = {
+    'eastern-cape': ['eastern-cape', 'Eastern Cape'],
+    'free-state': ['free-state', 'Free State'],
+    gauteng: ['gauteng', 'Gauteng'],
+    'kwazulu-natal': ['kwazulu-natal', 'KwaZulu-Natal', 'KwaZulu Natal'],
+    limpopo: ['limpopo', 'Limpopo'],
+    mpumalanga: ['mpumalanga', 'Mpumalanga'],
+    'north-west': ['north-west', 'North West'],
+    'northern-cape': ['northern-cape', 'Northern Cape'],
+    'western-cape': ['western-cape', 'Western Cape'],
+  }
+  return names[province] ?? [province]
+}
+
+function normalizedItemToDiscoveredDeal(
+  item: StoredDealItem,
+  retailerName: string,
+): DiscoveredDeal {
+  return {
+    capturedAt: item.capturedAt,
+    evidenceText: item.evidenceText,
+    expiresAt: item.expiresAt,
+    id: item.id,
+    imageUrl: item.imageUrl,
+    previousPriceText: item.previousPriceCents === undefined
+      ? undefined
+      : centsToRand(item.previousPriceCents),
+    priceScope: item.scope,
+    priceText: centsToRand(item.priceCents),
+    productId: item.productId,
+    productUrl: item.productUrl,
+    promotionId: item.promotionId,
+    retailerId: item.retailerId,
+    retailerName,
+    savingText: item.savingText,
+    sourceLabel: 'Official retailer feed',
+    sourceUrl: item.sourceUrl,
+    title: item.title,
+    validFrom: item.validFrom,
+    validTo: item.validTo,
+  }
+}
+
+function mergeNearMeDeals(...groups: DiscoveredDeal[][]): DiscoveredDeal[] {
+  const seen = new Set<string>()
+  return groups.flat().filter((deal) => {
+    const key = deal.productId
+      ? `${deal.retailerId}::${deal.productId}`
+      : `${deal.retailerId}::${deal.productUrl}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+function centsToRand(value: number): string {
+  const amount = value / 100
+  return `R${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)}`
+}
+
 function groupValidLeafletsByRetailer(
   leaflets: StoreLeaflet[],
   nowIso: string,
@@ -184,6 +469,31 @@ function groupValidLeafletsByRetailer(
   }
 
   return byRetailer
+}
+
+export function selectLeafletsForStore(
+  leaflets: StoreLeaflet[],
+  store: NearbyStore,
+): StoreLeaflet[] {
+  return leaflets.filter((leaflet) => {
+    const scope = leaflet.priceScope
+    if (!scope) {
+      return true
+    }
+    if ('excludedStoreIds' in scope && scope.excludedStoreIds?.includes(store.placeId)) {
+      return false
+    }
+    if (scope.type === 'store') {
+      return scope.storeIds.includes(store.placeId)
+    }
+    if (scope.type === 'province') {
+      const province = provinceIdFromAddress(store.address)
+      return Boolean(province && scope.regionIds.some(
+        (regionId) => normalizeRegionId(regionId) === province,
+      ))
+    }
+    return scope.type === 'national'
+  })
 }
 
 function clampRadius(value: number): number {
