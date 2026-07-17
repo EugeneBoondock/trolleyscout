@@ -118,6 +118,12 @@ import type {
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
 import { filterDiscoveryDeals } from './services/dealFilters'
+import {
+  CATEGORY_OPTIONS,
+  FOOD_SUBCATEGORY_OPTIONS,
+  type DealCategory,
+  type FoodSubcategory,
+} from './services/dealCategories'
 import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/storeGroups'
 import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
@@ -2840,51 +2846,130 @@ function AdminConsole() {
   )
 }
 
-function LeafletBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
+interface CatalogueGroup {
+  retailerId: string
+  retailerName: string
+  leaflets: StoreLeaflet[]
+}
+
+// One card per retailer, so ten SPAR branch catalogues collapse to a single
+// "SPAR — 10 catalogues" card; tapping opens a modal listing every location.
+function groupLeafletsByRetailer(leaflets: StoreLeaflet[]): CatalogueGroup[] {
+  const byRetailer = new Map<string, CatalogueGroup>()
+
+  for (const leaflet of leaflets) {
+    const key = leaflet.retailerId || leaflet.retailerName.toLowerCase()
+    const group = byRetailer.get(key)
+
+    if (group) {
+      group.leaflets.push(leaflet)
+    } else {
+      byRetailer.set(key, {
+        leaflets: [leaflet],
+        retailerId: key,
+        retailerName: leaflet.retailerName,
+      })
+    }
+  }
+
+  return Array.from(byRetailer.values()).sort((left, right) =>
+    left.retailerName.localeCompare(right.retailerName),
+  )
+}
+
+function CatalogueGroupsBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
+  const groups = groupLeafletsByRetailer(leaflets)
+  const [openGroup, setOpenGroup] = useState<CatalogueGroup | undefined>()
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
 
+  if (groups.length === 0) {
+    return (
+      <div className="discovery-empty">
+        <Storefront size={46} />
+        <p className="eyebrow">No catalogues yet</p>
+        <h3>No store catalogues loaded</h3>
+        <p>Run a source check, or open Near me so the scouts find catalogues around you.</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="leaflet-board" aria-label="Store leaflets">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Big-store catalogues</p>
-          <h3>This week’s specials leaflets</h3>
-          <p className="freshness-line">
-            Shoprite, Checkers, and Boxer publish catalogues, not per-item prices. Open the official
-            leaflet to see every special.
-          </p>
-        </div>
-      </div>
+    <div className="catalogue-board" aria-label="Store catalogues">
       <div className="leaflet-grid">
-        {leaflets.map((leaflet) => (
-          <article className="leaflet-card" key={leaflet.id}>
-            {leaflet.imageUrl && (
-              <img
-                alt={`${leaflet.retailerName} catalogue cover`}
-                className="leaflet-cover"
-                decoding="async"
-                loading="lazy"
-                onError={(event) => { event.currentTarget.hidden = true }}
-                referrerPolicy="no-referrer"
-                src={leaflet.imageUrl}
-              />
-            )}
-            <p className="leaflet-retailer">{leaflet.retailerName}</p>
-            <h4>{leaflet.name}</h4>
-            {(leaflet.validFrom || leaflet.validTo) && (
-              <p className="leaflet-dates">{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</p>
-            )}
-            <button
-              className="leaflet-open"
-              onClick={() => setOpenLeaflet(leaflet)}
-              type="button"
-            >
-              View leaflet
-              <MagnifyingGlass size={14} />
-            </button>
-          </article>
-        ))}
+        {groups.map((group) => {
+          const cover = group.leaflets.find((leaflet) => leaflet.imageUrl)?.imageUrl
+
+          return (
+            <article className="leaflet-card" key={group.retailerId}>
+              {cover && (
+                <img
+                  alt={`${group.retailerName} catalogue cover`}
+                  className="leaflet-cover"
+                  decoding="async"
+                  loading="lazy"
+                  onError={(event) => { event.currentTarget.hidden = true }}
+                  referrerPolicy="no-referrer"
+                  src={cover}
+                />
+              )}
+              <p className="leaflet-retailer">{group.retailerName}</p>
+              <h4>
+                {group.leaflets.length === 1
+                  ? group.leaflets[0].name
+                  : `${group.leaflets.length} catalogues`}
+              </h4>
+              <button
+                className="leaflet-open"
+                onClick={() =>
+                  group.leaflets.length === 1
+                    ? setOpenLeaflet(group.leaflets[0])
+                    : setOpenGroup(group)
+                }
+                type="button"
+              >
+                {group.leaflets.length === 1 ? 'View leaflet' : 'View locations'}
+                <MagnifyingGlass size={14} />
+              </button>
+            </article>
+          )
+        })}
       </div>
+
+      {openGroup && (
+        <div className="catalogue-modal-backdrop" onClick={() => setOpenGroup(undefined)} role="presentation">
+          <div
+            aria-label={`${openGroup.retailerName} catalogues`}
+            className="catalogue-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="catalogue-modal-head">
+              <h3>{openGroup.retailerName} catalogues</h3>
+              <button aria-label="Close" className="icon-button" onClick={() => setOpenGroup(undefined)} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="catalogue-modal-list">
+              {openGroup.leaflets.map((leaflet) => (
+                <button
+                  className="catalogue-modal-row"
+                  key={leaflet.id}
+                  onClick={() => { setOpenLeaflet(leaflet); setOpenGroup(undefined) }}
+                  type="button"
+                >
+                  <div>
+                    <strong>{leaflet.name}</strong>
+                    {(leaflet.validFrom || leaflet.validTo) && (
+                      <span>{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</span>
+                    )}
+                  </div>
+                  <MagnifyingGlass size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {openLeaflet && (
         <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
@@ -3383,7 +3468,12 @@ function DiscoveryPanel({
   const [sourceLabel, setSourceLabel] = useState('all')
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
+  const [category, setCategory] = useState<DealCategory | 'all'>('all')
+  const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
+  const [activeTab, setActiveTab] = useState<'deals' | 'catalogues' | 'overview'>('deals')
   const deals = filterDiscoveryDeals(allDeals, {
+    category,
+    foodSubcategory,
     imagesOnly,
     query: dealQuery,
     retailerId,
@@ -3394,6 +3484,9 @@ function DiscoveryPanel({
     new Map(allDeals.map((deal) => [deal.retailerId, deal.retailerName])).entries(),
   )
   const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
+  const catalogueRetailerCount = new Set(
+    leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
+  ).size
 
   const dealsPerPage = 24
   const [page, setPage] = useState(0)
@@ -3401,7 +3494,10 @@ function DiscoveryPanel({
   const safePage = Math.min(page, pageCount - 1)
   const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
 
-  useEffect(() => setPage(0), [dealQuery, retailerId, sourceLabel, imagesOnly, savingsOnly])
+  useEffect(
+    () => setPage(0),
+    [dealQuery, retailerId, sourceLabel, imagesOnly, savingsOnly, category, foodSubcategory],
+  )
 
   return (
     <section className="discovery-panel" aria-label="Deal finder">
@@ -3420,12 +3516,27 @@ function DiscoveryPanel({
       {state.status === 'loading' && <LoadingStrip label="Checking official deal pages" />}
       {state.status === 'error' && <div className="write-notice" role="status">{state.message}</div>}
 
-      <div className="discovery-summary">
-        <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
-        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
-        <Metric icon={<Storefront size={22} />} label="Store leaflets" value={`${leaflets.length}`} />
+      <div className="deal-tabs" role="tablist" aria-label="Deal finder sections">
+        {([
+          ['deals', `Deals (${deals.length})`],
+          ['catalogues', `Catalogues (${catalogueRetailerCount})`],
+          ['overview', 'Overview'],
+        ] as const).map(([id, label]) => (
+          <button
+            aria-selected={activeTab === id}
+            className={clsx('deal-tab', activeTab === id && 'is-active')}
+            key={id}
+            onClick={() => setActiveTab(id)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
+      {activeTab === 'deals' && (
+      <>
       <div className="deal-filter-bar" aria-label="Deal filters">
         <label>
           Search deals
@@ -3460,26 +3571,44 @@ function DiscoveryPanel({
         </label>
       </div>
 
-      {leaflets.length > 0 && <LeafletBoard leaflets={leaflets} />}
+      <div className="category-chips" role="group" aria-label="Category filter">
+        <button
+          className={clsx('category-chip', category === 'all' && 'is-active')}
+          onClick={() => { setCategory('all'); setFoodSubcategory('all') }}
+          type="button"
+        >
+          All
+        </button>
+        {CATEGORY_OPTIONS.map((option) => (
+          <button
+            className={clsx('category-chip', category === option.id && 'is-active')}
+            key={option.id}
+            onClick={() => { setCategory(option.id); setFoodSubcategory('all') }}
+            type="button"
+          >
+            <span aria-hidden="true">{option.icon}</span> {option.label}
+          </button>
+        ))}
+      </div>
 
-      {discovery.sources.length > 0 && (
-        <div className="discovery-source-grid" aria-label="Checked sources">
-          {discovery.sources.map((source) => (
-            <article className={clsx('discovery-source-card', `is-${source.status}`)} key={`${source.retailerId}-${source.sourceLabel}`}>
-              <div>
-                <p className="eyebrow">{source.retailerName}</p>
-                <h3>{source.sourceLabel}</h3>
-                <p>{source.statusText}</p>
-              </div>
-              <div className="source-meta">
-                <span>{source.httpStatus ? `HTTP ${source.httpStatus}` : 'No status'}</span>
-                <span>{source.itemCount} rows</span>
-              </div>
-              <a href={source.sourceUrl} rel="noreferrer" target="_blank">
-                Source
-                <LinkSimple size={14} />
-              </a>
-            </article>
+      {category === 'food' && (
+        <div className="category-chips is-sub" role="group" aria-label="Food subcategory filter">
+          <button
+            className={clsx('category-chip', foodSubcategory === 'all' && 'is-active')}
+            onClick={() => setFoodSubcategory('all')}
+            type="button"
+          >
+            All food
+          </button>
+          {FOOD_SUBCATEGORY_OPTIONS.map((option) => (
+            <button
+              className={clsx('category-chip', foodSubcategory === option.id && 'is-active')}
+              key={option.id}
+              onClick={() => setFoodSubcategory(option.id)}
+              type="button"
+            >
+              {option.label}
+            </button>
           ))}
         </div>
       )}
@@ -3602,6 +3731,42 @@ function DiscoveryPanel({
             )
           ) : null}
         </div>
+      )}
+      </>
+      )}
+
+      {activeTab === 'catalogues' && <CatalogueGroupsBoard leaflets={leaflets} />}
+
+      {activeTab === 'overview' && (
+      <>
+      <div className="discovery-summary">
+        <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
+        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
+        <Metric icon={<Storefront size={22} />} label="Store leaflets" value={`${leaflets.length}`} />
+      </div>
+
+      {discovery.sources.length > 0 && (
+        <div className="discovery-source-grid" aria-label="Checked sources">
+          {discovery.sources.map((source) => (
+            <article className={clsx('discovery-source-card', `is-${source.status}`)} key={`${source.retailerId}-${source.sourceLabel}`}>
+              <div>
+                <p className="eyebrow">{source.retailerName}</p>
+                <h3>{source.sourceLabel}</h3>
+                <p>{source.statusText}</p>
+              </div>
+              <div className="source-meta">
+                <span>{source.httpStatus ? `HTTP ${source.httpStatus}` : 'No status'}</span>
+                <span>{source.itemCount} rows</span>
+              </div>
+              <a href={source.sourceUrl} rel="noreferrer" target="_blank">
+                Source
+                <LinkSimple size={14} />
+              </a>
+            </article>
+          ))}
+        </div>
+      )}
+      </>
       )}
     </section>
   )

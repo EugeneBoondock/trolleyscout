@@ -2856,6 +2856,136 @@ main {
   color: var(--specials-red, #c9271b);
 }
 
+.deal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 3px solid var(--line);
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.deal-tab {
+  appearance: none;
+  border: 2px solid var(--line);
+  border-bottom: none;
+  background: var(--surface-soft, #ece4cd);
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.9rem;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+  margin-bottom: -3px;
+}
+
+.deal-tab.is-active {
+  background: var(--marker-yellow, #ffd42e);
+  color: var(--ink);
+  border-bottom: 3px solid var(--marker-yellow, #ffd42e);
+}
+
+.category-chips {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+
+.category-chips.is-sub {
+  padding-left: 0.2rem;
+  opacity: 0.95;
+}
+
+.category-chip {
+  appearance: none;
+  border: 2px solid var(--line-soft, var(--line));
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.category-chip.is-active {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+.category-chips.is-sub .category-chip {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.6rem;
+}
+
+.catalogue-board {
+  display: grid;
+  gap: 1rem;
+}
+
+.catalogue-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(28, 23, 16, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+}
+
+.catalogue-modal {
+  width: min(520px, 94vw);
+  max-height: 82vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow-hard, 6px 6px 0 rgba(28, 23, 16, 0.3));
+}
+
+.catalogue-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  border-bottom: 2px solid var(--line);
+}
+
+.catalogue-modal-head h3 {
+  margin: 0;
+}
+
+.catalogue-modal-list {
+  display: grid;
+}
+
+.catalogue-modal-row {
+  appearance: none;
+  border: none;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  background: transparent;
+  text-align: left;
+  padding: 0.85rem 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: inherit;
+}
+
+.catalogue-modal-row:hover {
+  background: var(--surface-soft, #ece4cd);
+}
+
+.catalogue-modal-row strong {
+  display: block;
+}
+
+.catalogue-modal-row span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .watch-prompt {
   display: grid;
   gap: 0.6rem;
