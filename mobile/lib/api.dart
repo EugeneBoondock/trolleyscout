@@ -2,13 +2,54 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'ad_pricing.dart';
 import 'api_models.dart';
 import 'platform_http_client.dart';
 import 'session_cookie_store.dart';
 import 'voucher_models.dart';
 
+export 'ad_pricing.dart';
 export 'api_models.dart';
 export 'voucher_models.dart';
+
+/// An advertiser's ads plus the current rate card, as /api/ads returns them.
+class AdsResult {
+  const AdsResult({required this.ads, required this.rateCard});
+
+  final List<AdSubmission> ads;
+  final AdRateCard rateCard;
+}
+
+/// A new ad an advertiser is submitting for review.
+class AdDraft {
+  const AdDraft({
+    required this.title,
+    required this.bodyText,
+    required this.targetUrl,
+    required this.placement,
+    required this.reach,
+    this.imageUrl,
+    this.province,
+  });
+
+  final String title;
+  final String bodyText;
+  final String targetUrl;
+  final String placement;
+  final int reach;
+  final String? imageUrl;
+  final String? province;
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'bodyText': bodyText,
+        'targetUrl': targetUrl,
+        'placement': placement,
+        'reach': reach,
+        if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
+        if (province != null && province!.isNotEmpty) 'province': province,
+      };
+}
 
 class Api {
   Api({
@@ -279,6 +320,102 @@ class Api {
 
   Future<AdminOverview> adminOverview() async {
     return AdminOverview.fromJson(await _request('GET', '/api/admin'));
+  }
+
+  /// Turns a typed address/suburb into coordinates via the server-side geocoder.
+  Future<GeoPoint> geocodeAddress(String query) async {
+    final data = await _request(
+      'GET',
+      '/api/geocode?q=${Uri.encodeComponent(query.trim())}',
+    );
+    final match = data['match'];
+    if (match is Map) {
+      return GeoPoint.fromJson(Map<String, dynamic>.from(match));
+    }
+    final message = data['message'];
+    throw ApiException(
+      message is String && message.isNotEmpty
+          ? message
+          : 'We could not find that address.',
+    );
+  }
+
+  AdsResult _adsResult(Map<String, dynamic> data) => AdsResult(
+        ads: _maps(data['ads']).map(AdSubmission.fromJson).toList(),
+        rateCard: data['rateCard'] is Map
+            ? AdRateCard.fromJson(Map<String, dynamic>.from(data['rateCard']))
+            : AdRateCard.fallback,
+      );
+
+  /// The signed-in member's own ads plus the current rate card.
+  Future<AdsResult> myAds() async {
+    return _adsResult(await _request('GET', '/api/ads'));
+  }
+
+  /// The admin review queue (pending first, then approved/rest).
+  Future<AdsResult> adminAds() async {
+    return _adsResult(await _request('GET', '/api/ads?queue=review'));
+  }
+
+  Future<AdSubmission> submitAd(AdDraft draft) async {
+    final data = await _request('POST', '/api/ads', body: draft.toJson());
+    return AdSubmission.fromJson(_map(data['ad']));
+  }
+
+  Future<AdsResult> reviewAd(String id, String decision, {String? note}) async {
+    final data = await _request(
+      'PATCH',
+      '/api/ads',
+      body: {
+        'id': id,
+        'decision': decision,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    );
+    return _adsResult(data);
+  }
+
+  /// Starts a once-off PayFast checkout for an approved ad. Reuses the
+  /// SubscriptionCheckout shape so the same checkout sheet renders it.
+  Future<SubscriptionCheckout> adCheckout(String adId) async {
+    final data = await _request(
+      'POST',
+      '/api/ad-checkout',
+      body: {'adId': adId},
+      acceptErrorData: true,
+    );
+    return SubscriptionCheckout.fromJson(_map(data['checkout']));
+  }
+
+  /// Live sponsored ads for a placement ('feed' or 'near_me'). Public, no auth.
+  Future<List<PublicAd>> publicAds(String placement) async {
+    final data = await _request(
+      'GET',
+      '/api/public-ads?placement=${Uri.encodeComponent(placement)}',
+    );
+    return _maps(data['ads']).map(PublicAd.fromJson).toList();
+  }
+
+  /// Deals from the external deal sites (OneDayOnly, Hyperli, Daddy's Deals,
+  /// MyRunway) for the endless Scroll reel. Public, no auth.
+  Future<List<ScrollDeal>> dealSites() async {
+    final data = await _request('GET', '/api/deal-sites');
+    return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
+  }
+
+  Future<NotificationPreferences> notificationPreferences() async {
+    final data = await _request('GET', '/api/notification-prefs');
+    return NotificationPreferences.fromJson(_map(data['preferences']));
+  }
+
+  Future<NotificationPreferences> setNotificationPreferences(
+      bool newDeals) async {
+    final data = await _request(
+      'PUT',
+      '/api/notification-prefs',
+      body: {'newDeals': newDeals},
+    );
+    return NotificationPreferences.fromJson(_map(data['preferences']));
   }
 
   Future<Map<String, dynamic>> _request(

@@ -1260,6 +1260,19 @@ function App() {
         )}
         {activeView === 'rules' && <RulesPanel />}
       </main>
+      <footer className="site-foot">
+        <p>
+          Trolley Scout is property of{' '}
+          <a
+            href="https://boondocklabs.co.za"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Boondock Labs (Pty) Ltd
+          </a>
+          .
+        </p>
+      </footer>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_controller.dart';
+import 'screens/advertise_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/about_screen.dart';
 import 'screens/admin_screen.dart';
@@ -17,6 +18,7 @@ import 'screens/rules_screen.dart';
 import 'screens/saved_deals_screen.dart';
 import 'screens/saved_sources_screen.dart';
 import 'screens/scanner_screen.dart';
+import 'screens/scroll_feed_screen.dart';
 import 'screens/stores_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/tools_screen.dart';
@@ -101,7 +103,7 @@ class _RootShellState extends State<RootShell> {
     AppDestination.money,
     AppDestination.near,
     AppDestination.deals,
-    AppDestination.tools,
+    AppDestination.scroll,
   ];
 
   void _showAuth(String intent) => setState(() => _authIntent = intent);
@@ -305,9 +307,9 @@ class _RootShellState extends State<RootShell> {
                         label: 'Deals',
                       ),
                       NavigationDestination(
-                        icon: Icon(Icons.calculate_outlined),
-                        selectedIcon: Icon(Icons.calculate),
-                        label: 'Tools',
+                        icon: Icon(Icons.local_fire_department_outlined),
+                        selectedIcon: Icon(Icons.local_fire_department),
+                        label: 'Scroll',
                       ),
                     ],
                   ),
@@ -323,8 +325,12 @@ class _RootShellState extends State<RootShell> {
       AppDestination.home =>
         HomeScreen(onGoToDeals: () => _selectDestination(AppDestination.deals)),
       AppDestination.money => const MoneyHelpScreen(),
-      AppDestination.near =>
-        NearMeScreen(api: api, onViewStoreDeals: _viewStoreDeals),
+      AppDestination.near => NearMeScreen(
+          api: api,
+          onViewStoreDeals: _viewStoreDeals,
+          isAuthenticated: widget.controller.session.isAuthenticated,
+          onWantsAuth: () => _showAuth('login'),
+        ),
       AppDestination.deals => DealsScreen(
           api: api,
           isAuthenticated: widget.controller.session.isAuthenticated,
@@ -334,6 +340,7 @@ class _RootShellState extends State<RootShell> {
           initialQuery: _dealsQuery,
         ),
       AppDestination.tools => ToolsScreen(api: api),
+      AppDestination.scroll => ScrollFeedScreen(api: api),
       AppDestination.dashboard => DashboardScreen(
           api: api,
           session: widget.controller.session,
@@ -356,6 +363,7 @@ class _RootShellState extends State<RootShell> {
           canDelete: widget.controller.session.account?.isAdmin == true,
         ),
       AppDestination.scanner => ScannerScreen(api: api),
+      AppDestination.advertise => AdvertiseScreen(api: api),
       AppDestination.subscription => SubscriptionScreen(api: api),
       AppDestination.profile => ProfileScreen(controller: widget.controller),
       AppDestination.about => AboutScreen(onNavigate: _selectDestination),

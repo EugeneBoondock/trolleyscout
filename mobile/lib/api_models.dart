@@ -960,6 +960,181 @@ class DealWatchResult {
       );
 }
 
+/// A geocoded point returned by /api/geocode when a shopper types an address.
+class GeoPoint {
+  const GeoPoint({required this.lat, required this.lon, this.formatted});
+
+  final double lat;
+  final double lon;
+  final String? formatted;
+
+  factory GeoPoint.fromJson(Map<String, dynamic> json) => GeoPoint(
+        lat: (json['lat'] as num?)?.toDouble() ?? 0,
+        lon: (json['lon'] as num?)?.toDouble() ?? 0,
+        formatted: _optionalString(json['formatted']),
+      );
+}
+
+/// An advertiser's own ad through its lifecycle: pending review, approved and
+/// awaiting payment, rejected, live (active), or expired.
+class AdSubmission {
+  const AdSubmission({
+    required this.id,
+    required this.title,
+    required this.bodyText,
+    required this.targetUrl,
+    required this.placement,
+    required this.reach,
+    required this.amountCents,
+    required this.status,
+    required this.createdAt,
+    this.imageUrl,
+    this.province,
+    this.reviewNote,
+  });
+
+  final String id;
+  final String title;
+  final String bodyText;
+  final String targetUrl;
+  final String placement;
+  final int reach;
+  final int amountCents;
+  final String status;
+  final String createdAt;
+  final String? imageUrl;
+  final String? province;
+  final String? reviewNote;
+
+  bool get awaitingPayment => status == 'approved';
+  bool get isLive => status == 'active';
+
+  factory AdSubmission.fromJson(Map<String, dynamic> json) => AdSubmission(
+        id: _string(json['id']),
+        title: _string(json['title']),
+        bodyText: _string(json['bodyText']),
+        targetUrl: _string(json['targetUrl']),
+        placement: _string(json['placement'], 'feed'),
+        reach: _int(json['reach']),
+        amountCents: _int(json['amountCents']),
+        status: _string(json['status'], 'pending'),
+        createdAt: _string(json['createdAt']),
+        imageUrl: _optionalString(json['imageUrl']),
+        province: _optionalString(json['province']),
+        reviewNote: _optionalString(json['reviewNote']),
+      );
+}
+
+/// A paid, live ad as the public feed exposes it — the sponsored card content.
+class PublicAd {
+  const PublicAd({
+    required this.id,
+    required this.title,
+    required this.bodyText,
+    required this.targetUrl,
+    required this.placement,
+    this.imageUrl,
+    this.province,
+  });
+
+  final String id;
+  final String title;
+  final String bodyText;
+  final String targetUrl;
+  final String placement;
+  final String? imageUrl;
+  final String? province;
+
+  factory PublicAd.fromJson(Map<String, dynamic> json) => PublicAd(
+        id: _string(json['id']),
+        title: _string(json['title']),
+        bodyText: _string(json['bodyText']),
+        targetUrl: _string(json['targetUrl']),
+        placement: _string(json['placement'], 'feed'),
+        imageUrl: _optionalString(json['imageUrl']),
+        province: _optionalString(json['province']),
+      );
+}
+
+/// One deal in the endless "Scroll" window-shopping reel. Sourced from the
+/// external deal sites (OneDayOnly, Hyperli, Daddy's Deals, MyRunway) and from
+/// the platform's own discovery feed.
+class ScrollDeal {
+  const ScrollDeal({
+    required this.id,
+    required this.title,
+    required this.retailerName,
+    required this.sourceLabel,
+    required this.source,
+    required this.productUrl,
+    this.priceText,
+    this.previousPriceText,
+    this.savingText,
+    this.imageUrl,
+    this.category,
+    this.expiresAt,
+  });
+
+  final String id;
+  final String title;
+  final String retailerName;
+  final String sourceLabel;
+  final String source;
+  final String productUrl;
+  final String? priceText;
+  final String? previousPriceText;
+  final String? savingText;
+  final String? imageUrl;
+  final String? category;
+  final String? expiresAt;
+
+  bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
+
+  factory ScrollDeal.fromJson(Map<String, dynamic> json) => ScrollDeal(
+        id: _string(json['id']),
+        title: _string(json['title']),
+        retailerName: _string(json['retailerName']),
+        sourceLabel: _string(json['sourceLabel']),
+        source: _string(json['source']),
+        productUrl: _string(json['productUrl']),
+        priceText: _optionalString(json['priceText']),
+        previousPriceText: _optionalString(json['previousPriceText']),
+        savingText: _optionalString(json['savingText']),
+        imageUrl: _optionalString(json['imageUrl']),
+        category: _optionalString(json['category']),
+        expiresAt: _optionalString(json['expiresAt']),
+      );
+
+  /// Builds a scroll deal from a regular discovery [Deal] so the reel can mix in
+  /// the platform's own grocery finds.
+  factory ScrollDeal.fromDeal(Deal deal) => ScrollDeal(
+        id: deal.id.isNotEmpty ? deal.id : deal.productUrl ?? deal.title,
+        title: deal.title,
+        retailerName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        source: 'discovery',
+        productUrl: deal.productUrl ?? deal.sourceUrl,
+        priceText: deal.priceText,
+        previousPriceText: deal.previousPriceText,
+        savingText: deal.savingText,
+        imageUrl: deal.imageUrl,
+        category: null,
+        expiresAt: null,
+      );
+}
+
+/// Member notification opt-ins. Today the only channel is new-deal alerts.
+class NotificationPreferences {
+  const NotificationPreferences({required this.newDeals});
+
+  const NotificationPreferences.off() : newDeals = false;
+
+  final bool newDeals;
+
+  factory NotificationPreferences.fromJson(Map<String, dynamic> json) =>
+      NotificationPreferences(newDeals: json['newDeals'] == true);
+}
+
 String _string(Object? value, [String fallback = '']) =>
     value is String ? value : fallback;
 

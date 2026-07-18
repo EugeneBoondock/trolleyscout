@@ -2,21 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
 import '../nearby_history_store.dart';
+import '../saved_addresses_store.dart';
 import '../theme.dart';
+import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
+import '../widgets/login_gate_card.dart';
 import '../widgets/scout_mark.dart';
+import '../widgets/sponsored_ad_card.dart';
 
 class NearMeScreen extends StatefulWidget {
   const NearMeScreen({
     super.key,
     required this.api,
     this.historyStore,
+    this.addressStore,
     this.onViewStoreDeals,
+    this.isAuthenticated = false,
+    this.onWantsAuth,
   });
   final Api api;
   final NearbyHistoryStore? historyStore;
+  final SavedAddressesStore? addressStore;
   // Called when a shopper taps a store card to see its deals in Find deals.
   final void Function(String? retailerId, String storeName)? onViewStoreDeals;
+  final bool isAuthenticated;
+  final VoidCallback? onWantsAuth;
 
   @override
   State<NearMeScreen> createState() => _NearMeScreenState();
@@ -25,6 +35,9 @@ class NearMeScreen extends StatefulWidget {
 class _NearMeScreenState extends State<NearMeScreen> {
   late final NearbyHistoryStore _historyStore =
       widget.historyStore ?? NearbyHistoryStore();
+  late final SavedAddressesStore _addressStore =
+      widget.addressStore ?? SavedAddressesStore();
+  final _addressController = TextEditingController();
   bool _busy = false;
   bool _restoringHistory = true;
   String _message =
@@ -32,12 +45,41 @@ class _NearMeScreenState extends State<NearMeScreen> {
   List<NearbyStore> _stores = const [];
   DateTime? _capturedAt;
   List<NearbyHistoryEntry> _history = const [];
+  List<SavedAddress> _savedAddresses = const [];
+  List<PublicAd> _ads = const [];
   String? _viewingId;
+  // The location behind the currently shown results, so it can be saved.
+  double? _currentLat;
+  double? _currentLon;
+  String? _currentLabel;
+  String? _currentFormatted;
 
   @override
   void initState() {
     super.initState();
     _restoreHistory();
+    _restoreAddresses();
+    _loadAds();
+  }
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAds() async {
+    try {
+      final ads = await widget.api.publicAds('near_me');
+      if (mounted) setState(() => _ads = ads);
+    } catch (_) {
+      // Sponsored slot stays empty if unreachable.
+    }
+  }
+
+  Future<void> _restoreAddresses() async {
+    final saved = await _addressStore.load();
+    if (mounted) setState(() => _savedAddresses = saved);
   }
 
   Future<void> _restoreHistory() async {
@@ -51,6 +93,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
         _stores = latest.result.stores;
         _capturedAt = latest.capturedAt;
         _viewingId = latest.id;
+        _currentLabel = latest.locationLabel;
         _message =
             '${_stores.length} stores from your last search near ${latest.locationLabel}.';
       }
@@ -62,6 +105,13 @@ class _NearMeScreenState extends State<NearMeScreen> {
       _stores = entry.result.stores;
       _capturedAt = entry.capturedAt;
       _viewingId = entry.id;
+      _currentLabel = entry.locationLabel;
+      _currentFormatted = null;
+      // History entries don't carry their search-centre coordinate, so the
+      // "Save address" button must hide (matching restored history) rather than
+      // save the previously-searched spot under this entry's label.
+      _currentLat = null;
+      _currentLon = null;
       _message = '${_stores.length} stores near ${entry.locationLabel}.';
     });
   }
@@ -96,14 +146,74 @@ class _NearMeScreenState extends State<NearMeScreen> {
         locationSettings:
             const LocationSettings(accuracy: LocationAccuracy.medium),
       );
-      setState(() => _message = 'Checking stores near you…');
+      await _loadNearbyFor(pos.latitude, pos.longitude);
+    } catch (e) {
+      setState(() {
+        _busy = false;
+        _message = 'Could not read your location. Try again.';
+      });
+    }
+  }
 
-      final result = await widget.api.nearbyStores(pos.latitude, pos.longitude);
+  // Geocodes a typed address, then searches around it. Keeps its own error copy
+  // so a geocode miss never reads as a location-permission problem.
+  Future<void> _findByAddress() async {
+    final query = _addressController.text.trim();
+    if (query.length < 3) return;
+    FocusScope.of(context).unfocus();
+    uxTap();
+    setState(() {
+      _busy = true;
+      _message = 'Looking up “$query”…';
+    });
+
+    GeoPoint point;
+    try {
+      point = await widget.api.geocodeAddress(query);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = error.message;
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = 'We could not find that address. Try a suburb or town.';
+      });
+      return;
+    }
+
+    await _loadNearbyFor(
+      point.lat,
+      point.lon,
+      label: _shortLabelFor(query, point.formatted),
+      formatted: point.formatted,
+    );
+  }
+
+  // The shared "search this spot and show it" step used by GPS, a typed
+  // address, and a saved address.
+  Future<void> _loadNearbyFor(
+    double lat,
+    double lon, {
+    String? label,
+    String? formatted,
+  }) async {
+    setState(() {
+      _busy = true;
+      _message = 'Checking stores near ${label ?? 'you'}…';
+    });
+
+    try {
+      final result = await widget.api.nearbyStores(lat, lon);
       final capturedAt = DateTime.now();
       var entries = _history;
       if (result.stores.isNotEmpty) {
         entries = await _historyStore.save(result, capturedAt,
-            lat: pos.latitude, lon: pos.longitude);
+            lat: lat, lon: lon, label: label);
       }
       if (!mounted) return;
       setState(() {
@@ -112,16 +222,57 @@ class _NearMeScreenState extends State<NearMeScreen> {
         _stores = result.stores;
         _capturedAt = result.stores.isEmpty ? _capturedAt : capturedAt;
         _viewingId = entries.isEmpty ? _viewingId : entries.first.id;
+        _currentLat = lat;
+        _currentLon = lon;
+        _currentLabel =
+            label ?? (entries.isNotEmpty ? entries.first.locationLabel : null);
+        _currentFormatted = formatted;
         _message = result.stores.isEmpty
-            ? 'No supermarkets found within a few kilometres.'
-            : '${result.stores.length} stores near ${entries.isNotEmpty ? entries.first.locationLabel : 'you'}.';
+            ? 'No supermarkets found within a few kilometres of ${label ?? 'there'}.'
+            : '${result.stores.length} stores near ${_currentLabel ?? 'you'}.';
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
-        _message = 'Could not read your location. Try again.';
+        _message = 'Could not check that location. Try again.';
       });
     }
+  }
+
+  Future<void> _saveCurrentAddress() async {
+    if (_currentLat == null || _currentLon == null) return;
+    final label = _currentLabel ?? _currentFormatted ?? 'Saved location';
+    final next = await _addressStore.add(SavedAddress(
+      id: DateTime.now().toUtc().toIso8601String(),
+      label: label,
+      lat: _currentLat!,
+      lon: _currentLon!,
+      formattedAddress: _currentFormatted,
+      createdAt: DateTime.now(),
+    ));
+    if (!mounted) return;
+    uxSuccess();
+    setState(() => _savedAddresses = next);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Saved “$label”.')));
+  }
+
+  Future<void> _removeSavedAddress(SavedAddress address) async {
+    final next = await _addressStore.remove(address.id);
+    if (!mounted) return;
+    setState(() => _savedAddresses = next);
+  }
+
+  static String _shortLabelFor(String query, String? formatted) {
+    // Prefer the first, most-specific part of the formatted address; fall back
+    // to what the shopper typed.
+    if (formatted != null && formatted.trim().isNotEmpty) {
+      final first = formatted.split(',').first.trim();
+      if (first.isNotEmpty) return first;
+    }
+    return query;
   }
 
   @override
@@ -159,6 +310,54 @@ class _NearMeScreenState extends State<NearMeScreen> {
             label: Text(_busy ? 'Searching' : 'Use my location'),
           ),
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _addressController,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  labelText: 'Or search any address or suburb',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onSubmitted: (_) => _busy ? null : _findByAddress(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 56,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: TS.ink,
+                  foregroundColor: TS.surface,
+                  shape: const RoundedRectangleBorder(),
+                ),
+                onPressed: _busy ? null : _findByAddress,
+                child: const Icon(Icons.arrow_forward),
+              ),
+            ),
+          ],
+        ),
+        if (_savedAddresses.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Text('SAVED ADDRESSES', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final address in _savedAddresses)
+                _SavedAddressChip(
+                  address: address,
+                  onTap: () => _loadNearbyFor(address.lat, address.lon,
+                      label: address.label,
+                      formatted: address.formattedAddress),
+                  onRemove: () => _removeSavedAddress(address),
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: 14),
         if (_restoringHistory)
           const Padding(
@@ -206,28 +405,98 @@ class _NearMeScreenState extends State<NearMeScreen> {
           ),
           const SizedBox(height: 14),
         ],
-        if (_capturedAt != null && _stores.isNotEmpty)
+        if (_stores.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              _busy
-                  ? 'Showing your saved results while the scout checks again.'
-                  : 'Last checked ${_historyTime(_capturedAt!)}',
-              style: TextStyle(
-                color: TS.mutedOf(context),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _busy
+                        ? 'Showing your saved results while the scout checks again.'
+                        : _capturedAt != null
+                            ? 'Last checked ${_historyTime(_capturedAt!)}'
+                            : '',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (_currentLat != null && _currentLon != null && !_busy)
+                  TextButton.icon(
+                    onPressed: _saveCurrentAddress,
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    label: const Text('Save address'),
+                  ),
+              ],
             ),
           ),
-        for (final store in _stores)
+        if (_ads.isNotEmpty && _stores.isNotEmpty) SponsoredAdCard(ad: _ads.first),
+        for (final store
+            in widget.isAuthenticated ? _stores : _stores.take(3))
           _StoreCard(
             store: store,
             onViewDeals: widget.onViewStoreDeals == null
                 ? null
                 : () => widget.onViewStoreDeals!(store.retailerId, store.name),
           ),
+        if (!widget.isAuthenticated &&
+            _stores.length > 3 &&
+            widget.onWantsAuth != null)
+          LoginGateCard(
+            message: 'You are seeing 3 of ${_stores.length} nearby stores. '
+                'Log in or sign up free to see them all and save addresses.',
+            onLogin: widget.onWantsAuth!,
+          ),
       ],
+    );
+  }
+}
+
+class _SavedAddressChip extends StatelessWidget {
+  const _SavedAddressChip({
+    required this.address,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final SavedAddress address;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: TS.lineOf(context), width: 2),
+          color: TS.surfaceOf(context),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.bookmark, size: 14, color: TS.redOf(context)),
+            const SizedBox(width: 5),
+            Text(
+              address.label,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 15),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.only(left: 6),
+              color: TS.mutedOf(context),
+              tooltip: 'Remove',
+              onPressed: onRemove,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

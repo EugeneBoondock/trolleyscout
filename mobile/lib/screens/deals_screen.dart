@@ -6,10 +6,14 @@ import '../api.dart';
 import '../deal_categories.dart';
 import '../deal_filters.dart';
 import '../discovery_cache.dart';
+import '../notification_prefs_store.dart';
+import '../notifications.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
+import '../widgets/login_gate_card.dart';
 import '../widgets/skeleton.dart';
+import '../widgets/sponsored_ad_card.dart';
 
 class DealsScreen extends StatefulWidget {
   const DealsScreen({
@@ -43,6 +47,7 @@ class _DealsScreenState extends State<DealsScreen> {
   String _sourceLabel = 'all';
   bool _imagesOnly = false;
   bool _savingsOnly = false;
+  DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
   Timer? _searchDebounce;
@@ -51,6 +56,11 @@ class _DealsScreenState extends State<DealsScreen> {
   final _cacheStore = DiscoveryCache();
   CachedDiscovery? _cached;
   Set<String> _previousDealIds = const {};
+  static const _sampleLimit = 6;
+  List<PublicAd> _ads = const [];
+  final _notifPrefs = NotificationPrefsStore();
+  bool _notifyNewDeals = false;
+  bool _notifBusy = false;
 
   @override
   void initState() {
@@ -62,6 +72,92 @@ class _DealsScreenState extends State<DealsScreen> {
     _searchController.text = _query;
     _restoreCache();
     _load();
+    _loadAds();
+    _restoreNotifyPref();
+  }
+
+  Future<void> _loadAds() async {
+    try {
+      final ads = await widget.api.publicAds('feed');
+      if (mounted) setState(() => _ads = ads);
+    } catch (_) {
+      // Sponsored slot simply stays empty if the feed is unreachable.
+    }
+  }
+
+  Future<void> _restoreNotifyPref() async {
+    final local = await _notifPrefs.loadOptIn();
+    if (mounted) setState(() => _notifyNewDeals = local);
+    // When signed in, the server is the source of truth across devices.
+    if (widget.isAuthenticated) {
+      try {
+        final prefs = await widget.api.notificationPreferences();
+        if (mounted) setState(() => _notifyNewDeals = prefs.newDeals);
+        await _notifPrefs.saveOptIn(prefs.newDeals);
+      } catch (_) {
+        // Keep the local value.
+      }
+    }
+  }
+
+  Future<void> _toggleNotify(bool value) async {
+    if (_notifBusy) return;
+    setState(() => _notifBusy = true);
+    try {
+      if (value) {
+        final granted = await DealNotifications.instance.requestPermission();
+        if (!granted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Turn on notifications in your phone settings to get deal alerts.'),
+          ));
+        }
+      }
+      await _notifPrefs.saveOptIn(value);
+      if (widget.isAuthenticated) {
+        try {
+          await widget.api.setNotificationPreferences(value);
+        } catch (_) {
+          // Local opt-in still stands; the next sync retries.
+        }
+      }
+      if (mounted) {
+        setState(() => _notifyNewDeals = value);
+        uxSuccess();
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(value
+                ? 'On. We\'ll alert you when new deals land.'
+                : 'Off. You won\'t get new-deal alerts.'),
+          ));
+      }
+    } finally {
+      if (mounted) setState(() => _notifBusy = false);
+    }
+  }
+
+  // Raises a device notification when this load surfaced deals that were not in
+  // the shopper's last visit — only if they opted in and we have a prior visit
+  // to compare against (so a first-ever load is never a false alarm).
+  Future<void> _maybeAlertNewDeals(DiscoveryResult result) async {
+    if (!_notifyNewDeals || _previousDealIds.isEmpty) return;
+    final currentIds =
+        result.deals.where((deal) => deal.id.isNotEmpty).map((deal) => deal.id).toSet();
+    final fresh = currentIds.difference(_previousDealIds).length;
+    // Advance the in-memory baseline so a pull-to-refresh in the same session
+    // compares against what was just shown, not the launch-time snapshot.
+    _previousDealIds = currentIds;
+    if (fresh == 0) return;
+    // At most one alert per 30 minutes, even across restarts, so a shopper who
+    // opens the app repeatedly isn't spammed about the same batch.
+    final last = await _notifPrefs.loadLastAlertAt();
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 30)) {
+      return;
+    }
+    await DealNotifications.instance.showNewDeals(fresh);
+    await _notifPrefs.saveLastAlertAt(DateTime.now());
   }
 
   @override
@@ -100,6 +196,7 @@ class _DealsScreenState extends State<DealsScreen> {
       // Deals not in the previous visit's snapshot get a NEW tag.
       _previousDealIds = _cached?.dealIds ?? const {};
       _cacheStore.save(result, DateTime.now());
+      unawaited(_maybeAlertNewDeals(result));
       return result;
     });
   }
@@ -194,19 +291,30 @@ class _DealsScreenState extends State<DealsScreen> {
         .toSet()
         .toList()
       ..sort();
-    final deals = filterDeals(
-      allDeals,
-      query: _query,
-      retailerId: _retailerId,
-      sourceLabel: _sourceLabel,
-      imagesOnly: _imagesOnly,
-      savingsOnly: _savingsOnly,
-      category: _category,
-      foodSubcategory: _foodSubcategory,
+    final deals = sortDeals(
+      filterDeals(
+        allDeals,
+        query: _query,
+        retailerId: _retailerId,
+        sourceLabel: _sourceLabel,
+        imagesOnly: _imagesOnly,
+        savingsOnly: _savingsOnly,
+        category: _category,
+        foodSubcategory: _foodSubcategory,
+      ),
+      _sort,
     );
     if (deals.isEmpty) {
       return _dealBoard(result, deals, retailers, sources, const [], 0, 0,
           staleNote: staleNote);
+    }
+
+    // Logged-out shoppers see a taste of the list; a gate invites them in for
+    // the rest. Real pagination only applies once they are signed in.
+    if (!widget.isAuthenticated) {
+      final sample = deals.take(_sampleLimit).toList();
+      return _dealBoard(result, deals, retailers, sources, sample, 0, 1,
+          staleNote: staleNote, sampled: deals.length > sample.length);
     }
 
     final pageCount = (deals.length / _perPage).ceil();
@@ -236,6 +344,7 @@ class _DealsScreenState extends State<DealsScreen> {
     int page,
     int pageCount, {
     String? staleNote,
+    bool sampled = false,
   }) {
     final catalogueGroups = _groupCatalogues(result.catalogues);
 
@@ -289,7 +398,8 @@ class _DealsScreenState extends State<DealsScreen> {
           Expanded(
             child: TabBarView(
               children: [
-                _dealsTab(deals, retailers, sources, slice, page, pageCount),
+                _dealsTab(deals, retailers, sources, slice, page, pageCount,
+                    sampled: sampled),
                 _cataloguesTab(catalogueGroups),
                 _overviewTab(result, catalogueGroups.length),
               ],
@@ -306,8 +416,9 @@ class _DealsScreenState extends State<DealsScreen> {
     List<String> sources,
     List<Deal> slice,
     int page,
-    int pageCount,
-  ) {
+    int pageCount, {
+    bool sampled = false,
+  }) {
     return RefreshIndicator(
       color: TS.redOf(context),
       onRefresh: () async => setState(() {
@@ -397,8 +508,19 @@ class _DealsScreenState extends State<DealsScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Text('${deals.length} matching deals', style: TS.eyebrowOf(context)),
+          _notifyToggle(),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text('${deals.length} matching deals',
+                    style: TS.eyebrowOf(context)),
+              ),
+              _sortControl(),
+            ],
+          ),
           const SizedBox(height: 8),
+          if (_ads.isNotEmpty && page == 0) SponsoredAdCard(ad: _ads.first),
           if (deals.isEmpty)
             Container(
               decoration: TS.card(context),
@@ -450,6 +572,13 @@ class _DealsScreenState extends State<DealsScreen> {
               isSaved: _savedDealIds.contains(deal.id),
               onSave: widget.isAuthenticated ? () => _save(deal) : null,
             ),
+          if (sampled && widget.onWantsAuth != null)
+            LoginGateCard(
+              message:
+                  'You are seeing ${slice.length} of ${deals.length} deals. '
+                  'Log in or sign up free to see them all, sort, and save.',
+              onLogin: widget.onWantsAuth!,
+            ),
           if (pageCount > 1)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -475,6 +604,81 @@ class _DealsScreenState extends State<DealsScreen> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notifyToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        border: Border.all(color: TS.lineSoftOf(context), width: 2),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_outlined,
+              size: 20, color: TS.redOf(context)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Alert me about new deals',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                Text('We\'ll notify you when fresh deals land.',
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 11)),
+              ],
+            ),
+          ),
+          Switch(
+            value: _notifyNewDeals,
+            onChanged: _notifBusy ? null : _toggleNotify,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sortControl() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        border: Border.all(color: TS.lineSoftOf(context), width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_vert, size: 16, color: TS.mutedOf(context)),
+          const SizedBox(width: 4),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<DealSort>(
+              value: _sort,
+              isDense: true,
+              borderRadius: BorderRadius.zero,
+              style: TextStyle(
+                color: TS.inkOf(context),
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+              items: [
+                for (final option in dealSortOptions)
+                  DropdownMenuItem(
+                      value: option.id, child: Text(option.label)),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                uxTap();
+                setState(() {
+                  _sort = value;
+                  _page = 0;
+                });
+              },
+            ),
+          ),
         ],
       ),
     );

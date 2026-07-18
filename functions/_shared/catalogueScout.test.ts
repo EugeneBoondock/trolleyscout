@@ -715,7 +715,7 @@ describe('defaultPdfMarkdown', () => {
 
     await defaultPdfMarkdown(ai, new ArrayBuffer(8), 'leaflet.pdf')
 
-    const options = toMarkdown.mock.calls[0][1] as {
+    const options = (toMarkdown.mock.calls[0] as unknown[])[1] as {
       conversionOptions: { pdf: { images: { convert: boolean } } }
     }
     expect(options.conversionOptions.pdf.images.convert).toBe(false)

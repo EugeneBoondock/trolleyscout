@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../theme.dart';
@@ -8,6 +9,7 @@ enum AppDestination {
   money('Money help', Icons.volunteer_activism_outlined, false),
   near('Near me', Icons.near_me_outlined, false),
   deals('Find deals', Icons.local_offer_outlined, false),
+  scroll('Scroll', Icons.local_fire_department_outlined, false),
   tools('Tools', Icons.calculate_outlined, false),
   dashboard('Dashboard', Icons.dashboard_outlined, true),
   stores('Stores', Icons.storefront_outlined, false),
@@ -17,6 +19,7 @@ enum AppDestination {
   savedSources('Saved sources', Icons.bookmark_outline, true),
   offers('Offers', Icons.receipt_long_outlined, false),
   scanner('Scanner', Icons.verified_outlined, false),
+  advertise('Advertise', Icons.campaign_outlined, true),
   subscription('Subscription', Icons.credit_card_outlined, true),
   profile('Profile', Icons.account_circle_outlined, true),
   about('About & help', Icons.info_outline, false),
@@ -123,7 +126,46 @@ class AppMenuDrawer extends StatelessWidget {
                 ),
               ),
             ),
+            const _BoondockFooter(),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ownership credit — Trolley Scout is a Boondock Labs product. Tapping opens
+/// the Boondock Labs site.
+class _BoondockFooter extends StatelessWidget {
+  const _BoondockFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => launchUrl(
+        Uri.parse('https://boondocklabs.co.za'),
+        mode: LaunchMode.externalApplication,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+        ),
+        child: Text.rich(
+          TextSpan(
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+            children: [
+              const TextSpan(text: 'Property of '),
+              TextSpan(
+                text: 'Boondock Labs (Pty) Ltd',
+                style: TextStyle(
+                    color: TS.redOf(context),
+                    fontWeight: FontWeight.w900,
+                    decoration: TextDecoration.underline),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -68,12 +68,17 @@ class NearbyHistoryStore {
     DateTime capturedAt, {
     double? lat,
     double? lon,
+    String? label,
   }) async {
     if (result.stores.isEmpty) return loadEntries();
 
     final entry = NearbyHistoryEntry(
       capturedAt: capturedAt,
-      locationLabel: deriveLocationLabel(result.stores, lat, lon),
+      // A typed-address search passes its own label; a GPS search derives one
+      // from the nearest store's suburb.
+      locationLabel: label != null && label.trim().isNotEmpty
+          ? label.trim()
+          : deriveLocationLabel(result.stores, lat, lon),
       result: result,
     );
 

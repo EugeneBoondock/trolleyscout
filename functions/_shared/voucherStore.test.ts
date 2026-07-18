@@ -213,7 +213,9 @@ describe('voucher store', () => {
 
   it('claims a voucher idempotently for a signed-in member', async () => {
     const result = await upsertVouchers(env, {
-      candidates: [voucher({ validTo: '2026-07-17' })],
+      // Far-future validity: claimVoucher checks expiry against the real clock,
+      // so a fixed near-date here would make this test expire with the calendar.
+      candidates: [voucher({ validTo: '2099-12-31' })],
       retailerId: 'amazon-za',
       sourceKey: 'amazon-za::vouchers',
     })

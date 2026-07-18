@@ -4627,3 +4627,22 @@ main {
     order: 3;
   }
 }
+
+.site-foot {
+  border-top: 3px solid var(--line);
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.site-foot a {
+  color: var(--red);
+  font-weight: 900;
+  text-decoration: underline;
+}
+
+.site-foot a:hover {
+  color: var(--red-bright);
+}
