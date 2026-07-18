@@ -29,6 +29,26 @@
           "type": "application/json"
         },
         {
+          "href": "https://trolleyscout.co.za/api/deal-sites",
+          "title": "Aggregated flash/daily deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/public-ads{?placement}",
+          "title": "Live sponsored listings by placement (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/geocode{?q}",
+          "title": "Geocode a South African address to coordinates (JSON, read-only, no auth)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/mcp",
+          "title": "Model Context Protocol server (Streamable HTTP, read-only tools, no auth)",
+          "type": "application/json"
+        },
+        {
           "href": "https://trolleyscout.co.za/api/health",
           "title": "Service liveness (JSON)",
           "type": "application/json"
@@ -44,6 +64,21 @@
           "href": "https://trolleyscout.co.za/index.md",
           "title": "Site overview in markdown",
           "type": "text/markdown"
+        },
+        {
+          "href": "https://trolleyscout.co.za/auth.md",
+          "title": "How agents authenticate with Trolley Scout",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://trolleyscout.co.za/.well-known/mcp/server-card.json",
+          "title": "MCP Server Card",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/.well-known/agent-skills/index.json",
+          "title": "Agent Skills discovery index",
+          "type": "application/json"
         }
       ]
     }

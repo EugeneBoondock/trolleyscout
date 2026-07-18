@@ -1,7 +1,11 @@
 # Trolley Scout: grocery deals and money help for South Africans.
 # Agents and crawlers welcome. Machine-readable entry points:
 #   https://trolleyscout.co.za/llms.txt
+#   https://trolleyscout.co.za/index.md
+#   https://trolleyscout.co.za/auth.md
 #   https://trolleyscout.co.za/.well-known/api-catalog
+#   https://trolleyscout.co.za/.well-known/agent-skills/index.json
+#   https://trolleyscout.co.za/.well-known/mcp/server-card.json
 
 User-agent: *
 Allow: /

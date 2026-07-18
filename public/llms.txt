@@ -14,9 +14,19 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 - [Deals and catalogues](https://trolleyscout.co.za/api/discovery): current grocery deals and leaflet catalogues across retailers; supports no parameters
 - [Retailers](https://trolleyscout.co.za/api/retailers): the retailer registry with slugs and names
 - [Nearby stores](https://trolleyscout.co.za/api/nearby-stores?lat=-26.14&lon=28.15): supermarkets near a coordinate with each store's current deals and catalogues
+- [Flash deals](https://trolleyscout.co.za/api/deal-sites): aggregated flash/daily deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway
 - [Community offers](https://trolleyscout.co.za/api/offers): community-submitted local offers
 - [Vouchers](https://trolleyscout.co.za/api/vouchers): current voucher deals
+- [Sponsored listings](https://trolleyscout.co.za/api/public-ads?placement=feed): live sponsored listings by placement
+- [Geocode](https://trolleyscout.co.za/api/geocode?q=Soweto): geocode a South African address to coordinates
 - [Health](https://trolleyscout.co.za/api/health): service liveness
+
+## Agents
+
+- [MCP server](https://trolleyscout.co.za/mcp): Model Context Protocol over Streamable HTTP with read-only tools (search_deals, nearby_stores, flash_deals, money_help)
+- [MCP Server Card](https://trolleyscout.co.za/.well-known/mcp/server-card.json)
+- [Agent Skills index](https://trolleyscout.co.za/.well-known/agent-skills/index.json)
+- [Authentication for agents](https://trolleyscout.co.za/auth.md)
 
 ## Optional
 

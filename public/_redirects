@@ -1,0 +1,4 @@
+# SPA fallback: deep links to client-side views (/deals, /near-me, …) serve the
+# app shell with a 200 so they are crawlable and shareable. Pages Functions
+# (/, /api/*, /mcp) and real static files are matched first and are unaffected.
+/*    /index.html   200

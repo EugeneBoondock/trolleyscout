@@ -1,0 +1,47 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/server-card.json",
+  "name": "trolley-scout",
+  "title": "Trolley Scout",
+  "description": "Read-only MCP tools for South African grocery deals, nearby supermarkets, flash deals, and money help (SASSA grants and more). No authentication required.",
+  "version": "1.2.0",
+  "serverInfo": {
+    "name": "trolley-scout",
+    "title": "Trolley Scout",
+    "version": "1.2.0"
+  },
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://trolleyscout.co.za/mcp"
+  },
+  "endpoint": "https://trolleyscout.co.za/mcp",
+  "authentication": {
+    "type": "none"
+  },
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    }
+  },
+  "tools": [
+    {
+      "name": "search_deals",
+      "description": "Search this week's verified South African grocery specials by keyword and/or retailer."
+    },
+    {
+      "name": "nearby_stores",
+      "description": "Find supermarkets near a latitude/longitude and their current specials."
+    },
+    {
+      "name": "flash_deals",
+      "description": "Browse flash/daily deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway."
+    },
+    {
+      "name": "money_help",
+      "description": "Current South African social grant amounts (SASSA) and money-saving help."
+    }
+  ],
+  "publisher": {
+    "name": "Boondock Labs (Pty) Ltd",
+    "url": "https://boondocklabs.co.za"
+  }
+}

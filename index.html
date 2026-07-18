@@ -1,46 +1,102 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-ZA">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/assets/brand-mark.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/assets/brand-mark.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <title>Trolley Scout — grocery deals & money help for South Africa</title>
     <meta
       name="description"
-      content="Stretch every rand. SASSA grant amounts and how to claim them, school fee exemptions, free basic electricity, a unit price checker for the aisle, and grocery deals from official South African retailer pages."
+      content="Trolley Scout helps South Africans stretch every rand: this week's grocery specials from official retailer pages, a store-by-store price comparison, an aisle unit-price checker, and money help like SASSA grant amounts, school-fee exemptions and free basic electricity — all free."
     />
+    <meta
+      name="keywords"
+      content="grocery deals South Africa, supermarket specials, SASSA grants 2026, school fee exemption, free basic electricity, unit price calculator, Pick n Pay specials, Checkers specials, Shoprite deals, Woolworths specials, cheapest groceries, price comparison, OneDayOnly, Hyperli, save money South Africa"
+    />
+    <meta name="author" content="Boondock Labs (Pty) Ltd" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="theme-color" content="#1c1710" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Trolley Scout" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="canonical" href="https://trolleyscout.co.za/" />
+
+    <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Trolley Scout" />
-    <meta property="og:title" content="Trolley Scout: stretch every rand" />
+    <meta property="og:title" content="Trolley Scout — grocery deals & money help for South Africa" />
     <meta
       property="og:description"
-      content="SASSA grant amounts and how to claim them free, school fee exemptions, an offline unit price checker, and live grocery specials from official South African store pages."
+      content="This week's grocery specials from official SA retailer pages, a cheapest-store price comparison, an offline unit-price checker, and money help like SASSA grants and free basic electricity. Free."
     />
-    <meta property="og:image" content="/assets/brand-mark.png" />
+    <meta property="og:image" content="https://trolleyscout.co.za/assets/hero-grocery-source.png" />
+    <meta property="og:image:alt" content="Trolley Scout — stretch every rand" />
     <meta property="og:url" content="https://trolleyscout.co.za/" />
     <meta property="og:locale" content="en_ZA" />
-    <meta name="twitter:card" content="summary" />
-    <link rel="canonical" href="https://trolleyscout.co.za/" />
-    <title>Trolley Scout: stretch every rand</title>
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Trolley Scout — grocery deals & money help for South Africa" />
+    <meta
+      name="twitter:description"
+      content="This week's grocery specials, a cheapest-store price comparison, an aisle unit-price checker, and SASSA / free-electricity money help. Free."
+    />
+    <meta name="twitter:image" content="https://trolleyscout.co.za/assets/hero-grocery-source.png" />
+
+    <!-- Agent & machine-readable entry points -->
+    <link rel="alternate" type="text/markdown" href="/index.md" />
+    <link rel="api-catalog" href="/.well-known/api-catalog" />
+
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "Trolley Scout",
-        "url": "https://trolleyscout.co.za/",
-        "description": "Find this week's grocery specials across South African supermarkets, compare which store is cheapest for your list, and claim money help like SASSA grants, school fee exemptions, and free basic electricity.",
-        "applicationCategory": "ShoppingApplication",
-        "operatingSystem": "Web, Android",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "ZAR" },
-        "inLanguage": "en-ZA",
-        "areaServed": { "@type": "Country", "name": "South Africa" },
-        "publisher": {
-          "@type": "Organization",
-          "name": "Trolley Scout",
-          "url": "https://trolleyscout.co.za/",
-          "logo": "https://trolleyscout.co.za/assets/brand-mark.png"
-        }
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://trolleyscout.co.za/#organization",
+            "name": "Trolley Scout",
+            "url": "https://trolleyscout.co.za/",
+            "logo": "https://trolleyscout.co.za/assets/brand-mark.png",
+            "description": "Grocery deals and money help for South Africans.",
+            "areaServed": { "@type": "Country", "name": "South Africa" },
+            "parentOrganization": {
+              "@type": "Organization",
+              "name": "Boondock Labs (Pty) Ltd",
+              "url": "https://boondocklabs.co.za"
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://trolleyscout.co.za/#website",
+            "url": "https://trolleyscout.co.za/",
+            "name": "Trolley Scout",
+            "inLanguage": "en-ZA",
+            "publisher": { "@id": "https://trolleyscout.co.za/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://trolleyscout.co.za/deals?q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "MobileApplication",
+            "name": "Trolley Scout",
+            "operatingSystem": "ANDROID",
+            "applicationCategory": "ShoppingApplication",
+            "url": "https://trolleyscout.co.za/",
+            "downloadUrl": "https://github.com/EugeneBoondock/trolleyscout/releases/latest",
+            "inLanguage": "en-ZA",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "ZAR" },
+            "publisher": { "@id": "https://trolleyscout.co.za/#organization" }
+          }
+        ]
       }
     </script>
   </head>

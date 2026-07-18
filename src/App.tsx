@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
@@ -83,6 +83,7 @@ import {
   markDealWatchSeen,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
+import { useWebMcpTools } from './webmcp'
 import {
   clearDealLearningHistory,
   deleteDealLearningActivity,
@@ -188,6 +189,42 @@ const dataDeskOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Data rules', value: 'rules' },
 ]
 
+// Real, shareable URLs for each public view so every page is crawlable and
+// listed in the sitemap. The SPA reads the path on load and keeps it in sync.
+const VIEW_PATHS: Record<ActiveView, string> = {
+  home: '/',
+  discovery: '/deals',
+  near: '/near-me',
+  help: '/money-help',
+  tools: '/tools',
+  sources: '/stores',
+  vouchers: '/vouchers',
+  about: '/about',
+  offers: '/offers',
+  scanner: '/scanner',
+  rules: '/rules',
+}
+
+const VIEW_TITLES: Record<ActiveView, string> = {
+  home: 'Trolley Scout — grocery deals & money help for South Africa',
+  discovery: 'Find a deal — this week’s grocery specials | Trolley Scout',
+  near: 'Near me — supermarkets and specials around you | Trolley Scout',
+  help: 'Money help — SASSA grants, exemptions, free electricity | Trolley Scout',
+  tools: 'Tools — unit price checker and store comparison | Trolley Scout',
+  sources: 'Stores — official South African retailer sources | Trolley Scout',
+  vouchers: 'Vouchers — verified retailer vouchers | Trolley Scout',
+  about: 'About & help | Trolley Scout',
+  offers: 'Verified offers | Trolley Scout',
+  scanner: 'Offer scanner | Trolley Scout',
+  rules: 'Data rules | Trolley Scout',
+}
+
+function viewFromPath(pathname: string): ActiveView {
+  const clean = pathname.replace(/\/+$/, '') || '/'
+  const match = (Object.keys(VIEW_PATHS) as ActiveView[]).find((view) => VIEW_PATHS[view] === clean)
+  return match ?? 'home'
+}
+
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
   { icon: <HandCoins size={20} />, label: 'Money help', value: 'help' },
@@ -227,7 +264,9 @@ const defaultRetailerId = initialRetailers[0]?.id ?? 'pick-n-pay'
 
 function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme())
-  const [activeView, setActiveView] = useState<ActiveView>('home')
+  const [activeView, setActiveView] = useState<ActiveView>(() =>
+    typeof window === 'undefined' ? 'home' : viewFromPath(window.location.pathname),
+  )
   const [query, setQuery] = useState('')
   const [sourceKind, setSourceKind] = useState<SourceKind | 'all'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -288,6 +327,38 @@ function App() {
     document.documentElement.dataset.theme = theme
     window.localStorage.setItem('trolley-scout-theme', theme)
   }, [theme])
+
+  // Keep the URL and page title in sync with the active public view so every
+  // page is deep-linkable, shareable and shown correctly by the back button.
+  useEffect(() => {
+    if (memberMode) return
+    const path = VIEW_PATHS[activeView] ?? '/'
+    if (window.location.pathname !== path) {
+      window.history.pushState({ view: activeView }, '', path)
+    }
+    document.title = VIEW_TITLES[activeView] ?? VIEW_TITLES.home
+  }, [activeView, memberMode])
+
+  useEffect(() => {
+    const onPopState = () => setActiveView(viewFromPath(window.location.pathname))
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  // Expose read-only site actions to in-browser AI agents (WebMCP). No-op where
+  // navigator.modelContext is unavailable.
+  const webMcpDeps = useMemo(
+    () => ({
+      goToDeals: (query?: string) => {
+        if (query) setQuery(query)
+        setActiveView('discovery')
+      },
+      goToMoneyHelp: () => setActiveView('help'),
+      goToNearMe: () => setActiveView('near'),
+    }),
+    [],
+  )
+  useWebMcpTools(webMcpDeps)
 
   useEffect(() => {
     const controller = new AbortController()

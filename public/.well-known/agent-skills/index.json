@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agentskills.io/schemas/discovery/v0.2.0/index.json",
+  "version": "0.2.0",
+  "site": {
+    "name": "Trolley Scout",
+    "url": "https://trolleyscout.co.za",
+    "description": "Grocery deals and money help for South Africans."
+  },
+  "skills": [
+    {
+      "name": "find-grocery-deals",
+      "type": "text/markdown",
+      "description": "Find this week's verified South African grocery specials, the cheapest store for a list, nearby supermarket specials, and flash/daily deals. No auth.",
+      "url": "https://trolleyscout.co.za/.well-known/agent-skills/find-grocery-deals/SKILL.md",
+      "sha256": "49c3e663fe99f14c64beb53957ac532fbc122ffbcc9f45e0baab58ebd424fbb4"
+    },
+    {
+      "name": "money-help",
+      "type": "text/markdown",
+      "description": "Give South Africans accurate, current SASSA social grant amounts and free money help (school-fee exemptions, free basic electricity, zero-rated foods).",
+      "url": "https://trolleyscout.co.za/.well-known/agent-skills/money-help/SKILL.md",
+      "sha256": "36d3ba3acb5802bff13a52a233a32cebc312ad7ecee9b07196519056122c32ab"
+    }
+  ]
+}
