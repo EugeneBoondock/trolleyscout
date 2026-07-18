@@ -64,15 +64,23 @@ class DealNotifications {
     await _ensureInit();
     if (!_initialized) return;
 
+    // A new channel id ('_v2') is used because Android locks a channel's sound
+    // at creation time — this guarantees the custom deal_alert chime is used
+    // even on devices that already created the original channel.
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
-        'new_deals',
+        'new_deals_v2',
         'New deals',
         channelDescription: 'Alerts when fresh grocery deals land near you.',
         importance: Importance.high,
         priority: Priority.high,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('deal_alert'),
       ),
-      iOS: DarwinNotificationDetails(),
+      iOS: DarwinNotificationDetails(
+        sound: 'deal_alert.wav',
+        presentSound: true,
+      ),
     );
 
     try {

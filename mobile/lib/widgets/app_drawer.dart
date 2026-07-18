@@ -62,7 +62,10 @@ class AppMenuDrawer extends StatelessWidget {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
+              // Opaque fill so a selected (yellow) row can never show through
+              // behind the logo and title.
               decoration: BoxDecoration(
+                color: TS.bgOf(context),
                 border: Border(
                     bottom: BorderSide(color: TS.lineOf(context), width: 3)),
               ),
@@ -94,25 +97,24 @@ class AppMenuDrawer extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  children: [
-                    for (final item in destinations)
+              child: ClipRect(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    children: [
+                      for (final item in destinations)
                       ListTile(
                         selected: destination == item,
                         selectedTileColor: TS.yellow,
                         selectedColor: TS.ink,
                         iconColor: TS.mutedOf(context),
                         textColor: TS.inkOf(context),
+                        // A single clean accent bar marks the current page — no
+                        // top/bottom rules that read as bleeding into the header.
                         shape: destination == item
                             ? Border(
                                 left: BorderSide(
                                     color: TS.redOf(context), width: 5),
-                                top: BorderSide(
-                                    color: TS.lineOf(context), width: 1),
-                                bottom: BorderSide(
-                                    color: TS.lineOf(context), width: 1),
                               )
                             : null,
                         leading: Icon(item.icon),
@@ -122,7 +124,8 @@ class AppMenuDrawer extends StatelessWidget {
                             : null,
                         onTap: () => onSelect(item),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -148,22 +151,28 @@ class _BoondockFooter extends StatelessWidget {
       ),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+          border:
+              Border(top: BorderSide(color: TS.lineSoftOf(context), width: 1)),
         ),
         child: Text.rich(
+          textAlign: TextAlign.center,
           TextSpan(
-            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+            style: TextStyle(
+                color: TS.faintOf(context),
+                fontSize: 11,
+                fontWeight: FontWeight.w500),
             children: [
-              const TextSpan(text: 'Property of '),
+              const TextSpan(text: 'A '),
               TextSpan(
-                text: 'Boondock Labs (Pty) Ltd',
+                text: 'Boondock Labs',
                 style: TextStyle(
-                    color: TS.redOf(context),
-                    fontWeight: FontWeight.w900,
-                    decoration: TextDecoration.underline),
+                  fontWeight: FontWeight.w700,
+                  color: TS.mutedOf(context),
+                ),
               ),
+              const TextSpan(text: ' product'),
             ],
           ),
         ),

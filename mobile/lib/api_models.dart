@@ -1105,6 +1105,22 @@ class ScrollDeal {
         expiresAt: _optionalString(json['expiresAt']),
       );
 
+  /// Renders this deal-site item as a regular [Deal] so it can appear in the
+  /// Find-a-deal list alongside grocery specials.
+  Deal toDeal() => Deal(
+        id: id,
+        title: title,
+        retailerName: retailerName,
+        retailerId: source,
+        sourceLabel: sourceLabel,
+        sourceUrl: productUrl,
+        priceText: priceText,
+        previousPriceText: previousPriceText,
+        savingText: savingText,
+        productUrl: productUrl,
+        imageUrl: imageUrl,
+      );
+
   /// Builds a scroll deal from a regular discovery [Deal] so the reel can mix in
   /// the platform's own grocery finds.
   factory ScrollDeal.fromDeal(Deal deal) => ScrollDeal(

@@ -58,6 +58,7 @@ class _DealsScreenState extends State<DealsScreen> {
   Set<String> _previousDealIds = const {};
   static const _sampleLimit = 6;
   List<PublicAd> _ads = const [];
+  List<Deal> _siteDeals = const [];
   final _notifPrefs = NotificationPrefsStore();
   bool _notifyNewDeals = false;
   bool _notifBusy = false;
@@ -73,6 +74,7 @@ class _DealsScreenState extends State<DealsScreen> {
     _restoreCache();
     _load();
     _loadAds();
+    _loadSiteDeals();
     _restoreNotifyPref();
   }
 
@@ -82,6 +84,19 @@ class _DealsScreenState extends State<DealsScreen> {
       if (mounted) setState(() => _ads = ads);
     } catch (_) {
       // Sponsored slot simply stays empty if the feed is unreachable.
+    }
+  }
+
+  // Flash deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway, folded
+  // into the Find-a-deal list next to grocery specials.
+  Future<void> _loadSiteDeals() async {
+    try {
+      final items = await widget.api.dealSites();
+      if (mounted) {
+        setState(() => _siteDeals = items.map((item) => item.toDeal()).toList());
+      }
+    } catch (_) {
+      // The list still shows grocery deals if the deal-site feed is down.
     }
   }
 
@@ -123,7 +138,12 @@ class _DealsScreenState extends State<DealsScreen> {
       }
       if (mounted) {
         setState(() => _notifyNewDeals = value);
-        uxSuccess();
+        // Preview the reward chime the moment alerts are switched on.
+        if (value) {
+          uxReward();
+        } else {
+          uxTap();
+        }
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
@@ -281,7 +301,7 @@ class _DealsScreenState extends State<DealsScreen> {
   }
 
   Widget _buildBoard(DiscoveryResult result, {String? staleNote}) {
-    final allDeals = _sortByPage(result.deals);
+    final allDeals = _sortByPage([...result.deals, ..._siteDeals]);
     final retailers = <String, String>{
       for (final deal in allDeals) deal.retailerId: deal.retailerName,
     };
@@ -421,10 +441,14 @@ class _DealsScreenState extends State<DealsScreen> {
   }) {
     return RefreshIndicator(
       color: TS.redOf(context),
-      onRefresh: () async => setState(() {
-        _page = 0;
-        _load();
-      }),
+      onRefresh: () async {
+        _loadSiteDeals();
+        _loadAds();
+        setState(() {
+          _page = 0;
+          _load();
+        });
+      },
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
