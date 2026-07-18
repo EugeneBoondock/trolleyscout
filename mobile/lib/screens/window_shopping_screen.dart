@@ -23,10 +23,17 @@ class _Track {
   final String title;
 }
 
+// A wider, groovier crate so the shop never loops back too soon — funk, soul,
+// bossa, ska and lounge, all Kevin MacLeod, all CC BY 4.0.
 const List<_Track> _playlist = [
   _Track('music/groove_funk.mp3', 'Funkorama'),
   _Track('music/groove_deuces.mp3', 'Deuces'),
   _Track('music/groove_bossa.mp3', 'Bossa Antigua'),
+  _Track('music/groove_chunk.mp3', 'Funky Chunk'),
+  _Track('music/groove_cool.mp3', 'Cool Vibes'),
+  _Track('music/groove_riley.mp3', 'Life of Riley'),
+  _Track('music/groove_shade.mp3', 'Sidewalk Shade'),
+  _Track('music/groove_vibe.mp3', 'Vibe Ace'),
 ];
 
 /// Window Shopping — the calm, endless browse. One deal per swipe with real
@@ -55,6 +62,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   final _tasteStore = TasteStore();
   final _searchController = TextEditingController();
   final AudioPlayer _music = AudioPlayer(playerId: 'window_ambient');
+  // A fresh running order each visit so the same track never greets you twice.
+  final List<_Track> _tracks = List.of(_playlist)..shuffle();
 
   List<ScrollDeal> _deals = const [];
   Set<String> _saved = {};
@@ -101,7 +110,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       final prefs = await SharedPreferences.getInstance();
       _musicMuted = prefs.getBool(_muteKey) ?? false;
       // Open on a different track each visit so the shop never feels canned.
-      _trackIndex = DateTime.now().minute % _playlist.length;
+      _trackIndex = DateTime.now().minute % _tracks.length;
       if (mounted) setState(() {});
       await _music.setReleaseMode(ReleaseMode.stop);
       // Play as media without grabbing audio focus, so it stays a soft backdrop
@@ -118,7 +127,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       );
       // When a track ends, the next one takes the floor.
       _trackDone = _music.onPlayerComplete.listen((_) {
-        if (!_musicMuted) _playTrack((_trackIndex + 1) % _playlist.length);
+        if (!_musicMuted) _playTrack((_trackIndex + 1) % _tracks.length);
       });
       if (!_musicMuted) await _playTrack(_trackIndex);
     } catch (_) {
@@ -131,7 +140,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     if (mounted) setState(() {});
     try {
       await _music.stop();
-      await _music.play(AssetSource(_playlist[index].asset),
+      await _music.play(AssetSource(_tracks[index].asset),
           volume: _musicVolume);
     } catch (_) {}
   }
@@ -410,7 +419,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '♪ ${_playlist[_trackIndex].title} — Kevin MacLeod (CC BY)',
+                        '♪ ${_tracks[_trackIndex].title} — Kevin MacLeod (CC BY)',
                         style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 10,
@@ -619,15 +628,10 @@ class _WindowCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (deal.hasImage)
-              Image.network(
-                upgradeImageUrl(deal.imageUrl),
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-                gaplessPlayback: true,
-                errorBuilder: (_, __, ___) => const _ImageFallback(),
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : const _ImageFallback(),
-              )
+              // Key by the deal so the zoom-out restarts when the card at this
+              // PageView slot swaps to a different deal (e.g. live search),
+              // instead of freezing at the previous animation's scale.
+              _KenBurnsImage(key: ValueKey(deal.id), url: deal.imageUrl!)
             else
               const _ImageFallback(),
             const DecoratedBox(
@@ -941,6 +945,67 @@ class _Badge extends StatelessWidget {
               fontWeight: FontWeight.w900,
               letterSpacing: 0.4)),
     );
+  }
+}
+
+/// The window's picture opens pushed in close, then slowly eases back out to a
+/// full view. Two things fall out of that: a swipe lands on movement rather
+/// than a static frame, and a low-resolution image fills the screen at the
+/// start (where its softness is least noticeable) and only settles once it has
+/// had a moment to decode. Honours the system reduce-motion setting.
+class _KenBurnsImage extends StatefulWidget {
+  const _KenBurnsImage({super.key, required this.url});
+
+  final String url;
+
+  @override
+  State<_KenBurnsImage> createState() => _KenBurnsImageState();
+}
+
+class _KenBurnsImageState extends State<_KenBurnsImage>
+    with SingleTickerProviderStateMixin {
+  // Start zoomed in past the fill point (hides low-res softness), drift back to
+  // an exact cover fill so no black edge is ever revealed.
+  static const _startScale = 1.5;
+  static const _endScale = 1.0;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 14),
+  );
+  late final Animation<double> _scale = Tween<double>(
+    begin: _startScale,
+    end: _endScale,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = Image.network(
+      upgradeImageUrl(widget.url),
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => const _ImageFallback(),
+      loadingBuilder: (context, child, progress) =>
+          progress == null ? child : const _ImageFallback(),
+    );
+    // Reduce-motion shoppers get the settled frame with no movement.
+    if (MediaQuery.of(context).disableAnimations) {
+      return image;
+    }
+    return ScaleTransition(scale: _scale, child: image);
   }
 }
 

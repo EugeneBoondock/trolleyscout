@@ -32,6 +32,7 @@ class MemberAccount {
     required this.planName,
     required this.planStatus,
     required this.role,
+    required this.propertiesAccess,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -44,6 +45,7 @@ class MemberAccount {
   final String planName;
   final String planStatus;
   final String role;
+  final bool propertiesAccess;
   final String createdAt;
   final String updatedAt;
 
@@ -58,6 +60,7 @@ class MemberAccount {
         planName: _string(json['planName'], 'Free'),
         planStatus: _string(json['planStatus'], 'active'),
         role: _string(json['role'], 'member'),
+        propertiesAccess: json['propertiesAccess'] == true,
         createdAt: _string(json['createdAt']),
         updatedAt: _string(json['updatedAt']),
       );
@@ -1151,6 +1154,115 @@ class ScrollDeal {
         imageUrl: deal.imageUrl,
         category: null,
         expiresAt: null,
+      );
+}
+
+/// One home for sale or rent, found by Properties Scout on Property24 or
+/// Private Property.
+class PropertyListing {
+  const PropertyListing({
+    required this.id,
+    required this.portal,
+    required this.portalName,
+    required this.title,
+    required this.listingUrl,
+    required this.listingType,
+    this.priceText,
+    this.priceValue,
+    this.location,
+    this.province,
+    this.bedrooms,
+    this.bathrooms,
+    this.garages,
+    this.propertyType,
+    this.imageUrl,
+  });
+
+  final String id;
+  final String portal;
+  final String portalName;
+  final String title;
+  final String listingUrl;
+  final String listingType;
+  final String? priceText;
+  final num? priceValue;
+  final String? location;
+  final String? province;
+  final int? bedrooms;
+  final num? bathrooms;
+  final int? garages;
+  final String? propertyType;
+  final String? imageUrl;
+
+  bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
+
+  factory PropertyListing.fromJson(Map<String, dynamic> json) => PropertyListing(
+        id: _string(json['id']),
+        portal: _string(json['portal']),
+        portalName: _string(json['portalName']),
+        title: _string(json['title'], 'Property'),
+        listingUrl: _string(json['listingUrl']),
+        listingType: _string(json['listingType'], 'sale'),
+        priceText: _optionalString(json['priceText']),
+        priceValue: json['priceValue'] is num ? json['priceValue'] as num : null,
+        location: _optionalString(json['location']),
+        province: _optionalString(json['province']),
+        bedrooms: _intOrNull(json['bedrooms']),
+        bathrooms: json['bathrooms'] is num ? json['bathrooms'] as num : null,
+        garages: _intOrNull(json['garages']),
+        propertyType: _optionalString(json['propertyType']),
+        imageUrl: _optionalString(json['imageUrl']),
+      );
+}
+
+/// Which portals answered a Properties Scout search, and how many each returned.
+class PropertyPortalSource {
+  const PropertyPortalSource({
+    required this.id,
+    required this.label,
+    required this.count,
+    required this.ok,
+  });
+
+  final String id;
+  final String label;
+  final int count;
+  final bool ok;
+
+  factory PropertyPortalSource.fromJson(Map<String, dynamic> json) =>
+      PropertyPortalSource(
+        id: _string(json['id']),
+        label: _string(json['label']),
+        count: _int(json['count']),
+        ok: json['ok'] == true,
+      );
+}
+
+/// The result of a Properties Scout search: listings plus per-portal metadata.
+class PropertySearchResult {
+  const PropertySearchResult({
+    required this.listings,
+    required this.sources,
+    required this.listingType,
+    required this.page,
+    this.locationText,
+  });
+
+  final List<PropertyListing> listings;
+  final List<PropertyPortalSource> sources;
+  final String listingType;
+  final int page;
+  final String? locationText;
+
+  factory PropertySearchResult.fromJson(Map<String, dynamic> json) =>
+      PropertySearchResult(
+        listings:
+            _mapList(json['listings']).map(PropertyListing.fromJson).toList(),
+        sources:
+            _mapList(json['sources']).map(PropertyPortalSource.fromJson).toList(),
+        listingType: _string(json['listingType'], 'sale'),
+        page: _int(json['page'], 1),
+        locationText: _optionalString(json['locationText']),
       );
 }
 

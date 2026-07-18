@@ -36,6 +36,7 @@ interface MemberAccountRow {
   password_hash?: string | null
   plan_id: string
   plan_status: string
+  properties_access?: number | null
   role?: string | null
   updated_at: string
 }
@@ -45,10 +46,20 @@ interface MemberAccountRow {
 const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
 
 const ACCOUNT_COLUMNS =
-  'id, email, display_name, plan_id, plan_status, role, password_hash, created_at, updated_at'
+  'id, email, display_name, plan_id, plan_status, role, properties_access, password_hash, created_at, updated_at'
 
 export function isAdminEmail(email: string): boolean {
   return ADMIN_EMAILS.has(email.trim().toLowerCase())
+}
+
+// Effective Properties Scout access: the Household plan grants it, admins always
+// have it, and an admin can grant it to any single member (properties_access).
+export function computePropertiesAccess(
+  planId: MemberPlanId,
+  role: 'member' | 'admin',
+  grant: number | null | undefined,
+): boolean {
+  return planId === 'household' || role === 'admin' || grant === 1
 }
 
 interface SavedSourceRow {
@@ -152,7 +163,8 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
 
   const row = await env.DB.prepare(
     `SELECT member_accounts.id, member_accounts.email, member_accounts.display_name,
-      member_accounts.plan_id, member_accounts.plan_status,
+      member_accounts.plan_id, member_accounts.plan_status, member_accounts.role,
+      member_accounts.properties_access,
       member_accounts.created_at, member_accounts.updated_at
       FROM member_sessions
       INNER JOIN member_accounts ON member_accounts.id = member_sessions.account_id
@@ -326,6 +338,35 @@ export async function updateMemberProfile(
   return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
 }
 
+// Admin-only: grant or revoke a single member's Properties Scout access. Only
+// the raw grant flag is written; Household and admin accounts keep effective
+// access regardless. Returns the updated account (with effective access).
+export async function setMemberPropertiesAccess(
+  env: TrolleyScoutEnv,
+  accountId: string,
+  granted: boolean,
+) {
+  if (!hasMemberStore(env)) {
+    return { issues: ['Member storage is not configured.'] }
+  }
+
+  const result = await env.DB.prepare(
+    'UPDATE member_accounts SET properties_access = ?, updated_at = ? WHERE id = ?',
+  )
+    .bind(granted ? 1 : 0, new Date().toISOString(), accountId)
+    .run()
+
+  if (result.meta.changes === 0) {
+    return { issues: ['Member account was not found.'] }
+  }
+
+  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+    .bind(accountId)
+    .first<MemberAccountRow>()
+
+  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+}
+
 export async function changeMemberPassword(
   env: TrolleyScoutEnv,
   accountId: string | undefined,
@@ -365,7 +406,8 @@ export async function getAdminOverview(env: TrolleyScoutEnv) {
 
   const [accounts, planRows, dealRows, leafletRow] = await Promise.all([
     env.DB.prepare(
-      `SELECT id, email, display_name, plan_id, plan_status, role, created_at, updated_at
+      `SELECT id, email, display_name, plan_id, plan_status, role, properties_access,
+        created_at, updated_at
         FROM member_accounts
         ORDER BY created_at DESC
         LIMIT 100`,
@@ -1001,7 +1043,8 @@ export async function startSubscriptionCheckout(
 
 async function getAccountByEmail(env: TrolleyScoutEnv & { DB: D1Database }, email: string) {
   const row = await env.DB.prepare(
-    `SELECT id, email, display_name, plan_id, plan_status, created_at, updated_at
+    `SELECT id, email, display_name, plan_id, plan_status, role, properties_access,
+      created_at, updated_at
       FROM member_accounts
       WHERE email = ?`,
   )
@@ -1015,6 +1058,8 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
   const planId = normalizePlanId(row.plan_id)
   const plan = getMemberPlan(planId)
 
+  const role = row.role === 'admin' || isAdminEmail(row.email) ? 'admin' : 'member'
+
   return {
     createdAt: row.created_at,
     displayName: row.display_name,
@@ -1024,7 +1069,8 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
     planId,
     planName: plan.name,
     planStatus: normalizePlanStatus(row.plan_status),
-    role: row.role === 'admin' || isAdminEmail(row.email) ? 'admin' : 'member',
+    propertiesAccess: computePropertiesAccess(planId, role, row.properties_access),
+    role,
     updatedAt: row.updated_at,
   }
 }

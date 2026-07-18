@@ -5,6 +5,7 @@ import {
   Bell,
   BellRinging,
   BookmarkSimple,
+  Buildings,
   Calculator,
   CheckCircle,
   ClipboardText,
@@ -14,6 +15,7 @@ import {
   Info,
   LinkSimple,
   List,
+  Lock,
   MagnifyingGlass,
   Minus,
   MoonStars,
@@ -38,6 +40,7 @@ import { motion } from 'motion/react'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
 import { StoreMap } from './components/StoreMap'
+import { PropertiesView } from './views/PropertiesView'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -65,6 +68,7 @@ import {
   loadMemberSession,
   changeAccountPassword,
   loadAdminOverview,
+  setMemberPropertiesAccess,
   loadDiscovery,
   loadBasket,
   loadSavedDeals,
@@ -97,6 +101,7 @@ import type {
   DealActivity,
   DealLearningState,
   DealWatch,
+  MemberAccount,
   MemberSession,
   MemberPlanId,
   MemberSessionDraft,
@@ -161,6 +166,7 @@ type MemberView =
   | 'sources'
   | 'discovery'
   | 'vouchers'
+  | 'properties'
   | 'savedDeals'
   | 'basket'
   | 'saved'
@@ -172,16 +178,23 @@ type MemberView =
   | 'admin'
   | 'rules'
 
+// Logged-out shoppers see a trimmed public nav: Near me, Tools, and Stores are
+// members-only, so they are left out here and gated on direct navigation.
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Home', value: 'home' },
   { label: 'Deals', value: 'discovery' },
-  { label: 'Near me', value: 'near' },
   { label: 'Money help', value: 'help' },
-  { label: 'Tools', value: 'tools' },
-  { label: 'Stores', value: 'sources' },
   { label: 'Vouchers', value: 'vouchers' },
   { label: 'Help', value: 'about' },
 ]
+
+// Views that require an account; if a logged-out visitor deep-links to one, the
+// public shell shows a sign-in gate instead of the members-only content.
+const MEMBER_ONLY_PUBLIC_VIEWS: ReadonlySet<ActiveView> = new Set<ActiveView>([
+  'near',
+  'tools',
+  'sources',
+])
 
 const dataDeskOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Verified offers', value: 'offers' },
@@ -233,6 +246,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
   { icon: <Ticket size={20} />, label: 'Vouchers', value: 'vouchers' },
   { icon: <NavigationArrow size={20} />, label: 'Near me', value: 'near' },
+  { icon: <Buildings size={20} />, label: 'Properties', value: 'properties' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
   { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
@@ -1203,6 +1217,16 @@ function App() {
       </nav>
 
       <main id="top">
+        {MEMBER_ONLY_PUBLIC_VIEWS.has(activeView) ? (
+          <PublicSignInGate
+            view={activeView}
+            onSignIn={() => {
+              setMemberReturnView(undefined)
+              setMemberMode(true)
+            }}
+          />
+        ) : (
+        <>
         {activeView === 'home' && (
           <HomeView
             isCheckingStaples={isDiscovering}
@@ -1304,6 +1328,11 @@ function App() {
             isDiscovering={isDiscovering}
             onReviewDeal={reviewDiscoveredDeal}
             onRunDiscovery={runDiscovery}
+            onSignIn={() => {
+              setMemberReturnView(undefined)
+              setMemberMode(true)
+            }}
+            sampleLimit={10}
             state={discoveryState}
           />
         )}
@@ -1330,6 +1359,8 @@ function App() {
           />
         )}
         {activeView === 'rules' && <RulesPanel />}
+        </>
+        )}
       </main>
       <footer className="site-foot">
         <p>
@@ -1776,6 +1807,10 @@ function MemberShell({
             savingDealUrl={savingDealUrl}
             state={discoveryState}
           />
+        )}
+
+        {activeView === 'properties' && (
+          <PropertiesView account={account} onUpgrade={() => onSetView('subscription')} />
         )}
 
         {activeView === 'savedDeals' && (
@@ -2850,6 +2885,7 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
 function AdminConsole() {
   const [overview, setOverview] = useState<AdminOverview | undefined>()
   const [message, setMessage] = useState('Loading admin data.')
+  const [pendingId, setPendingId] = useState<string | undefined>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -2867,6 +2903,25 @@ function AdminConsole() {
 
     return () => controller.abort()
   }, [])
+
+  async function onToggleAccess(member: MemberAccount) {
+    setPendingId(member.id)
+    const result = await setMemberPropertiesAccess(member.id, !member.propertiesAccess)
+    setPendingId(undefined)
+    if (result.ok && result.account) {
+      const updated = result.account
+      setOverview((current) =>
+        current
+          ? {
+              ...current,
+              accounts: current.accounts.map((row) => (row.id === updated.id ? updated : row)),
+            }
+          : current,
+      )
+    } else {
+      setMessage(result.message)
+    }
+  }
 
   return (
     <section className="admin-console" aria-label="Admin console">
@@ -2929,26 +2984,49 @@ function AdminConsole() {
             </div>
           </div>
 
-          <div className="admin-table" role="table" aria-label="Member accounts">
+          <div className="admin-table admin-table-properties" role="table" aria-label="Member accounts">
             <div className="admin-row admin-row-head" role="row">
               <span role="columnheader">Member</span>
               <span role="columnheader">Plan</span>
               <span role="columnheader">Role</span>
+              <span role="columnheader">Properties</span>
               <span role="columnheader">Joined</span>
             </div>
-            {overview.accounts.map((member) => (
-              <div className="admin-row" key={member.id} role="row">
-                <span role="cell">
-                  <strong>{member.displayName}</strong>
-                  <small>{member.email}</small>
-                </span>
-                <span role="cell">{member.planName}</span>
-                <span role="cell">
-                  {member.role === 'admin' ? <mark>admin</mark> : 'member'}
-                </span>
-                <span role="cell">{member.createdAt.slice(0, 10)}</span>
-              </div>
-            ))}
+            {overview.accounts.map((member) => {
+              // Household and admins always have access via their plan/role, so
+              // the grant toggle is only meaningful for other members.
+              const planBased = member.planId === 'household' || member.role === 'admin'
+              return (
+                <div className="admin-row" key={member.id} role="row">
+                  <span role="cell">
+                    <strong>{member.displayName}</strong>
+                    <small>{member.email}</small>
+                  </span>
+                  <span role="cell">{member.planName}</span>
+                  <span role="cell">
+                    {member.role === 'admin' ? <mark>admin</mark> : 'member'}
+                  </span>
+                  <span role="cell">
+                    {planBased ? (
+                      <span className="admin-access-note">Via plan</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={clsx(
+                          'admin-access-toggle',
+                          member.propertiesAccess && 'is-on',
+                        )}
+                        disabled={pendingId === member.id}
+                        onClick={() => onToggleAccess(member)}
+                      >
+                        {member.propertiesAccess ? 'Granted' : 'Grant'}
+                      </button>
+                    )}
+                  </span>
+                  <span role="cell">{member.createdAt.slice(0, 10)}</span>
+                </div>
+              )
+            })}
           </div>
         </>
       )}
@@ -3551,6 +3629,35 @@ function SourcePanel({
   )
 }
 
+const MEMBER_VIEW_LABELS: Partial<Record<ActiveView, string>> = {
+  near: 'Near me',
+  tools: 'Tools',
+  sources: 'Stores',
+}
+
+// Shown in the public shell when a logged-out visitor lands on a members-only
+// view (Near me, Tools, Stores) — invites them to create a free account.
+function PublicSignInGate({ view, onSignIn }: { view: ActiveView; onSignIn: () => void }) {
+  const label = MEMBER_VIEW_LABELS[view] ?? 'This page'
+  return (
+    <section className="public-signin-gate" aria-label={`${label} is for members`}>
+      <div className="public-signin-gate-badge" aria-hidden>
+        <Lock size={30} weight="fill" />
+      </div>
+      <p className="eyebrow">Members only</p>
+      <h1>{label} is for members</h1>
+      <p className="public-signin-gate-lede">
+        Create a free account to use {label} and unlock the full Trolley Scout — every deal,
+        near-me store search, tools, saved lists, and more. No card, no catch.
+      </p>
+      <button className="primary-button" type="button" onClick={onSignIn}>
+        <UserCircle size={18} />
+        Sign up free
+      </button>
+    </section>
+  )
+}
+
 function DiscoveryPanel({
   canWatchItems = false,
   initialFilter,
@@ -3558,6 +3665,8 @@ function DiscoveryPanel({
   onReviewDeal,
   onRunDiscovery,
   onSaveDeal,
+  onSignIn,
+  sampleLimit,
   savedDealUrls = new Set<string>(),
   savingDealUrl,
   state,
@@ -3568,6 +3677,10 @@ function DiscoveryPanel({
   onReviewDeal: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
   onSaveDeal?: (deal: DiscoveredDeal) => void
+  // When set, only the first N deals are shown (logged-out sample), the pager is
+  // hidden, and a sign-in call-to-action invites the shopper to see them all.
+  onSignIn?: () => void
+  sampleLimit?: number
   savedDealUrls?: Set<string>
   savingDealUrl?: string
   state: ResourceState<DiscoveryResource>
@@ -3623,9 +3736,12 @@ function DiscoveryPanel({
 
   const dealsPerPage = 24
   const [page, setPage] = useState(0)
+  const isSample = sampleLimit != null
   const pageCount = Math.max(1, Math.ceil(deals.length / dealsPerPage))
   const safePage = Math.min(page, pageCount - 1)
   const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
+  // Logged-out sample: show only the first N, never the pager.
+  const shownDeals = isSample ? deals.slice(0, sampleLimit) : pagedDeals
 
   useEffect(
     () => setPage(0),
@@ -3758,7 +3874,7 @@ function DiscoveryPanel({
 
       {deals.length > 0 ? (
         <div className="discovery-deal-list">
-          {pagedDeals.map((deal) => (
+          {shownDeals.map((deal) => (
             <article className="discovery-deal-row" key={deal.id}>
               <div className="discovery-deal-main">
                 {deal.imageUrl && (
@@ -3816,7 +3932,20 @@ function DiscoveryPanel({
             </article>
           ))}
 
-          {pageCount > 1 && (
+          {isSample && (
+            <div className="deals-signin-cta">
+              <div>
+                <strong>Seeing a taste of {deals.length} live deals.</strong>
+                <span>Sign up free to see every deal, save them, and get new-deal alerts.</span>
+              </div>
+              <button className="primary-button" type="button" onClick={onSignIn}>
+                <UserCircle size={18} />
+                Sign up free
+              </button>
+            </div>
+          )}
+
+          {!isSample && pageCount > 1 && (
             <nav className="deal-pager" aria-label="Deal pages">
               <button
                 className="ghost-button"

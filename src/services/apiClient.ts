@@ -37,6 +37,8 @@ import type {
   MemberSessionDraft,
   OfferDraft,
   OfferValidationResult,
+  PropertyListingType,
+  PropertySearchResult,
   Retailer,
   DiscoveryRun,
   DiscoveredDeal,
@@ -1344,6 +1346,80 @@ export async function deleteDealWatch(id: string): Promise<DealWatch[]> {
 
   const envelope = (await response.json()) as { data?: { watches?: DealWatch[] } }
   return envelope.data?.watches ?? []
+}
+
+export type PropertySearchOutcome =
+  | { ok: true; result: PropertySearchResult }
+  | { ok: false; locked?: boolean; needsAuth?: boolean; message: string }
+
+export interface PropertySearchInput {
+  query: string
+  listingType: PropertyListingType
+  page?: number
+  minPrice?: number
+  maxPrice?: number
+  minBeds?: number
+  sort?: string
+}
+
+// Properties Scout search. Access is enforced server-side; a 401 means log in,
+// a 403 means the plan does not include it (the view shows an upgrade card).
+export async function searchProperties(
+  input: PropertySearchInput,
+  signal?: AbortSignal,
+): Promise<PropertySearchOutcome> {
+  const params = new URLSearchParams({ q: input.query, type: input.listingType })
+  if (input.page && input.page > 1) params.set('page', String(input.page))
+  if (input.minPrice) params.set('minPrice', String(input.minPrice))
+  if (input.maxPrice) params.set('maxPrice', String(input.maxPrice))
+  if (input.minBeds) params.set('minBeds', String(input.minBeds))
+  if (input.sort && input.sort !== 'relevance') params.set('sort', input.sort)
+
+  try {
+    const response = await fetch(`/api/properties?${params.toString()}`, {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+    const envelope = (await response.json()) as {
+      data?: PropertySearchResult & { error?: string; locked?: boolean; reason?: string }
+    }
+    if (!response.ok || !envelope.data || !('listings' in envelope.data)) {
+      return {
+        ok: false,
+        locked: envelope.data?.locked ?? response.status === 403,
+        needsAuth: response.status === 401,
+        message: envelope.data?.error ?? 'Could not search properties.',
+      }
+    }
+    return { ok: true, result: envelope.data }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+    return { ok: false, message: 'Properties Scout is unavailable right now.' }
+  }
+}
+
+// Admin-only: grant or revoke a single member's Properties Scout access.
+export async function setMemberPropertiesAccess(accountId: string, granted: boolean) {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({ action: 'set_properties_access', accountId, granted }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { account?: MemberAccount; accounts?: MemberAccount[]; message?: string }
+    }
+    return {
+      account: envelope.data?.account,
+      accounts: envelope.data?.accounts,
+      message: envelope.data?.message ?? (response.ok ? 'Access updated.' : 'Could not update access.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
+  }
 }
 
 function emptyDiscoveryRun(): DiscoveryRun {

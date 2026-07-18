@@ -13,7 +13,9 @@ import 'screens/home_screen.dart';
 import 'screens/money_help_screen.dart';
 import 'screens/near_me_screen.dart';
 import 'screens/offers_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/properties_screen.dart';
 import 'screens/rules_screen.dart';
 import 'screens/saved_deals_screen.dart';
 import 'screens/saved_sources_screen.dart';
@@ -137,6 +139,20 @@ class _RootShellState extends State<RootShell> {
       animation: widget.controller,
       builder: (context, _) {
         final session = widget.controller.session;
+        // Full auth gate: while the stored session is being restored show a
+        // splash, and until the shopper is signed in show onboarding + auth —
+        // no app content is reachable before an account exists.
+        if (widget.controller.restoring) {
+          return Scaffold(
+            backgroundColor: TS.bgOf(context),
+            body: const Center(
+              child: AnimatedScoutMark(motion: ScoutMarkMotion.spin, size: 48),
+            ),
+          );
+        }
+        if (!session.isAuthenticated) {
+          return OnboardingScreen(controller: widget.controller);
+        }
         final compact = MediaQuery.sizeOf(context).width < 430;
         return Scaffold(
           appBar: AppBar(
@@ -341,6 +357,13 @@ class _RootShellState extends State<RootShell> {
         ),
       AppDestination.tools => ToolsScreen(api: api),
       AppDestination.scroll => WindowShoppingScreen(api: api),
+      AppDestination.properties => PropertiesScreen(
+          api: api,
+          account: widget.controller.session.account,
+          isAuthenticated: widget.controller.session.isAuthenticated,
+          onWantsAuth: () => _showAuth('login'),
+          onUpgrade: () => _selectDestination(AppDestination.subscription),
+        ),
       AppDestination.dashboard => DashboardScreen(
           api: api,
           session: widget.controller.session,

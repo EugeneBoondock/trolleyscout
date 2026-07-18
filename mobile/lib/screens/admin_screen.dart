@@ -90,28 +90,119 @@ class _AdminScreenState extends State<AdminScreen> {
                     ?.merge(TS.display)),
             const SizedBox(height: 8),
             for (final account in overview.accounts)
-              PaperCard(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(child: Text(account.initials)),
-                  title: Text(account.displayName,
-                      style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text(
-                      '${account.email}\nJoined ${account.createdAt.split('T').first}'),
-                  isThreeLine: true,
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(account.planName),
-                      Text(account.role, style: TS.eyebrowOf(context))
-                    ],
-                  ),
-                ),
-              ),
+              _MemberAccessTile(
+                  key: ValueKey(account.id), api: widget.api, account: account),
           ],
         );
       },
+    );
+  }
+}
+
+/// One member row with a Properties Scout access toggle. Household plans and
+/// admins always have access via their plan/role, so the toggle only appears for
+/// other members; granting one flips their access on immediately.
+class _MemberAccessTile extends StatefulWidget {
+  const _MemberAccessTile({super.key, required this.api, required this.account});
+
+  final Api api;
+  final MemberAccount account;
+
+  @override
+  State<_MemberAccessTile> createState() => _MemberAccessTileState();
+}
+
+class _MemberAccessTileState extends State<_MemberAccessTile> {
+  late MemberAccount _account = widget.account;
+  bool _busy = false;
+
+  @override
+  void didUpdateWidget(covariant _MemberAccessTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Resync when a fresh overview supplies a new account object for this id,
+    // but never clobber an in-flight optimistic toggle.
+    if (!_busy && !identical(widget.account, oldWidget.account)) {
+      _account = widget.account;
+    }
+  }
+
+  bool get _planBased => _account.planId == 'household' || _account.isAdmin;
+
+  Future<void> _toggle(bool value) async {
+    setState(() => _busy = true);
+    try {
+      uxTap();
+      final updated =
+          await widget.api.setMemberPropertiesAccess(_account.id, value);
+      if (mounted) setState(() => _account = updated);
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = _account;
+    return PaperCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(child: Text(account.initials)),
+            title: Text(account.displayName,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text(
+                '${account.email}\nJoined ${account.createdAt.split('T').first}'),
+            isThreeLine: true,
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(account.planName),
+                Text(account.role, style: TS.eyebrowOf(context)),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: TS.lineSoftOf(context)),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Icon(Icons.apartment_outlined,
+                    size: 18, color: TS.mutedOf(context)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _planBased
+                        ? 'Properties Scout — included with plan'
+                        : 'Properties Scout access',
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                  ),
+                ),
+                if (_planBased)
+                  Text('On', style: TS.eyebrowOf(context))
+                else if (_busy)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Switch(
+                    value: account.propertiesAccess,
+                    onChanged: _toggle,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

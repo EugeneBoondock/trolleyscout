@@ -4646,3 +4646,345 @@ main {
 .site-foot a:hover {
   color: var(--red-bright);
 }
+
+/* ---------------------------------------------------------------------------
+   Properties Scout
+   --------------------------------------------------------------------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.admin-table-properties .admin-row {
+  grid-template-columns: minmax(0, 2fr) 1fr 0.8fr 0.9fr 1fr;
+}
+
+@media (max-width: 760px) {
+  .admin-table-properties .admin-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.admin-access-toggle {
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.admin-access-toggle.is-on {
+  background: var(--yellow);
+}
+
+.admin-access-toggle:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.admin-access-note {
+  color: var(--faint);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.properties-search {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+  margin-bottom: 1.5rem;
+}
+
+.properties-toggle {
+  display: inline-flex;
+  border: 2px solid var(--line);
+  width: fit-content;
+}
+
+.properties-toggle button {
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 800;
+  padding: 0.5rem 1.4rem;
+  cursor: pointer;
+}
+
+.properties-toggle button + button {
+  border-left: 2px solid var(--line);
+}
+
+.properties-toggle button.is-active {
+  background: var(--yellow);
+}
+
+.properties-search-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.properties-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 2px solid var(--line-soft);
+  background: var(--surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.properties-field-grow {
+  flex: 1 1 16rem;
+}
+
+.properties-field input,
+.properties-field select {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  width: 100%;
+  outline: none;
+}
+
+.properties-field > span:not(.sr-only) {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.properties-submit {
+  border: 2px solid var(--line);
+  background: var(--red);
+  color: #fff;
+  font-weight: 900;
+  padding: 0.55rem 1.6rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+}
+
+.properties-submit:hover {
+  background: var(--red-bright);
+}
+
+.properties-submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.properties-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.properties-count {
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.properties-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+  gap: 1.1rem;
+}
+
+.property-card {
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.property-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hard);
+}
+
+.property-card-image {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--surface-soft);
+}
+
+.property-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.property-card-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--faint);
+}
+
+.property-card-portal {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  background: rgba(28, 23, 16, 0.82);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+}
+
+.property-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.8rem 0.9rem 1rem;
+}
+
+.property-card-price {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.property-card-title {
+  font-weight: 700;
+}
+
+.property-card-location {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.property-card-facts {
+  color: var(--faint);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.properties-empty {
+  border: 2px dashed var(--line-soft);
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.properties-locked {
+  max-width: 34rem;
+  margin: 1rem auto;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+  padding: 2rem;
+  text-align: center;
+}
+
+.properties-locked-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border: 2px solid var(--line);
+  background: var(--yellow);
+  color: var(--ink);
+  margin-bottom: 0.75rem;
+}
+
+.properties-locked-lede {
+  color: var(--muted);
+  margin: 0.5rem 0 1rem;
+}
+
+.properties-locked-list {
+  text-align: left;
+  display: inline-block;
+  margin: 0 auto 1.4rem;
+  color: var(--ink);
+  padding-left: 1.1rem;
+}
+
+.properties-locked-list li {
+  margin: 0.35rem 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Logged-out gates (deals sample CTA + members-only page gate)
+   --------------------------------------------------------------------------- */
+
+.deals-signin-cta {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+  padding: 1.1rem 1.3rem;
+  border: 3px solid var(--line);
+  background: var(--yellow);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
+}
+
+.deals-signin-cta strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.deals-signin-cta span {
+  display: block;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.public-signin-gate {
+  max-width: 34rem;
+  margin: 2rem auto;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+  padding: 2.5rem 2rem;
+  text-align: center;
+}
+
+.public-signin-gate-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border: 2px solid var(--line);
+  background: var(--yellow);
+  color: var(--ink);
+  margin-bottom: 0.75rem;
+}
+
+.public-signin-gate-lede {
+  color: var(--muted);
+  margin: 0.5rem auto 1.4rem;
+  max-width: 28rem;
+}

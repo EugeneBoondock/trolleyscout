@@ -2,52 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/main.dart';
-import 'package:trolley_scout/widgets/scout_mark.dart';
 
 void main() {
-  testWidgets('boots home with visible log in and sign up actions',
-      (tester) async {
+  testWidgets('signed out boots onboarding, not the app shell', (tester) async {
     await tester.pumpWidget(
         TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
     await tester.pump(const Duration(milliseconds: 500));
 
+    // Onboarding is shown; no app content or navigation is reachable yet.
     expect(find.text('TROLLEY SCOUT'), findsOneWidget);
-    expect(find.byKey(const ValueKey('navbar-scout-mark')), findsOneWidget);
-    expect(
-      tester
-          .widget<AnimatedScoutMark>(
-              find.byKey(const ValueKey('navbar-scout-mark')))
-          .motion,
-      ScoutMarkMotion.scout,
-    );
-    expect(find.textContaining('MONEY ON THE TABLE'), findsOneWidget);
+    expect(find.text('Stretch every rand'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Next'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Log in'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Sign up'), findsOneWidget);
-    expect(find.text('Near me'), findsOneWidget);
-    expect(find.text('Deals'), findsOneWidget);
+    expect(find.byTooltip('Open navigation menu'), findsNothing);
   });
 
-  testWidgets('sign up opens the account form and can switch to log in',
+  testWidgets('onboarding opens the account form and can switch to log in',
       (tester) async {
     await tester.pumpWidget(
         TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign up'));
+    await tester.tap(find.textContaining('create an account'));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Create your account'), findsOneWidget);
     expect(find.text('Display name'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Log in').last);
+
+    await tester.tap(find.text('Log in'));
     await tester.pump();
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Display name'), findsNothing);
   });
 
-  testWidgets('drawer contains every consumer destination', (tester) async {
-    await tester.pumpWidget(
-        TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
+  testWidgets('drawer contains every consumer destination once signed in',
+      (tester) async {
+    await tester.pumpWidget(TrolleyScoutApp(api: _FakeApi(_memberSession)));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Open navigation menu'));
@@ -57,6 +48,7 @@ void main() {
       'Dashboard',
       'Stores',
       'Vouchers',
+      'Properties',
       'Saved deals',
       'Basket',
       'Saved sources',
@@ -73,32 +65,9 @@ void main() {
     expect(find.text('Admin console'), findsNothing);
   });
 
-  testWidgets('protected drawer taps keep signed-out shoppers on Home',
-      (tester) async {
-    await tester.pumpWidget(
-        TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    await tester.tap(find.byTooltip('Open navigation menu'));
-    await tester.pump(const Duration(milliseconds: 500));
-    tester
-        .widget<ListTile>(find
-            .ancestor(
-                of: find.text('Dashboard'), matching: find.byType(ListTile))
-            .first)
-        .onTap!();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.textContaining('MONEY ON THE TABLE'), findsOneWidget);
-    expect(find.text('Welcome back'), findsNothing);
-    expect(find.textContaining('Log in or sign up to open Dashboard'),
-        findsOneWidget);
-  });
-
   testWidgets('drawer gives the current destination a strong selected state',
       (tester) async {
-    await tester.pumpWidget(
-        TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
+    await tester.pumpWidget(TrolleyScoutApp(api: _FakeApi(_memberSession)));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Open navigation menu'));
@@ -145,11 +114,31 @@ class _FakeApi extends Api {
   Future<MemberSession> authenticate(AuthDraft draft) async => currentSession;
 
   @override
+  Future<List<DealWatch>> dealWatches() async => const [];
+
+  @override
   Future<MemberSession> signOut() async {
     currentSession = const MemberSession.signedOut();
     return currentSession;
   }
 }
+
+const _memberSession = MemberSession(
+  isAuthenticated: true,
+  account: MemberAccount(
+    id: 'member-1',
+    email: 'sam@example.com',
+    displayName: 'Sam Shopper',
+    initials: 'SS',
+    planId: 'free',
+    planName: 'Free',
+    planStatus: 'active',
+    role: 'member',
+    propertiesAccess: false,
+    createdAt: '2026-07-01T10:00:00.000Z',
+    updatedAt: '2026-07-01T10:00:00.000Z',
+  ),
+);
 
 const _adminSession = MemberSession(
   isAuthenticated: true,
@@ -162,6 +151,7 @@ const _adminSession = MemberSession(
     planName: 'Household',
     planStatus: 'active',
     role: 'admin',
+    propertiesAccess: true,
     createdAt: '2026-07-01T10:00:00.000Z',
     updatedAt: '2026-07-01T10:00:00.000Z',
   ),

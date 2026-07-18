@@ -293,8 +293,53 @@ export interface MemberAccount {
   planName: string
   planStatus: MemberPlanStatus
   role: MemberRole
+  // True when this member may open Properties Scout: the Household plan grants
+  // it, admins always have it, and an admin can grant it to any single member.
+  propertiesAccess: boolean
   createdAt: string
   updatedAt: string
+}
+
+// Properties Scout — a Household-tier tool that finds homes to buy or rent from
+// the SA property portals (Property24, Private Property).
+export type PropertyListingType = 'sale' | 'rent'
+
+export type PropertyPortalId = 'property24' | 'privateproperty'
+
+export interface PropertyListing {
+  id: string
+  portal: PropertyPortalId
+  portalName: string
+  title: string
+  priceText?: string
+  // Numeric rand amount, for sorting and price filters. For rentals this is the
+  // monthly figure. Undefined when the portal only shows "POA".
+  priceValue?: number
+  location?: string
+  province?: string
+  bedrooms?: number
+  bathrooms?: number
+  garages?: number
+  propertyType?: string
+  imageUrl?: string
+  listingUrl: string
+  listingType: PropertyListingType
+}
+
+export interface PropertyPortalSourceMeta {
+  id: PropertyPortalId
+  label: string
+  count: number
+  ok: boolean
+}
+
+export interface PropertySearchResult {
+  listings: PropertyListing[]
+  sources: PropertyPortalSourceMeta[]
+  listingType: PropertyListingType
+  page: number
+  locationText?: string
+  refreshedAt?: string
 }
 
 export interface AdminOverview {

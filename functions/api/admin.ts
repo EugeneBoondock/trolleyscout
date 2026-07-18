@@ -1,4 +1,8 @@
-import { getAdminOverview, getMemberSession } from '../_shared/memberStore'
+import {
+  getAdminOverview,
+  getMemberSession,
+  setMemberPropertiesAccess,
+} from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
 
@@ -6,9 +10,15 @@ const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
+interface AdminActionBody {
+  action?: string
+  accountId?: string
+  granted?: boolean
+}
+
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
-  if (request.method !== 'GET') {
-    return methodNotAllowed(request.method, 'GET')
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    return methodNotAllowed(request.method, 'GET, POST')
   }
 
   const session = await getMemberSession(env, request)
@@ -19,6 +29,36 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       { message: 'Admin access is required.' },
       { headers: privateHeaders, status: 403 },
     )
+  }
+
+  if (request.method === 'POST') {
+    let body: AdminActionBody
+    try {
+      body = (await request.json()) as AdminActionBody
+    } catch {
+      return json({ message: 'Request body must be valid JSON.' }, { headers: privateHeaders, status: 400 })
+    }
+
+    if (body.action === 'set_properties_access') {
+      if (!body.accountId || typeof body.granted !== 'boolean') {
+        return json(
+          { message: 'accountId and granted are required.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      const result = await setMemberPropertiesAccess(env, body.accountId, body.granted)
+      if (!('account' in result) || !result.account) {
+        const message =
+          'issues' in result && result.issues?.length
+            ? result.issues[0]
+            : 'Could not update access.'
+        return json({ message }, { headers: privateHeaders, status: 400 })
+      }
+      const overview = await getAdminOverview(env)
+      return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
+    }
+
+    return json({ message: 'Unknown admin action.' }, { headers: privateHeaders, status: 400 })
   }
 
   const overview = await getAdminOverview(env)

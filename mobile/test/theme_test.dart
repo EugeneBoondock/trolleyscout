@@ -21,7 +21,8 @@ void main() {
   testWidgets('theme button switches the running app to dark mode',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(TrolleyScoutApp(api: _SignedOutApi()));
+    // The theme toggle lives in the signed-in shell, so boot authenticated.
+    await tester.pumpWidget(TrolleyScoutApp(api: _MemberApi()));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(Theme.of(tester.element(find.byType(Scaffold))).brightness,
@@ -36,9 +37,27 @@ void main() {
   });
 }
 
-class _SignedOutApi extends Api {
-  _SignedOutApi() : super(baseUrl: 'https://example.test');
+class _MemberApi extends Api {
+  _MemberApi() : super(baseUrl: 'https://example.test');
 
   @override
-  Future<MemberSession> session() async => const MemberSession.signedOut();
+  Future<MemberSession> session() async => const MemberSession(
+        isAuthenticated: true,
+        account: MemberAccount(
+          id: 'member-1',
+          email: 'sam@example.com',
+          displayName: 'Sam Shopper',
+          initials: 'SS',
+          planId: 'free',
+          planName: 'Free',
+          planStatus: 'active',
+          role: 'member',
+          propertiesAccess: false,
+          createdAt: '2026-07-01T10:00:00.000Z',
+          updatedAt: '2026-07-01T10:00:00.000Z',
+        ),
+      );
+
+  @override
+  Future<List<DealWatch>> dealWatches() async => const [];
 }

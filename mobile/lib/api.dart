@@ -322,6 +322,50 @@ class Api {
     return AdminOverview.fromJson(await _request('GET', '/api/admin'));
   }
 
+  /// Grants or revokes a single member's Properties Scout access. Admin only;
+  /// returns the updated account.
+  Future<MemberAccount> setMemberPropertiesAccess(
+      String accountId, bool granted) async {
+    final data = await _request(
+      'POST',
+      '/api/admin',
+      body: {
+        'action': 'set_properties_access',
+        'accountId': accountId,
+        'granted': granted,
+      },
+    );
+    return MemberAccount.fromJson(_map(data['account']));
+  }
+
+  /// Properties Scout — searches Property24 and Private Property for homes to
+  /// buy or rent. Access is enforced server-side; a locked/unauthed response
+  /// surfaces as an [ApiException] (the UI gates on the account flag first).
+  Future<PropertySearchResult> searchProperties({
+    required String query,
+    required String listingType,
+    int page = 1,
+    int? minBeds,
+    int? minPrice,
+    int? maxPrice,
+    String? sort,
+  }) async {
+    final params = <String, String>{
+      'q': query.trim(),
+      'type': listingType,
+      if (page > 1) 'page': '$page',
+      if (minBeds != null) 'minBeds': '$minBeds',
+      if (minPrice != null) 'minPrice': '$minPrice',
+      if (maxPrice != null) 'maxPrice': '$maxPrice',
+      if (sort != null && sort != 'relevance') 'sort': sort,
+    };
+    final qs = params.entries
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
+    final data = await _request('GET', '/api/properties?$qs');
+    return PropertySearchResult.fromJson(data);
+  }
+
   /// Turns a typed address/suburb into coordinates via the server-side geocoder.
   Future<GeoPoint> geocodeAddress(String query) async {
     final data = await _request(
