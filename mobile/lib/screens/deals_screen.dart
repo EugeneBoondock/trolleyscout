@@ -8,6 +8,7 @@ import '../deal_filters.dart';
 import '../discovery_cache.dart';
 import '../notification_prefs_store.dart';
 import '../notifications.dart';
+import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
@@ -62,6 +63,8 @@ class _DealsScreenState extends State<DealsScreen> {
   final _notifPrefs = NotificationPrefsStore();
   bool _notifyNewDeals = false;
   bool _notifBusy = false;
+  final _tasteStore = TasteStore();
+  TasteProfile _taste = const TasteProfile.empty();
 
   @override
   void initState() {
@@ -76,6 +79,19 @@ class _DealsScreenState extends State<DealsScreen> {
     _loadAds();
     _loadSiteDeals();
     _restoreNotifyPref();
+    _restoreTaste();
+  }
+
+  // Load the taste profile learned from Window Shopping. When the shopper has
+  // shown taste, Find a deal defaults to "For you" so the list opens on what
+  // they like — they can still switch sort manually.
+  Future<void> _restoreTaste() async {
+    final taste = await _tasteStore.load();
+    if (!mounted || taste.isEmpty) return;
+    setState(() {
+      _taste = taste;
+      if (_sort == DealSort.store) _sort = DealSort.forYou;
+    });
   }
 
   Future<void> _loadAds() async {
@@ -164,11 +180,13 @@ class _DealsScreenState extends State<DealsScreen> {
     if (!_notifyNewDeals || _previousDealIds.isEmpty) return;
     final currentIds =
         result.deals.where((deal) => deal.id.isNotEmpty).map((deal) => deal.id).toSet();
-    final fresh = currentIds.difference(_previousDealIds).length;
+    final freshDeals = result.deals
+        .where((deal) => deal.id.isNotEmpty && !_previousDealIds.contains(deal.id))
+        .toList();
     // Advance the in-memory baseline so a pull-to-refresh in the same session
     // compares against what was just shown, not the launch-time snapshot.
     _previousDealIds = currentIds;
-    if (fresh == 0) return;
+    if (freshDeals.isEmpty) return;
     // At most one alert per 30 minutes, even across restarts, so a shopper who
     // opens the app repeatedly isn't spammed about the same batch.
     final last = await _notifPrefs.loadLastAlertAt();
@@ -176,7 +194,17 @@ class _DealsScreenState extends State<DealsScreen> {
         DateTime.now().difference(last) < const Duration(minutes: 30)) {
       return;
     }
-    await DealNotifications.instance.showNewDeals(fresh);
+    // Prefer new deals that match what the shopper likes (their Window Shopping
+    // taste); fall back to a generic alert when nothing matches.
+    final liked = _taste.isEmpty
+        ? const <Deal>[]
+        : freshDeals.where((deal) => _taste.score(deal.title) > 0).toList();
+    if (liked.isNotEmpty) {
+      await DealNotifications.instance
+          .showNewDeals(liked.length, personalized: true);
+    } else {
+      await DealNotifications.instance.showNewDeals(freshDeals.length);
+    }
     await _notifPrefs.saveLastAlertAt(DateTime.now());
   }
 
@@ -323,6 +351,7 @@ class _DealsScreenState extends State<DealsScreen> {
         foodSubcategory: _foodSubcategory,
       ),
       _sort,
+      taste: _taste,
     );
     if (deals.isEmpty) {
       return _dealBoard(result, deals, retailers, sources, const [], 0, 0,

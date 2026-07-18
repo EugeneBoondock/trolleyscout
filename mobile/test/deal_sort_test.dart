@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/deal_filters.dart';
+import 'package:trolley_scout/taste_profile.dart';
 
 Deal _deal({
   required String id,
@@ -93,6 +94,30 @@ void main() {
       ];
       sortDeals(deals, DealSort.priceLowToHigh);
       expect(deals.map((d) => d.id), ['a', 'b']);
+    });
+  });
+
+  group('For you sort', () {
+    Deal _titled(String id, String title) =>
+        Deal(id: id, title: title, retailerName: 'Store');
+
+    test('ranks taste matches first, keeps order for the rest', () {
+      final deals = [
+        _titled('a', 'Plain white bread'),
+        _titled('b', 'Nike running shoes'),
+        _titled('c', 'Peanut butter'),
+      ];
+      const taste = TasteProfile({'nike': 3.0, 'shoes': 2.0});
+      final sorted = sortDeals(deals, DealSort.forYou, taste: taste);
+      expect(sorted.first.id, 'b');
+      // Non-matching deals keep their original relative order (stable).
+      expect(sorted.map((d) => d.id).toList().sublist(1), ['a', 'c']);
+    });
+
+    test('empty profile leaves the order unchanged', () {
+      final deals = [_titled('a', 'One'), _titled('b', 'Two')];
+      final sorted = sortDeals(deals, DealSort.forYou, taste: const TasteProfile.empty());
+      expect(sorted.map((d) => d.id), ['a', 'b']);
     });
   });
 }

@@ -1,11 +1,12 @@
 import 'api_models.dart';
 import 'deal_categories.dart';
 import 'price_compare.dart';
+import 'taste_profile.dart';
 
-/// How the Find-a-deal list is ordered. `store` is the original grouping used
-/// across the app (retailer name, then catalogue page order); the rest are the
-/// shopper-facing sorts.
-enum DealSort { store, latest, mostSaved, biggestDiscount, priceLowToHigh }
+/// How the Find-a-deal list is ordered. `forYou` ranks by the shopper's Window
+/// Shopping taste profile; `store` is the original grouping (retailer name, then
+/// catalogue page order); the rest are the plain shopper-facing sorts.
+enum DealSort { forYou, store, latest, mostSaved, biggestDiscount, priceLowToHigh }
 
 class DealSortOption {
   const DealSortOption(this.id, this.label);
@@ -14,6 +15,7 @@ class DealSortOption {
 }
 
 const dealSortOptions = <DealSortOption>[
+  DealSortOption(DealSort.forYou, 'For you'),
   DealSortOption(DealSort.store, 'Store order'),
   DealSortOption(DealSort.latest, 'Latest'),
   DealSortOption(DealSort.mostSaved, 'Most saved'),
@@ -52,8 +54,25 @@ double? dealDiscountFraction(Deal deal) {
 /// Returns a new list ordered by [sort]. Deals that lack the value a sort needs
 /// (no date, no parseable price/saving) always fall to the end, so the useful
 /// results stay on top. `store` order is applied by the caller.
-List<Deal> sortDeals(List<Deal> deals, DealSort sort) {
+List<Deal> sortDeals(List<Deal> deals, DealSort sort, {TasteProfile? taste}) {
   if (sort == DealSort.store) return deals;
+
+  // "For you": rank by taste score, keeping the original order for ties (a
+  // stable decorate-sort so equal/zero scores never shuffle). An empty profile
+  // scores everything 0, so the list simply keeps its incoming order.
+  if (sort == DealSort.forYou) {
+    if (taste == null || taste.isEmpty) return deals;
+    final indexed = [
+      for (var i = 0; i < deals.length; i++)
+        (deal: deals[i], index: i, score: taste.score(deals[i].title))
+    ];
+    indexed.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      return byScore != 0 ? byScore : a.index.compareTo(b.index);
+    });
+    return indexed.map((entry) => entry.deal).toList();
+  }
+
   final sorted = [...deals];
 
   int byNullableInt(int? a, int? b, {bool descending = true}) {
@@ -90,6 +109,7 @@ List<Deal> sortDeals(List<Deal> deals, DealSort sort) {
           extractPriceCents(a.priceText), extractPriceCents(b.priceText),
           descending: false));
     case DealSort.store:
+    case DealSort.forYou:
       break;
   }
   return sorted;

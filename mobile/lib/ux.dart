@@ -69,7 +69,8 @@ class _SoundBank {
   AudioPlayer _playerFor(String name) => _players.putIfAbsent(name, () {
         final player = AudioPlayer(playerId: 'ux_$name');
         player.setReleaseMode(ReleaseMode.stop);
-        // A UI sound should duck nothing and never grab audio focus.
+        // A UI sound should duck nothing and never grab audio focus. Only the
+        // Android context is customised; iOS keeps the valid default.
         player.setAudioContext(
           AudioContext(
             android: const AudioContextAndroid(
@@ -77,10 +78,6 @@ class _SoundBank {
               contentType: AndroidContentType.sonification,
               usageType: AndroidUsageType.assistanceSonification,
               audioFocus: AndroidAudioFocus.none,
-            ),
-            iOS: AudioContextIOS(
-              category: AVAudioSessionCategory.ambient,
-              options: const {AVAudioSessionOptions.mixWithOthers},
             ),
           ),
         );

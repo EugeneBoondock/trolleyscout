@@ -58,8 +58,9 @@ class DealNotifications {
     return true;
   }
 
-  /// Raises the "fresh deals landed" notification.
-  Future<void> showNewDeals(int count) async {
+  /// Raises the "fresh deals landed" notification. When [personalized], the copy
+  /// reflects that the deals match what the shopper likes.
+  Future<void> showNewDeals(int count, {bool personalized = false}) async {
     if (count <= 0) return;
     await _ensureInit();
     if (!_initialized) return;
@@ -84,14 +85,17 @@ class DealNotifications {
     );
 
     try {
-      await _plugin.show(
-        1001,
-        'New deals on Trolley Scout',
-        count == 1
-            ? '1 new deal just landed. Open the app to grab it.'
-            : '$count new deals just landed. Open the app to grab them.',
-        details,
-      );
+      final title = personalized
+          ? 'Deals you\'ll love just landed'
+          : 'New deals on Trolley Scout';
+      final body = personalized
+          ? (count == 1
+              ? '1 new deal matches what you like. Open the app to grab it.'
+              : '$count new deals match what you like. Open the app to grab them.')
+          : (count == 1
+              ? '1 new deal just landed. Open the app to grab it.'
+              : '$count new deals just landed. Open the app to grab them.');
+      await _plugin.show(1001, title, body, details);
     } catch (error) {
       debugPrint('Show notification failed: $error');
     }

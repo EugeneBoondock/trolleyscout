@@ -18,8 +18,8 @@ import 'screens/rules_screen.dart';
 import 'screens/saved_deals_screen.dart';
 import 'screens/saved_sources_screen.dart';
 import 'screens/scanner_screen.dart';
-import 'screens/scroll_feed_screen.dart';
 import 'screens/stores_screen.dart';
+import 'screens/window_shopping_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/tools_screen.dart';
 import 'screens/vouchers_screen.dart';
@@ -307,9 +307,9 @@ class _RootShellState extends State<RootShell> {
                         label: 'Deals',
                       ),
                       NavigationDestination(
-                        icon: Icon(Icons.local_fire_department_outlined),
-                        selectedIcon: Icon(Icons.local_fire_department),
-                        label: 'Scroll',
+                        icon: Icon(Icons.window_outlined),
+                        selectedIcon: Icon(Icons.window),
+                        label: 'Window',
                       ),
                     ],
                   ),
@@ -340,7 +340,7 @@ class _RootShellState extends State<RootShell> {
           initialQuery: _dealsQuery,
         ),
       AppDestination.tools => ToolsScreen(api: api),
-      AppDestination.scroll => ScrollFeedScreen(api: api),
+      AppDestination.scroll => WindowShoppingScreen(api: api),
       AppDestination.dashboard => DashboardScreen(
           api: api,
           session: widget.controller.session,

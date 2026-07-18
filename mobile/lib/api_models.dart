@@ -1105,6 +1105,21 @@ class ScrollDeal {
         expiresAt: _optionalString(json['expiresAt']),
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'retailerName': retailerName,
+        'sourceLabel': sourceLabel,
+        'source': source,
+        'productUrl': productUrl,
+        'priceText': priceText,
+        'previousPriceText': previousPriceText,
+        'savingText': savingText,
+        'imageUrl': imageUrl,
+        'category': category,
+        'expiresAt': expiresAt,
+      };
+
   /// Renders this deal-site item as a regular [Deal] so it can appear in the
   /// Find-a-deal list alongside grocery specials.
   Deal toDeal() => Deal(

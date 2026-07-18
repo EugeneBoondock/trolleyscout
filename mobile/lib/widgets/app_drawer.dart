@@ -9,7 +9,7 @@ enum AppDestination {
   money('Money help', Icons.volunteer_activism_outlined, false),
   near('Near me', Icons.near_me_outlined, false),
   deals('Find deals', Icons.local_offer_outlined, false),
-  scroll('Scroll', Icons.local_fire_department_outlined, false),
+  scroll('Window shopping', Icons.window_outlined, false),
   tools('Tools', Icons.calculate_outlined, false),
   dashboard('Dashboard', Icons.dashboard_outlined, true),
   stores('Stores', Icons.storefront_outlined, false),
