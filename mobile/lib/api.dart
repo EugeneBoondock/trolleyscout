@@ -344,6 +344,8 @@ class Api {
   Future<PropertySearchResult> searchProperties({
     required String query,
     required String listingType,
+    double? lat,
+    double? lon,
     int page = 1,
     int? minBeds,
     int? minPrice,
@@ -353,6 +355,8 @@ class Api {
     final params = <String, String>{
       'q': query.trim(),
       'type': listingType,
+      if (lat != null && lon != null) 'lat': '$lat',
+      if (lat != null && lon != null) 'lon': '$lon',
       if (page > 1) 'page': '$page',
       if (minBeds != null) 'minBeds': '$minBeds',
       if (minPrice != null) 'minPrice': '$minPrice',

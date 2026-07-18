@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Buildings, Lock, MagnifyingGlass } from '@phosphor-icons/react'
+import { Buildings, Lock, MagnifyingGlass, NavigationArrow } from '@phosphor-icons/react'
 import { searchProperties } from '../services/apiClient'
 import type { MemberAccount, PropertyListing, PropertyListingType } from '../types'
 
@@ -34,15 +34,15 @@ export function PropertiesView({ account, onUpgrade }: Props) {
   const [status, setStatus] = useState<Status>('idle')
   const [message, setMessage] = useState('')
   const [searchedFor, setSearchedFor] = useState('')
+  const [locating, setLocating] = useState(false)
 
   if (!account.propertiesAccess) {
     return <PropertiesUpsell onUpgrade={onUpgrade} />
   }
 
-  async function runSearch(event: React.FormEvent) {
-    event.preventDefault()
+  async function doSearch(coords?: { lat: number; lon: number }) {
     const trimmed = query.trim()
-    if (trimmed.length < 2) {
+    if (!coords && trimmed.length < 2) {
       setMessage('Enter a city, suburb, or area to search.')
       setStatus('error')
       return
@@ -51,8 +51,10 @@ export function PropertiesView({ account, onUpgrade }: Props) {
     setStatus('loading')
     setMessage('')
     const outcome = await searchProperties({
-      query: trimmed,
+      query: coords ? '' : trimmed,
       listingType,
+      lat: coords?.lat,
+      lon: coords?.lon,
       minBeds: minBeds ? Number(minBeds) : undefined,
       minPrice: toAmount(minPrice),
       maxPrice: toAmount(maxPrice),
@@ -66,12 +68,39 @@ export function PropertiesView({ account, onUpgrade }: Props) {
       return
     }
 
+    const where = outcome.result.locationText || trimmed
     setListings(outcome.result.listings)
-    setSearchedFor(trimmed)
+    setSearchedFor(where)
     setStatus('ready')
     if (outcome.result.listings.length === 0) {
-      setMessage(`No ${listingType === 'rent' ? 'rentals' : 'listings'} found for “${trimmed}”.`)
+      setMessage(`No ${listingType === 'rent' ? 'rentals' : 'listings'} found near ${where}.`)
     }
+  }
+
+  function runSearch(event: React.FormEvent) {
+    event.preventDefault()
+    void doSearch()
+  }
+
+  function runNearMe() {
+    if (!('geolocation' in navigator)) {
+      setStatus('error')
+      setMessage('Location is not available in this browser. Search by name instead.')
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false)
+        void doSearch({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+      },
+      () => {
+        setLocating(false)
+        setStatus('error')
+        setMessage('Could not get your location. Allow location access, or search by name.')
+      },
+      { timeout: 10000, maximumAge: 300000 },
+    )
   }
 
   return (
@@ -123,6 +152,16 @@ export function PropertiesView({ account, onUpgrade }: Props) {
           </label>
           <button type="submit" className="properties-submit" disabled={status === 'loading'}>
             {status === 'loading' ? 'Searching…' : 'Search'}
+          </button>
+          <button
+            type="button"
+            className="properties-nearme"
+            onClick={runNearMe}
+            disabled={locating || status === 'loading'}
+            title="Find homes near your current location"
+          >
+            <NavigationArrow size={18} weight="fill" />
+            {locating ? 'Locating…' : 'Near me'}
           </button>
         </div>
 

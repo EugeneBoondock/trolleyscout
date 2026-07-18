@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
@@ -40,8 +41,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   List<PropertyListing> _listings = const [];
   bool _loading = false;
+  bool _locating = false;
   bool _searched = false;
   String? _error;
+  String? _resultLocation;
 
   @override
   void dispose() {
@@ -56,9 +59,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     return digits.isEmpty ? null : int.tryParse(digits);
   }
 
-  Future<void> _search() async {
+  Future<void> _search({double? lat, double? lon}) async {
     final query = _searchController.text.trim();
-    if (query.length < 2) {
+    final hasCoords = lat != null && lon != null;
+    if (!hasCoords && query.length < 2) {
       setState(() => _error = 'Enter a city, suburb, or area to search.');
       return;
     }
@@ -70,8 +74,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     });
     try {
       final result = await widget.api.searchProperties(
-        query: query,
+        query: hasCoords ? '' : query,
         listingType: _listingType,
+        lat: lat,
+        lon: lon,
         minBeds: _minBeds,
         minPrice: _amount(_minPriceController),
         maxPrice: _amount(_maxPriceController),
@@ -80,6 +86,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       if (!mounted) return;
       setState(() {
         _listings = result.listings;
+        _resultLocation = result.locationText;
         _loading = false;
         _searched = true;
       });
@@ -94,6 +101,42 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       setState(() {
         _loading = false;
         _error = 'Properties Scout is unavailable right now. Try again.';
+      });
+    }
+  }
+
+  /// Uses the device location to search homes near the shopper's nearest town.
+  Future<void> _nearMe() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _locating = true;
+      _error = null;
+    });
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() {
+          _locating = false;
+          _error = 'Allow location access to find homes near you.';
+        });
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+      );
+      if (!mounted) return;
+      setState(() => _locating = false);
+      await _search(lat: pos.latitude, lon: pos.longitude);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _error = 'Could not read your location. Try again.';
       });
     }
   }
@@ -142,10 +185,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           minBeds: _minBeds,
           sort: _sort,
           loading: _loading,
+          locating: _locating,
           onListingType: (value) => setState(() => _listingType = value),
           onMinBeds: (value) => setState(() => _minBeds = value),
           onSort: (value) => setState(() => _sort = value),
-          onSearch: _search,
+          onSearch: () => _search(),
+          onNearMe: _nearMe,
         ),
         Expanded(child: _buildBody()),
       ],
@@ -166,17 +211,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       );
     }
     if (_listings.isEmpty) {
+      final where = _resultLocation != null ? ' near ${_resultLocation!}' : '';
       return _Message(
         icon: Icons.search_off,
-        text: 'No ${_listingType == 'rent' ? 'rentals' : 'listings'} found. '
+        text: 'No ${_listingType == 'rent' ? 'rentals' : 'listings'} found$where. '
             'Try another location or widen your filters.',
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-      itemCount: _listings.length,
-      itemBuilder: (context, index) =>
-          _PropertyCard(listing: _listings[index], onOpen: _open),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      itemCount: _listings.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          final where = _resultLocation ?? 'your area';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 2),
+            child: Text(
+              '${_listings.length} ${_listingType == 'rent' ? 'to rent' : 'for sale'} near $where',
+              style: TextStyle(color: TS.mutedOf(context), fontWeight: FontWeight.w700),
+            ),
+          );
+        }
+        return _PropertyCard(listing: _listings[index - 1], onOpen: _open);
+      },
     );
   }
 }
@@ -190,10 +247,12 @@ class _SearchBar extends StatelessWidget {
     required this.minBeds,
     required this.sort,
     required this.loading,
+    required this.locating,
     required this.onListingType,
     required this.onMinBeds,
     required this.onSort,
     required this.onSearch,
+    required this.onNearMe,
   });
 
   final TextEditingController controller;
@@ -203,10 +262,12 @@ class _SearchBar extends StatelessWidget {
   final int? minBeds;
   final String sort;
   final bool loading;
+  final bool locating;
   final ValueChanged<String> onListingType;
   final ValueChanged<int?> onMinBeds;
   final ValueChanged<String> onSort;
   final VoidCallback onSearch;
+  final VoidCallback onNearMe;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +321,26 @@ class _SearchBar extends StatelessWidget {
                 child: const Text('Search'),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: TS.inkOf(context),
+                side: BorderSide(color: TS.lineOf(context), width: 2),
+                shape: const RoundedRectangleBorder(),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: (loading || locating) ? null : onNearMe,
+              icon: locating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.near_me_outlined, size: 18),
+              label: Text(locating ? 'Locating…' : 'Search near me'),
+            ),
           ),
           const SizedBox(height: 10),
           Row(

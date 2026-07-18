@@ -1355,6 +1355,8 @@ export type PropertySearchOutcome =
 export interface PropertySearchInput {
   query: string
   listingType: PropertyListingType
+  lat?: number
+  lon?: number
   page?: number
   minPrice?: number
   maxPrice?: number
@@ -1369,6 +1371,10 @@ export async function searchProperties(
   signal?: AbortSignal,
 ): Promise<PropertySearchOutcome> {
   const params = new URLSearchParams({ q: input.query, type: input.listingType })
+  if (input.lat !== undefined && input.lon !== undefined) {
+    params.set('lat', String(input.lat))
+    params.set('lon', String(input.lon))
+  }
   if (input.page && input.page > 1) params.set('page', String(input.page))
   if (input.minPrice) params.set('minPrice', String(input.minPrice))
   if (input.maxPrice) params.set('maxPrice', String(input.maxPrice))

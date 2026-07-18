@@ -4789,6 +4789,28 @@ main {
   cursor: progress;
 }
 
+.properties-nearme {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 800;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.properties-nearme:hover {
+  background: var(--yellow);
+}
+
+.properties-nearme:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 .properties-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));

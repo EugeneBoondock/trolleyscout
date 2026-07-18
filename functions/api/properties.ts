@@ -21,6 +21,12 @@ function toInt(value: string | null): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
 }
 
+function toFloat(value: string | null): number | undefined {
+  if (!value) return undefined
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method, 'GET')
@@ -48,8 +54,12 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   const url = new URL(request.url)
   const query = (url.searchParams.get('q') ?? '').trim()
+  const lat = toFloat(url.searchParams.get('lat'))
+  const lon = toFloat(url.searchParams.get('lon'))
+  const hasCoords = lat !== undefined && lon !== undefined
 
-  if (query.length < 2) {
+  // Either a text query (>=2 chars) or a "near me" coordinate pair is required.
+  if (!hasCoords && query.length < 2) {
     return json(
       { error: 'Enter a city, suburb, or area to search.' },
       { headers: privateHeaders, status: 400 },
@@ -61,6 +71,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const sortParam = url.searchParams.get('sort') as PropertySort | null
   const params: PropertySearchParams = {
     query,
+    lat,
+    lon,
     listingType,
     page: toInt(url.searchParams.get('page')) ?? 1,
     minPrice: toInt(url.searchParams.get('minPrice')),
