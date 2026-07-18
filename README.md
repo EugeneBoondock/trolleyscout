@@ -155,3 +155,11 @@ npm run cf:deploy
 - Game: https://www.game.co.za/on-promotion
 - Builders: https://www.builders.co.za/promotions
 - Yuppiechef: https://www.yuppiechef.com/specials.htm
+
+## Music credits
+
+The mobile app's Window Shopping playlist uses royalty-free tracks by
+Kevin MacLeod (https://incompetech.com), licensed under
+[Creative Commons: By Attribution 4.0](https://creativecommons.org/licenses/by/4.0/):
+"Funkorama", "Deuces", and "Bossa Antigua". The app credits the artist on
+screen while music plays. UI feedback sounds are original, synthesized in-house.

@@ -186,7 +186,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   value: UxSettings.instance.sounds,
                   onChanged: (enabled) {
                     UxSettings.instance.setSounds(enabled);
-                    if (enabled) uxTap();
+                    // Preview the warm two-note chime so switching sounds on
+                    // is immediately rewarded with the nicest of them.
+                    if (enabled) uxSuccess();
                   },
                 ),
               ],

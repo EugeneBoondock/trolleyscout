@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,11 +13,28 @@ import '../ux.dart';
 import '../widgets/scout_mark.dart';
 import '../window_saved_store.dart';
 
-/// Window Shopping — the calm, endless browse. One deal per swipe with soft
-/// in-store ambient music (mutable), image-first. What a shopper saves here
-/// teaches an on-device taste profile that then personalises Find a deal and
-/// new-deal alerts. No destination required — just the pleasure of the next
-/// deal, like drifting past shop windows.
+/// The in-store playlist. All tracks by Kevin MacLeod (incompetech.com),
+/// licensed under Creative Commons: By Attribution 4.0 — credited on screen
+/// while the music plays.
+class _Track {
+  const _Track(this.asset, this.title);
+
+  final String asset;
+  final String title;
+}
+
+const List<_Track> _playlist = [
+  _Track('music/groove_funk.mp3', 'Funkorama'),
+  _Track('music/groove_deuces.mp3', 'Deuces'),
+  _Track('music/groove_bossa.mp3', 'Bossa Antigua'),
+];
+
+/// Window Shopping — the calm, endless browse. One deal per swipe with real
+/// groovy store music (a rotating playlist of Kevin MacLeod tracks, CC BY 4.0,
+/// mutable), image-first, and searchable. What a shopper saves here teaches an
+/// on-device taste profile that then personalises Find a deal and new-deal
+/// alerts. No destination required — just the pleasure of the next deal, like
+/// drifting past shop windows.
 class WindowShoppingScreen extends StatefulWidget {
   const WindowShoppingScreen({super.key, required this.api});
 
@@ -28,19 +47,23 @@ class WindowShoppingScreen extends StatefulWidget {
 class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     with WidgetsBindingObserver {
   static const _muteKey = 'window_music_muted';
-  // Barely-there, like a clothing store: soft enough to ignore, present enough
-  // to feel calm.
-  static const _musicVolume = 0.3;
+  // Present enough to groove to, soft enough to talk over — store-speaker level.
+  static const _musicVolume = 0.35;
 
   final _pageController = PageController();
   final _savedStore = WindowSavedStore();
   final _tasteStore = TasteStore();
+  final _searchController = TextEditingController();
   final AudioPlayer _music = AudioPlayer(playerId: 'window_ambient');
 
   List<ScrollDeal> _deals = const [];
   Set<String> _saved = {};
   bool _loading = true;
   bool _musicMuted = false;
+  bool _searching = false;
+  String _query = '';
+  int _trackIndex = 0;
+  StreamSubscription<void>? _trackDone;
   String? _error;
 
   @override
@@ -55,9 +78,11 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _trackDone?.cancel();
     _music.stop();
     _music.dispose();
     _pageController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -75,8 +100,10 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     try {
       final prefs = await SharedPreferences.getInstance();
       _musicMuted = prefs.getBool(_muteKey) ?? false;
+      // Open on a different track each visit so the shop never feels canned.
+      _trackIndex = DateTime.now().minute % _playlist.length;
       if (mounted) setState(() {});
-      await _music.setReleaseMode(ReleaseMode.loop);
+      await _music.setReleaseMode(ReleaseMode.stop);
       // Play as media without grabbing audio focus, so it stays a soft backdrop
       // and doesn't stop the shopper's own music. iOS keeps the valid default.
       await _music.setAudioContext(
@@ -89,14 +116,24 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
           ),
         ),
       );
-      await _music.setVolume(_musicVolume);
-      if (!_musicMuted) {
-        await _music.play(AssetSource('sounds/window_ambient.wav'),
-            volume: _musicVolume);
-      }
+      // When a track ends, the next one takes the floor.
+      _trackDone = _music.onPlayerComplete.listen((_) {
+        if (!_musicMuted) _playTrack((_trackIndex + 1) % _playlist.length);
+      });
+      if (!_musicMuted) await _playTrack(_trackIndex);
     } catch (_) {
       // Music is a nicety; the feed works without it.
     }
+  }
+
+  Future<void> _playTrack(int index) async {
+    _trackIndex = index;
+    if (mounted) setState(() {});
+    try {
+      await _music.stop();
+      await _music.play(AssetSource(_playlist[index].asset),
+          volume: _musicVolume);
+    } catch (_) {}
   }
 
   Future<void> _toggleMute() async {
@@ -109,15 +146,57 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       if (muted) {
         await _music.pause();
       } else {
-        await _music.setVolume(_musicVolume);
-        // Resume, or start it if it never began.
+        // Resume mid-track, or start the current track if nothing is queued.
         await _music.resume();
         if (_music.state != PlayerState.playing) {
-          await _music.play(AssetSource('sounds/window_ambient.wav'),
-              volume: _musicVolume);
+          await _playTrack(_trackIndex);
         }
       }
     } catch (_) {}
+  }
+
+  /// The deals currently in the window: everything, or the search matches.
+  List<ScrollDeal> get _visible {
+    if (_query.isEmpty) return _deals;
+    final q = _query.toLowerCase();
+    return _deals
+        .where((d) =>
+            d.title.toLowerCase().contains(q) ||
+            d.retailerName.toLowerCase().contains(q) ||
+            (d.category?.toLowerCase().contains(q) ?? false) ||
+            d.sourceLabel.toLowerCase().contains(q))
+        .toList();
+  }
+
+  void _setQuery(String value) {
+    setState(() => _query = value.trim());
+    // A new search starts the window at its first match.
+    if (_pageController.hasClients) _pageController.jumpToPage(0);
+  }
+
+  void _toggleSearch() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _query = '';
+        _searchController.clear();
+      }
+    });
+    if (_pageController.hasClients) _pageController.jumpToPage(0);
+  }
+
+  /// Warms the image cache for the next couple of windows so a swipe lands on
+  /// a sharp, already-decoded picture instead of a fallback flash.
+  void _precacheAround(int index) {
+    final deals = _visible;
+    if (deals.isEmpty) return;
+    for (var ahead = 1; ahead <= 2; ahead++) {
+      final deal = deals[(index + ahead) % deals.length];
+      if (deal.hasImage) {
+        precacheImage(NetworkImage(upgradeImageUrl(deal.imageUrl)), context);
+      }
+    }
   }
 
   Future<void> _restoreSaved() async {
@@ -242,62 +321,175 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       return _EmptyState(message: _error ?? 'Nothing to browse yet.', onRetry: _load);
     }
 
+    final visible = _visible;
+
     return Stack(
       children: [
-        PageView.builder(
-          controller: _pageController,
-          scrollDirection: Axis.vertical,
-          onPageChanged: (_) => HapticFeedback.selectionClick(),
-          itemBuilder: (context, index) {
-            final deal = _deals[index % _deals.length];
-            return _WindowCard(
-              deal: deal,
-              saved: _saved.contains(deal.id),
-              onOpen: () => _open(deal),
-              onSave: () => _toggleSave(deal),
-              onShare: () => _share(deal),
-            );
-          },
-        ),
-        // Top bar: label, music mute, and saved.
+        if (visible.isEmpty)
+          _NoMatches(query: _query, onClear: _toggleSearch)
+        else
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            onPageChanged: (index) {
+              HapticFeedback.selectionClick();
+              _precacheAround(index);
+            },
+            itemBuilder: (context, index) {
+              final deal = visible[index % visible.length];
+              return _WindowCard(
+                deal: deal,
+                saved: _saved.contains(deal.id),
+                onOpen: () => _open(deal),
+                onSave: () => _toggleSave(deal),
+                onShare: () => _share(deal),
+              );
+            },
+          ),
+        // Top bar: label (or search field), search, music mute, and saved.
         Positioned(
           top: 10,
           left: 12,
           right: 12,
           child: SafeArea(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(20),
+                Row(
+                  children: [
+                    if (_searching)
+                      Expanded(child: _buildSearchField())
+                    else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('WINDOW SHOPPING',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8)),
+                      ),
+                      const Spacer(),
+                    ],
+                    const SizedBox(width: 8),
+                    _RoundIcon(
+                      icon: _searching ? Icons.close : Icons.search,
+                      tooltip: _searching ? 'Close search' : 'Search the window',
+                      onTap: _toggleSearch,
+                    ),
+                    const SizedBox(width: 8),
+                    _RoundIcon(
+                      icon: _musicMuted ? Icons.music_off : Icons.music_note,
+                      tooltip:
+                          _musicMuted ? 'Play store music' : 'Mute store music',
+                      onTap: _toggleMute,
+                    ),
+                    const SizedBox(width: 8),
+                    _RoundIcon(
+                      icon: Icons.bookmark,
+                      badge: _saved.isEmpty ? null : '${_saved.length}',
+                      tooltip: 'Saved deals',
+                      onTap: _openSaved,
+                    ),
+                  ],
+                ),
+                // Now-playing credit — also the CC BY attribution for the music.
+                if (!_musicMuted)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '♪ ${_playlist[_trackIndex].title} — Kevin MacLeod (CC BY)',
+                        style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ),
-                  child: const Text('WINDOW SHOPPING',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.8)),
-                ),
-                const Spacer(),
-                _RoundIcon(
-                  icon: _musicMuted ? Icons.music_off : Icons.music_note,
-                  tooltip: _musicMuted ? 'Play store music' : 'Mute store music',
-                  onTap: _toggleMute,
-                ),
-                const SizedBox(width: 8),
-                _RoundIcon(
-                  icon: Icons.bookmark,
-                  badge: _saved.isEmpty ? null : '${_saved.length}',
-                  tooltip: 'Saved deals',
-                  onTap: _openSaved,
-                ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _setQuery,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        cursorColor: TS.yellow,
+        decoration: const InputDecoration(
+          isDense: true,
+          border: InputBorder.none,
+          hintText: 'Search the window…',
+          hintStyle: TextStyle(color: Colors.white54, fontSize: 14),
+          contentPadding: EdgeInsets.symmetric(vertical: 10),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when a search has no matches — the window is empty but the deals
+/// aren't gone; clearing the search brings them all back.
+class _NoMatches extends StatelessWidget {
+  const _NoMatches({required this.query, required this.onClear});
+
+  final String query;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off, size: 48, color: Colors.white38),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Nothing in the window for “$query”.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: TS.yellow, foregroundColor: TS.ink),
+              onPressed: onClear,
+              child: const Text('Show everything'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -306,14 +498,29 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 /// the full-screen window isn't a stretched thumbnail.
 String upgradeImageUrl(String? url) {
   if (url == null || url.isEmpty) return '';
+  // imgix (OneDayOnly): replace whatever variant the feed pinned with a large,
+  // sharp, modern-format one sized for a full phone screen.
   if (url.contains('imgix.net')) {
-    final sep = url.contains('?') ? '&' : '?';
-    return '$url${sep}w=1080&q=82&auto=format&fit=max';
+    final base = url.split('?').first;
+    return '$base?w=1600&q=85&auto=format,compress&fit=max';
   }
-  if (url.contains('cdn.shopify.com') && !RegExp(r'_\d+x\d*\.').hasMatch(url)) {
+  // Shopify (Hyperli): swap any sized variant for 1600px, or add one to the
+  // master image.
+  if (url.contains('cdn.shopify.com')) {
+    if (RegExp(r'_\d+x\d*\.').hasMatch(url)) {
+      return url.replaceFirst(RegExp(r'_\d+x\d*\.'), '_1600x.');
+    }
     return url.replaceFirstMapped(
       RegExp(r'(\.(?:jpg|jpeg|png|webp))(\?|$)', caseSensitive: false),
-      (match) => '_1080x${match[1]}${match[2]}',
+      (match) => '_1600x${match[1]}${match[2]}',
+    );
+  }
+  // WordPress uploads (Daddy's Deals): strip -300x200-style thumbnail suffixes
+  // so the original full-size upload is fetched instead.
+  if (url.contains('/wp-content/')) {
+    return url.replaceFirst(
+      RegExp(r'-\d+x\d+(?=\.(?:jpg|jpeg|png|webp)(?:\?|$))', caseSensitive: false),
+      '',
     );
   }
   return url;

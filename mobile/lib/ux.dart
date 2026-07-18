@@ -5,9 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// App-feel preferences and one-line feedback helpers. Both haptics and sounds
 /// default ON so the app feels alive out of the box; both live in Profile
-/// settings. Sounds are custom glockenspiel chimes (see assets/sounds), played
-/// through audioplayers — the old SystemSound.click was inaudible on most
-/// phones, which is why sounds were never heard.
+/// settings. Sounds are soft, warm bell chimes with a touch of room — elegant
+/// rather than clicky (see assets/sounds) — played through audioplayers; the
+/// old SystemSound.click was inaudible on most phones, which is why sounds
+/// were never heard.
 class UxSettings extends ChangeNotifier {
   UxSettings._();
 

@@ -1,3 +1,6 @@
+// CupertinoPageTransitionsBuilder lives in the cupertino library as of
+// Flutter 3.44; material no longer re-exports it.
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 class TS {

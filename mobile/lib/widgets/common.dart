@@ -67,7 +67,10 @@ class PaperCard extends StatelessWidget {
       margin: margin,
       padding: padding,
       decoration: TS.card(context),
-      child: child,
+      // ListTiles and ink splashes paint on the nearest Material; without this
+      // they'd try to paint on the Scaffold's, underneath this card's color
+      // (Flutter 3.44+ asserts on that). Transparent, so the paper look wins.
+      child: Material(type: MaterialType.transparency, child: child),
     );
   }
 }
