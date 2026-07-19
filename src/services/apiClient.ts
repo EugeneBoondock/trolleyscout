@@ -1428,6 +1428,36 @@ export async function setMemberPropertiesAccess(accountId: string, granted: bool
   }
 }
 
+// Generic per-account key/value state (cross-device sync). Best-effort: a
+// signed-out shopper or a network error just returns null / false, and the
+// caller keeps its local copy.
+export async function getMemberState<T>(key: string, signal?: AbortSignal): Promise<T | null> {
+  try {
+    const response = await fetch(`/api/member-state?key=${encodeURIComponent(key)}`, {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+    if (!response.ok) return null
+    const envelope = (await response.json()) as { data?: { value?: T | null } }
+    return envelope.data?.value ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function setMemberState(key: string, value: unknown): Promise<boolean> {
+  try {
+    const response = await fetch('/api/member-state', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 function emptyDiscoveryRun(): DiscoveryRun {
   return {
     deals: [] satisfies DiscoveredDeal[],

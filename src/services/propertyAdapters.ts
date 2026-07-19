@@ -98,7 +98,15 @@ function parseGumtree(html: string, type: PropertyListingType): PropertyListing[
     const seo: string = it.viewSeoUrl ?? ''
     const url = seo ? (seo.startsWith('http') ? seo : `https://www.gumtree.co.za${seo}`) : ''
     if (!url || !it.title) continue
-    const pic = Array.isArray(it.pictures) && it.pictures[0]?.url
+    const images = Array.isArray(it.pictures)
+      ? [
+          ...new Set(
+            it.pictures
+              .map((p: any) => (p && typeof p.url === 'string' ? p.url.replace(/\?size=[a-z]/, '?size=l') : undefined))
+              .filter((u: unknown): u is string => typeof u === 'string'),
+          ),
+        ].slice(0, 12)
+      : []
     out.push({
       id: `gumtree:${it.adId ?? it.id}`,
       portal: 'gumtree',
@@ -109,7 +117,8 @@ function parseGumtree(html: string, type: PropertyListingType): PropertyListing[
       location: it.geo?.name ? collapseSpace(String(it.geo.name)) : undefined,
       bedrooms: beds != null ? Number(beds) : undefined,
       bathrooms: baths != null ? Number(baths) : undefined,
-      imageUrl: pic ? String(pic).replace(/\?size=[a-z]/, '?size=l') : undefined,
+      imageUrl: images[0],
+      images: images.length > 1 ? images : undefined,
       listingUrl: cleanUrl(url),
       listingType: type,
     })
@@ -576,10 +585,14 @@ function parseFineAndCountry(html: string, type: PropertyListingType): PropertyL
     const slugPart = href.toLowerCase()
     const beds = cap(/(\d+)-bedroom/, slugPart)
     const typeWord = cap(/\d+-bedroom-([a-z]+)-(?:for|to)/, slugPart)
-    const img = cap(
-      new RegExp(`(https://cdn\\.members\\.nurtur\\.tech/properties/[^"'\\) ]*/${id}/[^"'\\) ]+\\.(?:jpg|jpeg|png|webp))`, 'i'),
-      html,
-    )
+    // All gallery images for this listing carry its id in the CDN path.
+    const images = [
+      ...new Set(
+        html.match(
+          new RegExp(`https://cdn\\.members\\.nurtur\\.tech/properties/[^"'\\) ]*/${id}/[^"'\\) ]+\\.(?:jpg|jpeg|png|webp)`, 'gi'),
+        ) ?? [],
+      ),
+    ].slice(0, 12)
     const title = beds
       ? `${beds} Bedroom ${typeWord ? typeWord[0].toUpperCase() + typeWord.slice(1) : 'Property'} ${
           type === 'rent' ? 'to rent' : 'for sale'
@@ -594,7 +607,8 @@ function parseFineAndCountry(html: string, type: PropertyListingType): PropertyL
       priceValue: priceDigits ? parseRandValue(`R${priceDigits}`) : undefined,
       location: locationText,
       bedrooms: beds ? Number(beds) : undefined,
-      imageUrl: img,
+      imageUrl: images[0],
+      images: images.length > 1 ? images : undefined,
       listingUrl: href,
       listingType: type,
     })
@@ -728,7 +742,21 @@ function parseLeapfrog(html: string, type: PropertyListingType): PropertyListing
     const baths = cap(/(\d+(?:\.\d+)?)\s*Baths?/i, stats)
     const address = cap(/data-address="([^"]+)"/, chunk)
     const ptype = cap(/data-property-type="([^"]+)"/, chunk)
-    const img = cap(/data-thumbnail="([^"]+)"/, chunk)
+    // data-photos is an HTML-entity-encoded JSON array of {url,...}.
+    let images: string[] = []
+    const photosRaw = cap(/data-photos="([^"]*)"/, chunk)
+    if (photosRaw) {
+      try {
+        const arr = JSON.parse(photosRaw.replace(/&quot;/g, '"').replace(/&amp;/g, '&'))
+        if (Array.isArray(arr)) {
+          images = arr.map((p: any) => p?.url).filter((u: unknown): u is string => typeof u === 'string').slice(0, 12)
+        }
+      } catch {
+        // fall back to the thumbnail below
+      }
+    }
+    const thumb = cap(/data-thumbnail="([^"]+)"/, chunk)
+    if (images.length === 0 && thumb) images = [cleanUrl(thumb)]
     const title = address ? `${ptype ? `${ptype} in ` : ''}${collapseSpace(address)}` : (ptype ?? 'Property')
     out.push({
       id: key,
@@ -740,7 +768,8 @@ function parseLeapfrog(html: string, type: PropertyListingType): PropertyListing
       location: address ? collapseSpace(address) : undefined,
       bedrooms: beds ? Math.round(Number(beds)) : undefined,
       bathrooms: baths ? Math.round(Number(baths)) : undefined,
-      imageUrl: img ? cleanUrl(img) : undefined,
+      imageUrl: images[0],
+      images: images.length > 1 ? images : undefined,
       listingUrl: cleanUrl(url),
       listingType: type,
     })

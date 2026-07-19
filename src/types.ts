@@ -346,7 +346,11 @@ export interface PropertyListing {
   bathrooms?: number
   garages?: number
   propertyType?: string
+  // Primary/cover image. `images` carries the full gallery when the portal
+  // exposes more than one in its results (Gumtree, Leapfrog, Fine & Country);
+  // otherwise the UI falls back to [imageUrl].
   imageUrl?: string
+  images?: string[]
   listingUrl: string
   listingType: PropertyListingType
 }
