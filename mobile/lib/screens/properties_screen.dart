@@ -48,6 +48,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   bool _loading = false;
   bool _locating = false;
   bool _searched = false;
+  bool _filtersExpanded = true;
   String? _error;
   String? _resultLocation;
 
@@ -176,7 +177,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         return;
       }
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.medium),
       );
       if (!mounted) return;
       setState(() => _locating = false);
@@ -212,8 +214,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return _GateCard(
         icon: Icons.lock_open_outlined,
         title: 'Sign in for Properties Scout',
-        message:
-            'Log in to search homes to buy or rent across South Africa. '
+        message: 'Log in to search homes to buy or rent across South Africa. '
             'Properties Scout is included with the Household plan.',
         actionLabel: 'Log in',
         onAction: widget.onWantsAuth,
@@ -224,31 +225,53 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return _UpsellCard(onUpgrade: widget.onUpgrade);
     }
 
-    return Column(
-      children: [
-        _ViewSwitch(
-          view: _view,
-          savedCount: _saved.length,
-          onChanged: (value) => setState(() => _view = value),
-        ),
-        if (_view == 'search')
-          _SearchBar(
-            controller: _searchController,
-            minPriceController: _minPriceController,
-            maxPriceController: _maxPriceController,
-            listingType: _listingType,
-            minBeds: _minBeds,
-            sort: _sort,
-            loading: _loading,
-            locating: _locating,
-            onListingType: (value) => setState(() => _listingType = value),
-            onMinBeds: (value) => setState(() => _minBeds = value),
-            onSort: (value) => setState(() => _sort = value),
-            onSearch: () => _search(),
-            onNearMe: _nearMe,
-          ),
-        Expanded(child: _view == 'search' ? _buildBody() : _buildSaved()),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableForExpandedFilters = constraints.maxHeight - 220;
+        final expandedFilterHeight = availableForExpandedFilters < 160
+            ? 160.0
+            : availableForExpandedFilters;
+
+        return Column(
+          children: [
+            _ViewSwitch(
+              view: _view,
+              savedCount: _saved.length,
+              onChanged: (value) => setState(() => _view = value),
+            ),
+            if (_view == 'search')
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: _filtersExpanded
+                      ? expandedFilterHeight
+                      : constraints.maxHeight,
+                ),
+                child: SingleChildScrollView(
+                  child: _SearchBar(
+                    controller: _searchController,
+                    minPriceController: _minPriceController,
+                    maxPriceController: _maxPriceController,
+                    listingType: _listingType,
+                    minBeds: _minBeds,
+                    sort: _sort,
+                    loading: _loading,
+                    locating: _locating,
+                    filtersExpanded: _filtersExpanded,
+                    onListingType: (value) =>
+                        setState(() => _listingType = value),
+                    onMinBeds: (value) => setState(() => _minBeds = value),
+                    onSort: (value) => setState(() => _sort = value),
+                    onToggleFilters: () =>
+                        setState(() => _filtersExpanded = !_filtersExpanded),
+                    onSearch: () => _search(),
+                    onNearMe: _nearMe,
+                  ),
+                ),
+              ),
+            Expanded(child: _view == 'search' ? _buildBody() : _buildSaved()),
+          ],
+        );
+      },
     );
   }
 
@@ -269,7 +292,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             padding: const EdgeInsets.only(bottom: 8, left: 2),
             child: Text(
               '${_saved.length} saved ${_saved.length == 1 ? 'home' : 'homes'}',
-              style: TextStyle(color: TS.mutedOf(context), fontWeight: FontWeight.w700),
+              style: TextStyle(
+                  color: TS.mutedOf(context), fontWeight: FontWeight.w700),
             ),
           );
         }
@@ -302,7 +326,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       final where = _resultLocation != null ? ' near ${_resultLocation!}' : '';
       return _Message(
         icon: Icons.search_off,
-        text: 'No ${_listingType == 'rent' ? 'rentals' : 'listings'} found$where. '
+        text:
+            'No ${_listingType == 'rent' ? 'rentals' : 'listings'} found$where. '
             'Try another location or widen your filters.',
       );
     }
@@ -316,7 +341,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             padding: const EdgeInsets.only(bottom: 8, left: 2),
             child: Text(
               '${_listings.length} ${_listingType == 'rent' ? 'to rent' : 'for sale'} near $where',
-              style: TextStyle(color: TS.mutedOf(context), fontWeight: FontWeight.w700),
+              style: TextStyle(
+                  color: TS.mutedOf(context), fontWeight: FontWeight.w700),
             ),
           );
         }
@@ -343,9 +369,11 @@ class _SearchBar extends StatelessWidget {
     required this.sort,
     required this.loading,
     required this.locating,
+    required this.filtersExpanded,
     required this.onListingType,
     required this.onMinBeds,
     required this.onSort,
+    required this.onToggleFilters,
     required this.onSearch,
     required this.onNearMe,
   });
@@ -358,130 +386,192 @@ class _SearchBar extends StatelessWidget {
   final String sort;
   final bool loading;
   final bool locating;
+  final bool filtersExpanded;
   final ValueChanged<String> onListingType;
   final ValueChanged<int?> onMinBeds;
   final ValueChanged<String> onSort;
+  final VoidCallback onToggleFilters;
   final VoidCallback onSearch;
   final VoidCallback onNearMe;
 
   @override
   Widget build(BuildContext context) {
+    final toggleLabel =
+        filtersExpanded ? 'Hide search filters' : 'Show search filters';
+
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
         color: TS.bgOf(context),
         border: Border(bottom: BorderSide(color: TS.lineOf(context), width: 2)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SegmentedButton<String>(
-            style: SegmentedButton.styleFrom(
-              selectedBackgroundColor: TS.yellow,
-              selectedForegroundColor: TS.ink,
-            ),
-            segments: const [
-              ButtonSegment(value: 'sale', label: Text('Buy')),
-              ButtonSegment(value: 'rent', label: Text('Rent')),
-            ],
-            selected: {listingType},
-            onSelectionChanged: (set) => onListingType(set.first),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => onSearch(),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 20),
-                    hintText: 'City, suburb or area',
-                    border: OutlineInputBorder(
-                        borderSide: BorderSide(color: TS.lineSoftOf(context))),
+      child: _MotionAwareSize(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SegmentedButton<String>(
+                  style: SegmentedButton.styleFrom(
+                    selectedBackgroundColor: TS.yellow,
+                    selectedForegroundColor: TS.ink,
+                  ),
+                  segments: const [
+                    ButtonSegment(value: 'sale', label: Text('Buy')),
+                    ButtonSegment(value: 'rent', label: Text('Rent')),
+                  ],
+                  selected: {listingType},
+                  onSelectionChanged: (set) => onListingType(set.first),
+                ),
+                const Spacer(),
+                SizedBox.square(
+                  dimension: 48,
+                  child: IconButton(
+                    tooltip: toggleLabel,
+                    style: IconButton.styleFrom(
+                      foregroundColor: TS.inkOf(context),
+                      side: BorderSide(color: TS.lineOf(context), width: 2),
+                      shape: const RoundedRectangleBorder(),
+                      minimumSize: const Size.square(48),
+                      padding: EdgeInsets.zero,
+                    ),
+                    onPressed: onToggleFilters,
+                    icon: Icon(filtersExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: TS.red,
-                  foregroundColor: Colors.white,
-                  shape: const RoundedRectangleBorder(),
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
-                ),
-                onPressed: loading ? null : onSearch,
-                child: const Text('Search'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: TS.inkOf(context),
-                side: BorderSide(color: TS.lineOf(context), width: 2),
-                shape: const RoundedRectangleBorder(),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: (loading || locating) ? null : onNearMe,
-              icon: locating
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.near_me_outlined, size: 18),
-              label: Text(locating ? 'Locating…' : 'Search near me'),
+              ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _LabeledDropdown<int?>(
-                  label: 'Min beds',
-                  value: minBeds,
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Any')),
-                    DropdownMenuItem(value: 1, child: Text('1+')),
-                    DropdownMenuItem(value: 2, child: Text('2+')),
-                    DropdownMenuItem(value: 3, child: Text('3+')),
-                    DropdownMenuItem(value: 4, child: Text('4+')),
-                    DropdownMenuItem(value: 5, child: Text('5+')),
-                  ],
-                  onChanged: onMinBeds,
+            if (filtersExpanded) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => onSearch(),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        hintText: 'City, suburb or area',
+                        border: OutlineInputBorder(
+                            borderSide:
+                                BorderSide(color: TS.lineSoftOf(context))),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TS.red,
+                      foregroundColor: Colors.white,
+                      shape: const RoundedRectangleBorder(),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 16, horizontal: 18),
+                    ),
+                    onPressed: loading ? null : onSearch,
+                    child: const Text('Search'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: TS.inkOf(context),
+                    side: BorderSide(color: TS.lineOf(context), width: 2),
+                    shape: const RoundedRectangleBorder(),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: (loading || locating) ? null : onNearMe,
+                  icon: locating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.near_me_outlined, size: 18),
+                  label: Text(locating ? 'Locating…' : 'Search near me'),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: _LabeledDropdown<String>(
-                  label: 'Sort',
-                  value: sort,
-                  items: const [
-                    DropdownMenuItem(value: 'relevance', child: Text('Most relevant')),
-                    DropdownMenuItem(value: 'price_low', child: Text('Price: low to high')),
-                    DropdownMenuItem(value: 'price_high', child: Text('Price: high to low')),
-                    DropdownMenuItem(value: 'beds', child: Text('Most bedrooms')),
-                  ],
-                  onChanged: (value) => onSort(value ?? 'relevance'),
-                ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _LabeledDropdown<int?>(
+                      label: 'Min beds',
+                      value: minBeds,
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('Any')),
+                        DropdownMenuItem(value: 1, child: Text('1+')),
+                        DropdownMenuItem(value: 2, child: Text('2+')),
+                        DropdownMenuItem(value: 3, child: Text('3+')),
+                        DropdownMenuItem(value: 4, child: Text('4+')),
+                        DropdownMenuItem(value: 5, child: Text('5+')),
+                      ],
+                      onChanged: onMinBeds,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: _LabeledDropdown<String>(
+                      label: 'Sort',
+                      value: sort,
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'relevance', child: Text('Most relevant')),
+                        DropdownMenuItem(
+                            value: 'price_low',
+                            child: Text('Price: low to high')),
+                        DropdownMenuItem(
+                            value: 'price_high',
+                            child: Text('Price: high to low')),
+                        DropdownMenuItem(
+                            value: 'beds', child: Text('Most bedrooms')),
+                      ],
+                      onChanged: (value) => onSort(value ?? 'relevance'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                      child: _PriceField(
+                          controller: minPriceController,
+                          hint: 'Min price (R)')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _PriceField(
+                          controller: maxPriceController,
+                          hint: 'Max price (R)')),
+                ],
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _PriceField(controller: minPriceController, hint: 'Min price (R)')),
-              const SizedBox(width: 8),
-              Expanded(child: _PriceField(controller: maxPriceController, hint: 'Max price (R)')),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _MotionAwareSize extends StatelessWidget {
+  const _MotionAwareSize({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.of(context).disableAnimations) return child;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: child,
     );
   }
 }
@@ -589,7 +679,8 @@ class _PropertyCard extends StatelessWidget {
                       top: 8,
                       left: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         color: isRent ? const Color(0xFFBFE3D0) : TS.yellow,
                         child: Text(
                           isRent ? 'TO RENT' : 'FOR SALE',
@@ -605,7 +696,8 @@ class _PropertyCard extends StatelessWidget {
                       left: 8,
                       bottom: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         color: Colors.black.withValues(alpha: 0.78),
                         child: Text(
                           listing.portalName.toUpperCase(),
@@ -623,9 +715,13 @@ class _PropertyCard extends StatelessWidget {
                       child: Row(
                         children: [
                           _CircleAction(
-                            icon: saved ? Icons.favorite : Icons.favorite_border,
-                            tooltip: saved ? 'Remove from saved' : 'Save this home',
-                            background: saved ? TS.red : Colors.white.withValues(alpha: 0.92),
+                            icon:
+                                saved ? Icons.favorite : Icons.favorite_border,
+                            tooltip:
+                                saved ? 'Remove from saved' : 'Save this home',
+                            background: saved
+                                ? TS.red
+                                : Colors.white.withValues(alpha: 0.92),
                             foreground: saved ? Colors.white : TS.ink,
                             onTap: onToggleSave,
                           ),
@@ -748,7 +844,8 @@ class _PropertyGalleryState extends State<_PropertyGallery> {
 
   Widget _fallback(BuildContext context) => ColoredBox(
         color: TS.surfaceSoftOf(context),
-        child: Icon(Icons.apartment_outlined, size: 48, color: TS.faintOf(context)),
+        child: Icon(Icons.apartment_outlined,
+            size: 48, color: TS.faintOf(context)),
       );
 
   @override
@@ -788,7 +885,9 @@ class _PropertyGalleryState extends State<_PropertyGallery> {
               child: Text(
                 '${_index + 1}/${images.length}',
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -843,7 +942,7 @@ class _ViewSwitch extends StatelessWidget {
       ),
       child: SegmentedButton<String>(
         style: SegmentedButton.styleFrom(
-          selectedBackgroundColor: TS.ink,
+          selectedBackgroundColor: TS.inkOf(context),
           selectedForegroundColor: TS.bgOf(context),
         ),
         segments: [
@@ -990,7 +1089,7 @@ class _Message extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,

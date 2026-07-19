@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/payfast_checkout_html.dart';
+import 'package:trolley_scout/payfast_checkout_native.dart';
 
 void main() {
   test('checkout wrapper uses the production HTTPS origin', () {
@@ -32,5 +34,23 @@ void main() {
     expect(html, contains('src="https://www.payfast.co.za/onsite/engine.js"'));
     expect(html, contains('uuid: "checkout-123"'));
     expect(html, contains('TrolleyScout.postMessage'));
+  });
+
+  test('native checkout prefers the classic redirect document', () {
+    final html = buildNativePayFastCheckoutDocument(
+      const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'scout',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+        redirectUrl: 'https://www.payfast.co.za/eng/process',
+        redirectFields: {'signature': 'signed'},
+        engineUrl: 'https://www.payfast.co.za/onsite/engine.js',
+        onsiteUuid: 'onsite-123',
+      ),
+    );
+
+    expect(html, contains('id="payfast-form"'));
+    expect(html, isNot(contains('payfast_do_onsite_payment')));
   });
 }

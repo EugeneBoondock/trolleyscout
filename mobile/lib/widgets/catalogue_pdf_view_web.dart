@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
 import '../theme.dart';
+import 'catalogue_source_button.dart';
 
 class CataloguePdfView extends StatefulWidget {
   const CataloguePdfView({
@@ -11,11 +12,15 @@ class CataloguePdfView extends StatefulWidget {
     required this.url,
     required this.label,
     this.fallbackImageUrl,
+    this.sourceUrl,
+    this.openExternal = launchCatalogueSource,
   });
 
   final String url;
   final String label;
   final String? fallbackImageUrl;
+  final String? sourceUrl;
+  final CatalogueUriOpener openExternal;
 
   @override
   State<CataloguePdfView> createState() => _CataloguePdfViewState();
@@ -76,19 +81,32 @@ class _CataloguePdfViewState extends State<CataloguePdfView> {
   }
 
   Widget _cover(BuildContext context) => Center(
-        child: Semantics(
-          image: true,
-          label: 'Cover for ${widget.label}',
-          child: SizedBox(
-            width: 240,
-            height: 320,
-            child: widget.fallbackImageUrl == null
-                ? _fallbackIcon(context)
-                : Image.network(
-                    widget.fallbackImageUrl!,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => _fallbackIcon(context),
-                  ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Semantics(
+                image: true,
+                label: 'Cover for ${widget.label}',
+                child: SizedBox(
+                  width: 240,
+                  height: 320,
+                  child: widget.fallbackImageUrl == null
+                      ? _fallbackIcon(context)
+                      : Image.network(
+                          widget.fallbackImageUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => _fallbackIcon(context),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              CatalogueSourceButton(
+                sourceUrl: widget.sourceUrl,
+                openExternal: widget.openExternal,
+              ),
+            ],
           ),
         ),
       );

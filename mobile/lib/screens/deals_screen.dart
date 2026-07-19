@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
+import '../catalogue_sort.dart';
 import '../deal_categories.dart';
 import '../deal_filters.dart';
 import '../discovery_cache.dart';
@@ -109,7 +110,8 @@ class _DealsScreenState extends State<DealsScreen> {
     try {
       final items = await widget.api.dealSites();
       if (mounted) {
-        setState(() => _siteDeals = items.map((item) => item.toDeal()).toList());
+        setState(
+            () => _siteDeals = items.map((item) => item.toDeal()).toList());
       }
     } catch (_) {
       // The list still shows grocery deals if the deal-site feed is down.
@@ -178,10 +180,13 @@ class _DealsScreenState extends State<DealsScreen> {
   // to compare against (so a first-ever load is never a false alarm).
   Future<void> _maybeAlertNewDeals(DiscoveryResult result) async {
     if (!_notifyNewDeals || _previousDealIds.isEmpty) return;
-    final currentIds =
-        result.deals.where((deal) => deal.id.isNotEmpty).map((deal) => deal.id).toSet();
+    final currentIds = result.deals
+        .where((deal) => deal.id.isNotEmpty)
+        .map((deal) => deal.id)
+        .toSet();
     final freshDeals = result.deals
-        .where((deal) => deal.id.isNotEmpty && !_previousDealIds.contains(deal.id))
+        .where(
+            (deal) => deal.id.isNotEmpty && !_previousDealIds.contains(deal.id))
         .toList();
     // Advance the in-memory baseline so a pull-to-refresh in the same session
     // compares against what was just shown, not the launch-time snapshot.
@@ -410,7 +415,8 @@ class _DealsScreenState extends State<DealsScreen> {
                 Text('DEAL FINDER', style: TS.eyebrowOf(context)),
                 const SizedBox(height: 4),
                 const Text('Source-backed specials',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+                    style:
+                        TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
                 if (staleNote != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -680,7 +686,8 @@ class _DealsScreenState extends State<DealsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('Alert me about new deals',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                 Text('We\'ll notify you when fresh deals land.',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 11)),
               ],
@@ -719,8 +726,7 @@ class _DealsScreenState extends State<DealsScreen> {
               ),
               items: [
                 for (final option in dealSortOptions)
-                  DropdownMenuItem(
-                      value: option.id, child: Text(option.label)),
+                  DropdownMenuItem(value: option.id, child: Text(option.label)),
               ],
               onChanged: (value) {
                 if (value == null) return;
@@ -743,18 +749,23 @@ class _DealsScreenState extends State<DealsScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _chip('All', _category == null, () => setState(() {
-                _category = null;
-                _foodSubcategory = null;
-                _page = 0;
-              })),
+          _chip(
+              'All',
+              _category == null,
+              () => setState(() {
+                    _category = null;
+                    _foodSubcategory = null;
+                    _page = 0;
+                  })),
           for (final option in categoryOptions)
-            _chip('${option.icon} ${option.label}', _category == option.id,
+            _chip(
+                '${option.icon} ${option.label}',
+                _category == option.id,
                 () => setState(() {
-                  _category = option.id;
-                  _foodSubcategory = null;
-                  _page = 0;
-                })),
+                      _category = option.id;
+                      _foodSubcategory = null;
+                      _page = 0;
+                    })),
         ],
       ),
     );
@@ -766,17 +777,23 @@ class _DealsScreenState extends State<DealsScreen> {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _chip('All food', _foodSubcategory == null,
+          _chip(
+              'All food',
+              _foodSubcategory == null,
               () => setState(() {
-                _foodSubcategory = null;
-                _page = 0;
-              }), small: true),
+                    _foodSubcategory = null;
+                    _page = 0;
+                  }),
+              small: true),
           for (final option in foodSubcategoryOptions)
-            _chip(option.label, _foodSubcategory == option.id,
+            _chip(
+                option.label,
+                _foodSubcategory == option.id,
                 () => setState(() {
-                  _foodSubcategory = option.id;
-                  _page = 0;
-                }), small: true),
+                      _foodSubcategory = option.id;
+                      _page = 0;
+                    }),
+                small: true),
         ],
       ),
     );
@@ -800,9 +817,7 @@ class _DealsScreenState extends State<DealsScreen> {
           ),
           child: Text(label,
               style: TextStyle(
-                  color: active
-                      ? TS.surfaceOf(context)
-                      : TS.inkOf(context),
+                  color: active ? TS.surfaceOf(context) : TS.inkOf(context),
                   fontWeight: FontWeight.w700,
                   fontSize: small ? 12 : 13)),
         ),
@@ -878,15 +893,13 @@ class _DealsScreenState extends State<DealsScreen> {
   // One entry per retailer; multiple branch catalogues collapse into it.
   List<_CatalogueGroup> _groupCatalogues(List<Catalogue> catalogues) {
     final byRetailer = <String, _CatalogueGroup>{};
-    for (final catalogue in catalogues) {
+    for (final catalogue in sortCataloguesMostRecent(catalogues)) {
       final name = catalogue.retailerName ?? catalogue.name;
       final key = name.toLowerCase();
       byRetailer.putIfAbsent(key, () => _CatalogueGroup(name, []));
       byRetailer[key]!.catalogues.add(catalogue);
     }
-    final groups = byRetailer.values.toList()
-      ..sort((a, b) => a.retailerName.compareTo(b.retailerName));
-    return groups;
+    return byRetailer.values.toList();
   }
 
   void _openCatalogueGroup(_CatalogueGroup group) {
@@ -904,14 +917,14 @@ class _DealsScreenState extends State<DealsScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             Text('${group.retailerName} catalogues',
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w900)),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
             for (final catalogue in group.catalogues)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.menu_book_outlined,
-                    color: TS.redOf(context)),
+                leading:
+                    Icon(Icons.menu_book_outlined, color: TS.redOf(context)),
                 title: Text(catalogue.name),
                 subtitle: catalogue.validTo != null
                     ? Text('Until ${catalogue.validTo!.substring(0, 10)}')
@@ -1011,8 +1024,8 @@ class _DealRow extends StatelessWidget {
                 if (isNew) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 1),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     color: TS.yellow,
                     child: const Text('NEW',
                         style: TextStyle(
@@ -1160,8 +1173,8 @@ class _CatalogueGroupCard extends StatelessWidget {
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => ColoredBox(
                               color: TS.surfaceOf(context),
-                              child:
-                                  const Icon(Icons.menu_book_outlined, size: 34),
+                              child: const Icon(Icons.menu_book_outlined,
+                                  size: 34),
                             )),
               ),
             ),

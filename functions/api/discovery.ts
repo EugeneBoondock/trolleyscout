@@ -611,6 +611,7 @@ export function storePromotionsToDiscovery(
   const byStore = new Map<string, { name: string; sourceUrl: string; count: number }>()
 
   for (const promotion of promotions) {
+    const promotionCapturedAt = promotion.capturedAt ?? capturedAt
     const retailerId = (promotion.retailerId ?? `store-${promotion.placeId}`) as DiscoveredDeal['retailerId']
     const source = byStore.get(promotion.placeId) ?? {
       count: 0,
@@ -622,7 +623,7 @@ export function storePromotionsToDiscovery(
 
     if (promotion.kind === 'catalogue') {
       leaflets.push({
-        capturedAt,
+        capturedAt: promotionCapturedAt,
         documentUrl: promotion.productUrl ?? promotion.sourceUrl,
         id: promotion.id,
         imageUrl: promotion.imageUrl,
@@ -638,7 +639,7 @@ export function storePromotionsToDiscovery(
     }
 
     deals.push({
-      capturedAt,
+      capturedAt: promotionCapturedAt,
       evidenceText: [promotion.title, promotion.priceText, promotion.savingText]
         .filter(Boolean)
         .join(' '),

@@ -31,11 +31,13 @@ export function createPayFastCheckoutFields(options: {
     id: string
   }
   attemptId: string
+  cancelUrl: string
   merchantId: string
   merchantKey: string
   notifyUrl: string
   option: PayFastBillingOption
   passphrase: string
+  returnUrl: string
 }) {
   const fields = new URLSearchParams()
   const names = splitDisplayName(options.account.displayName)
@@ -43,6 +45,8 @@ export function createPayFastCheckoutFields(options: {
 
   fields.append('merchant_id', options.merchantId)
   fields.append('merchant_key', options.merchantKey)
+  fields.append('return_url', options.returnUrl)
+  fields.append('cancel_url', options.cancelUrl)
   fields.append('notify_url', options.notifyUrl)
   fields.append('name_first', names.firstName)
   if (names.lastName) {

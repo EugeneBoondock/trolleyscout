@@ -98,6 +98,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       session.account,
       body.planId,
       body.billingCycle,
+      body.checkoutMode === 'redirect',
     )
     // A checkout is successful when the plan is free, PayFast returned an
     // onsite session, or we fell back to the classic redirect checkout.

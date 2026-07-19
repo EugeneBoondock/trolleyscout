@@ -72,25 +72,63 @@ void main() {
     expect(find.textContaining('open another app'), findsNothing);
   });
 
-  testWidgets('shows a grounded cover when page embedding is unavailable',
+  testWidgets('offers the official source when a PDF cannot be embedded',
       (tester) async {
+    Uri? openedUri;
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
-      home: const CatalogueReader(
-        catalogue: Catalogue(
-          name: 'Branch catalogue',
-          url: 'https://market.example.test/catalogue',
-          imageUrl: 'https://market.example.test/cover.jpg',
+      home: CatalogueReader(
+        catalogue: const Catalogue(
+          name: 'Weekly PDF',
+          url: 'invalid.pdf',
+          sourceUrl: 'https://market.example.test/catalogue',
         ),
+        openExternal: (uri) async => openedUri = uri,
       ),
     ));
+    await tester.pump();
 
-    expect(find.text('Catalogue pages are being prepared.'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel('Cover for Branch catalogue'),
-      findsOneWidget,
-    );
+    expect(find.text('This PDF could not be embedded.'), findsOneWidget);
+    expect(find.text('Open official source'), findsOneWidget);
+
+    await tester.tap(find.text('Open official source'));
+    await tester.pump();
+
+    expect(openedUri, Uri.parse('https://market.example.test/catalogue'));
   });
+
+  for (final themeMode in [ThemeMode.light, ThemeMode.dark]) {
+    testWidgets('shows an official source fallback in ${themeMode.name} mode',
+        (tester) async {
+      Uri? openedUri;
+      await tester.pumpWidget(MaterialApp(
+        theme: TS.lightTheme(),
+        darkTheme: TS.darkTheme(),
+        themeMode: themeMode,
+        home: CatalogueReader(
+          catalogue: const Catalogue(
+            name: 'Branch catalogue',
+            url: 'https://cdn.market.example.test/catalogue-preview',
+            sourceUrl: 'https://market.example.test/catalogue',
+            imageUrl: 'https://market.example.test/cover.jpg',
+          ),
+          openExternal: (uri) async => openedUri = uri,
+        ),
+      ));
+
+      expect(find.text('Catalogue preview unavailable.'), findsOneWidget);
+      expect(find.text('Open official source'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Cover for Branch catalogue'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Open official source'));
+      await tester.pump();
+
+      expect(openedUri, Uri.parse('https://market.example.test/catalogue'));
+    });
+  }
 }
 
 const _imageCatalogue = Catalogue(

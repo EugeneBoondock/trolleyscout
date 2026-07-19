@@ -457,6 +457,7 @@ export interface BasketQuantityDraft {
 
 export interface SubscriptionCheckoutRequest {
   billingCycle: BillingCycle
+  checkoutMode?: 'onsite' | 'redirect'
   planId: MemberPlanId
 }
 

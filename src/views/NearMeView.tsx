@@ -14,6 +14,7 @@ import {
 import type { StoreLeaflet } from '../types'
 import { LeafletViewer } from '../components/LeafletViewer'
 import { ScoutMark } from '../components/ScoutMark'
+import { sortLeafletsMostRecent } from '../services/catalogueOrdering'
 
 const INITIAL: NearbyStoresState = {
   message: 'Find the supermarkets around you and this week’s specials for each.',
@@ -230,7 +231,13 @@ function StoreCard({
   store: NearbyStoreResult
 }) {
   const dealCount = store.deals.length + store.promotions.filter((p) => p.kind === 'deal').length
-  const catalogueCount = store.leaflets.length + store.promotions.filter((p) => p.kind === 'catalogue').length
+  const catalogues = sortLeafletsMostRecent([
+    ...store.leaflets,
+    ...store.promotions
+      .filter((promotion) => promotion.kind === 'catalogue')
+      .map((promotion) => promotionToLeaflet(store, promotion)),
+  ])
+  const catalogueCount = catalogues.length
 
   const hasDeals =
     store.deals.length > 0 || store.promotions.some((promotion) => promotion.kind === 'deal')
@@ -284,7 +291,7 @@ function StoreCard({
             </div>
           ))}
 
-          {store.leaflets.map((leaflet) => (
+          {catalogues.map((leaflet) => (
             <button
               aria-label={`Read ${cleanUiText(leaflet.name)}`}
               className="store-catalogue"
@@ -301,24 +308,6 @@ function StoreCard({
             </button>
           ))}
 
-          {store.promotions
-            .filter((promotion) => promotion.kind === 'catalogue')
-            .map((promotion) => (
-              <button
-                aria-label={`Read ${cleanUiText(promotion.title)}`}
-                className="store-catalogue"
-                key={promotion.id}
-                onClick={() => onOpenLeaflet(promotionToLeaflet(store, promotion))}
-                type="button"
-              >
-                {promotion.imageUrl ? (
-                  <img alt="" className="near-catalogue-image" loading="lazy" src={promotion.imageUrl} />
-                ) : <Tag size={14} />}
-                {cleanUiText(promotion.title)}
-                {describeValid(promotion.validFrom, promotion.validTo)}
-                <span className="store-catalogue-action">Read here</span>
-              </button>
-            ))}
         </>
       )}
 
@@ -337,7 +326,7 @@ function promotionToLeaflet(
   promotion: NearbyStoreResult['promotions'][number],
 ): StoreLeaflet {
   return {
-    capturedAt: store.lastSeenAt ?? new Date().toISOString(),
+    capturedAt: promotion.capturedAt ?? store.lastSeenAt ?? new Date().toISOString(),
     documentUrl: promotion.productUrl ?? promotion.sourceUrl,
     id: promotion.id,
     imageUrl: promotion.imageUrl,

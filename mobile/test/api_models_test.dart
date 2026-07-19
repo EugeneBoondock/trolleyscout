@@ -17,7 +17,9 @@ void main() {
           'name': 'Weekly catalogue',
           'retailerName': 'Local Market',
           'url': 'https://market.test/catalogue',
+          'documentUrl': 'https://cdn.market.test/catalogue.pdf',
           'imageUrl': 'https://market.test/catalogue.jpg',
+          'capturedAt': '2026-07-19T10:00:00.000Z',
           'validFrom': '2026-07-16',
           'validTo': '2026-07-31',
         }
@@ -35,6 +37,15 @@ void main() {
     expect(
         result.catalogues.single.imageUrl, 'https://market.test/catalogue.jpg');
     expect(result.catalogues.single.retailerName, 'Local Market');
+    expect(result.catalogues.single.capturedAt, '2026-07-19T10:00:00.000Z');
+    expect(
+        result.catalogues.single.url, 'https://cdn.market.test/catalogue.pdf');
+    expect(result.catalogues.single.sourceUrl, 'https://market.test/catalogue');
+    final restored = DiscoveryResult.fromJson(result.toJson());
+    expect(restored.catalogues.single.url,
+        'https://cdn.market.test/catalogue.pdf');
+    expect(
+        restored.catalogues.single.sourceUrl, 'https://market.test/catalogue');
     expect(result.refreshedAt, '2026-07-16T10:00:00.000Z');
   });
 
@@ -63,5 +74,43 @@ void main() {
     expect(store.lastSeenAt, '2026-07-16T10:00:00.000Z');
     expect(store.promotionCount, 3);
     expect(offer.imageUrl, 'https://shop.test/milk.jpg');
+  });
+
+  test('scroll deals preserve a distinct ordered product gallery', () {
+    final deal = ScrollDeal.fromJson({
+      'id': 'window-1',
+      'title': 'Gallery deal',
+      'retailerName': 'Example Store',
+      'sourceLabel': 'Example',
+      'source': 'example',
+      'productUrl': 'https://example.test/products/1',
+      'imageUrl': 'https://example.test/images/cover.jpg',
+      'images': [
+        'https://example.test/images/cover.jpg',
+        'https://example.test/images/side.jpg',
+        '',
+        'https://example.test/images/side.jpg',
+      ],
+    });
+
+    expect(deal.gallery, [
+      'https://example.test/images/cover.jpg',
+      'https://example.test/images/side.jpg',
+    ]);
+    expect(ScrollDeal.fromJson(deal.toJson()).gallery, deal.gallery);
+  });
+
+  test('scroll deal gallery falls back to its single cover image', () {
+    const deal = ScrollDeal(
+      id: 'window-2',
+      title: 'Single image deal',
+      retailerName: 'Example Store',
+      sourceLabel: 'Example',
+      source: 'example',
+      productUrl: 'https://example.test/products/2',
+      imageUrl: 'https://example.test/images/only.jpg',
+    );
+
+    expect(deal.gallery, ['https://example.test/images/only.jpg']);
   });
 }

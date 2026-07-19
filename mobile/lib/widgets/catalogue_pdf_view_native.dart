@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme.dart';
+import 'catalogue_source_button.dart';
 
 class CataloguePdfView extends StatefulWidget {
   const CataloguePdfView({
@@ -9,11 +10,15 @@ class CataloguePdfView extends StatefulWidget {
     required this.url,
     required this.label,
     this.fallbackImageUrl,
+    this.sourceUrl,
+    this.openExternal = launchCatalogueSource,
   });
 
   final String url;
   final String label;
   final String? fallbackImageUrl;
+  final String? sourceUrl;
+  final CatalogueUriOpener openExternal;
 
   @override
   State<CataloguePdfView> createState() => _CataloguePdfViewState();
@@ -75,6 +80,8 @@ class _CataloguePdfViewState extends State<CataloguePdfView> {
           ? _PdfCoverFallback(
               label: widget.label,
               imageUrl: widget.fallbackImageUrl,
+              sourceUrl: widget.sourceUrl,
+              openExternal: widget.openExternal,
             )
           : _controller == null
               ? Center(
@@ -86,10 +93,17 @@ class _CataloguePdfViewState extends State<CataloguePdfView> {
 }
 
 class _PdfCoverFallback extends StatelessWidget {
-  const _PdfCoverFallback({required this.label, this.imageUrl});
+  const _PdfCoverFallback({
+    required this.label,
+    required this.sourceUrl,
+    required this.openExternal,
+    this.imageUrl,
+  });
 
   final String label;
   final String? imageUrl;
+  final String? sourceUrl;
+  final CatalogueUriOpener openExternal;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -124,6 +138,11 @@ class _PdfCoverFallback extends StatelessWidget {
                 'The catalogue cover remains available in Trolley Scout.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context)),
+              ),
+              const SizedBox(height: 18),
+              CatalogueSourceButton(
+                sourceUrl: sourceUrl,
+                openExternal: openExternal,
               ),
             ],
           ),

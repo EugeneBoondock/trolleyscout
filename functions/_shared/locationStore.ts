@@ -8,6 +8,7 @@ const PROMOTION_DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface StorePromotion {
   id: string
+  capturedAt?: string
   placeId: string
   storeName: string
   retailerId?: string
@@ -290,7 +291,7 @@ export async function readAllStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to
+        valid_from, valid_to, captured_at
         FROM store_promotions
         WHERE expires_at >= ?
         ORDER BY captured_at DESC
@@ -324,7 +325,7 @@ export async function readAllStoreCatalogues(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to
+        valid_from, valid_to, captured_at
         FROM store_promotions
         WHERE kind = 'catalogue' AND expires_at >= ?
         ORDER BY captured_at DESC, id ASC
@@ -389,7 +390,7 @@ export async function readStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to
+        valid_from, valid_to, captured_at
         FROM store_promotions
         WHERE place_id IN (${placeholders}) AND expires_at >= ?
         ORDER BY captured_at DESC`,
@@ -655,6 +656,7 @@ export async function recordStoreScout(
 
 interface StorePromotionRow {
   id: string
+  captured_at: string
   place_id: string
   store_name: string
   retailer_id: string | null
@@ -672,6 +674,7 @@ interface StorePromotionRow {
 
 function rowToPromotion(row: StorePromotionRow): StorePromotion {
   return {
+    capturedAt: row.captured_at,
     id: row.id,
     imageUrl: row.image_url ?? undefined,
     kind: row.kind === 'catalogue' ? 'catalogue' : 'deal',

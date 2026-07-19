@@ -825,6 +825,7 @@ export interface NearbyStoreResult {
   deals: DiscoveredDeal[]
   leaflets: StoreLeaflet[]
   promotions: Array<{
+    capturedAt?: string
     id: string
     kind: 'deal' | 'catalogue'
     title: string

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
+import '../catalogue_sort.dart';
 import '../nearby_history_store.dart';
 import '../saved_addresses_store.dart';
 import '../theme.dart';
@@ -433,9 +434,9 @@ class _NearMeScreenState extends State<NearMeScreen> {
               ],
             ),
           ),
-        if (_ads.isNotEmpty && _stores.isNotEmpty) SponsoredAdCard(ad: _ads.first),
-        for (final store
-            in widget.isAuthenticated ? _stores : _stores.take(3))
+        if (_ads.isNotEmpty && _stores.isNotEmpty)
+          SponsoredAdCard(ad: _ads.first),
+        for (final store in widget.isAuthenticated ? _stores : _stores.take(3))
           _StoreCard(
             store: store,
             onViewDeals: widget.onViewStoreDeals == null
@@ -653,7 +654,7 @@ class _StoreCard extends StatelessWidget {
                 ],
               ),
             ),
-          for (final cat in store.catalogues.take(3))
+          for (final cat in sortCataloguesMostRecent(store.catalogues).take(3))
             InkWell(
               onTap: () => showCatalogueReader(context, cat),
               child: Padding(

@@ -239,6 +239,7 @@ describe('discovered store scout timing', () => {
     )
 
     expect(secondPage.map((promotion) => promotion.id)).toEqual(['catalogue-old'])
+    expect(secondPage[0].capturedAt).toBe('2026-07-16T10:00:00.000Z')
   })
 
   it('removes missing rows only for the successful place and official source identity', async () => {

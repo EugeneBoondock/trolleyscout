@@ -20,6 +20,7 @@ export interface DealSiteItem {
   savingText?: string
   productUrl: string
   imageUrl?: string
+  images?: string[]
   category?: string
   expiresAt?: string
 }
@@ -57,23 +58,35 @@ export function parseOneDayOnly(html: string): DealSiteItem[] {
     if (product.isSoldOut === true) continue
 
     const slug = typeof product.id === 'string' ? product.id : realId
+    const externalListingUrl = webUrl(product.externalListingLink)
     const price = moneyText(pathValue(product, ['price', 'formattedValue']))
     const wasPrice = moneyText(pathValue(product, ['retailPrice', 'formattedValue']))
     const saving = oneDayOnlySaving(product.saving)
+    const gallery = uniqueImageUrls([
+      pathValue(product, ['image', 'url']),
+      ...(Array.isArray(product.gallery)
+        ? [...product.gallery]
+            .filter((entry) =>
+              pathValue(entry, ['type']) === 'IMAGE' &&
+              pathValue(entry, ['file', 'isCensored']) !== true,
+            )
+            .sort((left, right) =>
+              numberValue(pathValue(left, ['position'])) - numberValue(pathValue(right, ['position'])),
+            )
+            .map((entry) => pathValue(entry, ['file', 'url']))
+        : []),
+    ])
 
     out.push({
       category: firstString(product.topLevelCategories) ?? undefined,
       expiresAt: typeof product.activeToDate === 'string' ? product.activeToDate : undefined,
       id: `onedayonly-${realId}`,
-      imageUrl: typeof pathValue(product, ['image', 'url']) === 'string'
-        ? String(pathValue(product, ['image', 'url']))
-        : undefined,
+      imageUrl: gallery[0],
+      images: gallery.length > 0 ? gallery : undefined,
       previousPriceText: wasPrice,
       priceText: price,
-      productUrl: typeof product.externalListingLink === 'string' && product.externalListingLink
-        ? String(product.externalListingLink)
-        : `https://www.onedayonly.co.za/product/${slug}`,
-      retailerName: firstString(product.brand) ?? SITE_LABEL.onedayonly,
+      productUrl: externalListingUrl ?? `https://www.onedayonly.co.za/products/${slug}`,
+      retailerName: SITE_LABEL.onedayonly,
       savingText: saving,
       source: 'onedayonly',
       sourceLabel: SITE_LABEL.onedayonly,
@@ -95,6 +108,19 @@ function oneDayOnlySaving(saving: unknown): string | undefined {
   return undefined
 }
 
+function webUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const candidate = value.trim()
+  try {
+    const parsed = new URL(candidate)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+      ? candidate
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // ---------- Hyperli (Shopify) ----------
 
 export function parseHyperli(payload: unknown): DealSiteItem[] {
@@ -112,6 +138,13 @@ export function parseHyperli(payload: unknown): DealSiteItem[] {
     const priceCents = decimalToCents(variant.price)
     const compareCents = decimalToCents(variant.compare_at_price)
     const images = Array.isArray(product.images) ? product.images : []
+    const gallery = uniqueImageUrls(
+      [...images]
+        .sort((left, right) =>
+          numberValue(pathValue(left, ['position'])) - numberValue(pathValue(right, ['position'])),
+        )
+        .map((image) => pathValue(image, ['src'])),
+    )
     const handle = typeof product.handle === 'string' ? product.handle : ''
     if (!product.title || !handle) continue
     if (variant.available === false) continue
@@ -119,9 +152,8 @@ export function parseHyperli(payload: unknown): DealSiteItem[] {
     out.push({
       category: typeof product.product_type === 'string' ? product.product_type : undefined,
       id: `hyperli-${String(product.id ?? handle)}`,
-      imageUrl: typeof pathValue(images[0], ['src']) === 'string'
-        ? String(pathValue(images[0], ['src']))
-        : undefined,
+      imageUrl: gallery[0],
+      images: gallery.length > 0 ? gallery : undefined,
       previousPriceText: compare,
       priceText: price,
       productUrl: `https://hyperli.com/products/${handle}`,
@@ -164,6 +196,7 @@ export function parseDaddysDeals(payload: unknown): DealSiteItem[] {
       category: embeddedTerm(post),
       id: `daddysdeals-${String(post.id ?? link)}`,
       imageUrl: image,
+      images: image ? [image] : undefined,
       priceText: price,
       productUrl: link,
       retailerName: SITE_LABEL.daddysdeals,
@@ -196,18 +229,33 @@ export function parseMyRunway(payload: unknown): DealSiteItem[] {
     const sellingCents = decimalToCents(product.selling_price)
     const retailCents = decimalToCents(product.retail_price)
     const id = String(product.id ?? product.sku ?? '')
+    const productImages = Array.isArray(product.product_images)
+      ? [...product.product_images]
+          .filter((entry) =>
+            entry !== null &&
+            typeof entry === 'object' &&
+            pathValue(entry, ['is_include']) !== 0 &&
+            pathValue(entry, ['deleteflag']) !== 1,
+          )
+          .sort((left, right) =>
+            numberValue(pathValue(left, ['position'])) - numberValue(pathValue(right, ['position'])),
+          )
+          .map((entry) => pathValue(entry, ['image_url']))
+      : []
+    const gallery = uniqueImageUrls([product.image_url, ...productImages])
 
     out.push({
       category: firstString(product.product_category_name) ??
         firstString(pathValue(product, ['product_category', 'name'])) ?? undefined,
       id: `myrunway-${id}`,
-      imageUrl: typeof product.image_url === 'string' ? product.image_url : undefined,
+      imageUrl: gallery[0],
+      images: gallery.length > 0 ? gallery : undefined,
       previousPriceText:
         retailCents !== undefined && (sellingCents === undefined || retailCents > sellingCents)
           ? `R${(retailCents / 100).toFixed(0)}`
           : undefined,
       priceText: sellingCents !== undefined ? `R${(sellingCents / 100).toFixed(0)}` : undefined,
-      productUrl: myRunwayUrl(product, id),
+      productUrl: myRunwayUrl(product),
       retailerName: firstString(pathValue(product, ['brand', 'name'])) ?? SITE_LABEL.myrunway,
       savingText: myRunwaySaving(product, sellingCents, retailCents),
       source: 'myrunway',
@@ -237,12 +285,38 @@ function myRunwaySaving(
   return undefined
 }
 
-function myRunwayUrl(product: Record<string, unknown>, id: string): string {
+function myRunwayUrl(product: Record<string, unknown>): string {
+  const sku = typeof product.sku === 'string' ? product.sku.trim() : ''
+  if (sku) return `https://myrunway.co.za/product/${encodeURIComponent(sku)}`
+
   const params = product.url_params
   if (typeof params === 'string' && params.trim()) {
-    return `https://myrunway.co.za/products/${params.replace(/^\//, '')}`
+    const routeKey = params
+      .trim()
+      .replace(/^https?:\/\/(?:www\.)?myrunway\.co\.za\//i, '')
+      .replace(/^\/+/, '')
+      .replace(/^products?\//i, '')
+      .replace(/[?#].*$/, '')
+    if (routeKey) return `https://myrunway.co.za/product/${routeKey}`
   }
-  return id ? `https://myrunway.co.za/product/${id}` : 'https://myrunway.co.za/'
+  return 'https://myrunway.co.za/'
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER
+}
+
+function uniqueImageUrls(values: unknown[]): string[] {
+  const seen = new Set<string>()
+  const urls: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const url = value.trim()
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue
+    seen.add(url)
+    urls.push(url)
+  }
+  return urls
 }
 
 // ---------- shared helpers ----------

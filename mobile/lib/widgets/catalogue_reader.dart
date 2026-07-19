@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api_models.dart';
 import '../theme.dart';
 import 'catalogue_pdf_view.dart';
+import 'catalogue_source_button.dart';
 
 Future<void> showCatalogueReader(
   BuildContext context,
@@ -18,9 +19,14 @@ Future<void> showCatalogueReader(
     );
 
 class CatalogueReader extends StatefulWidget {
-  const CatalogueReader({super.key, required this.catalogue});
+  const CatalogueReader({
+    super.key,
+    required this.catalogue,
+    this.openExternal = launchCatalogueSource,
+  });
 
   final Catalogue catalogue;
+  final CatalogueUriOpener openExternal;
 
   @override
   State<CatalogueReader> createState() => _CatalogueReaderState();
@@ -54,6 +60,8 @@ class _CatalogueReaderState extends State<CatalogueReader> {
   @override
   Widget build(BuildContext context) {
     final catalogue = widget.catalogue;
+    final sourceUrl = catalogue.sourceUrl ?? catalogue.url;
+    final sourceUri = catalogueSourceUri(sourceUrl);
     return Scaffold(
       backgroundColor: TS.bgOf(context),
       appBar: AppBar(
@@ -80,6 +88,14 @@ class _CatalogueReaderState extends State<CatalogueReader> {
             ),
           ],
         ),
+        actions: [
+          if (sourceUri != null)
+            IconButton(
+              tooltip: 'Open official source',
+              onPressed: () => widget.openExternal(sourceUri),
+              icon: const Icon(Icons.open_in_new),
+            ),
+        ],
       ),
       body: SafeArea(
         top: false,
@@ -90,8 +106,14 @@ class _CatalogueReaderState extends State<CatalogueReader> {
                     url: catalogue.url,
                     label: catalogue.name,
                     fallbackImageUrl: catalogue.coverImageUrl,
+                    sourceUrl: sourceUrl,
+                    openExternal: widget.openExternal,
                   )
-                : _CatalogueCoverFallback(catalogue: catalogue),
+                : _CatalogueCoverFallback(
+                    catalogue: catalogue,
+                    sourceUrl: sourceUrl,
+                    openExternal: widget.openExternal,
+                  ),
       ),
     );
   }
@@ -244,9 +266,15 @@ class _CatalogueNetworkImage extends StatelessWidget {
 }
 
 class _CatalogueCoverFallback extends StatelessWidget {
-  const _CatalogueCoverFallback({required this.catalogue});
+  const _CatalogueCoverFallback({
+    required this.catalogue,
+    required this.sourceUrl,
+    required this.openExternal,
+  });
 
   final Catalogue catalogue;
+  final String sourceUrl;
+  final CatalogueUriOpener openExternal;
 
   @override
   Widget build(BuildContext context) {
@@ -272,15 +300,20 @@ class _CatalogueCoverFallback extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             const Text(
-              'Catalogue pages are being prepared.',
+              'Catalogue preview unavailable.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
-              'The cover stays available here while Trolley Scout prepares the full reader.',
+              'This catalogue cannot be shown here right now. Open the retailer’s official source to continue.',
               textAlign: TextAlign.center,
               style: TextStyle(color: TS.mutedOf(context)),
+            ),
+            const SizedBox(height: 18),
+            CatalogueSourceButton(
+              sourceUrl: sourceUrl,
+              openExternal: openExternal,
             ),
           ],
         ),

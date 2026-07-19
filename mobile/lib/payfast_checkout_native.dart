@@ -11,7 +11,7 @@ Future<bool> openPayFastCheckout(
   BuildContext context,
   SubscriptionCheckout checkout,
 ) async {
-  final html = _checkoutHtml(checkout);
+  final html = buildNativePayFastCheckoutDocument(checkout);
   if (html == null) return false;
 
   if (!Platform.isAndroid && !Platform.isIOS) {
@@ -33,7 +33,7 @@ Future<bool> openPayFastCheckout(
       false;
 }
 
-String? _checkoutHtml(SubscriptionCheckout checkout) {
+String? buildNativePayFastCheckoutDocument(SubscriptionCheckout checkout) {
   final redirectUrl = checkout.redirectUrl;
   if (redirectUrl != null && checkout.redirectFields.isNotEmpty) {
     return buildPayFastRedirectHtml(redirectUrl, checkout.redirectFields);
@@ -79,8 +79,11 @@ class _PayFastCheckoutSheetState extends State<_PayFastCheckoutSheet> {
           onProgress: (progress) => setState(() => _progress = progress),
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
-            if (uri?.host == 'trolleyscout.co.za') {
-              Navigator.of(context).pop(true);
+            if (uri?.host == 'trolleyscout.co.za' &&
+                uri?.path.toLowerCase() == '/subscription' &&
+                uri?.queryParameters.containsKey('payfast') == true) {
+              Navigator.of(context)
+                  .pop(uri?.queryParameters['payfast'] == 'success');
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;

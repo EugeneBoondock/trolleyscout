@@ -916,6 +916,7 @@ export async function startSubscriptionCheckout(
   account: MemberAccount | undefined,
   planId: MemberPlanId,
   billingCycle: BillingCycle,
+  preferRedirect = false,
 ) {
   if (!hasMemberStore(env) || !account) {
     return {
@@ -982,19 +983,23 @@ export async function startSubscriptionCheckout(
   const fields = createPayFastCheckoutFields({
     account,
     attemptId,
+    cancelUrl: new URL('/Subscription?payfast=cancelled', origin).toString(),
     merchantId: payfast.merchantId,
     merchantKey: payfast.merchantKey,
     notifyUrl: new URL('/api/payfast-itn', origin).toString(),
     option: billingOption,
     passphrase: payfast.passphrase ?? '',
+    returnUrl: new URL('/Subscription?payfast=success', origin).toString(),
   })
 
   let onsiteUuid: string | undefined
 
-  try {
-    onsiteUuid = await requestPayFastOnsitePayment(fields, payfast.mode)
-  } catch {
-    onsiteUuid = undefined
+  if (!preferRedirect) {
+    try {
+      onsiteUuid = await requestPayFastOnsitePayment(fields, payfast.mode)
+    } catch {
+      onsiteUuid = undefined
+    }
   }
 
   if (!onsiteUuid) {

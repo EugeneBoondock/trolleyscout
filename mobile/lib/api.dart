@@ -243,7 +243,14 @@ class Api {
     final data = await _request(
       'POST',
       '/api/subscription',
-      body: {'planId': planId, 'billingCycle': billingCycle},
+      body: {
+        'planId': planId,
+        'billingCycle': billingCycle,
+        // PayFast's classic checkout is a top-level page inside the native
+        // WebView. Its onsite engine relies on an injected iframe that can
+        // close immediately in Android WebViews.
+        'checkoutMode': 'redirect',
+      },
       acceptErrorData: true,
     );
     return SubscriptionCheckout.fromJson(_map(data['checkout']));
@@ -446,8 +453,9 @@ class Api {
 
   /// Deals from the external deal sites (OneDayOnly, Hyperli, Daddy's Deals,
   /// MyRunway) for the endless Scroll reel. Public, no auth.
-  Future<List<ScrollDeal>> dealSites() async {
-    final data = await _request('GET', '/api/deal-sites');
+  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async {
+    final suffix = forceLive ? '?refresh=1' : '';
+    final data = await _request('GET', '/api/deal-sites$suffix');
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
   }
 
@@ -461,8 +469,8 @@ class Api {
   }
 
   Future<SaveStat> saveWindowDeal(ScrollDeal deal) async {
-    final data =
-        await _request('POST', '/api/window-saves', body: {'deal': deal.toJson()});
+    final data = await _request('POST', '/api/window-saves',
+        body: {'deal': deal.toJson()});
     return SaveStat.fromJson(data);
   }
 
@@ -478,7 +486,8 @@ class Api {
     final query = ids.map(Uri.encodeComponent).join(',');
     final data = await _request('GET', '/api/window-saves?counts=$query');
     final counts = _map(data['counts']);
-    return counts.map((key, value) => MapEntry(key, SaveStat.fromJson(_map(value))));
+    return counts
+        .map((key, value) => MapEntry(key, SaveStat.fromJson(_map(value))));
   }
 
   Future<List<DealComment>> dealComments(String dealId) async {
@@ -495,13 +504,14 @@ class Api {
 
   /// Reads a per-account state blob (near-me history, saved addresses, …).
   Future<Object?> getMemberState(String key) async {
-    final data =
-        await _request('GET', '/api/member-state?key=${Uri.encodeComponent(key)}');
+    final data = await _request(
+        'GET', '/api/member-state?key=${Uri.encodeComponent(key)}');
     return data['value'];
   }
 
   Future<void> setMemberState(String key, Object? value) async {
-    await _request('PUT', '/api/member-state', body: {'key': key, 'value': value});
+    await _request('PUT', '/api/member-state',
+        body: {'key': key, 'value': value});
   }
 
   Future<NotificationPreferences> notificationPreferences() async {

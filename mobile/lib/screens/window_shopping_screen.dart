@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../ux.dart';
 import '../widgets/scout_mark.dart';
 import '../window_saved_store.dart';
+import '../window_seen_store.dart';
 
 /// The in-store playlist. All tracks by Kevin MacLeod (incompetech.com),
 /// licensed under Creative Commons: By Attribution 4.0 — credited on screen
@@ -43,9 +44,16 @@ const List<_Track> _playlist = [
 /// alerts. No destination required — just the pleasure of the next deal, like
 /// drifting past shop windows.
 class WindowShoppingScreen extends StatefulWidget {
-  const WindowShoppingScreen({super.key, required this.api});
+  const WindowShoppingScreen({
+    super.key,
+    required this.api,
+    this.seenStore,
+    this.now,
+  });
 
   final Api api;
+  final WindowSeenStore? seenStore;
+  final DateTime Function()? now;
 
   @override
   State<WindowShoppingScreen> createState() => _WindowShoppingScreenState();
@@ -54,11 +62,14 @@ class WindowShoppingScreen extends StatefulWidget {
 class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     with WidgetsBindingObserver {
   static const _muteKey = 'window_music_muted';
+  static const _reloadAfterBackground = Duration(minutes: 15);
   // Present enough to groove to, soft enough to talk over — store-speaker level.
   static const _musicVolume = 0.35;
 
   final _pageController = PageController();
   final _savedStore = WindowSavedStore();
+  late final WindowSeenStore _seenStore;
+  late final DateTime Function() _now;
   final _tasteStore = TasteStore();
   final _searchController = TextEditingController();
   final AudioPlayer _music = AudioPlayer(playerId: 'window_ambient');
@@ -66,20 +77,28 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   final List<_Track> _tracks = List.of(_playlist)..shuffle();
 
   List<ScrollDeal> _deals = const [];
+  final Set<String> _seenThisVisit = {};
   Set<String> _saved = {};
   // Global save counts per deal id, so the reel shows "N saves".
   final Map<String, SaveStat> _saveStats = {};
   bool _loading = true;
+  bool _caughtUp = false;
   bool _musicMuted = false;
   bool _searching = false;
   String _query = '';
   int _trackIndex = 0;
+  int _currentPage = 0;
+  bool _refreshGestureStartedAtTop = false;
+  Future<void>? _activeRefresh;
+  DateTime? _backgroundedAt;
   StreamSubscription<void>? _trackDone;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _seenStore = widget.seenStore ?? WindowSeenStore();
+    _now = widget.now ?? DateTime.now;
     WidgetsBinding.instance.addObserver(this);
     _restoreSaved();
     _initMusic();
@@ -102,7 +121,15 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     // Pause the music when the app leaves the foreground; resume on return.
     if (state == AppLifecycleState.resumed) {
       if (!_musicMuted) _music.resume();
+      final backgroundedAt = _backgroundedAt;
+      _backgroundedAt = null;
+      if (backgroundedAt != null &&
+          _now().difference(backgroundedAt) >= _reloadAfterBackground) {
+        _prepareForBackgroundReturn();
+        unawaited(_load());
+      }
     } else {
+      _backgroundedAt ??= _now();
       _music.pause();
     }
   }
@@ -183,6 +210,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     setState(() => _query = value.trim());
     // A new search starts the window at its first match.
     if (_pageController.hasClients) _pageController.jumpToPage(0);
+    _currentPage = 0;
+    _markFirstVisibleAfterFrame();
   }
 
   void _toggleSearch() {
@@ -195,19 +224,84 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       }
     });
     if (_pageController.hasClients) _pageController.jumpToPage(0);
+    _currentPage = 0;
+    _markFirstVisibleAfterFrame();
   }
 
   /// Warms the image cache for the next couple of windows so a swipe lands on
   /// a sharp, already-decoded picture instead of a fallback flash.
   void _precacheAround(int index) {
     final deals = _visible;
-    if (deals.isEmpty) return;
-    for (var ahead = 1; ahead <= 2; ahead++) {
-      final deal = deals[(index + ahead) % deals.length];
+    if (deals.isEmpty || index < 0 || index >= deals.length) return;
+    for (var next = index + 1;
+        next < deals.length && next <= index + 2;
+        next++) {
+      final deal = deals[next];
       if (deal.hasImage) {
-        precacheImage(NetworkImage(upgradeImageUrl(deal.imageUrl)), context);
+        precacheImage(
+          NetworkImage(upgradeImageUrl(deal.gallery.first)),
+          context,
+          onError: (_, __) {},
+        );
       }
     }
+  }
+
+  void _markDealSeen(ScrollDeal deal) {
+    final key = windowSeenKey(deal);
+    if (!_seenThisVisit.add(key)) return;
+    unawaited(_seenStore.markSeen(key));
+  }
+
+  void _markFirstVisibleAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final deals = _visible;
+      if (deals.isNotEmpty) _markDealSeen(deals.first);
+    });
+  }
+
+  bool _allowRefreshNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _refreshGestureStartedAtTop =
+          _currentPage == 0 && _query.isEmpty && !_searching;
+    }
+    final allowed = notification.depth == 0 && _refreshGestureStartedAtTop;
+    if (notification is ScrollEndNotification) {
+      _refreshGestureStartedAtTop = false;
+    }
+    return allowed;
+  }
+
+  Future<void> _refresh() {
+    final active = _activeRefresh;
+    if (active != null) return active;
+
+    late final Future<void> refresh;
+    refresh = _load(forceLive: true).whenComplete(() {
+      if (identical(_activeRefresh, refresh)) _activeRefresh = null;
+    });
+    _activeRefresh = refresh;
+    return refresh;
+  }
+
+  @visibleForTesting
+  Future<void> refreshForTest() => _refresh();
+
+  void _prepareForBackgroundReturn() {
+    if (_pageController.hasClients && _pageController.page != 0) {
+      _pageController.jumpToPage(0);
+    }
+    final hadDeals = _deals.isNotEmpty;
+    final remaining = _deals
+        .where((deal) => !_seenThisVisit.contains(windowSeenKey(deal)))
+        .toList();
+    setState(() {
+      _deals = remaining;
+      _currentPage = 0;
+      _caughtUp = _caughtUp || (hadDeals && remaining.isEmpty);
+      _error = null;
+    });
   }
 
   Future<void> _restoreSaved() async {
@@ -233,11 +327,15 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   /// shows how many shoppers saved it.
   Future<void> _loadCountsFor(int index) async {
     final deals = _visible;
-    if (deals.isEmpty) return;
+    if (deals.isEmpty || index < 0 || index >= deals.length) return;
     final ids = <String>[];
-    for (var offset = -1; offset <= 3; offset++) {
-      final deal = deals[(index + offset) % deals.length];
-      if (deal.id.isNotEmpty && !_saveStats.containsKey(deal.id)) ids.add(deal.id);
+    final first = index > 0 ? index - 1 : 0;
+    final last = index + 3 < deals.length ? index + 3 : deals.length - 1;
+    for (var candidate = first; candidate <= last; candidate++) {
+      final deal = deals[candidate];
+      if (deal.id.isNotEmpty && !_saveStats.containsKey(deal.id)) {
+        ids.add(deal.id);
+      }
     }
     if (ids.isEmpty) return;
     try {
@@ -254,55 +352,122 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool forceLive = false}) async {
+    final fallbackDeals = List<ScrollDeal>.of(_deals);
+    if (!forceLive) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else if (mounted) {
+      setState(() => _error = null);
+    }
     try {
-      final results = await Future.wait([
-        widget.api.dealSites().catchError((_) => <ScrollDeal>[]),
+      var dealSitesFailed = false;
+      var discoveryFailed = false;
+      final results = await Future.wait<List<ScrollDeal>>([
+        widget.api.dealSites(forceLive: forceLive).catchError((_) {
+          dealSitesFailed = true;
+          return <ScrollDeal>[];
+        }),
         widget.api
-            .discovery()
+            .discovery(forceLive: false)
             .then((r) => r.deals
                 .where((d) => d.imageUrl != null)
                 .map(ScrollDeal.fromDeal)
                 .toList())
-            .catchError((_) => <ScrollDeal>[]),
+            .catchError((_) {
+          discoveryFailed = true;
+          return <ScrollDeal>[];
+        }),
       ]);
 
+      if (dealSitesFailed && discoveryFailed) {
+        if (!mounted) return;
+        if (forceLive || _deals.isNotEmpty || _caughtUp) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not refresh right now. Try again soon.'),
+            ),
+          );
+          return;
+        }
+        setState(() {
+          _loading = false;
+          _caughtUp = false;
+          _error = 'Could not load the window. Try again.';
+        });
+        return;
+      }
+
       final combined = <ScrollDeal>[
-        ...results[0].where((d) => d.hasImage),
-        ...results[1],
+        ...(dealSitesFailed
+            ? fallbackDeals.where((deal) => deal.source != 'discovery')
+            : results[0].where((deal) => deal.hasImage)),
+        ...(discoveryFailed
+            ? fallbackDeals.where((deal) => deal.source == 'discovery')
+            : results[1]),
       ];
-      final seen = <String>{};
+      final responseKeys = <String>{};
       final unique = <ScrollDeal>[];
       for (final deal in combined) {
-        if (deal.id.isEmpty || seen.add(deal.id)) unique.add(deal);
+        if (responseKeys.add(windowSeenKey(deal))) unique.add(deal);
       }
+      final persistedSeen = await _seenStore.loadIds();
+      _seenThisVisit.addAll(persistedSeen);
+      final unseen = unique
+          .where((deal) => !_seenThisVisit.contains(windowSeenKey(deal)))
+          .toList();
       // Order by the shopper's taste so the window opens on things they'll love,
       // then shuffle the rest for freshness.
       final taste = await _tasteStore.load();
       if (!taste.isEmpty) {
-        unique.sort((a, b) => taste
+        unseen.sort((a, b) => taste
             .score(b.title, category: b.category)
             .compareTo(taste.score(a.title, category: a.category)));
       } else {
-        unique.shuffle();
+        unseen.shuffle();
       }
 
       if (!mounted) return;
+      if (_pageController.hasClients && _pageController.page != 0) {
+        _pageController.jumpToPage(0);
+      }
       setState(() {
-        _deals = unique;
+        _deals = unseen;
+        _currentPage = 0;
         _loading = false;
-        _error = unique.isEmpty ? 'No deals to browse yet. Check back soon.' : null;
+        _caughtUp = unique.isNotEmpty && unseen.isEmpty;
+        _error =
+            unique.isEmpty ? 'No deals to browse yet. Check back soon.' : null;
       });
-      if (unique.isNotEmpty) _loadCountsFor(0);
+      if (unseen.isNotEmpty) {
+        _markFirstVisibleAfterFrame();
+        unawaited(_loadCountsFor(0));
+      }
+      if ((dealSitesFailed || discoveryFailed) && fallbackDeals.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Some deal sources could not refresh right now.'),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
+      if (forceLive || _deals.isNotEmpty || _caughtUp) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not refresh right now. Try again soon.'),
+          ),
+        );
+        return;
+      }
       setState(() {
         _loading = false;
-        _error = 'Could not load the window. Pull to retry.';
+        _caughtUp = false;
+        _error = 'Could not load the window. Try again.';
       });
     }
   }
@@ -320,7 +485,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       }
       final current = _saveStats[deal.id]?.count ?? 0;
       final next = (current + (wasSaved ? -1 : 1));
-      _saveStats[deal.id] = SaveStat(count: next < 0 ? 0 : next, saved: !wasSaved);
+      _saveStats[deal.id] =
+          SaveStat(count: next < 0 ? 0 : next, saved: !wasSaved);
     });
     try {
       final stat = wasSaved
@@ -339,7 +505,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update your save. Try again.')),
+          const SnackBar(
+              content: Text('Could not update your save. Try again.')),
         );
       }
       return;
@@ -354,20 +521,29 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   }
 
   Future<void> _open(ScrollDeal deal) async {
-    final uri = Uri.tryParse(deal.productUrl);
-    if (uri == null) return;
+    final uri = safeWindowWebUri(deal.productUrl);
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This deal link is unavailable.')),
+        );
+      }
+      return;
+    }
     HapticFeedback.selectionClick();
     // Opening a deal is a mild interest signal.
-    _tasteStore.reinforce(title: deal.title, category: deal.category, weight: 0.5);
+    _tasteStore.reinforce(
+        title: deal.title, category: deal.category, weight: 0.5);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _share(ScrollDeal deal) async {
+    final productUri = safeWindowWebUri(deal.productUrl);
     final parts = [
       deal.title,
       if (deal.priceText != null) deal.priceText!,
       'at ${deal.retailerName}',
-      deal.productUrl,
+      if (productUri != null) productUri.toString(),
       'found on Trolley Scout',
     ];
     final text = Uri.encodeComponent(parts.join(' · '));
@@ -441,7 +617,14 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       );
     }
     if (_deals.isEmpty) {
-      return _EmptyState(message: _error ?? 'Nothing to browse yet.', onRetry: _load);
+      if (_caughtUp) {
+        return _CaughtUpState(
+          onRefresh: _refresh,
+          onOpenSaved: _openSaved,
+        );
+      }
+      return _EmptyState(
+          message: _error ?? 'Nothing to browse yet.', onRetry: _load);
     }
 
     final visible = _visible;
@@ -451,27 +634,42 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         if (visible.isEmpty)
           _NoMatches(query: _query, onClear: _toggleSearch)
         else
-          PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            onPageChanged: (index) {
-              HapticFeedback.selectionClick();
-              _precacheAround(index);
-              _loadCountsFor(index);
-            },
-            itemBuilder: (context, index) {
-              final deal = visible[index % visible.length];
-              return _WindowCard(
-                deal: deal,
-                saved: _saved.contains(deal.id),
-                saveCount: _saveStats[deal.id]?.count ?? 0,
-                onOpen: () => _open(deal),
-                onSave: () => _toggleSave(deal),
-                onShare: () => _share(deal),
-                onComment: () => _openComments(deal),
-                onOpenStore: () => _openStoreProfile(deal),
-              );
-            },
+          RefreshIndicator(
+            onRefresh: _refresh,
+            notificationPredicate: _allowRefreshNotification,
+            color: TS.redOf(context),
+            backgroundColor: TS.surfaceOf(context),
+            child: PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              physics: const PageScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              itemCount: visible.length,
+              onPageChanged: (index) {
+                setState(() => _currentPage = index);
+                HapticFeedback.selectionClick();
+                final current = _visible;
+                if (index < 0 || index >= current.length) return;
+                _markDealSeen(current[index]);
+                _precacheAround(index);
+                unawaited(_loadCountsFor(index));
+              },
+              itemBuilder: (context, index) {
+                final deal = visible[index];
+                return _WindowCard(
+                  active: index == _currentPage,
+                  deal: deal,
+                  saved: _saved.contains(deal.id),
+                  saveCount: _saveStats[deal.id]?.count ?? 0,
+                  onOpen: () => _open(deal),
+                  onSave: () => _toggleSave(deal),
+                  onShare: () => _share(deal),
+                  onComment: () => _openComments(deal),
+                  onOpenStore: () => _openStoreProfile(deal),
+                );
+              },
+            ),
           ),
         // Top bar: label (or search field), search, music mute, and saved.
         Positioned(
@@ -483,30 +681,40 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  key: const ValueKey('window-top-controls'),
                   children: [
                     if (_searching)
                       Expanded(child: _buildSearchField())
-                    else ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text('WINDOW SHOPPING',
-                            style: TextStyle(
+                    else
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'WINDOW SHOPPING',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.8)),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      const Spacer(),
-                    ],
                     const SizedBox(width: 8),
                     _RoundIcon(
                       icon: _searching ? Icons.close : Icons.search,
-                      tooltip: _searching ? 'Close search' : 'Search the window',
+                      tooltip:
+                          _searching ? 'Close search' : 'Search the window',
                       onTap: _toggleSearch,
                     ),
                     const SizedBox(width: 8),
@@ -646,7 +854,8 @@ String upgradeImageUrl(String? url) {
   // so the original full-size upload is fetched instead.
   if (url.contains('/wp-content/')) {
     return url.replaceFirst(
-      RegExp(r'-\d+x\d+(?=\.(?:jpg|jpeg|png|webp)(?:\?|$))', caseSensitive: false),
+      RegExp(r'-\d+x\d+(?=\.(?:jpg|jpeg|png|webp)(?:\?|$))',
+          caseSensitive: false),
       '',
     );
   }
@@ -655,6 +864,13 @@ String upgradeImageUrl(String? url) {
 
 /// Plays a quiet one-shot only when global sounds are on — Window Shopping keeps
 /// its own feedback almost silent so the ambience leads.
+@visibleForTesting
+Uri? safeWindowWebUri(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.host.isEmpty) return null;
+  return uri.scheme == 'https' || uri.scheme == 'http' ? uri : null;
+}
+
 class _SubtleSfx {
   static final AudioPlayer _player = AudioPlayer(playerId: 'window_sfx');
   static void play(String? name) {
@@ -723,6 +939,7 @@ class _RoundIcon extends StatelessWidget {
 
 class _WindowCard extends StatelessWidget {
   const _WindowCard({
+    this.active = true,
     required this.deal,
     required this.saved,
     required this.saveCount,
@@ -733,6 +950,7 @@ class _WindowCard extends StatelessWidget {
     required this.onOpenStore,
   });
 
+  final bool active;
   final ScrollDeal deal;
   final bool saved;
   final int saveCount;
@@ -750,21 +968,22 @@ class _WindowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onDoubleTap: saved ? null : onSave,
-      child: ColoredBox(
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (deal.hasImage)
-              // Key by the deal so the zoom-out restarts when the card at this
-              // PageView slot swaps to a different deal (e.g. live search),
-              // instead of freezing at the previous animation's scale.
-              _KenBurnsImage(key: ValueKey(deal.id), url: deal.imageUrl!)
-            else
-              const _ImageFallback(),
-            const DecoratedBox(
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (deal.hasImage)
+            _WindowImageGallery(
+              key: ValueKey(deal.id),
+              active: active,
+              images: deal.gallery,
+              onDoubleTap: saved ? null : onSave,
+            )
+          else
+            const _ImageFallback(),
+          const IgnorePointer(
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -779,130 +998,133 @@ class _WindowCard extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned(
-              right: 10,
-              bottom: 190,
-              child: Column(
-                children: [
-                  _RailButton(
-                    icon: saved ? Icons.bookmark : Icons.bookmark_border,
-                    color: saved ? TS.yellow : Colors.white,
-                    label: saveCount > 0 ? formatCount(saveCount) : (saved ? 'Saved' : 'Save'),
-                    onTap: onSave,
-                  ),
-                  const SizedBox(height: 18),
-                  _RailButton(
-                    icon: Icons.mode_comment_outlined,
-                    color: Colors.white,
-                    label: 'Comment',
-                    onTap: onComment,
-                  ),
-                  const SizedBox(height: 18),
-                  _RailButton(
-                    icon: Icons.share,
-                    color: Colors.white,
-                    label: 'Share',
-                    onTap: onShare,
-                  ),
-                ],
-              ),
+          ),
+          Positioned(
+            right: 10,
+            bottom: 190,
+            child: Column(
+              children: [
+                _RailButton(
+                  icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                  color: saved ? TS.yellow : Colors.white,
+                  label: saveCount > 0
+                      ? formatCount(saveCount)
+                      : (saved ? 'Saved' : 'Save'),
+                  onTap: onSave,
+                ),
+                const SizedBox(height: 18),
+                _RailButton(
+                  icon: Icons.mode_comment_outlined,
+                  color: Colors.white,
+                  label: 'Comment',
+                  onTap: onComment,
+                ),
+                const SizedBox(height: 18),
+                _RailButton(
+                  icon: Icons.share,
+                  color: Colors.white,
+                  label: 'Share',
+                  onTap: onShare,
+                ),
+              ],
             ),
-            Positioned(
-              left: 16,
-              right: 74,
-              bottom: 28,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      // Tapping the store opens its profile (all its promos).
-                      GestureDetector(
-                        onTap: onOpenStore,
-                        child: _StoreChip(name: deal.retailerName),
-                      ),
-                      if (deal.category != null) ...[
-                        const SizedBox(width: 6),
-                        _Badge(
-                            text: deal.category!.toUpperCase(),
-                            color: Colors.white24,
-                            textColor: Colors.white),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    deal.title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      if (deal.priceText != null)
-                        Text(deal.priceText!,
-                            style: const TextStyle(
-                                color: TS.yellow,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900)),
-                      const SizedBox(width: 10),
-                      if (deal.previousPriceText != null)
-                        Text(deal.previousPriceText!,
-                            style: const TextStyle(
-                                color: Colors.white70,
-                                decoration: TextDecoration.lineThrough,
-                                fontSize: 16)),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      if (deal.savingText != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4, right: 8),
-                          child: _Badge(
-                              text: deal.savingText!,
-                              color: TS.red,
-                              textColor: Colors.white),
-                        ),
-                      if (_expiryLabel(deal.expiresAt) != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: _Badge(
-                              text: _expiryLabel(deal.expiresAt)!,
-                              color: Colors.white,
-                              textColor: TS.ink),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: TS.yellow,
-                        foregroundColor: TS.ink,
-                        shape: const RoundedRectangleBorder(),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      onPressed: onOpen,
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: Text('View at ${deal.retailerName}',
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          Positioned(
+            left: 16,
+            right: 74,
+            bottom: 28,
+            child: Column(
+              key: const ValueKey('window-deal-details'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    // Tapping the store opens its profile (all its promos).
+                    GestureDetector(
+                      onTap: onOpenStore,
+                      child: _StoreChip(name: deal.retailerName),
                     ),
+                    if (deal.category != null) ...[
+                      const SizedBox(width: 6),
+                      _Badge(
+                          text: deal.category!.toUpperCase(),
+                          color: Colors.white24,
+                          textColor: Colors.white),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  deal.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    if (deal.priceText != null)
+                      Text(deal.priceText!,
+                          style: const TextStyle(
+                              color: TS.yellow,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900)),
+                    const SizedBox(width: 10),
+                    if (deal.previousPriceText != null)
+                      Text(deal.previousPriceText!,
+                          style: const TextStyle(
+                              color: Colors.white70,
+                              decoration: TextDecoration.lineThrough,
+                              fontSize: 16)),
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (deal.savingText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, right: 8),
+                        child: _Badge(
+                            text: deal.savingText!,
+                            color: TS.red,
+                            textColor: Colors.white),
+                      ),
+                    if (_expiryLabel(deal.expiresAt) != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: _Badge(
+                            text: _expiryLabel(deal.expiresAt)!,
+                            color: Colors.white,
+                            textColor: TS.ink),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TS.yellow,
+                      foregroundColor: TS.ink,
+                      shape: const RoundedRectangleBorder(),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: onOpen,
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: Text('View at ${deal.retailerName}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -967,8 +1189,8 @@ class _SavedSheetState extends State<_SavedSheet> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.7),
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1004,8 +1226,11 @@ class _SavedSheetState extends State<_SavedSheet> {
                       leading: deal.hasImage
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(6),
-                              child: Image.network(upgradeImageUrl(deal.imageUrl),
-                                  width: 46, height: 46, fit: BoxFit.cover,
+                              child: Image.network(
+                                  upgradeImageUrl(deal.imageUrl),
+                                  width: 46,
+                                  height: 46,
+                                  fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) =>
                                       const Icon(Icons.local_offer_outlined)),
                             )
@@ -1089,12 +1314,15 @@ class _StoreChip extends StatelessWidget {
           Container(
             width: 22,
             height: 22,
-            decoration: const BoxDecoration(color: TS.ink, shape: BoxShape.circle),
+            decoration:
+                const BoxDecoration(color: TS.ink, shape: BoxShape.circle),
             child: Center(
               child: Text(
                 name.isNotEmpty ? name[0].toUpperCase() : '?',
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12),
               ),
             ),
           ),
@@ -1180,7 +1408,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       if (mounted) {
         setState(() => _posting = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not post your comment. Try again.')),
+          const SnackBar(
+              content: Text('Could not post your comment. Try again.')),
         );
       }
     }
@@ -1192,8 +1421,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
         child: ConstrainedBox(
-          constraints:
-              BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.78),
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.78),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1201,7 +1430,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(20, 16, 20, 2),
                 child: Text('Comments',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -1262,7 +1492,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                           isDense: true,
                           hintText: 'Add a comment…',
                           border: OutlineInputBorder(
-                              borderSide: BorderSide(color: TS.lineSoftOf(context))),
+                              borderSide:
+                                  BorderSide(color: TS.lineSoftOf(context))),
                         ),
                       ),
                     ),
@@ -1272,8 +1503,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         backgroundColor: TS.yellow,
                         foregroundColor: TS.ink,
                         shape: const RoundedRectangleBorder(),
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 14, horizontal: 16),
                       ),
                       onPressed: _posting ? null : _post,
                       child: const Text('Post'),
@@ -1325,6 +1556,7 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
   late final Map<String, SaveStat> _saveStats =
       Map<String, SaveStat>.of(widget.initialStats);
   final _pageController = PageController();
+  int _currentPage = 0;
 
   @override
   void initState() {
@@ -1386,7 +1618,8 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update your save. Try again.')),
+          const SnackBar(
+              content: Text('Could not update your save. Try again.')),
         );
       }
     }
@@ -1405,8 +1638,10 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
             Text(widget.storeName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-            Text('${widget.deals.length} promo${widget.deals.length == 1 ? '' : 's'}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            Text(
+                '${widget.deals.length} promo${widget.deals.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: TS.mutedOf(context))),
           ],
         ),
@@ -1415,9 +1650,11 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: widget.deals.length,
+        onPageChanged: (index) => setState(() => _currentPage = index),
         itemBuilder: (context, index) {
           final deal = widget.deals[index];
           return _WindowCard(
+            active: index == _currentPage,
             deal: deal,
             saved: _saved.contains(deal.id),
             saveCount: _saveStats[deal.id]?.count ?? 0,
@@ -1434,7 +1671,8 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.text, required this.color, required this.textColor});
+  const _Badge(
+      {required this.text, required this.color, required this.textColor});
 
   final String text;
   final Color color;
@@ -1455,40 +1693,242 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// The window's picture opens pushed in close, then slowly eases back out to a
-/// full view. Two things fall out of that: a swipe lands on movement rather
-/// than a static frame, and a low-resolution image fills the screen at the
-/// start (where its softness is least noticeable) and only settles once it has
-/// had a moment to decode. Honours the system reduce-motion setting.
-class _KenBurnsImage extends StatefulWidget {
-  const _KenBurnsImage({super.key, required this.url});
+/// A product gallery that resolves horizontal image gestures inside the
+/// vertical deal reel and keeps its controls usable over every image shape.
+class _WindowImageGallery extends StatefulWidget {
+  const _WindowImageGallery({
+    super.key,
+    required this.active,
+    required this.images,
+    required this.onDoubleTap,
+  });
 
-  final String url;
+  final bool active;
+  final List<String> images;
+  final VoidCallback? onDoubleTap;
 
   @override
-  State<_KenBurnsImage> createState() => _KenBurnsImageState();
+  State<_WindowImageGallery> createState() => _WindowImageGalleryState();
 }
 
-class _KenBurnsImageState extends State<_KenBurnsImage>
-    with SingleTickerProviderStateMixin {
-  // Start zoomed in past the fill point (hides low-res softness), drift back to
-  // an exact cover fill so no black edge is ever revealed.
-  static const _startScale = 1.5;
-  static const _endScale = 1.0;
+class _WindowImageGalleryState extends State<_WindowImageGallery> {
+  final _controller = PageController();
+  int _index = 0;
 
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 14),
-  );
-  late final Animation<double> _scale = Tween<double>(
-    begin: _startScale,
-    end: _endScale,
-  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _show(int index) {
+    if (index < 0 || index >= widget.images.length) return;
+    HapticFeedback.selectionClick();
+    if (MediaQuery.of(context).disableAnimations) {
+      _controller.jumpToPage(index);
+    } else {
+      _controller.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  List<int> get _dotIndexes {
+    const visibleDotLimit = 9;
+    if (widget.images.length <= visibleDotLimit) {
+      return List<int>.generate(widget.images.length, (index) => index);
+    }
+    final maxStart = widget.images.length - visibleDotLimit;
+    final start = (_index - visibleDotLimit ~/ 2).clamp(0, maxStart).toInt();
+    return List<int>.generate(visibleDotLimit, (offset) => start + offset);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.images.length == 1) {
+      return GestureDetector(
+        onDoubleTap: widget.onDoubleTap,
+        child: WindowProductImage(
+          key: ValueKey(widget.images.first),
+          active: widget.active,
+          url: widget.images.first,
+        ),
+      );
+    }
+
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: 'Product image ${_index + 1} of ${widget.images.length}',
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            itemCount: widget.images.length,
+            onPageChanged: (index) {
+              if (!mounted) return;
+              setState(() => _index = index);
+            },
+            itemBuilder: (context, index) => GestureDetector(
+              onDoubleTap: widget.onDoubleTap,
+              child: WindowProductImage(
+                key: ValueKey(widget.images[index]),
+                active: widget.active && index == _index,
+                url: widget.images[index],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _GalleryArrow(
+                tooltip: 'Previous image',
+                icon: Icons.chevron_left,
+                onPressed: _index > 0 ? () => _show(_index - 1) : null,
+              ),
+            ),
+          ),
+          Positioned(
+            // Leave the far-right action rail clear on shorter phones.
+            right: 68,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _GalleryArrow(
+                tooltip: 'Next image',
+                icon: Icons.chevron_right,
+                onPressed: _index < widget.images.length - 1
+                    ? () => _show(_index + 1)
+                    : null,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 60,
+            right: 60,
+            top: 88,
+            child: Row(
+              key: const ValueKey('window-image-dots'),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (final index in _dotIndexes)
+                  Container(
+                    key: ValueKey('window-image-dot-$index'),
+                    width: index == _index ? 9 : 6,
+                    height: index == _index ? 9 : 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: index == _index ? Colors.white : Colors.white54,
+                      shape: BoxShape.circle,
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black45, blurRadius: 3),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GalleryArrow extends StatelessWidget {
+  const _GalleryArrow({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.52),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        color: Colors.white,
+        disabledColor: Colors.white30,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 30),
+      ),
+    );
+  }
+}
+
+class WindowProductImage extends StatefulWidget {
+  const WindowProductImage({
+    super.key,
+    required this.url,
+    this.active = true,
+    this.imageProvider,
+  });
+
+  final String url;
+  final bool active;
+  @visibleForTesting
+  final ImageProvider<Object>? imageProvider;
+
+  @override
+  State<WindowProductImage> createState() => _WindowProductImageState();
+}
+
+class _WindowProductImageState extends State<WindowProductImage>
+    with SingleTickerProviderStateMixin {
+  // Start at the image's fitted size, then ease outward so unusual dimensions
+  // remain visible without magnifying a low-resolution source.
+  static const _startScale = 1.0;
+  static const _endScale = 0.92;
+
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  bool _hasDecodedFrame = false;
 
   @override
   void initState() {
     super.initState();
-    _controller.forward();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 14),
+    );
+    _scale = Tween<double>(
+      begin: _startScale,
+      end: _endScale,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+  }
+
+  void _startAfterDecode() {
+    if (_hasDecodedFrame) return;
+    _hasDecodedFrame = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.active) _controller.forward(from: 0);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant WindowProductImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active == widget.active) return;
+    if (!widget.active) {
+      _controller.stop();
+      _controller.value = 0;
+    } else if (_hasDecodedFrame) {
+      _controller.forward(from: 0);
+    }
   }
 
   @override
@@ -1499,20 +1939,28 @@ class _KenBurnsImageState extends State<_KenBurnsImage>
 
   @override
   Widget build(BuildContext context) {
-    final image = Image.network(
-      upgradeImageUrl(widget.url),
-      fit: BoxFit.cover,
+    final image = Image(
+      image: widget.imageProvider ?? NetworkImage(upgradeImageUrl(widget.url)),
+      fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       gaplessPlayback: true,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (frame != null) _startAfterDecode();
+        return child;
+      },
       errorBuilder: (_, __, ___) => const _ImageFallback(),
       loadingBuilder: (context, child, progress) =>
           progress == null ? child : const _ImageFallback(),
     );
     // Reduce-motion shoppers get the settled frame with no movement.
     if (MediaQuery.of(context).disableAnimations) {
-      return image;
+      return Transform.scale(scale: _endScale, child: image);
     }
-    return ScaleTransition(scale: _scale, child: image);
+    return ScaleTransition(
+      key: ValueKey('window-image-scale-${widget.url}'),
+      scale: _scale,
+      child: image,
+    );
   }
 }
 
@@ -1524,7 +1972,93 @@ class _ImageFallback extends StatelessWidget {
     return const ColoredBox(
       color: Color(0xFF1C1710),
       child: Center(
-        child: Icon(Icons.local_offer_outlined, color: Colors.white24, size: 64),
+        child:
+            Icon(Icons.local_offer_outlined, color: Colors.white24, size: 64),
+      ),
+    );
+  }
+}
+
+class _CaughtUpState extends StatelessWidget {
+  const _CaughtUpState({
+    required this.onRefresh,
+    required this.onOpenSaved,
+  });
+
+  final Future<void> Function() onRefresh;
+  final VoidCallback onOpenSaved;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height;
+    return ColoredBox(
+      color: TS.bgOf(context),
+      child: RefreshIndicator(
+        onRefresh: onRefresh,
+        color: TS.redOf(context),
+        backgroundColor: TS.surfaceOf(context),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: height,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 54,
+                        color: TS.greenOf(context),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'You’re all caught up.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: TS.inkOf(context),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Pull down to check for fresh deals.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: TS.yellow,
+                          foregroundColor: TS.ink,
+                        ),
+                        onPressed: onRefresh,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Check for new deals'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: TS.inkOf(context),
+                          side: BorderSide(color: TS.lineOf(context)),
+                        ),
+                        onPressed: onOpenSaved,
+                        icon: const Icon(Icons.bookmark_outline),
+                        label: const Text('Saved deals'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

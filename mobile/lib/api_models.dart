@@ -798,6 +798,8 @@ class Catalogue {
   const Catalogue({
     required this.name,
     required this.url,
+    this.sourceUrl,
+    this.capturedAt,
     this.validFrom,
     this.validTo,
     this.imageUrl,
@@ -806,6 +808,8 @@ class Catalogue {
   });
   final String name;
   final String url;
+  final String? sourceUrl;
+  final String? capturedAt;
   final String? validFrom;
   final String? validTo;
   final String? imageUrl;
@@ -826,6 +830,8 @@ class Catalogue {
   factory Catalogue.fromLeaflet(Map<String, dynamic> json) => Catalogue(
         name: _string(json['name'], 'Catalogue'),
         url: _string(json['documentUrl'] ?? json['url']),
+        sourceUrl: _optionalString(json['sourceUrl'] ?? json['url']),
+        capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         imageUrl: _optionalString(json['imageUrl']),
@@ -836,6 +842,8 @@ class Catalogue {
   factory Catalogue.fromPromotion(Map<String, dynamic> json) => Catalogue(
         name: _string(json['title'], 'Specials'),
         url: _string(json['productUrl'] ?? json['sourceUrl']),
+        sourceUrl: _optionalString(json['sourceUrl']),
+        capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         imageUrl: _optionalString(json['imageUrl']),
@@ -845,7 +853,10 @@ class Catalogue {
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'url': url,
+        'documentUrl': url,
+        'url': sourceUrl ?? url,
+        'sourceUrl': sourceUrl,
+        'capturedAt': capturedAt,
         'validFrom': validFrom,
         'validTo': validTo,
         'imageUrl': imageUrl,
@@ -1074,6 +1085,7 @@ class ScrollDeal {
     this.previousPriceText,
     this.savingText,
     this.imageUrl,
+    this.images = const [],
     this.category,
     this.expiresAt,
   });
@@ -1088,10 +1100,22 @@ class ScrollDeal {
   final String? previousPriceText;
   final String? savingText;
   final String? imageUrl;
+  final List<String> images;
   final String? category;
   final String? expiresAt;
 
-  bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
+  List<String> get gallery {
+    final seen = <String>{};
+    return <String>[
+      if (imageUrl != null) imageUrl!,
+      ...images,
+    ]
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty && seen.add(url))
+        .toList(growable: false);
+  }
+
+  bool get hasImage => gallery.isNotEmpty;
 
   factory ScrollDeal.fromJson(Map<String, dynamic> json) => ScrollDeal(
         id: _string(json['id']),
@@ -1104,6 +1128,13 @@ class ScrollDeal {
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
         imageUrl: _optionalString(json['imageUrl']),
+        images: json['images'] is List
+            ? (json['images'] as List)
+                .whereType<String>()
+                .map((url) => url.trim())
+                .where((url) => url.isNotEmpty)
+                .toList()
+            : const [],
         category: _optionalString(json['category']),
         expiresAt: _optionalString(json['expiresAt']),
       );
@@ -1119,6 +1150,7 @@ class ScrollDeal {
         'previousPriceText': previousPriceText,
         'savingText': savingText,
         'imageUrl': imageUrl,
+        if (images.isNotEmpty) 'images': images,
         'category': category,
         'expiresAt': expiresAt,
       };
@@ -1207,7 +1239,8 @@ class PropertyListing {
   /// A stable key that identifies this listing across searches (for favourites).
   String get favouriteKey => '$portal:$id';
 
-  factory PropertyListing.fromJson(Map<String, dynamic> json) => PropertyListing(
+  factory PropertyListing.fromJson(Map<String, dynamic> json) =>
+      PropertyListing(
         id: _string(json['id']),
         portal: _string(json['portal']),
         portalName: _string(json['portalName']),
@@ -1215,7 +1248,8 @@ class PropertyListing {
         listingUrl: _string(json['listingUrl']),
         listingType: _string(json['listingType'], 'sale'),
         priceText: _optionalString(json['priceText']),
-        priceValue: json['priceValue'] is num ? json['priceValue'] as num : null,
+        priceValue:
+            json['priceValue'] is num ? json['priceValue'] as num : null,
         location: _optionalString(json['location']),
         province: _optionalString(json['province']),
         bedrooms: _intOrNull(json['bedrooms']),
@@ -1294,8 +1328,9 @@ class PropertySearchResult {
       PropertySearchResult(
         listings:
             _mapList(json['listings']).map(PropertyListing.fromJson).toList(),
-        sources:
-            _mapList(json['sources']).map(PropertyPortalSource.fromJson).toList(),
+        sources: _mapList(json['sources'])
+            .map(PropertyPortalSource.fromJson)
+            .toList(),
         listingType: _string(json['listingType'], 'sale'),
         page: _int(json['page'], 1),
         locationText: _optionalString(json['locationText']),

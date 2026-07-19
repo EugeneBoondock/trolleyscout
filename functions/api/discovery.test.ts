@@ -65,6 +65,7 @@ describe('storePromotionsToDiscovery', () => {
         title: 'Rice 2kg',
       },
       {
+        capturedAt: '2026-07-15T08:30:00.000Z',
         id: 'catalogue-1',
         imageUrl: 'https://market.test/catalogue.jpg',
         kind: 'catalogue',
@@ -84,6 +85,7 @@ describe('storePromotionsToDiscovery', () => {
       title: 'Rice 2kg',
     })
     expect(result.leaflets[0]).toMatchObject({
+      capturedAt: '2026-07-15T08:30:00.000Z',
       imageUrl: 'https://market.test/catalogue.jpg',
       name: 'Weekly catalogue',
       retailerName: 'Local Market',

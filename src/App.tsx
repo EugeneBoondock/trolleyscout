@@ -126,6 +126,10 @@ import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
 import { filterDiscoveryDeals } from './services/dealFilters'
 import {
+  groupLeafletsByRetailer,
+  type CatalogueGroup,
+} from './services/catalogueOrdering'
+import {
   CATEGORY_OPTIONS,
   FOOD_SUBCATEGORY_OPTIONS,
   type DealCategory,
@@ -3034,37 +3038,8 @@ function AdminConsole() {
   )
 }
 
-interface CatalogueGroup {
-  retailerId: string
-  retailerName: string
-  leaflets: StoreLeaflet[]
-}
-
 // One card per retailer, so ten SPAR branch catalogues collapse to a single
 // "SPAR — 10 catalogues" card; tapping opens a modal listing every location.
-function groupLeafletsByRetailer(leaflets: StoreLeaflet[]): CatalogueGroup[] {
-  const byRetailer = new Map<string, CatalogueGroup>()
-
-  for (const leaflet of leaflets) {
-    const key = leaflet.retailerId || leaflet.retailerName.toLowerCase()
-    const group = byRetailer.get(key)
-
-    if (group) {
-      group.leaflets.push(leaflet)
-    } else {
-      byRetailer.set(key, {
-        leaflets: [leaflet],
-        retailerId: key,
-        retailerName: leaflet.retailerName,
-      })
-    }
-  }
-
-  return Array.from(byRetailer.values()).sort((left, right) =>
-    left.retailerName.localeCompare(right.retailerName),
-  )
-}
-
 function CatalogueGroupsBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
   const groups = groupLeafletsByRetailer(leaflets)
   const [openGroup, setOpenGroup] = useState<CatalogueGroup | undefined>()

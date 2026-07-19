@@ -42,6 +42,7 @@ describe('NearMeView catalogue reader', () => {
           name: 'Pick n Pay Central',
           placeId: 'pnp-central',
           promotions: [{
+            capturedAt: '2026-07-18T08:00:00.000Z',
             id: 'catalogue-1',
             imageUrl: 'https://cdn.test/monthly-cover.jpg',
             kind: 'catalogue',
@@ -59,13 +60,17 @@ describe('NearMeView catalogue reader', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }))
 
     const weeklyButton = await screen.findByRole('button', { name: /Read Weekly leaflet/i })
+    const monthlyButton = screen.getByRole('button', { name: /Read Monthly catalogue/i })
+    const catalogueButtons = screen.getAllByRole('button').filter((button) =>
+      button.getAttribute('aria-label')?.startsWith('Read '),
+    )
+    expect(catalogueButtons).toEqual([monthlyButton, weeklyButton])
     expect(weeklyButton.tagName).toBe('BUTTON')
     fireEvent.click(weeklyButton)
     expect(screen.getByRole('dialog', { name: 'Weekly leaflet' })).toBeTruthy()
     expect(screen.getByRole('img', { name: 'Pick n Pay Central catalogue page 1' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Close catalogue' }))
 
-    const monthlyButton = screen.getByRole('button', { name: /Read Monthly catalogue/i })
     expect(monthlyButton.tagName).toBe('BUTTON')
     fireEvent.click(monthlyButton)
     expect(screen.getByRole('dialog', { name: 'Monthly catalogue' })).toBeTruthy()

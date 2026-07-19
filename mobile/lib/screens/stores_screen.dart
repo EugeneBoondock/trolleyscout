@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../catalogue_sort.dart';
 import '../store_grouping.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
@@ -394,7 +395,7 @@ class _BranchCard extends StatelessWidget {
           if (branch.catalogues.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text('Branch catalogues', style: TS.eyebrowOf(context)),
-            for (final catalogue in branch.catalogues)
+            for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: _StoreLogo(

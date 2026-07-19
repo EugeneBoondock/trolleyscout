@@ -78,20 +78,34 @@ export async function setMemberState(
 // window_saves — DB-backed saves + global counts
 // ---------------------------------------------------------------------------
 
-async function liveDealSiteIds(env: TrolleyScoutEnv): Promise<Set<string>> {
+interface LiveDealSiteIndex {
+  availableSources: Set<string>
+  idsBySource: Map<string, Set<string>>
+}
+
+async function liveDealSiteIndex(env: TrolleyScoutEnv): Promise<LiveDealSiteIndex> {
   try {
     const feed = await readDealSiteFeed(env)
-    return new Set(feed.deals.map((deal) => deal.id).filter(Boolean))
+    const availableSources = new Set(feed.sources.map((source) => source.id))
+    const idsBySource = new Map<string, Set<string>>()
+    for (const source of availableSources) idsBySource.set(source, new Set())
+    for (const deal of feed.deals) {
+      if (!availableSources.has(deal.source) || !deal.id) continue
+      idsBySource.get(deal.source)?.add(deal.id)
+    }
+    return { availableSources, idsBySource }
   } catch {
-    return new Set()
+    return { availableSources: new Set(), idsBySource: new Map() }
   }
 }
 
-function isStale(row: SaveRow, liveIds: Set<string>): boolean {
-  // Only prune rotating deal-site deals we can prove are gone; never blank a
-  // list just because the live feed failed to load.
-  if (liveIds.size === 0) return false
-  return DEAL_SITE_SOURCES.has(row.source ?? '') && !liveIds.has(row.deal_id)
+function isStale(row: SaveRow, live: LiveDealSiteIndex): boolean {
+  const source = row.source ?? ''
+  // A different source answering does not prove this source's deal is gone.
+  if (!DEAL_SITE_SOURCES.has(source) || !live.availableSources.has(source)) {
+    return false
+  }
+  return !live.idsBySource.get(source)?.has(row.deal_id)
 }
 
 export async function listWindowSaves(
@@ -105,11 +119,11 @@ export async function listWindowSaves(
     )
       .bind(accountId)
       .all<SaveRow>()
-    const liveIds = await liveDealSiteIds(env)
+    const live = await liveDealSiteIndex(env)
     const kept: Array<Record<string, unknown>> = []
     const staleIds: string[] = []
     for (const row of result.results) {
-      if (isStale(row, liveIds)) {
+      if (isStale(row, live)) {
         staleIds.push(row.id)
         continue
       }
@@ -276,13 +290,13 @@ async function deleteRowsById(env: TrolleyScoutEnv, table: string, ids: string[]
 // counts fall as stores pull deals. Safe to call from the scheduled scout.
 export async function pruneWindowSocial(env: TrolleyScoutEnv): Promise<void> {
   if (!hasTrolleyScoutDatabase(env)) return
-  const liveIds = await liveDealSiteIds(env)
-  if (liveIds.size === 0) return
+  const live = await liveDealSiteIndex(env)
+  if (live.availableSources.size === 0) return
   try {
     const saves = await env.DB.prepare(
       'SELECT id, deal_id, source, deal_json, created_at FROM window_saves',
     ).all<SaveRow>()
-    const staleSaveIds = saves.results.filter((r) => isStale(r, liveIds)).map((r) => r.id)
+    const staleSaveIds = saves.results.filter((r) => isStale(r, live)).map((r) => r.id)
     await deleteRowsById(env, 'window_saves', staleSaveIds)
 
     // Comments only exist for deal-site/discovery deals; prune those whose deal
@@ -292,11 +306,23 @@ export async function pruneWindowSocial(env: TrolleyScoutEnv): Promise<void> {
     ).all<{ deal_id: string }>()
     const staleDealIds = comments.results
       .map((r) => r.deal_id)
-      .filter((id) => id.includes(':') && DEAL_SITE_SOURCES.has(id.split(':')[0]) && !liveIds.has(id))
+      .filter((id) => {
+        const source = dealSiteSourceFromId(id)
+        return source !== undefined &&
+          live.availableSources.has(source) &&
+          !live.idsBySource.get(source)?.has(id)
+      })
     for (const dealId of staleDealIds) {
       await env.DB.prepare('DELETE FROM deal_comments WHERE deal_id = ?').bind(dealId).run()
     }
   } catch {
     // best-effort
   }
+}
+
+function dealSiteSourceFromId(id: string): string | undefined {
+  for (const source of DEAL_SITE_SOURCES) {
+    if (id.startsWith(`${source}-`) || id.startsWith(`${source}:`)) return source
+  }
+  return undefined
 }

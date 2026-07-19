@@ -23,15 +23,18 @@ describe('payfastBilling', () => {
         id: 'member-test',
       },
       attemptId: 'billing-test',
+      cancelUrl: 'https://trolleyscout.co.za/Subscription?payfast=cancelled',
       merchantId: '10000100',
       merchantKey: 'merchant-key',
       notifyUrl: 'https://trolleyscout.co.za/api/payfast-itn',
       option,
       passphrase: 'secret phrase',
+      returnUrl: 'https://trolleyscout.co.za/Subscription?payfast=success',
     })
 
     expect(Object.fromEntries(fields)).toMatchObject({
       amount: '29.00',
+      cancel_url: 'https://trolleyscout.co.za/Subscription?payfast=cancelled',
       custom_str1: 'member-test',
       custom_str2: 'scout',
       custom_str3: 'monthly',
@@ -44,9 +47,9 @@ describe('payfastBilling', () => {
       merchant_key: 'merchant-key',
       notify_url: 'https://trolleyscout.co.za/api/payfast-itn',
       recurring_amount: '29.00',
+      return_url: 'https://trolleyscout.co.za/Subscription?payfast=success',
       subscription_type: '1',
     })
-    expect(fields.has('return_url')).toBe(false)
     expect(verifyPayFastSignature(fields, 'secret phrase')).toBe(true)
   })
 

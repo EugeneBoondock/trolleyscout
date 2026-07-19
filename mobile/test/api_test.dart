@@ -145,6 +145,62 @@ void main() {
       expect(requestUri.queryParameters['refresh'], '1');
     });
 
+    test('uses the server refresh flag for a forced deal-site run', () async {
+      late Uri requestUri;
+      final api = Api(
+        client: MockClient((request) async {
+          requestUri = request.url;
+          return http.Response(
+            jsonEncode({
+              'data': {'deals': []},
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      await api.dealSites(forceLive: true);
+
+      expect(requestUri.queryParameters['refresh'], '1');
+    });
+
+    test('requests the redirect checkout that works in native WebViews',
+        () async {
+      late Map<String, dynamic> requestBody;
+      final api = Api(
+        client: MockClient((request) async {
+          requestBody =
+              Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'checkout': {
+                  'message': 'Redirecting to PayFast.',
+                  'planId': 'scout',
+                  'billingCycle': 'monthly',
+                  'status': 'checkout_required',
+                  'redirectUrl': 'https://www.payfast.co.za/eng/process',
+                  'redirectFields': {'signature': 'signed'},
+                },
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final checkout = await api.checkout('scout', 'monthly');
+
+      expect(requestBody['checkoutMode'], 'redirect');
+      expect(checkout.redirectFields, {'signature': 'signed'});
+    });
+
     test('reads the permanent discovered store directory', () async {
       late Uri requestUri;
       final api = Api(
@@ -235,8 +291,8 @@ void main() {
       expect(vouchers.single.title, 'Winter voucher');
       expect(await api.claimVoucher('voucher-1'), isTrue);
       expect(await api.removeVoucherClaim('voucher-1'), isTrue);
-      expect(requests.map((request) => request.method),
-          ['GET', 'POST', 'DELETE']);
+      expect(
+          requests.map((request) => request.method), ['GET', 'POST', 'DELETE']);
     });
   });
 }
