@@ -451,6 +451,59 @@ class Api {
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
   }
 
+  // --- Window Shopping social + cross-device account state ---
+
+  /// The account's saved Window Shopping deals (server-backed; stale deals are
+  /// pruned server-side so the list only holds deals still on offer).
+  Future<List<ScrollDeal>> windowSaves() async {
+    final data = await _request('GET', '/api/window-saves');
+    return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
+  }
+
+  Future<SaveStat> saveWindowDeal(ScrollDeal deal) async {
+    final data =
+        await _request('POST', '/api/window-saves', body: {'deal': deal.toJson()});
+    return SaveStat.fromJson(data);
+  }
+
+  Future<SaveStat> unsaveWindowDeal(String dealId) async {
+    final data = await _request(
+        'DELETE', '/api/window-saves?dealId=${Uri.encodeComponent(dealId)}');
+    return SaveStat.fromJson(data);
+  }
+
+  /// Save counts (and whether the current shopper saved each) for many deals.
+  Future<Map<String, SaveStat>> windowSaveCounts(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    final query = ids.map(Uri.encodeComponent).join(',');
+    final data = await _request('GET', '/api/window-saves?counts=$query');
+    final counts = _map(data['counts']);
+    return counts.map((key, value) => MapEntry(key, SaveStat.fromJson(_map(value))));
+  }
+
+  Future<List<DealComment>> dealComments(String dealId) async {
+    final data = await _request(
+        'GET', '/api/deal-comments?dealId=${Uri.encodeComponent(dealId)}');
+    return _maps(data['comments']).map(DealComment.fromJson).toList();
+  }
+
+  Future<DealComment> addDealComment(String dealId, String body) async {
+    final data = await _request('POST', '/api/deal-comments',
+        body: {'dealId': dealId, 'body': body});
+    return DealComment.fromJson(_map(data['comment']));
+  }
+
+  /// Reads a per-account state blob (near-me history, saved addresses, …).
+  Future<Object?> getMemberState(String key) async {
+    final data =
+        await _request('GET', '/api/member-state?key=${Uri.encodeComponent(key)}');
+    return data['value'];
+  }
+
+  Future<void> setMemberState(String key, Object? value) async {
+    await _request('PUT', '/api/member-state', body: {'key': key, 'value': value});
+  }
+
   Future<NotificationPreferences> notificationPreferences() async {
     final data = await _request('GET', '/api/notification-prefs');
     return NotificationPreferences.fromJson(_map(data['preferences']));

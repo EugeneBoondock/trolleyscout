@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/main.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('signed out boots onboarding, not the app shell', (tester) async {
     await tester.pumpWidget(
         TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
@@ -115,6 +118,12 @@ class _FakeApi extends Api {
 
   @override
   Future<List<DealWatch>> dealWatches() async => const [];
+
+  @override
+  Future<Object?> getMemberState(String key) async => null;
+
+  @override
+  Future<List<ScrollDeal>> windowSaves() async => const [];
 
   @override
   Future<MemberSession> signOut() async {

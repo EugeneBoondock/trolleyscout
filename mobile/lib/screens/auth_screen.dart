@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../app_controller.dart';
@@ -61,6 +62,9 @@ class _AuthScreenState extends State<AuthScreen> {
             password: _password.text,
           );
     if (await widget.controller.authenticate(draft) && mounted) {
+      // Let the platform password manager (Samsung Pass, Google) offer to save
+      // these credentials so the shopper never retypes them.
+      TextInput.finishAutofillContext();
       widget.onAuthenticated();
     }
   }
@@ -79,7 +83,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 padding: const EdgeInsets.all(24),
                 child: Form(
                   key: _formKey,
-                  child: Column(
+                  child: AutofillGroup(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Align(
@@ -201,6 +206,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       TextButton(
                           onPressed: widget.onBack, child: const Text('Back')),
                     ],
+                  ),
                   ),
                 ),
               ),

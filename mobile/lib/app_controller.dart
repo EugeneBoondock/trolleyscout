@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'member_state_sync.dart';
 
 class AppController extends ChangeNotifier {
   AppController(this.api);
@@ -25,6 +26,14 @@ class AppController extends ChangeNotifier {
       session = const MemberSession.signedOut();
     } finally {
       restoring = false;
+      notifyListeners();
+    }
+
+    // Pull the shopper's account-synced data (near-me history, saved addresses)
+    // into local storage so it shows after logout/login and on new devices.
+    if (session.isAuthenticated) {
+      MemberStateSync.instance.configure(api);
+      await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
       notifyListeners();
     }
 
@@ -83,6 +92,8 @@ class AppController extends ChangeNotifier {
     try {
       session = await api.authenticate(draft);
       if (session.isAuthenticated) {
+        MemberStateSync.instance.configure(api);
+        await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
         await refreshWatches();
       }
       return session.isAuthenticated;
@@ -101,6 +112,9 @@ class AppController extends ChangeNotifier {
     try {
       session = await api.signOut();
       watches = const [];
+      // Clear account-synced local data so the next shopper on a shared device
+      // never sees the previous one's history/addresses.
+      await MemberStateSync.instance.clearLocal();
     } on ApiException catch (error) {
       notice = error.message;
     } finally {

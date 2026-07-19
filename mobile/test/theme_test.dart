@@ -60,4 +60,7 @@ class _MemberApi extends Api {
 
   @override
   Future<List<DealWatch>> dealWatches() async => const [];
+
+  @override
+  Future<Object?> getMemberState(String key) async => null;
 }

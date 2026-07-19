@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_controller.dart';
+import 'biometric_gate.dart';
 import 'screens/advertise_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/about_screen.dart';
@@ -90,6 +91,16 @@ class _RootShellState extends State<RootShell> {
   String? _authIntent;
   String? _dealsRetailerId;
   String? _dealsQuery;
+  bool? _bioEnabled;
+  bool _unlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BiometricPrefs.isEnabled().then((enabled) {
+      if (mounted) setState(() => _bioEnabled = enabled);
+    });
+  }
 
   // Near-me store card → open Find deals pre-filtered to that store's deals.
   void _viewStoreDeals(String? retailerId, String storeName) {
@@ -152,6 +163,31 @@ class _RootShellState extends State<RootShell> {
         }
         if (!session.isAuthenticated) {
           return OnboardingScreen(controller: widget.controller);
+        }
+        // Biometric unlock (opt-in from Profile): ask for a fingerprint on
+        // launch before revealing the signed-in app.
+        if (_bioEnabled == null) {
+          return Scaffold(
+            backgroundColor: TS.bgOf(context),
+            body: const Center(
+              child: AnimatedScoutMark(motion: ScoutMarkMotion.spin, size: 48),
+            ),
+          );
+        }
+        if (_bioEnabled! && !_unlocked) {
+          return BiometricGate(
+            onUnlocked: () => setState(() => _unlocked = true),
+            onSignOut: () async {
+              await widget.controller.signOut();
+              if (mounted) {
+                setState(() {
+                  _unlocked = false;
+                  _destination = AppDestination.home;
+                  _primaryIndex = 0;
+                });
+              }
+            },
+          );
         }
         final compact = MediaQuery.sizeOf(context).width < 430;
         return Scaffold(

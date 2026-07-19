@@ -16,6 +16,7 @@ import {
 } from '../functions/_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../functions/_shared/storeScout'
 import { runVoucherScout } from '../functions/_shared/voucherScout'
+import { pruneWindowSocial } from '../functions/_shared/windowSocialStore'
 import type { DiscoveryRun } from '../src/types'
 import { parseRetailerSlug } from '../src/services/retailerFeeds/types'
 
@@ -302,6 +303,9 @@ function stableSlugHash(value: string): string {
 export default {
   async scheduled(_controller, env) {
     const result = await runScheduledScout(env)
+    // Drop saves/comments for deals that have left the live feed so global save
+    // counts fall as stores retire deals.
+    await pruneWindowSocial(env).catch(() => undefined)
     console.log(JSON.stringify({ event: 'deal_scout_completed', ...result }))
   },
 } satisfies ExportedHandler<ScoutEnv>

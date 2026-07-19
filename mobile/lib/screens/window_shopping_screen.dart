@@ -67,6 +67,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 
   List<ScrollDeal> _deals = const [];
   Set<String> _saved = {};
+  // Global save counts per deal id, so the reel shows "N saves".
+  final Map<String, SaveStat> _saveStats = {};
   bool _loading = true;
   bool _musicMuted = false;
   bool _searching = false;
@@ -209,8 +211,47 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   }
 
   Future<void> _restoreSaved() async {
-    final ids = await _savedStore.loadIds();
-    if (mounted) setState(() => _saved = ids);
+    // The server is the source of truth so saves follow the account across
+    // devices and reinstalls; fall back to the on-device mirror when offline.
+    try {
+      final saved = await widget.api.windowSaves();
+      if (!mounted) return;
+      setState(() {
+        _saved = saved.map((d) => d.id).toSet();
+        for (final deal in saved) {
+          final existing = _saveStats[deal.id]?.count ?? 0;
+          _saveStats[deal.id] = SaveStat(count: existing, saved: true);
+        }
+      });
+    } catch (_) {
+      final ids = await _savedStore.loadIds();
+      if (mounted) setState(() => _saved = ids);
+    }
+  }
+
+  /// Batch-loads global save counts for the deals around [index] so each card
+  /// shows how many shoppers saved it.
+  Future<void> _loadCountsFor(int index) async {
+    final deals = _visible;
+    if (deals.isEmpty) return;
+    final ids = <String>[];
+    for (var offset = -1; offset <= 3; offset++) {
+      final deal = deals[(index + offset) % deals.length];
+      if (deal.id.isNotEmpty && !_saveStats.containsKey(deal.id)) ids.add(deal.id);
+    }
+    if (ids.isEmpty) return;
+    try {
+      final counts = await widget.api.windowSaveCounts(ids);
+      if (!mounted) return;
+      setState(() {
+        counts.forEach((id, stat) {
+          _saveStats[id] = stat;
+          if (stat.saved) _saved.add(id);
+        });
+      });
+    } catch (_) {
+      // Counts are a nicety; the reel works without them.
+    }
   }
 
   Future<void> _load() async {
@@ -256,6 +297,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         _loading = false;
         _error = unique.isEmpty ? 'No deals to browse yet. Check back soon.' : null;
       });
+      if (unique.isNotEmpty) _loadCountsFor(0);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -269,8 +311,39 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     final wasSaved = _saved.contains(deal.id);
     HapticFeedback.mediumImpact();
     _SubtleSfx.play(wasSaved ? null : 'success');
-    final next = await _savedStore.toggle(deal);
-    if (mounted) setState(() => _saved = next.map((d) => d.id).toSet());
+    // Optimistic update of the saved set and the visible count.
+    setState(() {
+      if (wasSaved) {
+        _saved.remove(deal.id);
+      } else {
+        _saved.add(deal.id);
+      }
+      final current = _saveStats[deal.id]?.count ?? 0;
+      final next = (current + (wasSaved ? -1 : 1));
+      _saveStats[deal.id] = SaveStat(count: next < 0 ? 0 : next, saved: !wasSaved);
+    });
+    try {
+      final stat = wasSaved
+          ? await widget.api.unsaveWindowDeal(deal.id)
+          : await widget.api.saveWindowDeal(deal);
+      if (mounted) setState(() => _saveStats[deal.id] = stat);
+      // Keep an on-device mirror so the saved sheet works offline too.
+      await _savedStore.toggle(deal);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          if (wasSaved) {
+            _saved.add(deal.id);
+          } else {
+            _saved.remove(deal.id);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update your save. Try again.')),
+        );
+      }
+      return;
+    }
     // Teach the recommender: saving is a strong signal, un-saving reverses it.
     if (wasSaved) {
       await _tasteStore.weaken(title: deal.title, category: deal.category);
@@ -310,13 +383,54 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       isScrollControlled: true,
       shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
       builder: (context) => _SavedSheet(
-        store: _savedStore,
+        api: widget.api,
         onOpen: _open,
-        onChanged: (ids) {
-          if (mounted) setState(() => _saved = ids);
-        },
+        onRemove: (deal) => _toggleSave(deal),
       ),
     );
+  }
+
+  /// Opens the comment thread for a deal. Comments live with the deal.
+  void _openComments(ScrollDeal deal) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: TS.bgOf(context),
+      isScrollControlled: true,
+      shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+      builder: (context) => _CommentsSheet(api: widget.api, deal: deal),
+    );
+  }
+
+  /// Opens a store's profile — a vertical reel of just that store's promos.
+  void _openStoreProfile(ScrollDeal deal) {
+    HapticFeedback.selectionClick();
+    final storeDeals =
+        _deals.where((d) => d.retailerName == deal.retailerName).toList();
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _StoreProfileScreen(
+        api: widget.api,
+        storeName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        deals: storeDeals.isEmpty ? [deal] : storeDeals,
+        initialSaved: Set<String>.of(_saved),
+        initialStats: Map<String, SaveStat>.of(_saveStats),
+        onOpen: _open,
+        onShare: _share,
+        onComment: _openComments,
+        onSavedChanged: (id, stat) {
+          if (!mounted) return;
+          setState(() {
+            if (stat.saved) {
+              _saved.add(id);
+            } else {
+              _saved.remove(id);
+            }
+            _saveStats[id] = stat;
+          });
+        },
+      ),
+    ));
   }
 
   @override
@@ -343,15 +457,19 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
             onPageChanged: (index) {
               HapticFeedback.selectionClick();
               _precacheAround(index);
+              _loadCountsFor(index);
             },
             itemBuilder: (context, index) {
               final deal = visible[index % visible.length];
               return _WindowCard(
                 deal: deal,
                 saved: _saved.contains(deal.id),
+                saveCount: _saveStats[deal.id]?.count ?? 0,
                 onOpen: () => _open(deal),
                 onSave: () => _toggleSave(deal),
                 onShare: () => _share(deal),
+                onComment: () => _openComments(deal),
+                onOpenStore: () => _openStoreProfile(deal),
               );
             },
           ),
@@ -607,16 +725,28 @@ class _WindowCard extends StatelessWidget {
   const _WindowCard({
     required this.deal,
     required this.saved,
+    required this.saveCount,
     required this.onOpen,
     required this.onSave,
     required this.onShare,
+    required this.onComment,
+    required this.onOpenStore,
   });
 
   final ScrollDeal deal;
   final bool saved;
+  final int saveCount;
   final VoidCallback onOpen;
   final VoidCallback onSave;
   final VoidCallback onShare;
+  final VoidCallback onComment;
+  final VoidCallback onOpenStore;
+
+  static String formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}m';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return '$n';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -657,8 +787,15 @@ class _WindowCard extends StatelessWidget {
                   _RailButton(
                     icon: saved ? Icons.bookmark : Icons.bookmark_border,
                     color: saved ? TS.yellow : Colors.white,
-                    label: saved ? 'Saved' : 'Save',
+                    label: saveCount > 0 ? formatCount(saveCount) : (saved ? 'Saved' : 'Save'),
                     onTap: onSave,
+                  ),
+                  const SizedBox(height: 18),
+                  _RailButton(
+                    icon: Icons.mode_comment_outlined,
+                    color: Colors.white,
+                    label: 'Comment',
+                    onTap: onComment,
                   ),
                   const SizedBox(height: 18),
                   _RailButton(
@@ -680,7 +817,11 @@ class _WindowCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      _Badge(text: deal.sourceLabel.toUpperCase(), color: TS.yellow, textColor: TS.ink),
+                      // Tapping the store opens its profile (all its promos).
+                      GestureDetector(
+                        onTap: onOpenStore,
+                        child: _StoreChip(name: deal.retailerName),
+                      ),
                       if (deal.category != null) ...[
                         const SizedBox(width: 6),
                         _Badge(
@@ -782,14 +923,14 @@ class _WindowCard extends StatelessWidget {
 
 class _SavedSheet extends StatefulWidget {
   const _SavedSheet({
-    required this.store,
+    required this.api,
     required this.onOpen,
-    required this.onChanged,
+    required this.onRemove,
   });
 
-  final WindowSavedStore store;
+  final Api api;
   final void Function(ScrollDeal) onOpen;
-  final void Function(Set<String>) onChanged;
+  final void Function(ScrollDeal) onRemove;
 
   @override
   State<_SavedSheet> createState() => _SavedSheetState();
@@ -802,20 +943,24 @@ class _SavedSheetState extends State<_SavedSheet> {
   @override
   void initState() {
     super.initState();
-    widget.store.load().then((items) {
+    widget.api.windowSaves().then((items) {
       if (mounted) {
         setState(() {
           _items = items;
           _loading = false;
         });
       }
+    }).catchError((_) {
+      if (mounted) setState(() => _loading = false);
     });
   }
 
   Future<void> _remove(ScrollDeal deal) async {
-    final next = await widget.store.remove(deal.id);
-    widget.onChanged(next.map((d) => d.id).toSet());
-    if (mounted) setState(() => _items = next);
+    // Delegate to the parent so the server, counts, and reel stay in sync.
+    widget.onRemove(deal);
+    if (mounted) {
+      setState(() => _items = _items.where((d) => d.id != deal.id).toList());
+    }
   }
 
   @override
@@ -921,6 +1066,368 @@ class _RailButton extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700)),
         ],
+      ),
+    );
+  }
+}
+
+/// A tappable store "avatar + name" chip that opens the store's profile.
+class _StoreChip extends StatelessWidget {
+  const _StoreChip({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(5, 4, 8, 4),
+      decoration: BoxDecoration(
+          color: TS.yellow, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(color: TS.ink, shape: BoxShape.circle),
+            child: Center(
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 170),
+            child: Text(
+              name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: TS.ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4),
+            ),
+          ),
+          const Icon(Icons.chevron_right, size: 16, color: TS.ink),
+        ],
+      ),
+    );
+  }
+}
+
+/// Comment thread for one deal. Comments are stored against the deal id, so they
+/// disappear once the deal leaves the feed.
+class _CommentsSheet extends StatefulWidget {
+  const _CommentsSheet({required this.api, required this.deal});
+
+  final Api api;
+  final ScrollDeal deal;
+
+  @override
+  State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  final _controller = TextEditingController();
+  List<DealComment> _comments = const [];
+  bool _loading = true;
+  bool _posting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final comments = await widget.api.dealComments(widget.deal.id);
+      if (mounted) {
+        setState(() {
+          _comments = comments;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _post() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _posting) return;
+    setState(() => _posting = true);
+    try {
+      final comment = await widget.api.addDealComment(widget.deal.id, text);
+      if (mounted) {
+        setState(() {
+          _comments = [comment, ..._comments];
+          _controller.clear();
+          _posting = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _posting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not post your comment. Try again.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.78),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 2),
+                child: Text('Comments',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(widget.deal.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: TS.mutedOf(context))),
+              ),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_comments.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: Text(
+                    'No comments yet. Be the first — comments stay with the deal.',
+                    style: TextStyle(color: TS.mutedOf(context)),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _comments.length,
+                    itemBuilder: (context, index) {
+                      final comment = _comments[index];
+                      return ListTile(
+                        dense: true,
+                        leading: CircleAvatar(
+                          radius: 16,
+                          child: Text(comment.author.isNotEmpty
+                              ? comment.author[0].toUpperCase()
+                              : '?'),
+                        ),
+                        title: Text(comment.author,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 13)),
+                        subtitle: Text(comment.body),
+                      );
+                    },
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 3,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _post(),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: 'Add a comment…',
+                          border: OutlineInputBorder(
+                              borderSide: BorderSide(color: TS.lineSoftOf(context))),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: TS.yellow,
+                        foregroundColor: TS.ink,
+                        shape: const RoundedRectangleBorder(),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                      ),
+                      onPressed: _posting ? null : _post,
+                      child: const Text('Post'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A store's profile: a vertical reel of just that store's promos, opened by
+/// tapping the store chip on a card.
+class _StoreProfileScreen extends StatefulWidget {
+  const _StoreProfileScreen({
+    required this.api,
+    required this.storeName,
+    required this.sourceLabel,
+    required this.deals,
+    required this.initialSaved,
+    required this.initialStats,
+    required this.onOpen,
+    required this.onShare,
+    required this.onComment,
+    required this.onSavedChanged,
+  });
+
+  final Api api;
+  final String storeName;
+  final String sourceLabel;
+  final List<ScrollDeal> deals;
+  final Set<String> initialSaved;
+  final Map<String, SaveStat> initialStats;
+  final void Function(ScrollDeal) onOpen;
+  final void Function(ScrollDeal) onShare;
+  final void Function(ScrollDeal) onComment;
+  final void Function(String, SaveStat) onSavedChanged;
+
+  @override
+  State<_StoreProfileScreen> createState() => _StoreProfileScreenState();
+}
+
+class _StoreProfileScreenState extends State<_StoreProfileScreen> {
+  late final Set<String> _saved = Set<String>.of(widget.initialSaved);
+  late final Map<String, SaveStat> _saveStats =
+      Map<String, SaveStat>.of(widget.initialStats);
+  final _pageController = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCounts();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCounts() async {
+    final ids = widget.deals
+        .map((d) => d.id)
+        .where((id) => id.isNotEmpty && !_saveStats.containsKey(id))
+        .take(30)
+        .toList();
+    if (ids.isEmpty) return;
+    try {
+      final counts = await widget.api.windowSaveCounts(ids);
+      if (!mounted) return;
+      setState(() {
+        counts.forEach((id, stat) {
+          _saveStats[id] = stat;
+          if (stat.saved) _saved.add(id);
+        });
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggle(ScrollDeal deal) async {
+    final was = _saved.contains(deal.id);
+    HapticFeedback.mediumImpact();
+    setState(() {
+      if (was) {
+        _saved.remove(deal.id);
+      } else {
+        _saved.add(deal.id);
+      }
+      final current = _saveStats[deal.id]?.count ?? 0;
+      final next = current + (was ? -1 : 1);
+      _saveStats[deal.id] = SaveStat(count: next < 0 ? 0 : next, saved: !was);
+    });
+    try {
+      final stat = was
+          ? await widget.api.unsaveWindowDeal(deal.id)
+          : await widget.api.saveWindowDeal(deal);
+      if (mounted) setState(() => _saveStats[deal.id] = stat);
+      widget.onSavedChanged(deal.id, stat);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          if (was) {
+            _saved.add(deal.id);
+          } else {
+            _saved.remove(deal.id);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update your save. Try again.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: TS.bgOf(context),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.storeName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            Text('${widget.deals.length} promo${widget.deals.length == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: TS.mutedOf(context))),
+          ],
+        ),
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        scrollDirection: Axis.vertical,
+        itemCount: widget.deals.length,
+        itemBuilder: (context, index) {
+          final deal = widget.deals[index];
+          return _WindowCard(
+            deal: deal,
+            saved: _saved.contains(deal.id),
+            saveCount: _saveStats[deal.id]?.count ?? 0,
+            onOpen: () => widget.onOpen(deal),
+            onSave: () => _toggle(deal),
+            onShare: () => widget.onShare(deal),
+            onComment: () => widget.onComment(deal),
+            onOpenStore: () {},
+          );
+        },
       ),
     );
   }

@@ -1266,6 +1266,40 @@ class PropertySearchResult {
       );
 }
 
+/// How many shoppers saved a deal, and whether the current shopper did.
+class SaveStat {
+  const SaveStat({required this.count, required this.saved});
+
+  final int count;
+  final bool saved;
+
+  factory SaveStat.fromJson(Map<String, dynamic> json) =>
+      SaveStat(count: _int(json['count']), saved: json['saved'] == true);
+}
+
+/// One comment on a Window Shopping deal. Comments live with the deal and are
+/// pruned once it leaves the feed.
+class DealComment {
+  const DealComment({
+    required this.id,
+    required this.author,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String author;
+  final String body;
+  final String createdAt;
+
+  factory DealComment.fromJson(Map<String, dynamic> json) => DealComment(
+        id: _string(json['id']),
+        author: _string(json['author'], 'Shopper'),
+        body: _string(json['body']),
+        createdAt: _string(json['createdAt']),
+      );
+}
+
 /// Member notification opt-ins. Today the only channel is new-deal alerts.
 class NotificationPreferences {
   const NotificationPreferences({required this.newDeals});

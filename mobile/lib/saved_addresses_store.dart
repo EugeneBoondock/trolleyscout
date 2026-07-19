@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'member_state_sync.dart';
+
 /// One address a shopper saved to search Near me quickly — their home, a
 /// parent's place, the office. Coordinates are stored so a saved address never
 /// needs re-geocoding.
@@ -98,14 +100,14 @@ class SavedAddressesStore {
   }
 
   Future<void> _persist(List<SavedAddress> entries) async {
+    final data = entries.map((entry) => entry.toJson()).toList();
     try {
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(
-        _key,
-        jsonEncode(entries.map((entry) => entry.toJson()).toList()),
-      );
+      await preferences.setString(_key, jsonEncode(data));
     } catch (_) {
       // Best-effort persistence.
     }
+    // Mirror to the account so saved addresses follow the shopper's login.
+    MemberStateSync.instance.push(_key, data);
   }
 }

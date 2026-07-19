@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_models.dart';
+import 'member_state_sync.dart';
 
 /// One past Near-me search, labelled with where it ran.
 class NearbyHistoryEntry {
@@ -105,17 +106,17 @@ class NearbyHistoryStore {
   }
 
   Future<void> _persist(List<NearbyHistoryEntry> entries) async {
+    final data = entries
+        .map((e) => {
+              'locationLabel': e.locationLabel,
+              'capturedAt': e.capturedAt.toUtc().toIso8601String(),
+              'result': e.result.toJson(),
+            })
+        .toList();
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-      _key,
-      jsonEncode(entries
-          .map((e) => {
-                'locationLabel': e.locationLabel,
-                'capturedAt': e.capturedAt.toUtc().toIso8601String(),
-                'result': e.result.toJson(),
-              })
-          .toList()),
-    );
+    await preferences.setString(_key, jsonEncode(data));
+    // Mirror to the account so it follows the shopper across devices.
+    MemberStateSync.instance.push(_key, data);
   }
 
   NearbyHistoryEntry? _entryFromJson(Map<String, dynamic> json) {

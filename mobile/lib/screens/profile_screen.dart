@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../app_controller.dart';
+import '../biometric_gate.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
@@ -195,12 +196,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+        const _BiometricCard(),
         OutlinedButton.icon(
           onPressed: widget.controller.busy ? null : widget.controller.signOut,
           icon: const Icon(Icons.logout),
           label: const Text('Sign out'),
         ),
       ],
+    );
+  }
+}
+
+/// Opt-in fingerprint unlock. Enabling verifies the shopper once, then the app
+/// asks for a fingerprint on each launch instead of a password.
+class _BiometricCard extends StatefulWidget {
+  const _BiometricCard();
+
+  @override
+  State<_BiometricCard> createState() => _BiometricCardState();
+}
+
+class _BiometricCardState extends State<_BiometricCard> {
+  bool _enabled = false;
+  bool _available = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final available = await BiometricPrefs.canUse();
+    final enabled = await BiometricPrefs.isEnabled();
+    if (mounted) {
+      setState(() {
+        _available = available;
+        _enabled = enabled;
+      });
+    }
+  }
+
+  Future<void> _toggle(bool value) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    if (value) {
+      final ok =
+          await BiometricPrefs.authenticate('Confirm to turn on fingerprint unlock');
+      if (ok) {
+        await BiometricPrefs.setEnabled(true);
+        if (mounted) setState(() => _enabled = true);
+      } else if (mounted) {
+        showNotice(context, 'Could not verify — fingerprint unlock stays off.');
+      }
+    } else {
+      await BiometricPrefs.setEnabled(false);
+      if (mounted) setState(() => _enabled = false);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PaperCard(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Security',
+              style: Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
+          const SizedBox(height: 4),
+          Text(
+            _available
+                ? 'Unlock the app with your fingerprint instead of typing a password.'
+                : 'Fingerprint unlock is not available on this device.',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Unlock with fingerprint'),
+            subtitle: const Text('Ask for a fingerprint each time the app opens'),
+            value: _enabled,
+            onChanged: (_available && !_busy) ? _toggle : null,
+          ),
+        ],
+      ),
     );
   }
 }
