@@ -44,6 +44,8 @@ export const PROPERTY_PORTAL_LABELS: Record<PropertyPortalId, string> = {
   fineandcountry: 'Fine & Country',
   engelvoelkers: 'Engel & Völkers',
   roomies: 'Roomies',
+  realnet: 'RealNet',
+  leapfrog: 'Leapfrog',
 }
 
 const PROPERTY24_ORIGIN = 'https://www.property24.com'

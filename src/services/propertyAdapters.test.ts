@@ -26,6 +26,8 @@ describe('portal adapter registry', () => {
       // Wave 1 additions
       'wakefields', 'tysonprop', 'century21', 'huizemark', 'justproperty', 'lewgeffen',
       'dormehlphalane', 'fineandcountry', 'engelvoelkers', 'roomies',
+      // Wave 2 additions
+      'realnet', 'leapfrog',
     ]) {
       expect(ids).toContain(id)
     }
@@ -60,6 +62,14 @@ describe('portal adapter registry', () => {
     expect(adapter('engelvoelkers').buildUrl(CAPE_TOWN, 'rent', 1)).toBe(
       'https://www.engelvoelkers.com/za/en/properties/res/rent/real-estate/western-cape/cape-town',
     )
+    expect(adapter('realnet').buildUrl(CAPE_TOWN, 'sale', 1)).toBe(
+      'https://realnet.co.za/listings/?search-category=residential&listings-type=sale&search-location=za_western-cape_cape-town',
+    )
+    // Leapfrog reuses the Property24 id; undefined without it.
+    expect(adapter('leapfrog').buildUrl(CAPE_TOWN, 'sale', 1)).toBe(
+      'https://leapfrog.co.za/buy/?ff_city_id%5B%5D=432',
+    )
+    expect(adapter('leapfrog').buildUrl({ name: 'Nowhere', province: 'Karoo' }, 'sale', 1)).toBeUndefined()
   })
 
   it('builds correct slug/id search URLs', () => {
@@ -220,5 +230,42 @@ describe('Engel & Völkers parser (data-testid cards)', () => {
       listingUrl: `https://www.engelvoelkers.com/za/en/exposes/${uuid}`,
     })
     expect(out[0].imageUrl).toContain('uploadcare.engelvoelkers.com')
+  })
+})
+
+describe('RealNet parser (JSON-LD RealEstateListing, bare price string)', () => {
+  it('reads inline offer price and beds from name', () => {
+    const html = `<script type="application/ld+json">{"@type":"CollectionPage","mainEntity":{"@type":"ItemList","itemListElement":[
+      {"@type":"ListItem","item":{"@type":"RealEstateListing","url":"https://realnet.co.za/listing/residential/for-sale/cape-town/belhar/apartment/RLS760977/","name":"2 Bedroom Apartment for Sale in Belhar","image":"https://cdn.filestackcontent.com/abc","offers":{"@type":"Offer","price":"950000","priceCurrency":"ZAR"}}}
+    ]}}</script>`
+    const out = adapter('realnet').parse(html, 'sale')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      id: 'realnet:RLS760977',
+      priceValue: 950000,
+      bedrooms: 2,
+      location: 'Belhar',
+    })
+    expect(out[0].imageUrl).toContain('filestackcontent.com')
+  })
+})
+
+describe('Leapfrog parser (blok-card data-* attributes)', () => {
+  it('reads price, stats and address from data attributes', () => {
+    const html = `<div class="blok-card" data-listing-id="4349017" data-fusion-ref="LFPE-17390"
+      data-url="https://leapfrog.co.za/listing/4349017/philadelphia-cape-town-lfpe-17390"
+      data-property-type="House" data-thumbnail="https://d32lv0mvq9geaj.cloudfront.net/listings/4349017/photos/x.webp"
+      data-price="R 5,700,000" data-stats="6 Beds | 3 Baths | 7 ha Land" data-address="Philadelphia, Cape Town"></div>`
+    const out = adapter('leapfrog').parse(html, 'sale')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      id: 'leapfrog:4349017',
+      priceValue: 5700000,
+      bedrooms: 6,
+      bathrooms: 3,
+      location: 'Philadelphia, Cape Town',
+    })
+    expect(out[0].title).toBe('House in Philadelphia, Cape Town')
+    expect(out[0].imageUrl).toContain('cloudfront.net')
   })
 })

@@ -328,6 +328,8 @@ export type PropertyPortalId =
   | 'fineandcountry'
   | 'engelvoelkers'
   | 'roomies'
+  | 'realnet'
+  | 'leapfrog'
 
 export interface PropertyListing {
   id: string

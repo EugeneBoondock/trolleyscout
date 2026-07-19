@@ -649,6 +649,106 @@ function parseEngelVoelkers(html: string, type: PropertyListingType): PropertyLi
 }
 
 // ---------------------------------------------------------------------------
+// RealNet — PropertyEngine JSON-LD (RealEstateListing + inline Offer)
+// ---------------------------------------------------------------------------
+
+function parseRealnet(html: string, type: PropertyListingType): PropertyListing[] {
+  const out: PropertyListing[] = []
+  const seen = new Set<string>()
+  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: unknown
+    try {
+      data = JSON.parse(m[1])
+    } catch {
+      continue
+    }
+    const stack: any[] = [data]
+    while (stack.length) {
+      const node = stack.pop()
+      if (Array.isArray(node)) {
+        stack.push(...node)
+        continue
+      }
+      if (!node || typeof node !== 'object') continue
+      if (node['@type'] === 'ItemList' && Array.isArray(node.itemListElement)) {
+        for (const el of node.itemListElement) {
+          const it = el?.item ?? el
+          if (!it || typeof it !== 'object') continue
+          const url: string = typeof it.url === 'string' ? it.url : ''
+          if (!url) continue
+          const idm = /([A-Z]{2,}\d+)\/?$/.exec(url) ?? /(\d+)\/?$/.exec(url)
+          const key = `realnet:${idm ? idm[1] : url}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const offer = it.offers ?? {}
+          // offers.price is a bare numeric string ("950000"), no currency prefix.
+          const priceDigits = String(offer.price ?? '').replace(/[^\d]/g, '')
+          const price = priceDigits ? Number(priceDigits) : undefined
+          const name = collapseSpace(String(it.name ?? 'Property'))
+          const beds = cap(/^(\d+)\s+Bedroom/i, name)
+          const img = typeof it.image === 'string' ? it.image : it.image?.url
+          out.push({
+            id: key,
+            portal: 'realnet',
+            portalName: 'RealNet',
+            title: name,
+            priceText: price ? `R ${price.toLocaleString('en-ZA')}` : undefined,
+            priceValue: price || undefined,
+            location: suburbFromDescription(name),
+            bedrooms: beds ? Number(beds) : bedroomsFromTitle(name),
+            imageUrl: img ? String(img) : undefined,
+            listingUrl: cleanUrl(url),
+            listingType: type,
+          })
+        }
+      }
+      for (const v of Object.values(node)) if (v && typeof v === 'object') stack.push(v)
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Leapfrog — Blok PropSync cards; every field is a data-* attribute
+// ---------------------------------------------------------------------------
+
+function parseLeapfrog(html: string, type: PropertyListingType): PropertyListing[] {
+  const out: PropertyListing[] = []
+  const seen = new Set<string>()
+  for (const chunk of chunksBy(html, /class="blok-card"/)) {
+    const url = cap(/data-url="([^"]+)"/, chunk)
+    if (!url) continue
+    const id = cap(/data-listing-id="(\d+)"/, chunk) ?? url
+    const key = `leapfrog:${id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const priceRaw = cap(/data-price="([^"]+)"/, chunk)
+    const stats = cap(/data-stats="([^"]+)"/, chunk) ?? ''
+    const beds = cap(/(\d+(?:\.\d+)?)\s*Beds?/i, stats)
+    const baths = cap(/(\d+(?:\.\d+)?)\s*Baths?/i, stats)
+    const address = cap(/data-address="([^"]+)"/, chunk)
+    const ptype = cap(/data-property-type="([^"]+)"/, chunk)
+    const img = cap(/data-thumbnail="([^"]+)"/, chunk)
+    const title = address ? `${ptype ? `${ptype} in ` : ''}${collapseSpace(address)}` : (ptype ?? 'Property')
+    out.push({
+      id: key,
+      portal: 'leapfrog',
+      portalName: 'Leapfrog',
+      title: collapseSpace(title),
+      priceText: priceRaw ? collapseSpace(priceRaw) : undefined,
+      priceValue: parseRandValue(priceRaw),
+      location: address ? collapseSpace(address) : undefined,
+      bedrooms: beds ? Math.round(Number(beds)) : undefined,
+      bathrooms: baths ? Math.round(Number(baths)) : undefined,
+      imageUrl: img ? cleanUrl(img) : undefined,
+      listingUrl: cleanUrl(url),
+      listingType: type,
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Adapters registry
 // ---------------------------------------------------------------------------
 
@@ -846,5 +946,21 @@ export const PORTAL_ADAPTERS: PortalAdapter[] = [
     label: 'Roomies',
     buildUrl: (l, t) => (t === 'rent' ? `https://www.roomies.co.za/rooms/${slug(l.name)}` : undefined),
     parse: parseRoomies,
+  },
+  {
+    id: 'realnet',
+    label: 'RealNet',
+    // PropertyEngine location id is za_{province}_{city} — constructable, no lookup.
+    buildUrl: (l, t) =>
+      `https://realnet.co.za/listings/?search-category=residential&listings-type=${t === 'sale' ? 'sale' : 'rental'}&search-location=za_${slug(l.province)}_${slug(l.name)}`,
+    parse: parseRealnet,
+  },
+  {
+    id: 'leapfrog',
+    label: 'Leapfrog',
+    // Leapfrog's ff_city_id is the Property24 taxonomy id, so we reuse it.
+    buildUrl: (l, t) =>
+      l.p24 ? `https://leapfrog.co.za/${t === 'sale' ? 'buy' : 'rent'}/?ff_city_id%5B%5D=${l.p24.id}` : undefined,
+    parse: parseLeapfrog,
   },
 ]
