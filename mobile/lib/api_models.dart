@@ -1176,6 +1176,7 @@ class PropertyListing {
     this.garages,
     this.propertyType,
     this.imageUrl,
+    this.images = const [],
   });
 
   final String id;
@@ -1194,7 +1195,17 @@ class PropertyListing {
   final String? propertyType;
   final String? imageUrl;
 
+  /// Full gallery when the portal exposes more than one image; otherwise empty.
+  final List<String> images;
+
   bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
+
+  /// Every image to show in the carousel — the gallery, or the single cover.
+  List<String> get gallery =>
+      images.isNotEmpty ? images : (hasImage ? [imageUrl!] : const []);
+
+  /// A stable key that identifies this listing across searches (for favourites).
+  String get favouriteKey => '$portal:$id';
 
   factory PropertyListing.fromJson(Map<String, dynamic> json) => PropertyListing(
         id: _string(json['id']),
@@ -1212,7 +1223,32 @@ class PropertyListing {
         garages: _intOrNull(json['garages']),
         propertyType: _optionalString(json['propertyType']),
         imageUrl: _optionalString(json['imageUrl']),
+        images: json['images'] is List
+            ? (json['images'] as List)
+                .whereType<String>()
+                .where((s) => s.isNotEmpty)
+                .toList()
+            : const [],
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'portal': portal,
+        'portalName': portalName,
+        'title': title,
+        'listingUrl': listingUrl,
+        'listingType': listingType,
+        if (priceText != null) 'priceText': priceText,
+        if (priceValue != null) 'priceValue': priceValue,
+        if (location != null) 'location': location,
+        if (province != null) 'province': province,
+        if (bedrooms != null) 'bedrooms': bedrooms,
+        if (bathrooms != null) 'bathrooms': bathrooms,
+        if (garages != null) 'garages': garages,
+        if (propertyType != null) 'propertyType': propertyType,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        if (images.isNotEmpty) 'images': images,
+      };
 }
 
 /// Which portals answered a Properties Scout search, and how many each returned.

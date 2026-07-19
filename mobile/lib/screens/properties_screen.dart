@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
+import '../saved_properties_store.dart';
 import '../theme.dart';
 
 /// Properties Scout — a Household-tier tool that searches the SA property
@@ -34,17 +35,65 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   final _searchController = TextEditingController();
   final _minPriceController = TextEditingController();
   final _maxPriceController = TextEditingController();
+  final _store = SavedPropertiesStore();
 
   String _listingType = 'sale';
   int? _minBeds;
   String _sort = 'relevance';
+  String _view = 'search'; // 'search' | 'saved'
 
   List<PropertyListing> _listings = const [];
+  List<PropertyListing> _saved = const [];
+  Set<String> _savedKeys = const {};
   bool _loading = false;
   bool _locating = false;
   bool _searched = false;
   String? _error;
   String? _resultLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+  }
+
+  Future<void> _loadSaved() async {
+    final items = await _store.load();
+    if (!mounted) return;
+    setState(() {
+      _saved = items;
+      _savedKeys = items.map(SavedPropertiesStore.keyOf).toSet();
+    });
+  }
+
+  Future<void> _toggleSave(PropertyListing listing) async {
+    final key = SavedPropertiesStore.keyOf(listing);
+    final wasSaved = _savedKeys.contains(key);
+    HapticFeedback.selectionClick();
+    final items = await _store.toggle(listing);
+    if (!mounted) return;
+    setState(() {
+      _saved = items;
+      _savedKeys = items.map(SavedPropertiesStore.keyOf).toSet();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(wasSaved ? 'Removed from saved' : 'Saved'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Future<void> _share(PropertyListing listing) async {
+    await Clipboard.setData(ClipboardData(text: listing.listingUrl));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Link copied — paste to share'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -177,23 +226,62 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
     return Column(
       children: [
-        _SearchBar(
-          controller: _searchController,
-          minPriceController: _minPriceController,
-          maxPriceController: _maxPriceController,
-          listingType: _listingType,
-          minBeds: _minBeds,
-          sort: _sort,
-          loading: _loading,
-          locating: _locating,
-          onListingType: (value) => setState(() => _listingType = value),
-          onMinBeds: (value) => setState(() => _minBeds = value),
-          onSort: (value) => setState(() => _sort = value),
-          onSearch: () => _search(),
-          onNearMe: _nearMe,
+        _ViewSwitch(
+          view: _view,
+          savedCount: _saved.length,
+          onChanged: (value) => setState(() => _view = value),
         ),
-        Expanded(child: _buildBody()),
+        if (_view == 'search')
+          _SearchBar(
+            controller: _searchController,
+            minPriceController: _minPriceController,
+            maxPriceController: _maxPriceController,
+            listingType: _listingType,
+            minBeds: _minBeds,
+            sort: _sort,
+            loading: _loading,
+            locating: _locating,
+            onListingType: (value) => setState(() => _listingType = value),
+            onMinBeds: (value) => setState(() => _minBeds = value),
+            onSort: (value) => setState(() => _sort = value),
+            onSearch: () => _search(),
+            onNearMe: _nearMe,
+          ),
+        Expanded(child: _view == 'search' ? _buildBody() : _buildSaved()),
       ],
+    );
+  }
+
+  Widget _buildSaved() {
+    if (_saved.isEmpty) {
+      return const _Message(
+        icon: Icons.favorite_border,
+        text: 'Tap the heart on any home to save it here. '
+            'Your saved homes follow your account across devices.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      itemCount: _saved.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 2),
+            child: Text(
+              '${_saved.length} saved ${_saved.length == 1 ? 'home' : 'homes'}',
+              style: TextStyle(color: TS.mutedOf(context), fontWeight: FontWeight.w700),
+            ),
+          );
+        }
+        final listing = _saved[index - 1];
+        return _PropertyCard(
+          listing: listing,
+          onOpen: _open,
+          saved: _savedKeys.contains(SavedPropertiesStore.keyOf(listing)),
+          onToggleSave: () => _toggleSave(listing),
+          onShare: () => _share(listing),
+        );
+      },
     );
   }
 
@@ -232,7 +320,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
             ),
           );
         }
-        return _PropertyCard(listing: _listings[index - 1], onOpen: _open);
+        final listing = _listings[index - 1];
+        return _PropertyCard(
+          listing: listing,
+          onOpen: _open,
+          saved: _savedKeys.contains(SavedPropertiesStore.keyOf(listing)),
+          onToggleSave: () => _toggleSave(listing),
+          onShare: () => _share(listing),
+        );
       },
     );
   }
@@ -449,10 +544,19 @@ class _LabeledDropdown<T> extends StatelessWidget {
 }
 
 class _PropertyCard extends StatelessWidget {
-  const _PropertyCard({required this.listing, required this.onOpen});
+  const _PropertyCard({
+    required this.listing,
+    required this.onOpen,
+    required this.saved,
+    required this.onToggleSave,
+    required this.onShare,
+  });
 
   final PropertyListing listing;
   final void Function(PropertyListing) onOpen;
+  final bool saved;
+  final VoidCallback onToggleSave;
+  final VoidCallback onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -461,6 +565,7 @@ class _PropertyCard extends StatelessWidget {
       if (listing.bathrooms != null) '${_trim(listing.bathrooms!)} bath',
       if (listing.garages != null) '${listing.garages} garage',
     ];
+    final isRent = listing.listingType == 'rent';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -476,22 +581,31 @@ class _PropertyCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (listing.hasImage)
-                      Image.network(
-                        listing.imageUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _imageFallback(context),
-                        loadingBuilder: (context, child, progress) =>
-                            progress == null ? child : _imageFallback(context),
-                      )
-                    else
-                      _imageFallback(context),
+                    _PropertyGallery(
+                      images: listing.gallery,
+                      onTap: () => onOpen(listing),
+                    ),
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        color: isRent ? const Color(0xFFBFE3D0) : TS.yellow,
+                        child: Text(
+                          isRent ? 'TO RENT' : 'FOR SALE',
+                          style: const TextStyle(
+                              color: TS.ink,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4),
+                        ),
+                      ),
+                    ),
                     Positioned(
                       left: 8,
                       bottom: 8,
                       child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         color: Colors.black.withValues(alpha: 0.78),
                         child: Text(
                           listing.portalName.toUpperCase(),
@@ -501,6 +615,29 @@ class _PropertyCard extends StatelessWidget {
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.4),
                         ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Row(
+                        children: [
+                          _CircleAction(
+                            icon: saved ? Icons.favorite : Icons.favorite_border,
+                            tooltip: saved ? 'Remove from saved' : 'Save this home',
+                            background: saved ? TS.red : Colors.white.withValues(alpha: 0.92),
+                            foreground: saved ? Colors.white : TS.ink,
+                            onTap: onToggleSave,
+                          ),
+                          const SizedBox(width: 6),
+                          _CircleAction(
+                            icon: Icons.ios_share,
+                            tooltip: 'Share this home',
+                            background: Colors.white.withValues(alpha: 0.92),
+                            foreground: TS.ink,
+                            onTap: onShare,
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -548,11 +685,184 @@ class _PropertyCard extends StatelessWidget {
 
   static String _trim(num value) =>
       value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+}
 
-  Widget _imageFallback(BuildContext context) => ColoredBox(
+/// A round translucent overlay button (save / share) that consumes its own tap
+/// so it never triggers the card's open action.
+class _CircleAction extends StatelessWidget {
+  const _CircleAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.background,
+    required this.foreground,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Tooltip(
+          message: tooltip,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(icon, size: 18, color: foreground),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Swipeable photo gallery for a listing card: a PageView with a photo counter
+/// and dots. Falls back to a placeholder when the portal gave no usable image.
+class _PropertyGallery extends StatefulWidget {
+  const _PropertyGallery({required this.images, required this.onTap});
+
+  final List<String> images;
+  final VoidCallback onTap;
+
+  @override
+  State<_PropertyGallery> createState() => _PropertyGalleryState();
+}
+
+class _PropertyGalleryState extends State<_PropertyGallery> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _fallback(BuildContext context) => ColoredBox(
         color: TS.surfaceSoftOf(context),
         child: Icon(Icons.apartment_outlined, size: 48, color: TS.faintOf(context)),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final images = widget.images;
+    if (images.isEmpty) {
+      return GestureDetector(onTap: widget.onTap, child: _fallback(context));
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: images.length,
+          onPageChanged: (i) => setState(() => _index = i),
+          itemBuilder: (context, i) => GestureDetector(
+            onTap: widget.onTap,
+            child: Image.network(
+              images[i],
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _fallback(context),
+              loadingBuilder: (context, child, progress) =>
+                  progress == null ? child : _fallback(context),
+            ),
+          ),
+        ),
+        if (images.length > 1)
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${_index + 1}/${images.length}',
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        if (images.length > 1)
+          Positioned(
+            bottom: 9,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                images.length > 8 ? 8 : images.length,
+                (i) => Container(
+                  width: 5,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i == _index
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Segmented Search / Saved switch shown above the results.
+class _ViewSwitch extends StatelessWidget {
+  const _ViewSwitch({
+    required this.view,
+    required this.savedCount,
+    required this.onChanged,
+  });
+
+  final String view;
+  final int savedCount;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: TS.bgOf(context),
+        border: Border(bottom: BorderSide(color: TS.lineOf(context), width: 2)),
+      ),
+      child: SegmentedButton<String>(
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: TS.ink,
+          selectedForegroundColor: TS.bgOf(context),
+        ),
+        segments: [
+          const ButtonSegment(
+            value: 'search',
+            label: Text('Search'),
+            icon: Icon(Icons.search, size: 18),
+          ),
+          ButtonSegment(
+            value: 'saved',
+            label: Text(savedCount > 0 ? 'Saved ($savedCount)' : 'Saved'),
+            icon: const Icon(Icons.favorite_border, size: 18),
+          ),
+        ],
+        selected: {view},
+        onSelectionChanged: (set) => onChanged(set.first),
+      ),
+    );
+  }
 }
 
 class _UpsellCard extends StatelessWidget {
