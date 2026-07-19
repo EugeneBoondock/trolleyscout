@@ -367,6 +367,33 @@ export async function setMemberPropertiesAccess(
   return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
 }
 
+export async function setMemberPlan(
+  env: TrolleyScoutEnv,
+  accountId: string,
+  planId: string,
+) {
+  if (!hasMemberStore(env)) {
+    return { issues: ['Member storage is not configured.'] }
+  }
+
+  const timestamp = new Date().toISOString()
+  const result = await env.DB.prepare(
+    'UPDATE member_accounts SET plan_id = ?, plan_status = ?, updated_at = ? WHERE id = ?',
+  )
+    .bind(planId, 'active', timestamp, accountId)
+    .run()
+
+  if (result.meta.changes === 0) {
+    return { issues: ['Member account was not found.'] }
+  }
+
+  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+    .bind(accountId)
+    .first<MemberAccountRow>()
+
+  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+}
+
 export async function changeMemberPassword(
   env: TrolleyScoutEnv,
   accountId: string | undefined,
@@ -986,7 +1013,7 @@ export async function startSubscriptionCheckout(
     cancelUrl: new URL('/Subscription?payfast=cancelled', origin).toString(),
     merchantId: payfast.merchantId,
     merchantKey: payfast.merchantKey,
-    notifyUrl: new URL('/api/payfast-itn', origin).toString(),
+    notifyUrl: env.PAYFAST_NOTIFY_URL || new URL('/api/payfast-itn', origin).toString(),
     option: billingOption,
     passphrase: payfast.passphrase ?? '',
     returnUrl: new URL('/Subscription?payfast=success', origin).toString(),

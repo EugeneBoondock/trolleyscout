@@ -83,8 +83,11 @@ class Api {
     return MemberSession.fromJson(_map(data['session']));
   }
 
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async {
-    final suffix = forceLive ? '?refresh=1' : '';
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
+    final query = <String>[];
+    if (forceLive) query.add('refresh=1');
+    if (summary) query.add('summary=1');
+    final suffix = query.isEmpty ? '' : '?${query.join('&')}';
     return DiscoveryResult.fromJson(
         await _request('GET', '/api/discovery$suffix'));
   }

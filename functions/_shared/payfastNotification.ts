@@ -37,6 +37,7 @@ export async function processPayFastNotification(options: {
   merchantId: string
   mode: PayFastMode
   passphrase: string
+  payload: string
   repository: PayFastBillingRepository
 }) {
   const attemptId = options.fields.get('m_payment_id')?.trim()
@@ -62,7 +63,7 @@ export async function processPayFastNotification(options: {
     return rejected(validation.issue)
   }
 
-  const providerConfirmed = await confirmPayFastItn(options.fields, options.mode, options.fetcher)
+  const providerConfirmed = await confirmPayFastItn(options.payload, options.mode, options.fetcher)
 
   if (!providerConfirmed) {
     return rejected('PayFast did not validate the notification.')

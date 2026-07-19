@@ -294,10 +294,16 @@ export function getInitialBasketState(): ResourceState<BasketResource> {
 
 export async function loadDiscovery(
   signal?: AbortSignal,
-  options: { forceLive?: boolean } = {},
+  options: { forceLive?: boolean; summary?: boolean } = {},
 ): Promise<ResourceState<DiscoveryResource>> {
   try {
-    const response = await fetch(options.forceLive ? '/api/discovery?refresh=1' : '/api/discovery', {
+    const query = new URLSearchParams()
+    if (options.forceLive) query.set('refresh', '1')
+    if (options.summary) query.set('summary', '1')
+    const qs = query.toString()
+    const url = qs ? `/api/discovery?${qs}` : '/api/discovery'
+
+    const response = await fetch(url, {
       headers: {
         accept: 'application/json',
       },
@@ -1422,6 +1428,28 @@ export async function setMemberPropertiesAccess(accountId: string, granted: bool
       account: envelope.data?.account,
       accounts: envelope.data?.accounts,
       message: envelope.data?.message ?? (response.ok ? 'Access updated.' : 'Could not update access.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
+  }
+}
+
+// Admin-only: update a member's subscription plan directly.
+export async function setMemberPlan(accountId: string, planId: string) {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({ action: 'set_member_plan', accountId, planId }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { account?: MemberAccount; accounts?: MemberAccount[]; message?: string }
+    }
+    return {
+      account: envelope.data?.account,
+      accounts: envelope.data?.accounts,
+      message: envelope.data?.message ?? (response.ok ? 'Plan updated.' : 'Could not update plan.'),
       ok: response.ok,
     }
   } catch {

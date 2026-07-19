@@ -98,6 +98,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
+  const summaryOnly = new URL(request.url).searchParams.get('summary') === '1'
   const session = await getMemberSession(env, request)
   if (forceLive && session.account?.role !== 'admin') {
     return json(
@@ -129,6 +130,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       true,
       interests,
       storeDiscovery,
+      summaryOnly,
     )
   }
 
@@ -147,6 +149,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     false,
     interests,
     storeDiscovery,
+    summaryOnly,
   )
 }
 
@@ -816,7 +819,15 @@ function respond(
   fromCache: boolean,
   interests: DealInterestWeight[],
   storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
+  summaryOnly?: boolean,
 ) {
+  const headers = summaryOnly
+    ? {
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=10800',
+      }
+    : privateHeaders
+
   return json(
     buildDiscoveryRun(
       settled,
@@ -825,8 +836,9 @@ function respond(
       fromCache,
       interests,
       storeDiscovery,
+      summaryOnly,
     ),
-    { headers: privateHeaders },
+    { headers },
   )
 }
 
@@ -837,12 +849,14 @@ function buildDiscoveryRun(
   fromCache: boolean,
   interests: DealInterestWeight[],
   storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
+  summaryOnly?: boolean,
 ): DiscoveryRun {
-  const deals = rankDealsForMember(
-    dedupeDiscoveryDeals([
-      ...settled.flatMap((result) => result.deals),
-      ...storeDiscovery.deals,
-    ]),
+  const allDeals = dedupeDiscoveryDeals([
+    ...settled.flatMap((result) => result.deals),
+    ...storeDiscovery.deals,
+  ])
+  const deals = summaryOnly ? [] : rankDealsForMember(
+    allDeals,
     interests,
   )
   const sources = [...settled.map((result) => result.source), ...storeDiscovery.sources]
@@ -850,14 +864,14 @@ function buildDiscoveryRun(
 
   return {
     deals,
-    leaflets: mergedLeaflets,
+    leaflets: summaryOnly ? [] : mergedLeaflets,
     refreshedAt,
     served: fromCache ? 'snapshot' : 'live',
     sources,
     summary: {
       checkedSourceCount: sources.length,
       dataPolicy,
-      foundDealCount: deals.length,
+      foundDealCount: allDeals.length,
       leafletCount: mergedLeaflets.length,
       unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
     },

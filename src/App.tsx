@@ -69,6 +69,7 @@ import {
   changeAccountPassword,
   loadAdminOverview,
   setMemberPropertiesAccess,
+  setMemberPlan,
   loadDiscovery,
   loadBasket,
   loadSavedDeals,
@@ -299,6 +300,7 @@ function App() {
   const [discoveryKey, setDiscoveryKey] = useState(0)
   const forceLiveDiscoveryRef = useRef(false)
   const hasLoadedDiscoveryRef = useRef(false)
+  const hasLoadedFullDiscoveryRef = useRef(false)
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -585,7 +587,9 @@ function App() {
 
     const forceLive = forceLiveDiscoveryRef.current
     forceLiveDiscoveryRef.current = false
-    if (!forceLive && hasLoadedDiscoveryRef.current) {
+    const isDashboardOnly = memberView === 'dashboard' && activeView !== 'home' && activeView !== 'discovery'
+
+    if (!forceLive && (hasLoadedFullDiscoveryRef.current || (hasLoadedDiscoveryRef.current && isDashboardOnly))) {
       return () => controller.abort()
     }
 
@@ -596,10 +600,19 @@ function App() {
       status: 'loading',
     }))
 
-    loadDiscovery(controller.signal, { forceLive })
+    loadDiscovery(controller.signal, { forceLive, summary: isDashboardOnly })
       .then((state) => {
         hasLoadedDiscoveryRef.current = true
-        setDiscoveryState(state)
+        if (!isDashboardOnly) {
+          hasLoadedFullDiscoveryRef.current = true
+        }
+        setDiscoveryState((current) => {
+          if (isDashboardOnly && current.status !== 'loading') {
+            state.data.discovery.deals = current.data.discovery.deals
+            state.data.discovery.leaflets = current.data.discovery.leaflets
+          }
+          return state
+        })
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -609,7 +622,7 @@ function App() {
       .finally(() => setIsDiscovering(false))
 
     return () => controller.abort()
-  }, [discoveryKey, discoveryVisible])
+  }, [discoveryKey, discoveryVisible, activeView, memberView])
 
   function refreshSources() {
     setIsRefreshing(true)
@@ -2935,6 +2948,33 @@ function AdminConsole() {
     }
   }
 
+  async function onChangePlan(memberId: string, planId: string) {
+    setPendingId(memberId)
+    const result = await setMemberPlan(memberId, planId)
+    setPendingId(undefined)
+    if (result.ok && result.account) {
+      const updated = result.account
+      setOverview((current) => {
+        if (!current) return current
+        const accounts = current.accounts.map((row) => (row.id === updated.id ? updated : row))
+        const planCounts: Record<string, number> = {}
+        for (const account of accounts) {
+          planCounts[account.planId] = (planCounts[account.planId] ?? 0) + 1
+        }
+        return {
+          ...current,
+          accounts,
+          summary: {
+            ...current.summary,
+            planCounts,
+          },
+        }
+      })
+    } else {
+      setMessage(result.message)
+    }
+  }
+
   return (
     <section className="admin-console" aria-label="Admin console">
       <div className="member-section-head">
@@ -3014,7 +3054,26 @@ function AdminConsole() {
                     <strong>{member.displayName}</strong>
                     <small>{member.email}</small>
                   </span>
-                  <span role="cell">{member.planName}</span>
+                  <span role="cell">
+                    <select
+                      value={member.planId}
+                      onChange={(e) => onChangePlan(member.id, e.target.value)}
+                      disabled={pendingId === member.id}
+                      className="admin-plan-select"
+                      style={{
+                        background: 'var(--neutral-900)',
+                        border: '1px solid var(--neutral-800)',
+                        borderRadius: '4px',
+                        color: 'var(--text-primary)',
+                        padding: '4px 8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="free">Free</option>
+                      <option value="scout">Scout</option>
+                      <option value="household">Household</option>
+                    </select>
+                  </span>
                   <span role="cell">
                     {member.role === 'admin' ? <mark>admin</mark> : 'member'}
                   </span>

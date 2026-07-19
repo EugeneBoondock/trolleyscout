@@ -9,6 +9,7 @@ export interface TrolleyScoutEnv {
   PAYFAST_MERCHANT_ID?: string
   PAYFAST_MERCHANT_KEY?: string
   PAYFAST_MODE?: 'sandbox' | 'live'
+  PAYFAST_NOTIFY_URL?: string
   PAYFAST_PASSPHRASE?: string
   SCOUT_DEBUG?: string
 }

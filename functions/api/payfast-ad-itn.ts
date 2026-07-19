@@ -70,7 +70,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  const providerConfirmed = await confirmPayFastItn(fields, payfast.mode)
+  const providerConfirmed = await confirmPayFastItn(payload, payfast.mode)
 
   if (!providerConfirmed) {
     return json(

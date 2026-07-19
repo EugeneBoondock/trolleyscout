@@ -70,7 +70,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     itemName: `Trolley Scout ad: ${ad.title}`.slice(0, 100),
     merchantId: payfast.merchantId,
     merchantKey: payfast.merchantKey,
-    notifyUrl: new URL('/api/payfast-ad-itn', origin).toString(),
+    notifyUrl: env.PAYFAST_NOTIFY_URL || new URL('/api/payfast-ad-itn', origin).toString(),
     passphrase: payfast.passphrase ?? '',
   })
 

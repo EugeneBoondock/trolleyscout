@@ -25,7 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<_DashboardData> _load() async {
     final results = await Future.wait<dynamic>([
-      widget.api.discovery(),
+      widget.api.discovery(summary: true),
       widget.api.retailers(),
       widget.api.discoveredStores(),
       widget.api.savedDeals(),

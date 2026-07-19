@@ -137,12 +137,12 @@ export function validatePayFastItn(fields: URLSearchParams, expected: PayFastItn
 }
 
 export async function confirmPayFastItn(
-  fields: URLSearchParams,
+  payload: string,
   mode: PayFastMode,
   fetcher: Fetcher = fetch,
 ) {
   const response = await fetcher(getPayFastEndpoints(mode).validationUrl, {
-    body: createPayFastParameterString(fields),
+    body: payload,
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
     },
