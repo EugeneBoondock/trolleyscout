@@ -23,6 +23,17 @@ import type {
 export const PROPERTY_PORTAL_LABELS: Record<PropertyPortalId, string> = {
   property24: 'Property24',
   privateproperty: 'Private Property',
+  gumtree: 'Gumtree',
+  pamgolding: 'Pam Golding',
+  myroof: 'MyRoof',
+  sahometraders: 'SA Home Traders',
+  seeff: 'Seeff',
+  remax: 'RE/MAX',
+  harcourts: 'Harcourts',
+  rawson: 'Rawson',
+  chaseveritt: 'Chas Everitt',
+  jawitz: 'Jawitz',
+  immoafrica: 'ImmoAfrica',
 }
 
 const PROPERTY24_ORIGIN = 'https://www.property24.com'
@@ -45,7 +56,7 @@ export function normalizeLocationToken(value: string): string {
 }
 
 /** URL slug: lowercase words joined by hyphens, safe for a path segment. */
-function slug(value: string): string {
+export function slug(value: string): string {
   return (
     value
       .toLowerCase()
@@ -69,7 +80,7 @@ function decodeEntities(value: string): string {
   return value.replace(/&(?:amp|nbsp|quot|apos|#160|#39|#039|#8217);/g, (m) => ENTITIES[m] ?? m)
 }
 
-function collapseSpace(value: string): string {
+export function collapseSpace(value: string): string {
   return decodeEntities(value).replace(/\s+/g, ' ').trim()
 }
 
@@ -89,7 +100,7 @@ const LISTING_PREFIX: Record<PropertyListingType, string> = {
   rent: 'to-rent',
 }
 
-function bedroomsFromTitle(title: string): number | undefined {
+export function bedroomsFromTitle(title: string): number | undefined {
   const match = /(\d+)\s*bed/i.exec(title)
   return match ? Number(match[1]) : undefined
 }

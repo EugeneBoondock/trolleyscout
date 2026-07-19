@@ -304,7 +304,20 @@ export interface MemberAccount {
 // the SA property portals (Property24, Private Property).
 export type PropertyListingType = 'sale' | 'rent'
 
-export type PropertyPortalId = 'property24' | 'privateproperty'
+export type PropertyPortalId =
+  | 'property24'
+  | 'privateproperty'
+  | 'gumtree'
+  | 'pamgolding'
+  | 'myroof'
+  | 'sahometraders'
+  | 'seeff'
+  | 'remax'
+  | 'harcourts'
+  | 'rawson'
+  | 'chaseveritt'
+  | 'jawitz'
+  | 'immoafrica'
 
 export interface PropertyListing {
   id: string
