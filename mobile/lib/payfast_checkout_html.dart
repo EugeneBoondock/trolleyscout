@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+final payFastCheckoutBaseUrl = Uri.https('trolleyscout.co.za', '/');
+
 String buildPayFastRedirectHtml(String actionUrl, Map<String, String> fields) {
   final inputs = fields.entries
       .map(

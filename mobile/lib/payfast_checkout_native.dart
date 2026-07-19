@@ -87,7 +87,10 @@ class _PayFastCheckoutSheetState extends State<_PayFastCheckoutSheet> {
           },
         ),
       )
-      ..loadHtmlString(widget.html);
+      ..loadHtmlString(
+        widget.html,
+        baseUrl: payFastCheckoutBaseUrl.toString(),
+      );
   }
 
   @override

@@ -2,6 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/payfast_checkout_html.dart';
 
 void main() {
+  test('checkout wrapper uses the production HTTPS origin', () {
+    expect(payFastCheckoutBaseUrl.scheme, 'https');
+    expect(payFastCheckoutBaseUrl.host, 'trolleyscout.co.za');
+  });
+
   test(
       'classic checkout builds an auto-submitting POST form with escaped fields',
       () {
