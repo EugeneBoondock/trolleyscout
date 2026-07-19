@@ -232,9 +232,13 @@ export async function loadRetailers(options: {
   }
 }
 
-export async function loadOffers(signal?: AbortSignal): Promise<ResourceState<OfferResource>> {
+export async function loadOffers(
+  signal?: AbortSignal,
+  options: { summary?: boolean } = {},
+): Promise<ResourceState<OfferResource>> {
   try {
-    const response = await fetch('/api/offers', {
+    const url = options.summary ? '/api/offers?summary=1' : '/api/offers'
+    const response = await fetch(url, {
       headers: {
         accept: 'application/json',
       },

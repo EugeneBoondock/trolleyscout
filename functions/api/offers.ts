@@ -13,12 +13,13 @@ import type { TrolleyScoutEnv } from '../_shared/env'
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   if (request.method === 'GET') {
+    const summaryOnly = new URL(request.url).searchParams.get('summary') === '1'
     if (!hasOfferStore(env)) {
       return json(getStaticOffersPayload())
     }
 
     return json({
-      offers: await listStoredOffers(env),
+      offers: summaryOnly ? [] : await listStoredOffers(env),
       summary: await buildStoredSummary(env),
     })
   }

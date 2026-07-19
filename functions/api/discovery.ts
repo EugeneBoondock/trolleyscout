@@ -108,6 +108,39 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   const nowIso = new Date().toISOString()
+
+  // Try to load cached summary immediately if possible to avoid heavy D1 reads/dedupes
+  if (!forceLive && summaryOnly) {
+    try {
+      const summaryRow = await env.DB.prepare(
+        "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__summary__'",
+      ).first<{ checked_at: string; deals_json: string }>()
+
+      if (summaryRow) {
+        const parsed = JSON.parse(summaryRow.deals_json) as { foundDealCount?: number; leafletCount?: number }
+        return json(
+          {
+            deals: [],
+            leaflets: [],
+            summary: {
+              foundDealCount: parsed.foundDealCount ?? 0,
+              leafletCount: parsed.leafletCount ?? 0,
+              refreshedAt: summaryRow.checked_at,
+            },
+          },
+          {
+            headers: {
+              'access-control-allow-origin': '*',
+              'cache-control': 'public, max-age=10800',
+            },
+          },
+        )
+      }
+    } catch {
+      // Fallback to normal execution on DB errors
+    }
+  }
+
   const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
@@ -122,16 +155,41 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   // Scheduled and administrator runs are the only upstream refresh owners.
   if (!forceLive) {
     const newestCheckedAt = newestDiscoveryCacheTime(normalizedItems, snapshots)
+    const mergedChecks = mergeNormalizedFirstChecks(normalizedChecks, buildSnapshotChecks(snapshots))
+    const leaflets = leafletSnapshot?.leaflets ?? []
 
-    return respond(
-      mergeNormalizedFirstChecks(normalizedChecks, buildSnapshotChecks(snapshots)),
-      leafletSnapshot?.leaflets ?? [],
+    const response = respond(
+      mergedChecks,
+      leaflets,
       newestCheckedAt,
       true,
       interests,
       storeDiscovery,
       summaryOnly,
     )
+
+    // Compute summary and write back in background so subsequent summaryOnly hits get served instantly
+    const allDeals = dedupeDiscoveryDeals([
+      ...mergedChecks.flatMap((result) => result.deals),
+      ...storeDiscovery.deals,
+    ])
+
+    await env.DB.prepare(
+      `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
+       VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(source_key) DO UPDATE SET
+         checked_at = excluded.checked_at,
+         deals_json = excluded.deals_json,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(
+        newestCheckedAt || nowIso,
+        JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+      )
+      .run()
+      .catch(() => undefined)
+
+    return response
   }
 
   // Live path: an explicit administrator source check.
@@ -142,8 +200,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       refreshLeafletCache(env, leafletSnapshot?.leaflets),
     ]),
   )
-  return respond(
-    mergeNormalizedFirstChecks(normalizedChecks, settled),
+  const mergedChecks = mergeNormalizedFirstChecks(normalizedChecks, settled)
+
+  const response = respond(
+    mergedChecks,
     leaflets,
     new Date().toISOString(),
     false,
@@ -151,6 +211,29 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     storeDiscovery,
     summaryOnly,
   )
+
+  // Update summary table for live updates
+  const allDeals = dedupeDiscoveryDeals([
+    ...mergedChecks.flatMap((result) => result.deals),
+    ...storeDiscovery.deals,
+  ])
+
+  await env.DB.prepare(
+    `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
+     VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(source_key) DO UPDATE SET
+       checked_at = excluded.checked_at,
+       deals_json = excluded.deals_json,
+       updated_at = excluded.updated_at`,
+  )
+    .bind(
+      nowIso,
+      JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+    )
+    .run()
+    .catch(() => undefined)
+
+  return response
 }
 
 // Internal scheduled-worker entry point. It bypasses request authorization

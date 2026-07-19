@@ -219,6 +219,11 @@ class Api {
     return _maps(data['offers']).map(VerifiedOffer.fromJson).toList();
   }
 
+  Future<int> verifiedOfferCount() async {
+    final data = await _request('GET', '/api/offers?summary=1');
+    return (data['summary']?['verifiedOfferCount'] as num?)?.toInt() ?? 0;
+  }
+
   Future<OfferValidationResult> validateOffer(OfferDraft draft) async {
     final data =
         await _request('POST', '/api/offer-validator', body: draft.toJson());

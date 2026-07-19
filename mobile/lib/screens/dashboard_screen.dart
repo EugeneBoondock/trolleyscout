@@ -31,7 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       widget.api.savedDeals(),
       widget.api.savedSources(),
       widget.api.basket(),
-      widget.api.offers(),
+      widget.api.verifiedOfferCount(),
     ]);
     return _DashboardData(
       discovery: results[0] as DiscoveryResult,
@@ -40,7 +40,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       savedDeals: results[3] as List<SavedDeal>,
       savedSources: results[4] as List<SavedSource>,
       basket: results[5] as Basket,
-      offers: results[6] as List<VerifiedOffer>,
+      verifiedOfferCount: results[6] as int,
     );
   }
 
@@ -138,7 +138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         width: width,
                         child: MetricCard(
                           label: 'verified offers',
-                          value: '${data.offers.length}',
+                          value: '${data.verifiedOfferCount}',
                           icon: Icons.verified_outlined,
                           onTap: () => widget.onNavigate(AppDestination.offers),
                         ),
@@ -173,7 +173,7 @@ class _DashboardData {
     required this.savedDeals,
     required this.savedSources,
     required this.basket,
-    required this.offers,
+    required this.verifiedOfferCount,
   });
 
   final DiscoveryResult discovery;
@@ -182,5 +182,5 @@ class _DashboardData {
   final List<SavedDeal> savedDeals;
   final List<SavedSource> savedSources;
   final Basket basket;
-  final List<VerifiedOffer> offers;
+  final int verifiedOfferCount;
 }

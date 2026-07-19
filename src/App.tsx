@@ -434,7 +434,7 @@ function App() {
       status: 'loading',
     }))
 
-    loadOffers(controller.signal)
+    loadOffers(controller.signal, { summary: true })
       .then(setOfferState)
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -445,6 +445,30 @@ function App() {
 
     return () => controller.abort()
   }, [refreshKey])
+
+  useEffect(() => {
+    if (activeView !== 'offers') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    setOfferState((current) => ({
+      ...current,
+      message: 'Loading verified offers.',
+      status: 'loading',
+    }))
+
+    loadOffers(controller.signal, { summary: false })
+      .then(setOfferState)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
+
+    return () => controller.abort()
+  }, [activeView, refreshKey])
 
   useEffect(() => {
     const controller = new AbortController()
