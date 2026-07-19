@@ -278,7 +278,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     if (active != null) return active;
 
     late final Future<void> refresh;
-    refresh = _load(forceLive: true).whenComplete(() {
+    refresh = _load(isRefresh: true).whenComplete(() {
       if (identical(_activeRefresh, refresh)) _activeRefresh = null;
     });
     _activeRefresh = refresh;
@@ -352,9 +352,9 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     }
   }
 
-  Future<void> _load({bool forceLive = false}) async {
+  Future<void> _load({bool isRefresh = false}) async {
     final fallbackDeals = List<ScrollDeal>.of(_deals);
-    if (!forceLive) {
+    if (!isRefresh) {
       setState(() {
         _loading = true;
         _error = null;
@@ -366,7 +366,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       var dealSitesFailed = false;
       var discoveryFailed = false;
       final results = await Future.wait<List<ScrollDeal>>([
-        widget.api.dealSites(forceLive: forceLive).catchError((_) {
+        widget.api.dealSites(forceLive: false).catchError((_) {
           dealSitesFailed = true;
           return <ScrollDeal>[];
         }),
@@ -384,7 +384,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 
       if (dealSitesFailed && discoveryFailed) {
         if (!mounted) return;
-        if (forceLive || _deals.isNotEmpty || _caughtUp) {
+        if (isRefresh || _deals.isNotEmpty || _caughtUp) {
           setState(() => _loading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -455,7 +455,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       }
     } catch (_) {
       if (!mounted) return;
-      if (forceLive || _deals.isNotEmpty || _caughtUp) {
+      if (isRefresh || _deals.isNotEmpty || _caughtUp) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

@@ -1383,6 +1383,29 @@ class NotificationPreferences {
       NotificationPreferences(newDeals: json['newDeals'] == true);
 }
 
+/// New-deal batches recorded by the scheduled scout after this device cursor.
+class DealAlertSummary {
+  const DealAlertSummary({
+    required this.enabled,
+    required this.latestCursor,
+    required this.totalNewDealCount,
+    this.countCapped = false,
+  });
+
+  final bool enabled;
+  final int latestCursor;
+  final int totalNewDealCount;
+  final bool countCapped;
+
+  factory DealAlertSummary.fromJson(Map<String, dynamic> json) =>
+      DealAlertSummary(
+        enabled: json['enabled'] == true,
+        latestCursor: _int(json['latestCursor']),
+        totalNewDealCount: _int(json['totalNewDealCount']),
+        countCapped: json['countCapped'] == true,
+      );
+}
+
 String _string(Object? value, [String fallback = '']) =>
     value is String ? value : fallback;
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { DealSiteItem } from '../../src/services/dealSites'
 import {
-  DEAL_SITE_STALE_MS,
   enrichMyRunwayProducts,
   filterCurrentDealSiteItems,
   isDealSiteCacheRowUsable,
   readDealSiteFeed,
+  readDealSiteFeedStrict,
 } from './dealSiteScout'
 
 function deal(id: string, expiresAt?: string): DealSiteItem {
@@ -37,22 +37,24 @@ describe('filterCurrentDealSiteItems', () => {
     ])
   })
 
-  it('refreshes volatile feeds every fifteen minutes', () => {
-    expect(DEAL_SITE_STALE_MS).toBe(15 * 60 * 1000)
-  })
-
-  it('stops serving a MyRunway row after thirty minutes', () => {
-    const now = Date.parse('2026-07-19T12:31:00.000Z')
+  it('keeps a MyRunway row usable beyond the three-hour scout interval', () => {
+    const withinGrace = Date.parse('2026-07-19T15:30:00.000Z')
+    const beyondGrace = Date.parse('2026-07-19T16:01:00.000Z')
 
     expect(isDealSiteCacheRowUsable(
       'myrunway',
       '2026-07-19T12:00:00.000Z',
-      now,
+      withinGrace,
+    )).toBe(true)
+    expect(isDealSiteCacheRowUsable(
+      'myrunway',
+      '2026-07-19T12:00:00.000Z',
+      beyondGrace,
     )).toBe(false)
     expect(isDealSiteCacheRowUsable(
       'onedayonly',
       '2026-07-19T12:00:00.000Z',
-      now,
+      beyondGrace,
     )).toBe(true)
   })
 
@@ -80,6 +82,9 @@ describe('filterCurrentDealSiteItems', () => {
       deals: [],
       sources: [],
     })
+    await expect(readDealSiteFeedStrict(env as never)).rejects.toThrow(
+      'Deal-site cache payload for onedayonly is not valid JSON.',
+    )
   })
 
   it('enriches MyRunway list rows by SKU and keeps partial failures usable', async () => {

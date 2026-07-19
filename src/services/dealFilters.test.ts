@@ -27,6 +27,17 @@ const deals: DiscoveredDeal[] = [
     sourceUrl: 'https://shoprite.test/specials',
     title: 'Milk 2L',
   },
+  {
+    capturedAt: '2026-07-16T10:00:00.000Z',
+    evidenceText: 'Weekly value pack',
+    id: 'metadata-food',
+    productUrl: 'https://market.test/value-pack',
+    retailerId: 'frontline',
+    retailerName: 'Local Market',
+    sourceLabel: 'Food and grocery specials',
+    sourceUrl: 'https://market.test/groceries',
+    title: 'Weekly value pack',
+  },
 ]
 
 describe('filterDiscoveryDeals', () => {
@@ -36,5 +47,11 @@ describe('filterDiscoveryDeals', () => {
     expect(filterDiscoveryDeals(deals, { sourceLabel: 'Store scout' }).map((deal) => deal.id)).toEqual(['rice'])
     expect(filterDiscoveryDeals(deals, { imagesOnly: true }).map((deal) => deal.id)).toEqual(['rice'])
     expect(filterDiscoveryDeals(deals, { savingsOnly: true }).map((deal) => deal.id)).toEqual(['rice'])
+  })
+
+  it('uses source metadata when a title has no product signal', () => {
+    expect(filterDiscoveryDeals(deals, { category: 'food' }).map((deal) => deal.id)).toContain(
+      'metadata-food',
+    )
   })
 })

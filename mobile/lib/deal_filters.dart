@@ -6,7 +6,14 @@ import 'taste_profile.dart';
 /// How the Find-a-deal list is ordered. `forYou` ranks by the shopper's Window
 /// Shopping taste profile; `store` is the original grouping (retailer name, then
 /// catalogue page order); the rest are the plain shopper-facing sorts.
-enum DealSort { forYou, store, latest, mostSaved, biggestDiscount, priceLowToHigh }
+enum DealSort {
+  forYou,
+  store,
+  latest,
+  mostSaved,
+  biggestDiscount,
+  priceLowToHigh
+}
 
 class DealSortOption {
   const DealSortOption(this.id, this.label);
@@ -142,10 +149,20 @@ List<Deal> filterDeals(
 
     var matchesCategory = true;
     if (category != null || foodSubcategory != null) {
-      final classification = classifyDeal(deal.title, deal.retailerId);
-      matchesCategory = (category == null || classification.category == category) &&
-          (foodSubcategory == null ||
-              classification.foodSubcategory == foodSubcategory);
+      final classification = classifyDeal(
+        deal.title,
+        deal.retailerId,
+        DealClassificationContext(
+          evidenceText: deal.evidenceText,
+          retailerName: deal.retailerName,
+          sourceLabel: deal.sourceLabel,
+          sourceUrl: deal.sourceUrl,
+        ),
+      );
+      matchesCategory =
+          (category == null || classification.category == category) &&
+              (foodSubcategory == null ||
+                  classification.foodSubcategory == foodSubcategory);
     }
 
     return matchesQuery &&

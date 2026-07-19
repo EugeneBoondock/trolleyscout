@@ -100,7 +100,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
       body: SafeArea(
         top: false,
         child: catalogue.pages.isNotEmpty
-            ? _imageReader(catalogue.pages)
+            ? _imageReader(catalogue.pages, sourceUrl)
             : catalogue.isDirectPdf
                 ? CataloguePdfView(
                     url: catalogue.url,
@@ -118,7 +118,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
     );
   }
 
-  Widget _imageReader(List<CataloguePage> pages) {
+  Widget _imageReader(List<CataloguePage> pages, String sourceUrl) {
     return Column(
       children: [
         Expanded(
@@ -140,6 +140,10 @@ class _CatalogueReaderState extends State<CatalogueReader> {
                     urls: pages[index].imageUrls,
                     fit: BoxFit.contain,
                     fallbackIconSize: 52,
+                    allFailed: _CataloguePageFallback(
+                      sourceUrl: sourceUrl,
+                      openExternal: widget.openExternal,
+                    ),
                   ),
                 ),
               ),
@@ -224,19 +228,20 @@ class _CatalogueNetworkImage extends StatelessWidget {
     required this.urls,
     required this.fit,
     required this.fallbackIconSize,
+    this.allFailed,
   });
 
   final List<String> urls;
   final BoxFit fit;
   final double fallbackIconSize;
+  final Widget? allFailed;
 
   @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-        child: _imageAt(context, 0),
-      );
+  Widget build(BuildContext context) => _imageAt(context, 0);
 
   Widget _imageAt(BuildContext context, int index) {
     if (index >= urls.length) {
+      if (allFailed != null) return allFailed!;
       return ColoredBox(
         color: TS.surfaceSoftOf(context),
         child: Center(
@@ -251,6 +256,7 @@ class _CatalogueNetworkImage extends StatelessWidget {
     return Image.network(
       urls[index],
       fit: fit,
+      excludeFromSemantics: true,
       frameBuilder: (context, child, frame, loadedSynchronously) {
         if (loadedSynchronously || frame != null) return child;
         return ColoredBox(
@@ -263,6 +269,50 @@ class _CatalogueNetworkImage extends StatelessWidget {
       errorBuilder: (_, __, ___) => _imageAt(context, index + 1),
     );
   }
+}
+
+class _CataloguePageFallback extends StatelessWidget {
+  const _CataloguePageFallback({
+    required this.sourceUrl,
+    required this.openExternal,
+  });
+
+  final String sourceUrl;
+  final CatalogueUriOpener openExternal;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.broken_image_outlined,
+                color: TS.mutedOf(context),
+                size: 64,
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Catalogue page unavailable.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'This page image could not be loaded. Open the retailer’s official source to continue.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: TS.mutedOf(context)),
+              ),
+              const SizedBox(height: 18),
+              CatalogueSourceButton(
+                sourceUrl: sourceUrl,
+                openExternal: openExternal,
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _CatalogueCoverFallback extends StatelessWidget {

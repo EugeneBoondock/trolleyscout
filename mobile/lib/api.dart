@@ -459,6 +459,15 @@ class Api {
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
   }
 
+  /// Runs the two protected upstream deal scouts. The server accepts these
+  /// requests only for an authenticated admin account.
+  Future<void> refreshDealSources() async {
+    await Future.wait<dynamic>([
+      discovery(forceLive: true),
+      dealSites(forceLive: true),
+    ]);
+  }
+
   // --- Window Shopping social + cross-device account state ---
 
   /// The account's saved Window Shopping deals (server-backed; stale deals are
@@ -527,6 +536,12 @@ class Api {
       body: {'newDeals': newDeals},
     );
     return NotificationPreferences.fromJson(_map(data['preferences']));
+  }
+
+  Future<DealAlertSummary> dealAlerts({int? after}) async {
+    final suffix = after == null ? '' : '?after=$after';
+    final data = await _request('GET', '/api/deal-alerts$suffix');
+    return DealAlertSummary.fromJson(data);
   }
 
   Future<Map<String, dynamic>> _request(

@@ -1,37 +1,250 @@
 import { describe, expect, it, vi } from 'vitest'
-import { catalogueRetailerId, runScheduledScout } from './scout'
+import type { DiscoveryRun, StoreLeaflet } from '../src/types'
+import {
+  catalogueRetailerId,
+  runScheduledScout,
+  shouldRefreshDealSources,
+} from './scout'
+
+function discoveryRun(leaflets: StoreLeaflet[] = []): DiscoveryRun {
+  return {
+    deals: [],
+    leaflets,
+    refreshedAt: '2026-07-19T12:00:00.000Z',
+    served: 'live' as const,
+    sources: [],
+    summary: {
+      checkedSourceCount: 0,
+      dataPolicy: 'official sources',
+      foundDealCount: 0,
+      unavailableSourceCount: 0,
+    },
+  }
+}
 
 describe('runScheduledScout', () => {
-  it('forces a live site refresh before catalogue processing', async () => {
-    const fetcher = vi.fn(async () =>
-      Response.json({
-        data: {
-          deals: [],
-          leaflets: [],
-          sources: [],
-          summary: {
-            checkedSourceCount: 0,
-            dataPolicy: 'official sources',
-            foundDealCount: 0,
-            unavailableSourceCount: 0,
-          },
-        },
-      }),
+  it('keeps catalogue discovery and scanning hourly while skipping three-hour deal lanes', async () => {
+    const cachedLeaflet: StoreLeaflet = {
+      capturedAt: '2026-07-19T10:00:00.000Z',
+      documentUrl: 'https://catalogues.test/current.pdf',
+      id: 'current-catalogue',
+      name: 'Current catalogue',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      url: 'https://catalogues.test/current',
+    }
+    const refreshDiscovery = vi.fn(async () => discoveryRun([cachedLeaflet]))
+    const runStructuredRetailerFeedScout = vi.fn()
+    const refreshDealSites = vi.fn()
+    const readDueDiscoveredStores = vi.fn()
+    const scoutNearbyStores = vi.fn()
+    const runVoucherScout = vi.fn()
+    const runCatalogueScout = vi.fn(async () => ({
+      dealCount: 0,
+      discoveredLeafletCount: 1,
+      scannedDocumentCount: 1,
+    }))
+
+    await runScheduledScout(
+      { DB: {} as D1Database },
+      async () => Response.json({}),
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores,
+        refreshDealSites,
+        refreshDiscovery,
+        runCatalogueScout,
+        runStructuredRetailerFeedScout,
+        runVoucherScout,
+        scoutNearbyStores,
+      },
+      { refreshDealSources: false },
     )
+
+    expect(refreshDiscovery).toHaveBeenCalledWith(
+      expect.anything(),
+      { refreshDeals: false },
+    )
+    expect(runCatalogueScout).toHaveBeenCalledWith(
+      expect.anything(),
+      [cachedLeaflet],
+    )
+    expect(runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(refreshDealSites).not.toHaveBeenCalled()
+    expect(readDueDiscoveredStores).not.toHaveBeenCalled()
+    expect(scoutNearbyStores).not.toHaveBeenCalled()
+    expect(runVoucherScout).not.toHaveBeenCalled()
+  })
+
+  it('refreshes discovery and external deal sites through internal scout functions', async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error('the scheduled worker must not call its public refresh route')
+    })
+    const refreshDiscovery = vi.fn(async () => discoveryRun())
+    const refreshDealSites = vi.fn(async () => 37)
 
     const result = await runScheduledScout(
-      { SCOUT_ORIGIN: 'https://trolleyscout.co.za' },
+      { DB: {} as D1Database, SCOUT_ORIGIN: 'https://trolleyscout.co.za' },
       fetcher,
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores: async () => [],
+        refreshDealSites,
+        refreshDiscovery,
+        runCatalogueScout: async () => ({
+          dealCount: 0,
+          discoveredLeafletCount: 0,
+          scannedDocumentCount: 0,
+        }),
+        runStructuredRetailerFeedScout: async () => ({
+          acceptedDealCount: 0,
+          catalogueCount: 0,
+          catalogues: [],
+          checkedSourceCount: 0,
+          databaseAvailable: true,
+          failedSourceCount: 0,
+          physicalRequestCount: 0,
+          sources: [],
+        }),
+        scoutNearbyStores: async () => undefined,
+      },
     )
 
-    expect(fetcher).toHaveBeenCalledWith(
-      'https://trolleyscout.co.za/api/discovery?refresh=1',
-      expect.objectContaining({ headers: { accept: 'application/json' } }),
-    )
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(refreshDiscovery).toHaveBeenCalledWith(expect.anything())
+    expect(refreshDealSites).toHaveBeenCalledWith(expect.anything())
     expect(result).toMatchObject({
       catalogueDealCount: 0,
+      externalDealCount: 37,
       refreshedDealCount: 0,
       refreshedSourceCount: 0,
+    })
+  })
+
+  it('snapshots before every refresh lane and records one batch after expiry', async () => {
+    const order: string[] = []
+    const snapshotDealAlertKeys = vi.fn(async () => {
+      const phase = snapshotDealAlertKeys.mock.calls.length === 1 ? 'before' : 'after'
+      order.push(`snapshot-${phase}`)
+      return phase === 'before' ? ['deal-a'] : ['deal-a', 'deal-b']
+    })
+    const recordGlobalDealAlertBatch = vi.fn(async (
+      _env: unknown,
+      before: readonly string[],
+      after: readonly string[],
+    ) => {
+      order.push('record-alert-batch')
+      expect(before).toEqual(['deal-a'])
+      expect(after).toEqual(['deal-a', 'deal-b'])
+      return { cursor: 9, inserted: true, newDealCount: 1 }
+    })
+
+    const result = await runScheduledScout(
+      { DB: {} as D1Database },
+      async () => Response.json({}),
+      {
+        expireDealItems: async () => { order.push('expire-normalized'); return 0 },
+        matchPendingWatches: async () => { order.push('match-watches'); return 0 },
+        purgeExpired: async () => { order.push('expire-location'); return 0 },
+        readDueDiscoveredStores: async () => [],
+        recordGlobalDealAlertBatch,
+        refreshDealSites: async () => { order.push('deal-sites'); return 0 },
+        refreshDiscovery: async () => { order.push('discovery'); return discoveryRun() },
+        runCatalogueScout: async () => {
+          order.push('catalogue')
+          return { dealCount: 0, discoveredLeafletCount: 0, scannedDocumentCount: 0 }
+        },
+        runStructuredRetailerFeedScout: async () => {
+          order.push('structured')
+          return {
+            acceptedDealCount: 0,
+            catalogueCount: 0,
+            catalogues: [],
+            checkedSourceCount: 0,
+            databaseAvailable: true,
+            failedSourceCount: 0,
+            physicalRequestCount: 0,
+            sources: [],
+          }
+        },
+        runVoucherScout: async () => { order.push('vouchers'); return { expired: 0, sources: [] } },
+        scoutNearbyStores: async () => { order.push('stores') },
+        snapshotDealAlertKeys,
+      },
+    )
+
+    expect(order).toEqual([
+      'snapshot-before',
+      'structured',
+      'discovery',
+      'deal-sites',
+      'stores',
+      'catalogue',
+      'vouchers',
+      'expire-location',
+      'expire-normalized',
+      'snapshot-after',
+      'record-alert-batch',
+      'match-watches',
+    ])
+    expect(result).toMatchObject({
+      dealAlertAfterSnapshotCount: 2,
+      dealAlertBatchFailed: false,
+      dealAlertBatchInserted: true,
+      dealAlertBeforeSnapshotCount: 1,
+      dealAlertNewDealCount: 1,
+      dealAlertSnapshotFailed: false,
+    })
+  })
+
+  it('skips batch recording when the strict after snapshot fails', async () => {
+    const snapshotDealAlertKeys = vi.fn(async () => {
+      if (snapshotDealAlertKeys.mock.calls.length === 1) return ['deal-a']
+      throw new Error('after snapshot failed')
+    })
+    const recordGlobalDealAlertBatch = vi.fn()
+
+    const result = await runScheduledScout(
+      { DB: {} as D1Database },
+      async () => Response.json({}),
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores: async () => [],
+        recordGlobalDealAlertBatch,
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun(),
+        runCatalogueScout: async () => ({
+          dealCount: 0,
+          discoveredLeafletCount: 0,
+          scannedDocumentCount: 0,
+        }),
+        runStructuredRetailerFeedScout: async () => ({
+          acceptedDealCount: 0,
+          catalogueCount: 0,
+          catalogues: [],
+          checkedSourceCount: 0,
+          databaseAvailable: true,
+          failedSourceCount: 0,
+          physicalRequestCount: 0,
+          sources: [],
+        }),
+        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        scoutNearbyStores: async () => undefined,
+        snapshotDealAlertKeys,
+      },
+    )
+
+    expect(snapshotDealAlertKeys).toHaveBeenCalledTimes(2)
+    expect(recordGlobalDealAlertBatch).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      dealAlertAfterSnapshotCount: 0,
+      dealAlertBatchInserted: false,
+      dealAlertBeforeSnapshotCount: 1,
+      dealAlertNewDealCount: 0,
+      dealAlertSnapshotFailed: true,
     })
   })
 
@@ -67,6 +280,11 @@ describe('runScheduledScout', () => {
           return 2
         },
         readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => {
+          order.push('legacy')
+          return discoveryRun()
+        },
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -151,6 +369,8 @@ describe('runScheduledScout', () => {
       expireDealItems: vi.fn(async () => 99),
       purgeExpired: async () => 0,
       readDueDiscoveredStores: async () => [],
+      refreshDealSites: async () => 0,
+      refreshDiscovery: async () => discoveryRun(),
       runCatalogueScout: async () => ({
         dealCount: 0,
         discoveredLeafletCount: 0,
@@ -162,7 +382,7 @@ describe('runScheduledScout', () => {
 
     expect(structured).toHaveBeenCalled()
     expect(result.expiredNormalizedDealCount).toBe(0)
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('continues discovered-store fallbacks when the legacy refresh endpoint is unavailable', async () => {
@@ -185,6 +405,10 @@ describe('runScheduledScout', () => {
         purgeExpired: async () => 0,
         readAllStoreCatalogues: async () => [],
         readDueDiscoveredStores: async () => [dueStore],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => {
+          throw new Error('legacy discovery unavailable')
+        },
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -252,6 +476,11 @@ describe('runScheduledScout', () => {
         purgeExpired: async () => { order.push('expire-location'); return 0 },
         readAllStoreCatalogues: async () => [],
         readDueDiscoveredStores: async () => [dueStore],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => {
+          order.push('legacy')
+          return discoveryRun()
+        },
         runCatalogueScout: async () => {
           order.push('catalogue')
           throw new Error('catalogue lane failed')
@@ -330,6 +559,16 @@ describe('runScheduledScout', () => {
         title: 'Branch weekly catalogue',
       }],
       readDueDiscoveredStores: async () => [],
+      refreshDealSites: async () => 0,
+      refreshDiscovery: async () => discoveryRun([{
+        capturedAt: '2026-07-16T09:00:00.000Z',
+        documentUrl: 'https://legacy.test/catalogue.pdf',
+        id: 'legacy-catalogue',
+        name: 'Legacy catalogue',
+        retailerId: 'spar',
+        retailerName: 'SPAR',
+        url: 'https://legacy.test/specials',
+      }]),
       runCatalogueScout: runCatalogue,
       runStructuredRetailerFeedScout: async () => ({
         acceptedDealCount: 0,
@@ -428,6 +667,8 @@ describe('runScheduledScout', () => {
         purgeExpired: async () => 0,
         readAllStoreCatalogues,
         readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun(),
         runCatalogueScout,
         runStructuredRetailerFeedScout: async () => ({
           acceptedDealCount: 0,
@@ -525,6 +766,16 @@ describe('runScheduledScout', () => {
           throw new Error('temporary D1 page failure')
         },
         readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun([{
+          capturedAt: '2026-07-16T09:00:00.000Z',
+          documentUrl: 'https://legacy.test/fallback.pdf',
+          id: 'legacy-fallback',
+          name: 'Legacy fallback',
+          retailerId: 'spar',
+          retailerName: 'SPAR',
+          url: 'https://legacy.test/specials',
+        }]),
         runCatalogueScout,
         runStructuredRetailerFeedScout: async () => ({
           acceptedDealCount: 0,
@@ -601,6 +852,8 @@ describe('runScheduledScout', () => {
         purgeExpired: async () => 0,
         readAllStoreCatalogues,
         readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun(),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -627,6 +880,14 @@ describe('runScheduledScout', () => {
       1000,
       9000,
     )
+  })
+})
+
+describe('shouldRefreshDealSources', () => {
+  it('opens deal-source lanes on UTC hours divisible by three', () => {
+    expect(shouldRefreshDealSources(Date.parse('2026-07-19T00:17:00.000Z'))).toBe(true)
+    expect(shouldRefreshDealSources(Date.parse('2026-07-19T01:17:00.000Z'))).toBe(false)
+    expect(shouldRefreshDealSources(Date.parse('2026-07-19T03:17:00.000Z'))).toBe(true)
   })
 })
 

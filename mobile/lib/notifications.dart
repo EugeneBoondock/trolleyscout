@@ -1,10 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-/// Thin wrapper around the local-notifications plugin. Only immediate
-/// notifications (`show`) are used — the app raises one when it opens and finds
-/// deals that landed since the shopper last looked. No background scheduling, so
-/// no exact-alarm permissions are needed.
+/// Thin wrapper around the local-notifications plugin. The periodic deal check
+/// uses immediate notifications, so no exact-alarm permission is needed.
 class DealNotifications {
   DealNotifications._();
 
@@ -14,8 +12,8 @@ class DealNotifications {
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
-  Future<void> _ensureInit() async {
-    if (_initialized) return;
+  Future<bool> _ensureInit() async {
+    if (_initialized) return true;
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwin = DarwinInitializationSettings(
       requestAlertPermission: false,
@@ -27,15 +25,17 @@ class DealNotifications {
         const InitializationSettings(android: android, iOS: darwin),
       );
       _initialized = true;
+      return true;
     } catch (error) {
       debugPrint('Notification init failed: $error');
+      return false;
     }
   }
 
   /// Asks the OS for permission (Android 13+, iOS). Returns true if granted or
   /// if the platform grants implicitly.
   Future<bool> requestPermission() async {
-    await _ensureInit();
+    if (!await _ensureInit()) return false;
     try {
       final android = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
@@ -55,15 +55,14 @@ class DealNotifications {
     } catch (error) {
       debugPrint('Notification permission request failed: $error');
     }
-    return true;
+    return false;
   }
 
   /// Raises the "fresh deals landed" notification. When [personalized], the copy
   /// reflects that the deals match what the shopper likes.
-  Future<void> showNewDeals(int count, {bool personalized = false}) async {
-    if (count <= 0) return;
-    await _ensureInit();
-    if (!_initialized) return;
+  Future<bool> showNewDeals(int count, {bool personalized = false}) async {
+    if (count <= 0) return true;
+    if (!await _ensureInit()) return false;
 
     // A new channel id ('_v2') is used because Android locks a channel's sound
     // at creation time — this guarantees the custom deal_alert chime is used
@@ -86,7 +85,7 @@ class DealNotifications {
 
     try {
       final title = personalized
-          ? 'Deals you\'ll love just landed'
+          ? 'Deals you’ll love just landed'
           : 'New deals on Trolley Scout';
       final body = personalized
           ? (count == 1
@@ -96,8 +95,10 @@ class DealNotifications {
               ? '1 new deal just landed. Open the app to grab it.'
               : '$count new deals just landed. Open the app to grab them.');
       await _plugin.show(1001, title, body, details);
+      return true;
     } catch (error) {
       debugPrint('Show notification failed: $error');
+      return false;
     }
   }
 }

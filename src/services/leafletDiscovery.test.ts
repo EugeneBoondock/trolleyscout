@@ -5,6 +5,7 @@ import {
   extractFlippingBookViewerUrl,
   extractViewerCoverImage,
   extractPdfLeaflets,
+  extractPnpCmsLeaflets,
   extractSixtyLeaflets,
   leafletTargets,
 } from './leafletDiscovery'
@@ -12,6 +13,106 @@ import {
 const shoprite = leafletTargets.find((target) => target.retailerId === 'shoprite')!
 const boxer = leafletTargets.find((target) => target.retailerId === 'boxer')!
 const usave = leafletTargets.find((target) => target.retailerId === 'usave')!
+const pnp = leafletTargets.find((target) => target.kind === 'pnp-cms')!
+
+describe('Pick n Pay catalogue CMS leaflets', () => {
+  test('registers the official catalogue CMS as a leaflet source', () => {
+    expect(pnp).toMatchObject({
+      kind: 'pnp-cms',
+      pageUrl: expect.stringContaining('/pnphybris/v2/pnp-spa/cms/pages?'),
+      retailerId: 'pick-n-pay',
+      retailerName: 'Pick n Pay',
+    })
+  })
+
+  test('maps current banners into distinct viewer leaflets with regional scope', () => {
+    const payload = {
+      contentSlots: {
+        contentSlot: [{
+          components: {
+            component: [{
+              content: `<h2>Pick n Pay Weekly Specials</h2>
+                <p class="cat-validity-date">Valid 13 July - 19 July</p>
+                <a href="https://pnpcatalogues.hflip.co/4b5699c20a.html">Gauteng</a>
+                <a href="https://pnpcatalogues.hflip.co/4b5699c20a.html">Limpopo</a>
+                <a href="https://pnpcatalogues.hflip.co/4b5699c20a.html">KwaZulu-Natal</a>
+                <a href="https://pnpcatalogues.hflip.co/1c6a13cea9.html">Western Cape</a>
+                <a href="https://www.pnp.co.za/c/weekly-deals">Shop now</a>`,
+              media: { url: 'https://cdn-prd-02.pnp.co.za/catalogues/weekly.jpg' },
+              name: 'wk20_weekly specials_13-19July',
+              typeCode: 'BannerComponent',
+              uid: 'comp_weekly',
+            }, {
+              content: `<h2>Pick n Pay Back To School Specials</h2>
+                <p class="cat-validity-date">Valid 13 July - 26 July 2026</p>
+                <a href="https://pnpcatalogues.hflip.co/2a5875f9a3.html">National</a>`,
+              media: { url: 'https://cdn-prd-02.pnp.co.za/catalogues/school.jpg' },
+              typeCode: 'BannerComponent',
+              uid: 'comp_school',
+            }, {
+              content: '<a href="https://pnpcatalogues.hflip.co.evil.test/bad.html">Gauteng</a>',
+              typeCode: 'BannerComponent',
+              uid: 'comp_bad',
+            }],
+          },
+        }],
+      },
+    }
+
+    const leaflets = extractPnpCmsLeaflets(pnp, payload, '2026-07-15T10:00:00.000Z')
+
+    expect(leaflets).toHaveLength(3)
+    expect(leaflets[0]).toMatchObject({
+      imageUrl: 'https://cdn-prd-02.pnp.co.za/catalogues/weekly.jpg',
+      name: 'Pick n Pay Weekly Specials (Gauteng, Limpopo, KwaZulu-Natal)',
+      priceScope: {
+        regionIds: ['Gauteng', 'Limpopo', 'KwaZulu-Natal'],
+        type: 'province',
+      },
+      retailerId: 'pick-n-pay',
+      url: 'https://pnpcatalogues.hflip.co/4b5699c20a.html',
+      validFrom: '2026-07-13',
+      validTo: '2026-07-19',
+    })
+    expect(leaflets[1]).toMatchObject({
+      name: 'Pick n Pay Weekly Specials (Western Cape)',
+      priceScope: { regionIds: ['Western Cape'], type: 'province' },
+      url: 'https://pnpcatalogues.hflip.co/1c6a13cea9.html',
+    })
+    expect(leaflets[2]).toMatchObject({
+      name: 'Pick n Pay Back To School Specials (National)',
+      priceScope: { type: 'national' },
+      url: 'https://pnpcatalogues.hflip.co/2a5875f9a3.html',
+      validFrom: '2026-07-13',
+      validTo: '2026-07-26',
+    })
+  })
+
+  test('returns empty for malformed CMS data', () => {
+    expect(extractPnpCmsLeaflets(pnp, { contentSlots: null }, '2026-07-15T10:00:00.000Z'))
+      .toEqual([])
+  })
+
+  test('skips a malformed banner without hiding later catalogue banners', () => {
+    const payload = {
+      contentSlots: {
+        contentSlot: [{
+          components: {
+            component: [{ typeCode: 'BannerComponent' }, {
+              content: `<h2>Pick n Pay National Specials</h2>
+                <p>Valid 1 July - 31 July 2026</p>
+                <a href="https://pnpcatalogues.hflip.co/abcdef1234.html">National</a>`,
+              typeCode: 'BannerComponent',
+            }],
+          },
+        }],
+      },
+    }
+
+    expect(extractPnpCmsLeaflets(pnp, payload, '2026-07-15T10:00:00.000Z'))
+      .toHaveLength(1)
+  })
+})
 
 describe('buildLeafletApiUrl', () => {
   test('builds the get-store-leaflets endpoint', () => {

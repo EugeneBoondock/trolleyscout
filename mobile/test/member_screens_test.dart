@@ -117,6 +117,20 @@ void main() {
           reason: '${entry.value} must render');
     }
   });
+
+  testWidgets('admin console can trigger the protected deal refresh',
+      (tester) async {
+    final api = _FeatureApi();
+    await tester.pumpWidget(_wrap(AdminScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+        find.widgetWithText(FilledButton, 'Refresh deal sources'));
+    await tester.pumpAndSettle();
+
+    expect(api.dealRefreshCalls, 1);
+    expect(find.text('Deal sources refreshed.'), findsOneWidget);
+  });
 }
 
 Widget _wrap(Widget child) =>
@@ -127,6 +141,7 @@ class _FeatureApi extends Api {
 
   int savedSourceCalls = 0;
   int deletedDealCalls = 0;
+  int dealRefreshCalls = 0;
   int? updatedBasketQuantity;
   var _savedDeals = <SavedDeal>[_savedDeal];
   var _basket = _exampleBasket;
@@ -219,6 +234,11 @@ class _FeatureApi extends Api {
         leafletCount: 3,
         sourceCount: 6,
       );
+
+  @override
+  Future<void> refreshDealSources() async {
+    dealRefreshCalls += 1;
+  }
 }
 
 const _memberAccount = MemberAccount(

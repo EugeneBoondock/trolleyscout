@@ -2,6 +2,13 @@ import {
   runCatalogueScout,
   type CatalogueScoutResult,
 } from '../functions/_shared/catalogueScout'
+import {
+  beginDealAlertCapture,
+  finishDealAlertCapture,
+  recordGlobalDealAlertBatch,
+  snapshotDealAlertKeys,
+} from '../functions/_shared/dealAlertStore'
+import { refreshDealSites } from '../functions/_shared/dealSiteScout'
 import { expireDealItems } from '../functions/_shared/dealItemStore'
 import { matchPendingWatches } from '../functions/_shared/dealWatchStore'
 import type { TrolleyScoutEnv } from '../functions/_shared/env'
@@ -17,6 +24,7 @@ import {
 import { scoutNearbyStores } from '../functions/_shared/storeScout'
 import { runVoucherScout } from '../functions/_shared/voucherScout'
 import { pruneWindowSocial } from '../functions/_shared/windowSocialStore'
+import { refreshDiscoveryCache } from '../functions/api/discovery'
 import type { DiscoveryRun } from '../src/types'
 import { parseRetailerSlug } from '../src/services/retailerFeeds/types'
 
@@ -35,10 +43,18 @@ export interface ScheduledScoutDependencies {
   purgeExpired: typeof purgeExpired
   readAllStoreCatalogues?: typeof readAllStoreCatalogues
   readDueDiscoveredStores: typeof readDueDiscoveredStores
+  recordGlobalDealAlertBatch?: typeof recordGlobalDealAlertBatch
+  refreshDealSites: typeof refreshDealSites
+  refreshDiscovery: typeof refreshDiscoveryCache
   runCatalogueScout: typeof runCatalogueScout
   runStructuredRetailerFeedScout: typeof runStructuredRetailerFeedScout
   runVoucherScout?: typeof runVoucherScout
   scoutNearbyStores: typeof scoutNearbyStores
+  snapshotDealAlertKeys?: typeof snapshotDealAlertKeys
+}
+
+export interface ScheduledScoutOptions {
+  refreshDealSources?: boolean
 }
 
 const defaultDependencies: ScheduledScoutDependencies = {
@@ -47,52 +63,67 @@ const defaultDependencies: ScheduledScoutDependencies = {
   purgeExpired,
   readAllStoreCatalogues,
   readDueDiscoveredStores,
+  recordGlobalDealAlertBatch,
+  refreshDealSites,
+  refreshDiscovery: refreshDiscoveryCache,
   runCatalogueScout,
   runStructuredRetailerFeedScout,
   runVoucherScout,
   scoutNearbyStores,
+  snapshotDealAlertKeys,
 }
 
 export async function runScheduledScout(
   env: ScoutEnv,
-  fetcher: ScoutFetch = fetch,
+  _fetcher: ScoutFetch = fetch,
   dependencies: ScheduledScoutDependencies = defaultDependencies,
+  options: ScheduledScoutOptions = {},
 ) {
+  const refreshDealSources = options.refreshDealSources ?? true
+  const dealAlertCapture = await beginDealAlertCapture(env, {
+    snapshotKeys: dependencies.snapshotDealAlertKeys ?? snapshotDealAlertKeys,
+  })
+
   let structured: RetailerFeedScoutResult = emptyStructuredResult(env)
   let structuredScoutFailed = false
-  try {
-    structured = await dependencies.runStructuredRetailerFeedScout(env)
-  } catch {
-    structuredScoutFailed = true
+  if (refreshDealSources) {
+    try {
+      structured = await dependencies.runStructuredRetailerFeedScout(env)
+    } catch {
+      structuredScoutFailed = true
+    }
   }
-  const origin = env.SCOUT_ORIGIN ?? 'https://trolleyscout.co.za'
-  const refreshUrl = new URL('/api/discovery', origin)
-  refreshUrl.searchParams.set('refresh', '1')
   let discovery: DiscoveryRun | undefined
   let legacyRefreshFailed = false
   try {
-    const response = await fetcher(refreshUrl.toString(), {
-      headers: { accept: 'application/json' },
-    })
-    if (!response.ok) {
-      throw new Error(`Deal refresh returned HTTP ${response.status}.`)
-    }
-    const envelope = (await response.json()) as { data?: DiscoveryRun }
-    discovery = envelope.data
+    discovery = refreshDealSources
+      ? await dependencies.refreshDiscovery(env)
+      : await dependencies.refreshDiscovery(env, { refreshDeals: false })
   } catch {
     // Structured feeds and discovered-store fallbacks still run when this
     // older refresh lane has a transient transport or endpoint failure.
     legacyRefreshFailed = true
   }
+  let externalDealCount = 0
+  let externalDealRefreshFailed = false
+  if (refreshDealSources) {
+    try {
+      externalDealCount = await dependencies.refreshDealSites(env)
+    } catch {
+      externalDealRefreshFailed = true
+    }
+  }
   const nowMs = Date.now()
   const nowIso = new Date(nowMs).toISOString()
   let dueStores: Awaited<ReturnType<typeof readDueDiscoveredStores>> = []
   let storeScoutFailed = false
-  try {
-    dueStores = await dependencies.readDueDiscoveredStores(env, nowIso)
-    await dependencies.scoutNearbyStores(env, dueStores, nowMs, dueStores.length)
-  } catch {
-    storeScoutFailed = true
+  if (refreshDealSources) {
+    try {
+      dueStores = await dependencies.readDueDiscoveredStores(env, nowIso)
+      await dependencies.scoutNearbyStores(env, dueStores, nowMs, dueStores.length)
+    } catch {
+      storeScoutFailed = true
+    }
   }
 
   let discoveredStoreCatalogues: StorePromotion[] = []
@@ -123,7 +154,7 @@ export async function runScheduledScout(
   let voucherExpiredCount = 0
   let voucherSourceCount = 0
   let voucherWrittenCount = 0
-  if (hasTrolleyScoutDatabase(env)) {
+  if (refreshDealSources && hasTrolleyScoutDatabase(env)) {
     try {
       const voucherResult = await (dependencies.runVoucherScout ?? runVoucherScout)(env)
       voucherExpiredCount = voucherResult.expired
@@ -151,6 +182,16 @@ export async function runScheduledScout(
 
   // Every lane above may have landed new deals — answer waiting members last,
   // when today's corpus is at its fullest.
+  const dealAlerts = await finishDealAlertCapture(
+    env,
+    dealAlertCapture,
+    nowIso,
+    {
+      recordBatch: dependencies.recordGlobalDealAlertBatch ?? recordGlobalDealAlertBatch,
+      snapshotKeys: dependencies.snapshotDealAlertKeys ?? snapshotDealAlertKeys,
+    },
+  )
+
   let watchAlertCount = 0
   if (hasTrolleyScoutDatabase(env)) {
     try {
@@ -164,12 +205,21 @@ export async function runScheduledScout(
     catalogueDealCount: catalogue.dealCount,
     catalogueScoutFailed,
     discoveredLeafletCount: catalogue.discoveredLeafletCount,
+    dealAlertAfterSnapshotCount: dealAlerts.afterSnapshotCount,
+    dealAlertBatchFailed: dealAlerts.batchFailed,
+    dealAlertBatchInserted: dealAlerts.batchInserted,
+    dealAlertBeforeSnapshotCount: dealAlerts.beforeSnapshotCount,
+    dealAlertNewDealCount: dealAlerts.newDealCount,
+    dealAlertSnapshotFailed: dealAlerts.snapshotFailed,
+    dealSourcesRefreshed: refreshDealSources,
     dueStoreCount: dueStores.length,
     expiredNormalizedDealCount,
     expiredRemoved,
+    externalDealCount,
+    externalDealRefreshFailed,
     legacyRefreshFailed,
-    refreshedDealCount: discovery?.summary.foundDealCount ?? 0,
-    refreshedSourceCount: discovery?.summary.checkedSourceCount ?? 0,
+    refreshedDealCount: refreshDealSources ? discovery?.summary.foundDealCount ?? 0 : 0,
+    refreshedSourceCount: refreshDealSources ? discovery?.summary.checkedSourceCount ?? 0 : 0,
     scannedDocumentCount: catalogue.scannedDocumentCount,
     storeScoutFailed,
     structuredAcceptedDealCount: structured.acceptedDealCount,
@@ -300,9 +350,24 @@ function stableSlugHash(value: string): string {
   return (hash >>> 0).toString(36)
 }
 
+const DEAL_SOURCE_CADENCE_HOURS = 3
+const HOUR_MS = 60 * 60 * 1000
+
+export function shouldRefreshDealSources(scheduledTime: number): boolean {
+  if (!Number.isFinite(scheduledTime)) {
+    throw new TypeError('scheduledTime must be a finite timestamp.')
+  }
+  return Math.floor(scheduledTime / HOUR_MS) % DEAL_SOURCE_CADENCE_HOURS === 0
+}
+
 export default {
-  async scheduled(_controller, env) {
-    const result = await runScheduledScout(env)
+  async scheduled(controller, env) {
+    const result = await runScheduledScout(
+      env,
+      fetch,
+      defaultDependencies,
+      { refreshDealSources: shouldRefreshDealSources(controller.scheduledTime) },
+    )
     // Drop saves/comments for deals that have left the live feed so global save
     // counts fall as stores retire deals.
     await pruneWindowSocial(env).catch(() => undefined)

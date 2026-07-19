@@ -16,10 +16,43 @@ class AdminScreen extends StatefulWidget {
 
 class _AdminScreenState extends State<AdminScreen> {
   late Future<AdminOverview> _future = widget.api.adminOverview();
+  bool _refreshingDeals = false;
 
   void _reload() => setState(() {
         _future = widget.api.adminOverview();
       });
+
+  Future<void> _refreshDeals() async {
+    if (_refreshingDeals) return;
+    setState(() => _refreshingDeals = true);
+    try {
+      uxTap();
+      await widget.api.refreshDealSources();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Deal sources refreshed.')),
+        );
+      _reload();
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('Deal refresh could not start.')),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _refreshingDeals = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +104,41 @@ class _AdminScreenState extends State<AdminScreen> {
                         value: '${overview.sourceCount}',
                         icon: Icons.storefront_outlined)),
               ],
+            ),
+            const SizedBox(height: 16),
+            PaperCard(
+              child: Row(
+                children: [
+                  Icon(Icons.sync, color: TS.redOf(context)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Deal source refresh',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Fetch current store and daily-deal rows now.',
+                          style: TextStyle(
+                            color: TS.mutedOf(context),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: _refreshingDeals ? null : _refreshDeals,
+                    child: Text(
+                      _refreshingDeals ? 'Refreshing' : 'Refresh deal sources',
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             Wrap(

@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'deal_alert_lifecycle.dart';
 import 'member_state_sync.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this.api);
+  AppController(this.api, {DealAlertLifecycle? dealAlerts})
+      : _dealAlerts = dealAlerts ?? DealAlertLifecycle();
 
   final Api api;
+  final DealAlertLifecycle _dealAlerts;
   MemberSession session = const MemberSession.signedOut();
   bool restoring = true;
   bool busy = false;
@@ -16,39 +19,43 @@ class AppController extends ChangeNotifier {
   List<DealWatch> watches = const [];
 
   /// Matched watches the member has not dismissed yet — the bell badge.
-  int get alertCount =>
-      watches.where((watch) => watch.isUnreadAlert).length;
+  int get alertCount => watches.where((watch) => watch.isUnreadAlert).length;
 
   Future<void> restore() async {
     try {
-      session = await api.session();
-    } catch (_) {
-      session = const MemberSession.signedOut();
+      try {
+        session = await api.session();
+      } catch (_) {
+        session = const MemberSession.signedOut();
+      }
+
+      // Pull the shopper's account-synced data (near-me history, saved
+      // addresses) into local storage so it shows after logout/login and on
+      // new devices. Keep startup behind the restoring state until the device
+      // notification permission has also been resolved.
+      if (session.isAuthenticated) {
+        MemberStateSync.instance.configure(api);
+        await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
+        await _dealAlerts.syncAuthenticated(api);
+      } else {
+        await _dealAlerts.signedOut();
+      }
+
+      await refreshWatches();
+
+      try {
+        final preferences = await SharedPreferences.getInstance();
+        themeMode = switch (preferences.getString('trolley_scout_theme')) {
+          'light' => ThemeMode.light,
+          'dark' => ThemeMode.dark,
+          _ => ThemeMode.system,
+        };
+      } catch (_) {
+        themeMode = ThemeMode.system;
+      }
     } finally {
       restoring = false;
       notifyListeners();
-    }
-
-    // Pull the shopper's account-synced data (near-me history, saved addresses)
-    // into local storage so it shows after logout/login and on new devices.
-    if (session.isAuthenticated) {
-      MemberStateSync.instance.configure(api);
-      await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
-      notifyListeners();
-    }
-
-    await refreshWatches();
-
-    try {
-      final preferences = await SharedPreferences.getInstance();
-      themeMode = switch (preferences.getString('trolley_scout_theme')) {
-        'light' => ThemeMode.light,
-        'dark' => ThemeMode.dark,
-        _ => ThemeMode.system,
-      };
-      notifyListeners();
-    } catch (_) {
-      themeMode = ThemeMode.system;
     }
   }
 
@@ -95,6 +102,7 @@ class AppController extends ChangeNotifier {
         MemberStateSync.instance.configure(api);
         await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
         await refreshWatches();
+        await _dealAlerts.syncAuthenticated(api);
       }
       return session.isAuthenticated;
     } on ApiException catch (error) {
@@ -115,6 +123,7 @@ class AppController extends ChangeNotifier {
       // Clear account-synced local data so the next shopper on a shared device
       // never sees the previous one's history/addresses.
       await MemberStateSync.instance.clearLocal();
+      await _dealAlerts.signedOut();
     } on ApiException catch (error) {
       notice = error.message;
     } finally {

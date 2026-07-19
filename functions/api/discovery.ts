@@ -16,6 +16,7 @@ import {
   buildLeafletApiUrl,
   extractBoxerLeaflets,
   extractFlippingBookViewerUrl,
+  extractPnpCmsLeaflets,
   extractViewerCoverImage,
   extractPdfLeaflets,
   extractSixtyLeaflets,
@@ -25,6 +26,7 @@ import {
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import type {
   DiscoveredDeal,
+  DiscoveryRun,
   DiscoverySourceResult,
   RetailerId,
   StoreLeaflet,
@@ -33,6 +35,7 @@ import {
   listActiveDealItems,
   type StoredDealItem,
 } from '../_shared/dealItemStore'
+import { runDealRefreshWithAlerts } from '../_shared/dealAlertStore'
 import {
   type DealSnapshot,
   readDealSnapshots,
@@ -63,9 +66,6 @@ const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
-// How old the newest snapshot may get before a background refresh is kicked.
-const STALE_AFTER_MS = 60 * 60 * 1000
-
 // The Shoprite-Group leaflet endpoints and pages reject non-browser
 // user-agents with a 403, so reading their free public catalogues needs one.
 const BROWSER_USER_AGENT =
@@ -82,6 +82,9 @@ const PAGER_MANIFEST_MAX_BYTES = 512 * 1024
 const PAGER_MANIFEST_TIMEOUT_MS = 8_000
 const PAGER_ENRICH_CONCURRENCY = 2
 const PAGER_PUBLIC_PAGE_LIMIT = 250
+const PNP_VIEWER_MAX_BYTES = 256 * 1024
+const PNP_VIEWER_TIMEOUT_MS = 8_000
+const PNP_VIEWER_CONCURRENCY = 3
 
 export interface NormalizedDealReadOptions {
   listItems?: typeof listActiveDealItems
@@ -89,17 +92,24 @@ export interface NormalizedDealReadOptions {
   safetyCap?: number
 }
 
-export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method)
   }
 
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
+  const session = await getMemberSession(env, request)
+  if (forceLive && session.account?.role !== 'admin') {
+    return json(
+      { message: 'Admin access is required.' },
+      { headers: privateHeaders, status: 403 },
+    )
+  }
+
   const nowIso = new Date().toISOString()
-  const [snapshots, leafletSnapshot, session, storePromotions, normalizedItems] = await Promise.all([
+  const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
-    getMemberSession(env, request),
     readAllStorePromotions(env, nowIso),
     readNormalizedDealItems(env, nowIso),
   ])
@@ -107,16 +117,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
   const normalizedChecks = buildNormalizedDiscoveryChecks(normalizedItems)
 
-  // Instant path: serve the last stored snapshot without waiting on any
-  // retailer. A background refresh keeps it fresh so the next visitor still
-  // sees current prices — the page never blocks on 13 live fetches.
-  if (!forceLive && (normalizedItems.length > 0 || snapshots.size > 0)) {
+  // Normal requests read stored rows only, including a cold or empty cache.
+  // Scheduled and administrator runs are the only upstream refresh owners.
+  if (!forceLive) {
     const newestCheckedAt = newestDiscoveryCacheTime(normalizedItems, snapshots)
-    const isStale = !newestCheckedAt || Date.now() - Date.parse(newestCheckedAt) > STALE_AFTER_MS
-
-    if (isStale) {
-      waitUntil(Promise.all([refreshAllSources(env), refreshAllLeaflets(env)]))
-    }
 
     return respond(
       mergeNormalizedFirstChecks(normalizedChecks, buildSnapshotChecks(snapshots)),
@@ -128,11 +132,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     )
   }
 
-  // Live path: explicit "Check now", or a cold store with nothing to serve.
-  const [settled, leaflets] = await Promise.all([
-    refreshAllSources(env, snapshots),
-    refreshAllLeaflets(env, leafletSnapshot?.leaflets),
-  ])
+  // Live path: an explicit administrator source check.
+  const { value: [settled, leaflets] } = await runDealRefreshWithAlerts(
+    env,
+    () => Promise.all([
+      refreshAllSources(env, snapshots),
+      refreshLeafletCache(env, leafletSnapshot?.leaflets),
+    ]),
+  )
   return respond(
     mergeNormalizedFirstChecks(normalizedChecks, settled),
     leaflets,
@@ -140,6 +147,40 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     false,
     interests,
     storeDiscovery,
+  )
+}
+
+// Internal scheduled-worker entry point. It bypasses request authorization
+// because it is only called from the Worker bundle.
+export interface DiscoveryRefreshOptions {
+  refreshDeals?: boolean
+}
+
+export async function refreshDiscoveryCache(
+  env: TrolleyScoutEnv,
+  options: DiscoveryRefreshOptions = {},
+): Promise<DiscoveryRun> {
+  const nowIso = new Date().toISOString()
+  const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
+    readDealSnapshots(env),
+    readLeafletSnapshot(env),
+    readAllStorePromotions(env, nowIso),
+    readNormalizedDealItems(env, nowIso),
+  ])
+  const [settled, leaflets] = await Promise.all([
+    options.refreshDeals === false
+      ? Promise.resolve(buildSnapshotChecks(snapshots))
+      : refreshAllSources(env, snapshots),
+    refreshLeafletCache(env, leafletSnapshot?.leaflets),
+  ])
+
+  return buildDiscoveryRun(
+    mergeNormalizedFirstChecks(buildNormalizedDiscoveryChecks(normalizedItems), settled),
+    leaflets,
+    new Date().toISOString(),
+    false,
+    [],
+    storePromotionsToDiscovery(storePromotions, nowIso),
   )
 }
 
@@ -258,19 +299,53 @@ export function mergeNormalizedFirstChecks(
 
 // Fetches current specials leaflets for the big grocers that publish
 // catalogues rather than per-product API rows, and snapshots them.
-async function refreshAllLeaflets(
+export interface LeafletRefreshOptions {
+  fetcher?: typeof fetch
+  saveSnapshot?: typeof saveLeafletSnapshot
+  targets?: readonly LeafletTarget[]
+}
+
+interface LeafletFetchResult {
+  leaflets: StoreLeaflet[]
+  succeeded: boolean
+  target: LeafletTarget
+}
+
+export async function refreshLeafletCache(
   env: TrolleyScoutEnv,
   priorLeaflets?: StoreLeaflet[],
+  options: LeafletRefreshOptions = {},
 ): Promise<StoreLeaflet[]> {
   const checkedAt = new Date().toISOString()
-  const settled = await Promise.all(leafletTargets.map((target) => fetchLeaflets(target, checkedAt)))
-  const leaflets = await enrichInteractiveLeaflets(settled.flat())
+  const fetcher = options.fetcher ?? fetch
+  const targets = options.targets ?? leafletTargets
+  const settled = await Promise.all(
+    targets.map((target) => fetchLeaflets(target, checkedAt, fetcher)),
+  )
+  const freshLeaflets = await enrichInteractiveLeaflets(
+    settled.flatMap((result) => result.succeeded ? result.leaflets : []),
+    { fetcher },
+  )
+  const failedRetailers = new Set<string>(
+    settled
+      .filter((result) => !result.succeeded)
+      .map((result) => result.target.retailerId),
+  )
+  const targetedRetailers = new Set<string>(
+    targets.map((target) => target.retailerId),
+  )
+  const retainedLeaflets = (priorLeaflets ?? []).filter((leaflet) =>
+    failedRetailers.has(leaflet.retailerId) ||
+    !targetedRetailers.has(leaflet.retailerId),
+  )
+  const leaflets = dedupeLeaflets([...freshLeaflets, ...retainedLeaflets])
+  const anyTargetSucceeded = settled.some((result) => result.succeeded)
 
-  if (leaflets.length === 0) {
+  if (!anyTargetSucceeded || leaflets.length === 0) {
     return priorLeaflets ?? []
   }
 
-  await saveLeafletSnapshot(env, leaflets, checkedAt)
+  await (options.saveSnapshot ?? saveLeafletSnapshot)(env, leaflets, checkedAt)
   return leaflets
 }
 
@@ -342,6 +417,26 @@ async function fetchWithTimeout(
   }
 }
 
+async function fetchBoundedTextWithTimeout(
+  fetcher: typeof fetch,
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+  maxBytes: number,
+) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetcher(input, { ...init, signal: controller.signal })
+    return {
+      response,
+      text: response.ok ? await readBoundedText(response, maxBytes) : '',
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function readBoundedText(response: Response, maxBytes: number) {
   const declaredLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
@@ -369,10 +464,44 @@ async function readBoundedText(response: Response, maxBytes: number) {
   return value + decoder.decode()
 }
 
-async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<StoreLeaflet[]> {
+async function fetchLeaflets(
+  target: LeafletTarget,
+  checkedAt: string,
+  fetcher: typeof fetch,
+): Promise<LeafletFetchResult> {
+  const success = (leaflets: StoreLeaflet[]): LeafletFetchResult => ({
+    leaflets,
+    succeeded: true,
+    target,
+  })
+  const failure = (): LeafletFetchResult => ({
+    leaflets: [],
+    succeeded: false,
+    target,
+  })
+
   try {
+    if (target.kind === 'pnp-cms' && target.pageUrl) {
+      const response = await fetchWithTimeout(fetcher, target.pageUrl, {
+        headers: {
+          accept: 'application/json',
+          referer: 'https://www.pnp.co.za/catalogues',
+          'user-agent': BROWSER_USER_AGENT,
+        },
+      }, PNP_VIEWER_TIMEOUT_MS)
+
+      if (!response.ok) {
+        return failure()
+      }
+
+      return success(await resolvePnpHflipDocuments(
+        extractPnpCmsLeaflets(target, await response.json(), checkedAt),
+        { fetcher },
+      ))
+    }
+
     if (target.kind === 'sixty60-api' && target.apiBase && target.storeId) {
-      const response = await fetch(buildLeafletApiUrl(target.apiBase), {
+      const response = await fetcher(buildLeafletApiUrl(target.apiBase), {
         body: JSON.stringify({ posSiteCode: target.storeId }),
         headers: {
           accept: 'application/json',
@@ -384,14 +513,14 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
       })
 
       if (!response.ok) {
-        return []
+        return failure()
       }
 
-      return extractSixtyLeaflets(target, await response.json(), checkedAt)
+      return success(extractSixtyLeaflets(target, await response.json(), checkedAt))
     }
 
     if ((target.kind === 'html-list' || target.kind === 'html-pdf') && target.pageUrl) {
-      const response = await fetch(target.pageUrl, {
+      const response = await fetcher(target.pageUrl, {
         headers: {
           accept: 'text/html',
           'user-agent': BROWSER_USER_AGENT,
@@ -399,32 +528,138 @@ async function fetchLeaflets(target: LeafletTarget, checkedAt: string): Promise<
       })
 
       if (!response.ok) {
-        return []
+        return failure()
       }
 
       const html = await response.text()
 
       if (target.kind === 'html-pdf') {
-        return extractPdfLeaflets(target, html, checkedAt)
+        return success(extractPdfLeaflets(target, html, checkedAt))
       }
 
-      return await resolveEmbeddedViewers(extractBoxerLeaflets(target, html, checkedAt))
+      return success(await resolveEmbeddedViewers(
+        extractBoxerLeaflets(target, html, checkedAt),
+        fetcher,
+      ))
     }
 
     if (target.kind === 'sitebuilder-pdf' && target.pageUrls) {
-      return await fetchSitebuilderLeaflets(target, target.pageUrls, checkedAt)
+      return success(await fetchSitebuilderLeaflets(
+        target,
+        target.pageUrls,
+        checkedAt,
+        fetcher,
+      ))
     }
   } catch {
     // A single retailer's leaflet fetch failing must not sink the board.
   }
 
-  return []
+  return failure()
+}
+
+export async function resolvePnpHflipDocuments(
+  leaflets: StoreLeaflet[],
+  options: { fetcher?: typeof fetch; timeoutMs?: number } = {},
+): Promise<StoreLeaflet[]> {
+  const fetcher = options.fetcher ?? fetch
+  const timeoutMs = Math.min(
+    Math.max(1, options.timeoutMs ?? PNP_VIEWER_TIMEOUT_MS),
+    PNP_VIEWER_TIMEOUT_MS,
+  )
+  const resolved = [...leaflets]
+  let nextIndex = 0
+
+  const worker = async () => {
+    while (nextIndex < leaflets.length) {
+      const index = nextIndex
+      nextIndex += 1
+      const leaflet = leaflets[index]
+      if (
+        leaflet.documentUrl ||
+        leaflet.retailerId !== 'pick-n-pay' ||
+        !isTrustedPnpViewerUrl(leaflet.url)
+      ) {
+        continue
+      }
+
+      try {
+        const { response, text } = await fetchBoundedTextWithTimeout(fetcher, leaflet.url, {
+          headers: {
+            accept: 'text/html',
+            referer: 'https://www.pnp.co.za/catalogues',
+            'user-agent': BROWSER_USER_AGENT,
+          },
+        }, timeoutMs, PNP_VIEWER_MAX_BYTES)
+        if (!response.ok) {
+          continue
+        }
+        const documentUrl = trustedHeyzinePdfUrl(text)
+        if (documentUrl) {
+          resolved[index] = { ...leaflet, documentUrl }
+        }
+      } catch {
+        // Keep the official cover and HFlip source when its PDF cannot be resolved.
+      }
+    }
+  }
+
+  await Promise.all(Array.from(
+    { length: Math.min(PNP_VIEWER_CONCURRENCY, leaflets.length) },
+    worker,
+  ))
+  return resolved
+}
+
+function isTrustedPnpViewerUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'pnpcatalogues.hflip.co' &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      /^\/[a-z0-9]{6,64}\.html$/i.test(url.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+function trustedHeyzinePdfUrl(html: string): string | undefined {
+  const candidates = html.match(/https?:\/\/[^"'<>\\\s]+/gi) ?? []
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate.replace(/&amp;/gi, '&'))
+      if (
+        url.protocol === 'https:' &&
+        url.hostname === 'cdn.heyzine.com' &&
+        !url.port &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        /^\/flip-book\/pdf\/[a-f0-9]{32,128}\.pdf$/i.test(url.pathname)
+      ) {
+        return url.toString()
+      }
+    } catch {
+      // Ignore malformed candidate URLs and keep looking.
+    }
+  }
+  return undefined
 }
 
 // A leaflet whose link is an HTML promotion page cannot be read or scanned.
 // Follow each one and, when it embeds a hosted FlippingBook viewer, point the
 // leaflet at the viewer's index.html so its pages can be built and scanned.
-async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLeaflet[]> {
+async function resolveEmbeddedViewers(
+  leaflets: StoreLeaflet[],
+  fetcher: typeof fetch = fetch,
+): Promise<StoreLeaflet[]> {
   return await Promise.all(
     leaflets.map(async (leaflet) => {
       if (leaflet.documentUrl || leaflet.url.toLowerCase().endsWith('/index.html')) {
@@ -432,7 +667,7 @@ async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLe
       }
 
       try {
-        const response = await fetch(leaflet.url, {
+        const response = await fetcher(leaflet.url, {
           headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
         })
 
@@ -447,7 +682,7 @@ async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLe
         }
 
         // Its pages are signed and unreadable, so carry the public cover.
-        const cover = leaflet.imageUrl ?? (await fetchViewerCover(viewerUrl))
+        const cover = leaflet.imageUrl ?? (await fetchViewerCover(viewerUrl, fetcher))
         return { ...leaflet, imageUrl: cover, url: viewerUrl }
       } catch {
         return leaflet
@@ -456,9 +691,12 @@ async function resolveEmbeddedViewers(leaflets: StoreLeaflet[]): Promise<StoreLe
   )
 }
 
-async function fetchViewerCover(viewerUrl: string): Promise<string | undefined> {
+async function fetchViewerCover(
+  viewerUrl: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string | undefined> {
   try {
-    const response = await fetch(viewerUrl, {
+    const response = await fetcher(viewerUrl, {
       headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
     })
 
@@ -476,36 +714,44 @@ async function fetchSitebuilderLeaflets(
   target: LeafletTarget,
   pageUrls: string[],
   checkedAt: string,
+  fetcher: typeof fetch = fetch,
 ): Promise<StoreLeaflet[]> {
   const pages = await Promise.all(
     pageUrls.map(async (pageUrl) => {
       try {
-        const response = await fetch(pageUrl, {
+        const response = await fetcher(pageUrl, {
           headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
         })
 
         if (!response.ok) {
-          return []
+          return { leaflets: [] as StoreLeaflet[], succeeded: false }
         }
 
-        return extractRetailerLeafletsFromHtml(
-          {
-            retailerId: target.retailerId,
-            retailerName: target.retailerName,
-            sourceUrl: pageUrl,
-            trustAllPdfs: true,
-          },
-          await response.text(),
-          checkedAt,
-        )
+        return {
+          leaflets: extractRetailerLeafletsFromHtml(
+            {
+              retailerId: target.retailerId,
+              retailerName: target.retailerName,
+              sourceUrl: pageUrl,
+              trustAllPdfs: true,
+            },
+            await response.text(),
+            checkedAt,
+          ),
+          succeeded: true,
+        }
       } catch {
-        return []
+        return { leaflets: [] as StoreLeaflet[], succeeded: false }
       }
     }),
   )
 
+  if (!pages.some((page) => page.succeeded)) {
+    throw new Error(`Every ${target.retailerName} catalogue page failed.`)
+  }
+
   const seen = new Set<string>()
-  return pages.flat().filter((leaflet) => {
+  return pages.flatMap((page) => page.leaflets).filter((leaflet) => {
     const key = leaflet.documentUrl ?? leaflet.url
     if (seen.has(key)) {
       return false
@@ -571,6 +817,27 @@ function respond(
   interests: DealInterestWeight[],
   storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
 ) {
+  return json(
+    buildDiscoveryRun(
+      settled,
+      leaflets,
+      refreshedAt,
+      fromCache,
+      interests,
+      storeDiscovery,
+    ),
+    { headers: privateHeaders },
+  )
+}
+
+function buildDiscoveryRun(
+  settled: SourceCheck[],
+  leaflets: StoreLeaflet[],
+  refreshedAt: string | undefined,
+  fromCache: boolean,
+  interests: DealInterestWeight[],
+  storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
+): DiscoveryRun {
   const deals = rankDealsForMember(
     dedupeDiscoveryDeals([
       ...settled.flatMap((result) => result.deals),
@@ -581,25 +848,20 @@ function respond(
   const sources = [...settled.map((result) => result.source), ...storeDiscovery.sources]
   const mergedLeaflets = dedupeLeaflets([...leaflets, ...storeDiscovery.leaflets])
 
-  return json(
-    {
-      deals,
-      leaflets: mergedLeaflets,
-      refreshedAt,
-      served: fromCache ? 'snapshot' : 'live',
-      sources,
-      summary: {
-        checkedSourceCount: sources.length,
-        dataPolicy,
-        foundDealCount: deals.length,
-        leafletCount: mergedLeaflets.length,
-        unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
-      },
+  return {
+    deals,
+    leaflets: mergedLeaflets,
+    refreshedAt,
+    served: fromCache ? 'snapshot' : 'live',
+    sources,
+    summary: {
+      checkedSourceCount: sources.length,
+      dataPolicy,
+      foundDealCount: deals.length,
+      leafletCount: mergedLeaflets.length,
+      unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
     },
-    {
-      headers: privateHeaders,
-    },
-  )
+  }
 }
 
 export function storePromotionsToDiscovery(
@@ -672,9 +934,14 @@ export function storePromotionsToDiscovery(
   return { deals, leaflets, sources }
 }
 
-function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
+export function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
+  const hasOfficialPnpViewer = leaflets.some((leaflet) =>
+    leaflet.retailerId === 'pick-n-pay' && isTrustedPnpViewerUrl(leaflet.url))
   const seen = new Set<string>()
   return leaflets.filter((leaflet) => {
+    if (hasOfficialPnpViewer && isGenericPnpCatalogue(leaflet)) {
+      return false
+    }
     const key = leaflet.documentUrl ?? leaflet.url
     if (seen.has(key)) {
       return false
@@ -682,6 +949,32 @@ function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
     seen.add(key)
     return true
   })
+}
+
+function isGenericPnpCatalogue(leaflet: StoreLeaflet): boolean {
+  const isPnp = leaflet.retailerId === 'pick-n-pay' ||
+    leaflet.retailerName.toLowerCase().includes('pick n pay')
+  if (!isPnp) {
+    return false
+  }
+
+  for (const value of [leaflet.url, leaflet.documentUrl]) {
+    if (!value) {
+      continue
+    }
+    try {
+      const url = new URL(value)
+      if (
+        (url.hostname === 'www.pnp.co.za' || url.hostname === 'pnp.co.za') &&
+        url.pathname.replace(/\/+$/, '') === '/catalogues'
+      ) {
+        return true
+      }
+    } catch {
+      // Ignore malformed source URLs.
+    }
+  }
+  return false
 }
 
 async function getRequestInterests(env: TrolleyScoutEnv, accountId: string | undefined) {

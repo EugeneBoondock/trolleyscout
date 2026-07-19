@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  dealSitesNeedRefresh: vi.fn(),
+  getMemberSession: vi.fn(),
   readDealSiteFeed: vi.fn(),
   refreshDealSites: vi.fn(),
+  runDealRefreshWithAlerts: vi.fn(),
 }))
 
 vi.mock('../_shared/dealSiteScout', () => ({
-  dealSitesNeedRefresh: mocks.dealSitesNeedRefresh,
   readDealSiteFeed: mocks.readDealSiteFeed,
   refreshDealSites: mocks.refreshDealSites,
+}))
+
+vi.mock('../_shared/memberStore', () => ({
+  getMemberSession: mocks.getMemberSession,
+}))
+
+vi.mock('../_shared/dealAlertStore', () => ({
+  runDealRefreshWithAlerts: mocks.runDealRefreshWithAlerts,
 }))
 
 import { onRequest } from './deal-sites'
@@ -17,12 +25,16 @@ import { onRequest } from './deal-sites'
 describe('/api/deal-sites', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    mocks.dealSitesNeedRefresh.mockResolvedValue(false)
+    mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
     mocks.refreshDealSites.mockResolvedValue(undefined)
+    mocks.runDealRefreshWithAlerts.mockImplementation(async (
+      _env: unknown,
+      refresh: () => Promise<unknown>,
+    ) => ({ alerts: {}, value: await refresh() }))
   })
 
-  it('refreshes inline and disables caching for an explicit refresh', async () => {
-    mocks.dealSitesNeedRefresh.mockResolvedValue(true)
+  it('refreshes inline and disables caching for an admin refresh', async () => {
+    signInAsAdmin()
     mocks.readDealSiteFeed
       .mockResolvedValueOnce(feed('old-deal'))
       .mockResolvedValueOnce(feed('fresh-deal'))
@@ -37,14 +49,15 @@ describe('/api/deal-sites', () => {
     }
 
     expect(mocks.refreshDealSites).toHaveBeenCalledTimes(1)
+    expect(mocks.runDealRefreshWithAlerts).toHaveBeenCalledTimes(1)
     expect(mocks.readDealSiteFeed).toHaveBeenCalledTimes(2)
     expect(envelope.data.deals.map((deal) => deal.id)).toEqual(['fresh-deal'])
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(waitUntil).not.toHaveBeenCalled()
   })
 
-  it('keeps the cached feed when an explicit refresh fails', async () => {
-    mocks.dealSitesNeedRefresh.mockResolvedValue(true)
+  it('keeps the cached feed when an admin refresh fails', async () => {
+    signInAsAdmin()
     mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
     mocks.refreshDealSites.mockRejectedValue(new Error('upstream unavailable'))
 
@@ -61,7 +74,8 @@ describe('/api/deal-sites', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store')
   })
 
-  it('refreshes upstream even when the stored feed is recent', async () => {
+  it('refreshes upstream for an admin even when the stored feed is recent', async () => {
+    signInAsAdmin()
     mocks.readDealSiteFeed
       .mockResolvedValueOnce(feed('recent-deal'))
       .mockResolvedValueOnce(feed('new-deal'))
@@ -77,12 +91,28 @@ describe('/api/deal-sites', () => {
     expect(response.status).toBe(200)
     expect(mocks.refreshDealSites).toHaveBeenCalledTimes(1)
     expect(mocks.readDealSiteFeed).toHaveBeenCalledTimes(2)
-    expect(mocks.dealSitesNeedRefresh).not.toHaveBeenCalled()
     expect(envelope.data.deals.map((deal) => deal.id)).toEqual(['new-deal'])
     expect(response.headers.get('cache-control')).toBe('private, no-store')
   })
 
+  it('rejects a forced refresh from a non-admin account', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { role: 'member' },
+    })
+
+    const response = await invoke(
+      new Request('https://trolleyscout.co.za/api/deal-sites?refresh=1'),
+      vi.fn(),
+    )
+
+    expect(response.status).toBe(403)
+    expect(mocks.readDealSiteFeed).not.toHaveBeenCalled()
+    expect(mocks.refreshDealSites).not.toHaveBeenCalled()
+  })
+
   it('keeps concurrent refresh work scoped to each Worker request', async () => {
+    signInAsAdmin()
     mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
     mocks.refreshDealSites.mockResolvedValue(undefined)
 
@@ -100,6 +130,7 @@ describe('/api/deal-sites', () => {
   })
 
   it('uses the durable lease to back off after a failed refresh attempt', async () => {
+    signInAsAdmin()
     mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
     mocks.refreshDealSites.mockRejectedValue(new Error('upstream unavailable'))
     const env = refreshLeaseEnv()
@@ -118,9 +149,8 @@ describe('/api/deal-sites', () => {
     expect(mocks.refreshDealSites).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps normal populated reads cached and refreshes stale data in background', async () => {
+  it('only reads a populated cache for a normal request', async () => {
     mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
-    mocks.dealSitesNeedRefresh.mockResolvedValue(true)
     const waitUntil = vi.fn()
 
     const response = await invoke(
@@ -129,9 +159,35 @@ describe('/api/deal-sites', () => {
     )
 
     expect(response.headers.get('cache-control')).toBe('public, max-age=300')
-    expect(waitUntil).toHaveBeenCalledTimes(1)
+    expect(mocks.readDealSiteFeed).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshDealSites).not.toHaveBeenCalled()
+    expect(waitUntil).not.toHaveBeenCalled()
+  })
+
+  it('returns an empty stored cache without starting an upstream refresh', async () => {
+    mocks.readDealSiteFeed.mockResolvedValue({ deals: [], sources: [] })
+    const waitUntil = vi.fn()
+
+    const response = await invoke(
+      new Request('https://trolleyscout.co.za/api/deal-sites'),
+      waitUntil,
+    )
+    const envelope = await response.json() as { data: { deals: unknown[] } }
+
+    expect(response.status).toBe(200)
+    expect(envelope.data.deals).toEqual([])
+    expect(mocks.readDealSiteFeed).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshDealSites).not.toHaveBeenCalled()
+    expect(waitUntil).not.toHaveBeenCalled()
   })
 })
+
+function signInAsAdmin() {
+  mocks.getMemberSession.mockResolvedValue({
+    isAuthenticated: true,
+    account: { role: 'admin' },
+  })
+}
 
 function feed(id: string) {
   return {

@@ -1,6 +1,6 @@
-// Dart port of src/services/dealCategories.ts — a pure keyword classifier that
-// sorts deal titles into shopper-facing categories so Find deals can offer
-// "show me only dairy" style filters. Kept in lockstep with the web classifier.
+// Dart port of src/services/dealCategories.ts. Exact product-type guards handle
+// ambiguous words first, strong title signals decide most results, and source
+// metadata supplies a capped weak hint for vague titles.
 
 enum DealCategory {
   food,
@@ -73,69 +73,461 @@ const List<FoodSubcategoryOption> foodSubcategoryOptions = [
   FoodSubcategoryOption(FoodSubcategory.foodOther, 'Other Food'),
 ];
 
-class _Rule {
-  const _Rule(this.category, this.patterns);
+class _ScoredRule {
+  const _ScoredRule(this.category, this.strong, [this.supporting = const []]);
   final DealCategory category;
-  final List<String> patterns;
+  final List<String> strong;
+  final List<String> supporting;
 }
 
-// Checked in order; first hit wins. Less-ambiguous categories first.
-const List<_Rule> _categoryRules = [
-  _Rule(DealCategory.babyKids, [
-    'baby', 'infant', 'nappy', 'nappies', 'diaper', 'toddler', 'kids', "kid's",
-    'pj masks', 'gekko', 'toy', 'toys', 'play set', 'dummies', 'pacifier', 'purity',
+class DealClassificationContext {
+  const DealClassificationContext({
+    this.retailerName,
+    this.sourceLabel,
+    this.sourceUrl,
+    this.evidenceText,
+  });
+
+  final String? retailerName;
+  final String? sourceLabel;
+  final String? sourceUrl;
+  final String? evidenceText;
+}
+
+class _CategoryOverride {
+  const _CategoryOverride(this.category, this.phrases);
+  final DealCategory category;
+  final List<String> phrases;
+}
+
+const List<_CategoryOverride> _titleOverrides = [
+  _CategoryOverride(DealCategory.food, [
+    'baby spinach',
+    'baby potato',
+    'baby potatoes',
+    'baby carrot',
+    'baby carrots',
+    'baby marrow',
   ]),
-  _Rule(DealCategory.pets, [
-    'dog food', 'cat food', 'pet', 'puppy', 'kitten', 'bob martin', 'whiskas', 'pedigree',
+  _CategoryOverride(DealCategory.babyKids, ['breast pump', 'water gun']),
+  _CategoryOverride(DealCategory.healthBeauty,
+      ['insulin pump', 'body oil', 'facial oil', 'hair oil', 'body butter']),
+  _CategoryOverride(DealCategory.pets, ['chicken feeder']),
+  _CategoryOverride(DealCategory.homeCookware, [
+    'water bottle',
+    'coffee grinder',
+    'coffee maker',
+    'rice cooker',
+    'bread maker',
+    'food processor',
+    'milk frother',
+    'water dispenser',
+    'water filter',
+    'water purifier',
+    'meat grinder',
+    'fruit bowl',
+    'sugar bowl',
+    'bread bin',
+    'egg cooker',
+    'egg holder',
+    'egg chair',
+    'bread knife',
+    'cheese board',
+    'vegetable chopper',
+    'rice storage',
   ]),
-  _Rule(DealCategory.tech, [
-    'samsung', 'hisense', 'ledtv', 'led tv', 'smart tv', 'television', 'laptop', 'tablet',
-    'smartphone', 'iphone', 'galaxy', 'fridge', 'freezer', 'microwave', 'air fryer', 'airfryer',
-    'toaster', 'kettle', 'treadmill', 'inverter', 'charger', 'usb', 'adapter', 'vacuum',
-    'hair dryer', 'clipper', 'headphone', 'earbud', 'speaker', 'router', 'console', 'playstation',
-    'xbox', 'monitor', 'printer', 'camera', 'power bank', 'powerbank',
+  _CategoryOverride(DealCategory.diyHardware, [
+    'water pump',
+    'pressure washer',
+    'high pressure',
+    'submersible pump',
+    'booster pump',
+    'pool pump',
+    'borehole pump',
+    'motor oil',
+    'engine oil',
+    'hydraulic oil',
+    'chain oil',
+    'power tool',
+    'hand tool',
+    'tool kit',
+    'tool set',
+    'tools',
+    'tool',
+    'hardware',
+    'pump',
+    'pumps',
+    'water storage',
+    'water tank',
+    'water hose',
+    'water heater',
+    'water meter',
+    'water tap',
+    'water sprayer',
+    'water pressure',
+    'water fitting',
+    'watering can',
   ]),
-  _Rule(DealCategory.clothing, [
-    'jean', 'jeans', 'denim', 't-shirt', 'tshirt', 'shirt', 'trouser', 'jacket', 'hoodie',
-    'sneaker', 'shoe', 'shoes', 'boot', 'sock', 'socks', 'dress', 'skirt', 'jersey', 'takkies',
+];
+
+const List<_ScoredRule> _categoryRules = [
+  _ScoredRule(DealCategory.babyKids, [
+    'baby',
+    'infant',
+    'nappy',
+    'nappies',
+    'diaper',
+    'toddler',
+    'kids',
+    "kid's",
+    'toy',
+    'toys',
+    'play set',
+    'dummies',
+    'pacifier',
+    'baby food',
+    'baby formula',
+  ], [
+    'pj masks',
+    'gekko',
+    'purity',
   ]),
-  _Rule(DealCategory.diyHardware, [
-    'drill', 'grinder', 'welder', 'electrode', 'cordless', 'toolbox', 'screwdriver', 'spanner',
-    'paint', 'cement', 'timber', 'ladder', 'hose pipe', 'generator', 'battery', 'batteries',
-    'door chime', 'padlock', 'globe', 'downlight', 'extension cord', 'wheelbarrow',
+  _ScoredRule(DealCategory.pets, [
+    'dog food',
+    'cat food',
+    'pet food',
+    'bird seed',
+    'puppy',
+    'kitten',
+    'dog treat',
+    'cat litter',
+    'pet',
+  ], [
+    'bob martin',
+    'whiskas',
+    'pedigree',
   ]),
-  _Rule(DealCategory.cleaning, [
-    'detergent', 'washing powder', 'dishwash', 'omo', 'sunlight liquid', 'handy andy', 'mr sheen',
-    'domestos', 'bleach', 'toilet paper', 'toilet roll', 'paper towel', 'fabric softener',
-    'stain remover', 'air freshener', 'furniture polish', 'floor cleaner', 'surface cleaner',
-    'refuse bag', 'dishwashing',
+  _ScoredRule(DealCategory.tech, [
+    'ledtv',
+    'led tv',
+    'smart tv',
+    'television',
+    'laptop',
+    'macbook',
+    'tablet',
+    'smartwatch',
+    'apple watch',
+    'smartphone',
+    'iphone',
+    'galaxy',
+    'fridge',
+    'freezer',
+    'microwave',
+    'air fryer',
+    'airfryer',
+    'washing machine',
+    'dishwasher',
+    'toaster',
+    'kettle',
+    'treadmill',
+    'inverter',
+    'charger',
+    'usb',
+    'adapter',
+    'vacuum',
+    'hair dryer',
+    'clipper',
+    'headphone',
+    'earbud',
+    'speaker',
+    'router',
+    'console',
+    'playstation',
+    'xbox',
+    'monitor',
+    'printer',
+    'camera',
+    'power bank',
+    'powerbank',
+  ], [
+    'samsung',
+    'hisense',
+    'lg',
+    'sony',
+    'defy',
   ]),
-  _Rule(DealCategory.healthBeauty, [
-    'shampoo', 'conditioner', 'body wash', 'body lotion', 'body oil', 'hand sanitiser', 'sanitiser',
-    'toothbrush', 'toothpaste', 'deodorant', 'roll-on', 'roll on', 'perfume', 'fragrance', 'cologne',
-    'eau de', 'moisturiser', 'moisturizer', 'serum', 'sunscreen', 'spf', 'vitamin', 'supplement',
-    'capsule', 'tablet', 'tabs', 'ashwagandha', 'magnesium', 'moringa', 'collagen', 'probiotic',
-    'plaster', 'bandage', 'cantu', 'dark & lovely', 'eucerin', 'nivea', 'dove ', 'makeup', 'make-up',
-    'lipstick', 'mascara', 'hair butter', 'hair freshener', 'cleansing', 'face cream', 'night cream',
-    'day cream', 'anti-ageing', 'cotton wool', 'razor', 'shaving',
+  _ScoredRule(DealCategory.clothing, [
+    'jean',
+    'jeans',
+    'denim',
+    't-shirt',
+    'tshirt',
+    'shirt',
+    'trouser',
+    'jacket',
+    'hoodie',
+    'sneaker',
+    'shoe',
+    'shoes',
+    'boot',
+    'sock',
+    'socks',
+    'dress',
+    'skirt',
+    'jersey',
+    'takkies',
   ]),
-  _Rule(DealCategory.homeCookware, [
-    'towel', 'bathmat', 'bath mat', 'planter', 'mug', 'french press', 'dinner plate', 'plate set',
-    'cookie cutter', 'candle', 'bottle', 'flask', 'pot ', 'pan ', 'frying pan', 'saucepan',
-    'cutlery', 'crockery', 'glassware', 'tumbler', 'duvet', 'pillow', 'blanket', 'sheet set',
-    'curtain', 'storage box', 'bucket', 'basket', 'espresso maker', 'coffee maker', 'moka',
-    'chopping board', 'knife set', 'utensil', 'bakeware', 'bin ',
+  _ScoredRule(DealCategory.diyHardware, [
+    'drill',
+    'grinder',
+    'welder',
+    'electrode',
+    'cordless',
+    'toolbox',
+    'screwdriver',
+    'spanner',
+    'paint',
+    'cement',
+    'timber',
+    'ladder',
+    'hose pipe',
+    'generator',
+    'battery',
+    'batteries',
+    'door chime',
+    'padlock',
+    'globe',
+    'downlight',
+    'extension cord',
+    'wheelbarrow',
+    'chainsaw',
+    'hammer',
+    'wrench',
+    'socket set',
+    'compressor',
+    'plumbing',
+    'irrigation',
+    'bolts',
+    'screws',
   ]),
-  _Rule(DealCategory.food, [
-    'milk', 'juice', 'rice', 'beans', 'egg', 'eggs', 'sugar', 'flour', 'macaroni', 'pasta',
-    'noodle', 'chicken', 'beef', 'lamb', 'pork', 'fillet', 'chops', 'samoosa', 'muffin', 'roll',
-    'bread', 'biscuit', 'snack', 'niknaks', 'chips', 'chocolate', 'choc ', 'sweets', 'cereal',
-    'coffee', 'tea ', 'rooibos', 'water', 'soft drink', 'cooldrink', 'cola', 'appletiser', 'cheese',
-    'yoghurt', 'butter', 'margarine', 'oil', 'sauce', 'soup', 'jam', 'honey', 'peanut butter',
-    'coffee creamer', 'maize', 'mielie', 'samp', 'tastic', 'koo', 'wine', 'beer', 'cider',
-    'whisky', 'vodka', 'gin ', 'brandy', 'frozen', 'ice cream', 'crisps', 'nuts', 'fruit',
-    'vegetable', 'banana', 'apple', 'potato', 'onion', 'tomato',
+  _ScoredRule(DealCategory.cleaning, [
+    'detergent',
+    'washing powder',
+    'dishwash',
+    'omo',
+    'sunlight liquid',
+    'handy andy',
+    'mr sheen',
+    'domestos',
+    'bleach',
+    'toilet paper',
+    'toilet roll',
+    'paper towel',
+    'fabric softener',
+    'stain remover',
+    'air freshener',
+    'furniture polish',
+    'floor cleaner',
+    'surface cleaner',
+    'refuse bag',
+    'dishwashing',
   ]),
+  _ScoredRule(DealCategory.healthBeauty, [
+    'shampoo',
+    'conditioner',
+    'body wash',
+    'body lotion',
+    'body oil',
+    'hand sanitiser',
+    'sanitiser',
+    'toothbrush',
+    'toothpaste',
+    'deodorant',
+    'roll-on',
+    'roll on',
+    'perfume',
+    'fragrance',
+    'cologne',
+    'eau de',
+    'moisturiser',
+    'moisturizer',
+    'serum',
+    'sunscreen',
+    'spf',
+    'vitamin',
+    'supplement',
+    'capsule',
+    'tablet',
+    'tabs',
+    'ashwagandha',
+    'magnesium',
+    'moringa',
+    'collagen',
+    'probiotic',
+    'plaster',
+    'bandage',
+    'makeup',
+    'make-up',
+    'lipstick',
+    'mascara',
+    'hair butter',
+    'hair freshener',
+    'cleansing',
+    'face cream',
+    'night cream',
+    'day cream',
+    'anti-ageing',
+    'cotton wool',
+    'razor',
+    'shaving',
+  ], [
+    'cantu',
+    'dark lovely',
+    'eucerin',
+    'nivea',
+  ]),
+  _ScoredRule(DealCategory.homeCookware, [
+    'towel',
+    'bathmat',
+    'bath mat',
+    'planter',
+    'mug',
+    'french press',
+    'dinner plate',
+    'plate set',
+    'cookie cutter',
+    'candle',
+    'flask',
+    'pot',
+    'pan',
+    'frying pan',
+    'saucepan',
+    'cutlery',
+    'crockery',
+    'glassware',
+    'tumbler',
+    'duvet',
+    'pillow',
+    'blanket',
+    'sheet set',
+    'curtain',
+    'storage box',
+    'bucket',
+    'basket',
+    'espresso maker',
+    'coffee maker',
+    'moka',
+    'chopping board',
+    'knife set',
+    'utensil',
+    'bakeware',
+    'bin',
+  ], [
+    'bottle',
+  ]),
+  _ScoredRule(DealCategory.food, [
+    'bottled water',
+    'still water',
+    'sparkling water',
+    'drinking water',
+    'milk',
+    'juice',
+    'rice',
+    'beans',
+    'egg',
+    'eggs',
+    'sugar',
+    'flour',
+    'macaroni',
+    'pasta',
+    'noodle',
+    'chicken',
+    'beef',
+    'lamb',
+    'pork',
+    'fillet',
+    'chops',
+    'samoosa',
+    'muffin',
+    'bread',
+    'biscuit',
+    'snack',
+    'niknaks',
+    'chips',
+    'chocolate',
+    'sweets',
+    'cereal',
+    'coffee',
+    'tea',
+    'rooibos',
+    'water',
+    'soft drink',
+    'cooldrink',
+    'cola',
+    'appletiser',
+    'cheese',
+    'yoghurt',
+    'butter',
+    'margarine',
+    'cooking oil',
+    'sunflower oil',
+    'canola oil',
+    'olive oil',
+    'sauce',
+    'soup',
+    'jam',
+    'honey',
+    'peanut butter',
+    'coffee creamer',
+    'maize',
+    'mielie',
+    'samp',
+    'tastic',
+    'koo',
+    'wine',
+    'beer',
+    'cider',
+    'whisky',
+    'vodka',
+    'gin',
+    'brandy',
+    'frozen',
+    'ice cream',
+    'crisps',
+    'nuts',
+    'fruit',
+    'vegetable',
+    'banana',
+    'apple',
+    'potato',
+    'onion',
+    'tomato',
+  ], [
+    'roll',
+    'rolls',
+    'cake',
+    'bun',
+    'wrap',
+  ]),
+];
+
+const List<_CategoryOverride> _metadataHints = [
+  _CategoryOverride(DealCategory.babyKids, ['baby', 'kids', 'nursery']),
+  _CategoryOverride(DealCategory.pets, ['pets', 'pet supplies', 'pet care']),
+  _CategoryOverride(
+      DealCategory.tech, ['electronics', 'appliances', 'technology']),
+  _CategoryOverride(
+      DealCategory.clothing, ['clothing', 'fashion', 'apparel', 'footwear']),
+  _CategoryOverride(DealCategory.diyHardware,
+      ['diy', 'hardware', 'power tools', 'tools', 'builders']),
+  _CategoryOverride(
+      DealCategory.cleaning, ['cleaning', 'laundry', 'household cleaning']),
+  _CategoryOverride(DealCategory.healthBeauty,
+      ['health', 'beauty', 'personal care', 'pharmacy']),
+  _CategoryOverride(DealCategory.homeCookware,
+      ['homeware', 'cookware', 'kitchenware', 'kitchen']),
+  _CategoryOverride(DealCategory.food,
+      ['food', 'grocery', 'groceries', 'pantry', 'fresh produce']),
 ];
 
 class _FoodRule {
@@ -146,50 +538,196 @@ class _FoodRule {
 
 const List<_FoodRule> _foodRules = [
   _FoodRule(FoodSubcategory.alcohol, [
-    'wine', 'beer', 'cider', 'whisky', 'whiskey', 'vodka', 'gin ', 'brandy', 'rum ', 'liqueur', 'savanna', 'castle', 'heineken',
+    'wine',
+    'beer',
+    'cider',
+    'whisky',
+    'whiskey',
+    'vodka',
+    'gin ',
+    'brandy',
+    'rum ',
+    'liqueur',
+    'savanna',
+    'castle',
+    'heineken',
   ]),
   _FoodRule(FoodSubcategory.beverages, [
-    'juice', 'water', 'soft drink', 'cooldrink', 'cola', 'appletiser', 'coffee', 'tea ', 'rooibos', 'energy drink', 'squash', 'cordial', 'iced tea', 'lemonade',
+    'juice',
+    'water',
+    'soft drink',
+    'cooldrink',
+    'cola',
+    'appletiser',
+    'coffee',
+    'tea ',
+    'rooibos',
+    'energy drink',
+    'squash',
+    'cordial',
+    'iced tea',
+    'lemonade',
   ]),
   _FoodRule(FoodSubcategory.snacksSweets, [
-    'snack', 'niknaks', 'chips', 'crisps', 'chocolate', 'choc ', 'sweets', 'biscuit', 'cookie', 'nuts', 'popcorn', 'candy', 'gum ',
+    'snack',
+    'niknaks',
+    'chips',
+    'crisps',
+    'chocolate',
+    'choc ',
+    'sweets',
+    'biscuit',
+    'cookie',
+    'nuts',
+    'popcorn',
+    'candy',
+    'gum ',
   ]),
   _FoodRule(FoodSubcategory.dairyEggs, [
-    'milk', 'egg', 'eggs', 'cheese', 'yoghurt', 'yogurt', 'butter', 'margarine', 'cream ', 'custard', 'amasi', 'maas',
+    'milk',
+    'egg',
+    'eggs',
+    'cheese',
+    'yoghurt',
+    'yogurt',
+    'butter',
+    'margarine',
+    'cream ',
+    'custard',
+    'amasi',
+    'maas',
   ]),
   _FoodRule(FoodSubcategory.meatPoultry, [
-    'chicken', 'beef', 'lamb', 'pork', 'fillet', 'chops', 'mince', 'sausage', 'boerewors', 'wors', 'bacon', 'polony', 'viennas', 'samoosa', 'ribs', 'steak',
+    'chicken',
+    'beef',
+    'lamb',
+    'pork',
+    'fillet',
+    'chops',
+    'mince',
+    'sausage',
+    'boerewors',
+    'wors',
+    'bacon',
+    'polony',
+    'viennas',
+    'samoosa',
+    'ribs',
+    'steak',
   ]),
   _FoodRule(FoodSubcategory.bakery, [
-    'bread', 'roll', 'muffin', 'bun ', 'baguette', 'croissant', 'pancake', 'wrap', 'pita', 'cake', 'scone',
+    'bread',
+    'roll',
+    'rolls',
+    'muffin',
+    'bun ',
+    'baguette',
+    'croissant',
+    'pancake',
+    'wrap',
+    'pita',
+    'cake',
+    'scone',
   ]),
   _FoodRule(FoodSubcategory.freshProduce, [
-    'banana', 'apple', 'potato', 'onion', 'tomato', 'lettuce', 'spinach', 'carrot', 'fruit', 'vegetable', 'avocado', 'salad', 'cucumber', 'pepper',
+    'banana',
+    'apple',
+    'potato',
+    'onion',
+    'tomato',
+    'lettuce',
+    'spinach',
+    'carrot',
+    'fruit',
+    'vegetable',
+    'avocado',
+    'salad',
+    'cucumber',
+    'pepper',
   ]),
   _FoodRule(FoodSubcategory.frozen, [
-    'frozen', 'ice cream', 'ice-cream', 'oven chips', 'frozen veg',
+    'frozen',
+    'ice cream',
+    'ice-cream',
+    'oven chips',
+    'frozen veg',
   ]),
   _FoodRule(FoodSubcategory.pantry, [
-    'rice', 'beans', 'sugar', 'flour', 'macaroni', 'pasta', 'noodle', 'cereal', 'oil', 'sauce', 'soup', 'jam', 'honey', 'peanut butter', 'maize', 'mielie', 'samp', 'tastic', 'koo', 'spice', 'salt', 'stock', 'tinned', 'canned', 'mayonnaise',
+    'rice',
+    'beans',
+    'sugar',
+    'flour',
+    'macaroni',
+    'pasta',
+    'noodle',
+    'cereal',
+    'oil',
+    'sauce',
+    'soup',
+    'jam',
+    'honey',
+    'peanut butter',
+    'maize',
+    'mielie',
+    'samp',
+    'tastic',
+    'koo',
+    'spice',
+    'salt',
+    'stock',
+    'tinned',
+    'canned',
+    'mayonnaise',
   ]),
 ];
 
-DealClassification classifyDeal(String title, [String? retailerId]) {
-  final text =
-      ' ${title.toLowerCase().replaceAll(RegExp(r"[^a-z0-9&'-]+"), ' ').replaceAll(RegExp(r'\s+'), ' ')} ';
+DealClassification classifyDeal(String title,
+    [String? retailerId,
+    DealClassificationContext context = const DealClassificationContext()]) {
+  final text = _normalize(title);
+  final metadataText = _normalize([
+    context.retailerName,
+    context.sourceLabel,
+    context.sourceUrl,
+    context.evidenceText,
+  ].whereType<String>().join(' '));
 
-  for (final rule in _categoryRules) {
-    if (_matchesAny(text, rule.patterns)) {
-      return rule.category == DealCategory.food
-          ? DealClassification(DealCategory.food, _classifyFood(text))
-          : DealClassification(rule.category);
+  for (final override in _titleOverrides) {
+    if (_matchesAny(text, override.phrases)) {
+      return _buildClassification(override.category, text);
     }
   }
 
+  var bestCategory = DealCategory.other;
+  var bestScore = 0;
+
+  for (final rule in _categoryRules) {
+    final metadataPhrases = _metadataHints
+        .where((hint) => hint.category == rule.category)
+        .map((hint) => hint.phrases)
+        .firstOrNull;
+    final metadataScore =
+        _scoreMatches(metadataText, metadataPhrases ?? const [], 1).clamp(0, 2);
+    final score = _scoreMatches(text, rule.strong, 5) +
+        _scoreMatches(text, rule.supporting, 2) +
+        metadataScore;
+    if (score > bestScore) {
+      bestCategory = rule.category;
+      bestScore = score;
+    }
+  }
+
+  if (bestScore > 0) return _buildClassification(bestCategory, text);
+
   final fallback = _retailerFallback(retailerId);
-  return fallback == DealCategory.food
-      ? DealClassification(DealCategory.food, _classifyFood(text))
-      : DealClassification(fallback);
+  return _buildClassification(fallback, text);
+}
+
+DealClassification _buildClassification(
+    DealCategory category, String titleText) {
+  return category == DealCategory.food
+      ? DealClassification(DealCategory.food, _classifyFood(titleText))
+      : DealClassification(category);
 }
 
 FoodSubcategory _classifyFood(String text) {
@@ -213,14 +751,6 @@ DealCategory _retailerFallback(String? retailerId) {
     case 'amazon-za':
     case 'takealot':
       return DealCategory.tech;
-    case 'food-lovers':
-    case 'pick-n-pay':
-    case 'woolworths':
-    case 'checkers':
-    case 'shoprite':
-    case 'spar':
-    case 'boxer':
-      return DealCategory.food;
     default:
       return DealCategory.other;
   }
@@ -228,11 +758,25 @@ DealCategory _retailerFallback(String? retailerId) {
 
 bool _matchesAny(String paddedText, List<String> patterns) {
   for (final pattern in patterns) {
-    if (pattern.endsWith(' ')) {
-      if (paddedText.contains(' $pattern')) return true;
-    } else if (paddedText.contains(' $pattern ') || paddedText.contains(' $pattern')) {
-      return true;
-    }
+    if (paddedText.contains(_normalize(pattern))) return true;
   }
   return false;
+}
+
+int _scoreMatches(String paddedText, List<String> patterns, int weight) {
+  var score = 0;
+  for (final pattern in patterns) {
+    if (paddedText.contains(_normalize(pattern))) score += weight;
+  }
+  return score;
+}
+
+String _normalize(String value) {
+  final normalized = value
+      .toLowerCase()
+      .replaceAll(RegExp("[’']"), '')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return normalized.isEmpty ? ' ' : ' $normalized ';
 }

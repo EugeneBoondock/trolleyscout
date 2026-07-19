@@ -1,7 +1,7 @@
 // Fetches the four external deal sites and caches their normalized deals in D1,
 // one row per site. Each fetch is isolated and time-bounded so a slow or broken
-// site never blocks the others or the Worker. The public /api/deal-sites
-// endpoint reads the cache and triggers a background refresh when it is stale.
+// site never blocks the others or the Worker. Public reads only use the D1
+// cache; the scheduled Worker and an administrator own upstream refreshes.
 
 import {
   parseDaddysDeals,
@@ -18,9 +18,9 @@ const BROWSER_UA =
 
 const FETCH_TIMEOUT_MS = 9_000
 const MAX_ITEMS_PER_SITE = 60
-// A cache row older than this is refreshed in the background on the next read.
-export const DEAL_SITE_STALE_MS = 15 * 60 * 1000
-const MYRUNWAY_MAX_CACHE_AGE_MS = 30 * 60 * 1000
+// The scheduled scout runs every three hours. Keep a one-hour grace window so
+// a slow or failed run does not make MyRunway disappear between attempts.
+const MYRUNWAY_MAX_CACHE_AGE_MS = 4 * 60 * 60 * 1000
 const MYRUNWAY_GALLERY_MAX_PRODUCTS = 30
 const MYRUNWAY_GALLERY_CONCURRENCY = 3
 const MYRUNWAY_GALLERY_DEADLINE_MS = 6_000
@@ -255,6 +255,62 @@ export async function readDealSiteFeed(
   return { deals, refreshedAt: newest, sources }
 }
 
+// Scheduled alert snapshots need an all-or-nothing read. The public endpoint
+// keeps using readDealSiteFeed so a corrupt cache row cannot break browsing.
+export async function readDealSiteFeedStrict(
+  env: TrolleyScoutEnv,
+  nowMs: number = Date.now(),
+): Promise<DealSiteFeed> {
+  if (!hasTrolleyScoutDatabase(env)) {
+    throw new Error('Strict deal-site cache reads require a database binding.')
+  }
+
+  const result = await env.DB.prepare(
+    'SELECT source_key, payload_json, item_count, fetched_at FROM deal_site_cache',
+  ).all<DealSiteRow>()
+  const deals: DealSiteItem[] = []
+  const sources: DealSiteSourceMeta[] = []
+  let newest: string | undefined
+
+  for (const row of result.results) {
+    const id = row.source_key as DealSiteId
+    if (!(id in SITE_LABELS)) {
+      throw new Error(`Deal-site cache contains an unsupported source: ${row.source_key}.`)
+    }
+    if (!isDealSiteCacheRowUsable(id, row.fetched_at, nowMs)) continue
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(row.payload_json)
+    } catch (error) {
+      throw new Error(`Deal-site cache payload for ${row.source_key} is not valid JSON.`, {
+        cause: error,
+      })
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Deal-site cache payload for ${row.source_key} must be a JSON array.`)
+    }
+    if (parsed.length !== row.item_count) {
+      throw new Error(`Deal-site cache payload count for ${row.source_key} does not match its row.`)
+    }
+    if (parsed.some((item) => {
+      if (item === null || typeof item !== 'object') return true
+      const candidate = item as Partial<DealSiteItem>
+      return typeof candidate.id !== 'string' || candidate.id.trim().length === 0 ||
+        candidate.source !== id
+    })) {
+      throw new Error(`Deal-site cache payload for ${row.source_key} contains an invalid deal row.`)
+    }
+
+    const items = filterCurrentDealSiteItems(parsed as DealSiteItem[], nowMs)
+    deals.push(...items)
+    sources.push({ count: items.length, fetchedAt: row.fetched_at, id, label: SITE_LABELS[id] })
+    if (!newest || row.fetched_at > newest) newest = row.fetched_at
+  }
+
+  return { deals, refreshedAt: newest, sources }
+}
+
 export function filterCurrentDealSiteItems(
   items: DealSiteItem[],
   nowMs: number = Date.now(),
@@ -284,21 +340,6 @@ function parseDealSiteExpiry(value: string): number | undefined {
   const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
   const parsed = Date.parse(hasTimeZone ? normalized : `${normalized}+02:00`)
   return Number.isFinite(parsed) ? parsed : undefined
-}
-
-// True when no row exists or the oldest row is older than the stale window —
-// the read endpoint uses this to schedule a background refresh.
-export async function dealSitesNeedRefresh(env: TrolleyScoutEnv, nowMs: number): Promise<boolean> {
-  if (!hasTrolleyScoutDatabase(env)) return false
-  try {
-    const row = await env.DB.prepare(
-      'SELECT COUNT(*) AS total, MIN(fetched_at) AS oldest FROM deal_site_cache',
-    ).first<{ total: number; oldest: string | null }>()
-    if (!row || row.total < 1 || !row.oldest) return true
-    return nowMs - Date.parse(row.oldest) > DEAL_SITE_STALE_MS
-  } catch {
-    return true
-  }
 }
 
 async function writeSiteRow(

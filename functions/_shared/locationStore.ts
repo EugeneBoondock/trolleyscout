@@ -306,6 +306,39 @@ export async function readAllStorePromotions(
   }
 }
 
+// Alert snapshots use a strict, paged deal-only reader. Query failures must
+// abort the alert batch instead of looking like an empty promotion corpus.
+export async function readActiveStoreDealPromotionsStrict(
+  env: TrolleyScoutEnv,
+  nowIso: string,
+  limit = 200,
+  offset = 0,
+): Promise<StorePromotion[]> {
+  if (!hasDb(env)) {
+    throw new Error('Strict store promotion reads require a database binding.')
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+    throw new RangeError('limit must be an integer between 1 and 1000.')
+  }
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new RangeError('offset must be a non-negative integer.')
+  }
+
+  const result = await env.DB.prepare(
+    `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
+      previous_price_text, saving_text, source_url, product_url, image_url,
+      valid_from, valid_to, captured_at
+      FROM store_promotions
+      WHERE kind = 'deal' AND expires_at >= ?
+      ORDER BY captured_at DESC, id ASC
+      LIMIT ? OFFSET ?`,
+  )
+    .bind(nowIso, limit, offset)
+    .all<StorePromotionRow>()
+
+  return result.results.map(rowToPromotion)
+}
+
 // Reads only catalogue rows before applying pagination. A large deal feed can
 // therefore never push a branch catalogue beyond this query's page limit.
 export async function readAllStoreCatalogues(

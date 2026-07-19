@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../catalogue_sort.dart';
 import '../deal_categories.dart';
+import '../deal_alert_background.dart';
+import '../deal_alert_scheduler.dart';
 import '../deal_filters.dart';
 import '../discovery_cache.dart';
 import '../notification_prefs_store.dart';
@@ -26,6 +28,8 @@ class DealsScreen extends StatefulWidget {
     this.onWantsAuth,
     this.initialRetailerId,
     this.initialQuery,
+    this.alertScheduler,
+    this.requestNotificationPermission,
   });
   final Api api;
   final bool isAuthenticated;
@@ -34,6 +38,8 @@ class DealsScreen extends StatefulWidget {
   // When arriving from a Near-me store card, pre-filter to that store's deals.
   final String? initialRetailerId;
   final String? initialQuery;
+  final DealAlertScheduler? alertScheduler;
+  final Future<bool> Function()? requestNotificationPermission;
 
   @override
   State<DealsScreen> createState() => _DealsScreenState();
@@ -41,6 +47,7 @@ class DealsScreen extends StatefulWidget {
 
 class _DealsScreenState extends State<DealsScreen> {
   static const _perPage = 24;
+  static const _cacheReuseDuration = Duration(hours: 3);
   Future<DiscoveryResult>? _future;
   int _page = 0;
   final Set<String> _savedDealIds = {};
@@ -62,6 +69,7 @@ class _DealsScreenState extends State<DealsScreen> {
   List<PublicAd> _ads = const [];
   List<Deal> _siteDeals = const [];
   final _notifPrefs = NotificationPrefsStore();
+  late final DealAlertScheduler _alertScheduler;
   bool _notifyNewDeals = false;
   bool _notifBusy = false;
   final _tasteStore = TasteStore();
@@ -70,12 +78,12 @@ class _DealsScreenState extends State<DealsScreen> {
   @override
   void initState() {
     super.initState();
+    _alertScheduler = widget.alertScheduler ?? DealAlertScheduler();
     _query = widget.initialQuery ?? '';
     _retailerId = widget.initialRetailerId?.isNotEmpty == true
         ? widget.initialRetailerId!
         : 'all';
     _searchController.text = _query;
-    _restoreCache();
     _load();
     _loadAds();
     _loadSiteDeals();
@@ -121,12 +129,17 @@ class _DealsScreenState extends State<DealsScreen> {
   Future<void> _restoreNotifyPref() async {
     final local = await _notifPrefs.loadOptIn();
     if (mounted) setState(() => _notifyNewDeals = local);
+    if (local) await _alertScheduler.setEnabled(true);
     // When signed in, the server is the source of truth across devices.
     if (widget.isAuthenticated) {
       try {
         final prefs = await widget.api.notificationPreferences();
-        if (mounted) setState(() => _notifyNewDeals = prefs.newDeals);
-        await _notifPrefs.saveOptIn(prefs.newDeals);
+        final enabledOnDevice = prefs.newDeals && local;
+        if (mounted) setState(() => _notifyNewDeals = enabledOnDevice);
+        await _notifPrefs.saveOptIn(enabledOnDevice);
+        if (enabledOnDevice != local) {
+          await _alertScheduler.setEnabled(enabledOnDevice);
+        }
       } catch (_) {
         // Keep the local value.
       }
@@ -138,26 +151,58 @@ class _DealsScreenState extends State<DealsScreen> {
     setState(() => _notifBusy = true);
     try {
       if (value) {
-        final granted = await DealNotifications.instance.requestPermission();
-        if (!granted && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Turn on notifications in your phone settings to get deal alerts.'),
-          ));
+        if (!widget.isAuthenticated) {
+          widget.onWantsAuth?.call();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Log in to receive new-deal alerts.'),
+            ));
+          }
+          return;
+        }
+        final granted = await (widget.requestNotificationPermission?.call() ??
+            DealNotifications.instance.requestPermission());
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Turn on notifications in your phone settings to get deal alerts.'),
+            ));
+          }
+          return;
         }
       }
-      await _notifPrefs.saveOptIn(value);
+
+      var effectiveValue = value;
       if (widget.isAuthenticated) {
         try {
-          await widget.api.setNotificationPreferences(value);
+          final server = await widget.api.setNotificationPreferences(value);
+          effectiveValue = server.newDeals;
         } catch (_) {
-          // Local opt-in still stands; the next sync retries.
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(const SnackBar(
+                content: Text('Could not update deal alerts. Try again.'),
+              ));
+          }
+          return;
         }
       }
+
+      await _notifPrefs.saveOptIn(effectiveValue);
+      await _alertScheduler.setEnabled(effectiveValue);
+      if (effectiveValue) {
+        unawaited(DealAlertPoller(
+          api: widget.api,
+          preferences: _notifPrefs,
+          scheduler: _alertScheduler,
+        ).run());
+      }
       if (mounted) {
-        setState(() => _notifyNewDeals = value);
+        setState(() => _notifyNewDeals = effectiveValue);
         // Preview the reward chime the moment alerts are switched on.
-        if (value) {
+        if (effectiveValue) {
           uxReward();
         } else {
           uxTap();
@@ -165,52 +210,14 @@ class _DealsScreenState extends State<DealsScreen> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
-            content: Text(value
-                ? 'On. We\'ll alert you when new deals land.'
-                : 'Off. You won\'t get new-deal alerts.'),
+            content: Text(effectiveValue
+                ? 'On. We’ll alert you when new deals land.'
+                : 'Off. You won’t get new-deal alerts.'),
           ));
       }
     } finally {
       if (mounted) setState(() => _notifBusy = false);
     }
-  }
-
-  // Raises a device notification when this load surfaced deals that were not in
-  // the shopper's last visit — only if they opted in and we have a prior visit
-  // to compare against (so a first-ever load is never a false alarm).
-  Future<void> _maybeAlertNewDeals(DiscoveryResult result) async {
-    if (!_notifyNewDeals || _previousDealIds.isEmpty) return;
-    final currentIds = result.deals
-        .where((deal) => deal.id.isNotEmpty)
-        .map((deal) => deal.id)
-        .toSet();
-    final freshDeals = result.deals
-        .where(
-            (deal) => deal.id.isNotEmpty && !_previousDealIds.contains(deal.id))
-        .toList();
-    // Advance the in-memory baseline so a pull-to-refresh in the same session
-    // compares against what was just shown, not the launch-time snapshot.
-    _previousDealIds = currentIds;
-    if (freshDeals.isEmpty) return;
-    // At most one alert per 30 minutes, even across restarts, so a shopper who
-    // opens the app repeatedly isn't spammed about the same batch.
-    final last = await _notifPrefs.loadLastAlertAt();
-    if (last != null &&
-        DateTime.now().difference(last) < const Duration(minutes: 30)) {
-      return;
-    }
-    // Prefer new deals that match what the shopper likes (their Window Shopping
-    // taste); fall back to a generic alert when nothing matches.
-    final liked = _taste.isEmpty
-        ? const <Deal>[]
-        : freshDeals.where((deal) => _taste.score(deal.title) > 0).toList();
-    if (liked.isNotEmpty) {
-      await DealNotifications.instance
-          .showNewDeals(liked.length, personalized: true);
-    } else {
-      await DealNotifications.instance.showNewDeals(freshDeals.length);
-    }
-    await _notifPrefs.saveLastAlertAt(DateTime.now());
   }
 
   @override
@@ -237,22 +244,25 @@ class _DealsScreenState extends State<DealsScreen> {
     super.dispose();
   }
 
-  Future<void> _restoreCache() async {
+  Future<DiscoveryResult> _loadStoredDiscovery() async {
     final cached = await _cacheStore.load();
     if (cached != null && mounted) {
       setState(() => _cached = cached);
     }
+    _previousDealIds = cached?.dealIds ?? const {};
+    if (cached != null) {
+      final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
+      if (!age.isNegative && age < _cacheReuseDuration) {
+        return cached.result;
+      }
+    }
+
+    final result = await widget.api.discovery();
+    unawaited(_cacheStore.save(result, DateTime.now()));
+    return result;
   }
 
-  void _load() {
-    _future = widget.api.discovery().then((result) {
-      // Deals not in the previous visit's snapshot get a NEW tag.
-      _previousDealIds = _cached?.dealIds ?? const {};
-      _cacheStore.save(result, DateTime.now());
-      unawaited(_maybeAlertNewDeals(result));
-      return result;
-    });
-  }
+  void _load() => _future = _loadStoredDiscovery();
 
   // Filtering re-runs only after the shopper pauses typing, so long lists
   // never stutter under the keyboard.
@@ -688,7 +698,7 @@ class _DealsScreenState extends State<DealsScreen> {
                 const Text('Alert me about new deals',
                     style:
                         TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                Text('We\'ll notify you when fresh deals land.',
+                Text('We’ll notify you when fresh deals land.',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 11)),
               ],
             ),

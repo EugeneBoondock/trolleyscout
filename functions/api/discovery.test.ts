@@ -1,16 +1,48 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DealSnapshot } from '../_shared/dealSnapshotStore'
 import type { StoredDealItem } from '../_shared/dealItemStore'
+import type { StoreLeaflet } from '../../src/types'
+
+const mocks = vi.hoisted(() => ({
+  getMemberSession: vi.fn(),
+  runDealRefreshWithAlerts: vi.fn(),
+}))
+
+vi.mock('../_shared/memberStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../_shared/memberStore')>(),
+  getMemberSession: mocks.getMemberSession,
+}))
+
+vi.mock('../_shared/dealAlertStore', () => ({
+  runDealRefreshWithAlerts: mocks.runDealRefreshWithAlerts,
+}))
 import {
   buildNormalizedDiscoveryChecks,
   buildSnapshotChecks,
+  dedupeLeaflets,
   dedupeDiscoveryDeals,
   enrichInteractiveLeaflets,
   mergeNormalizedFirstChecks,
   onRequest,
   readNormalizedDealItems,
+  refreshLeafletCache,
+  resolvePnpHflipDocuments,
   storePromotionsToDiscovery,
 } from './discovery'
+
+beforeEach(() => {
+  mocks.getMemberSession.mockReset()
+  mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+  mocks.runDealRefreshWithAlerts.mockReset()
+  mocks.runDealRefreshWithAlerts.mockImplementation(async (
+    _env: unknown,
+    refresh: () => Promise<unknown>,
+  ) => ({ alerts: {}, value: await refresh() }))
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('buildSnapshotChecks', () => {
   it('surfaces catalogue scans from retailers outside the fixed source list', () => {
@@ -318,6 +350,88 @@ describe('normalized discovery cutover', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('serves an empty stored cache without starting live retailer fetches', async () => {
+    const liveFetch = vi.fn(async () => {
+      throw new Error('plain reads must not call retailer sites')
+    })
+    vi.stubGlobal('fetch', liveFetch)
+    const waitUntil = vi.fn()
+
+    const response = await onRequest({
+      data: {},
+      env: {
+        ASSETS: { fetch: async () => new Response('asset') },
+        DB: fakeDiscoveryDatabase(),
+      },
+      functionPath: '/api/discovery',
+      next: async () => new Response('next'),
+      passThroughOnException: () => undefined,
+      params: {},
+      request: new Request('https://trolleyscout.co.za/api/discovery'),
+      waitUntil,
+    })
+    const body = await response.json() as { data: { deals: unknown[]; served: string } }
+
+    expect(response.status).toBe(200)
+    expect(body.data.served).toBe('snapshot')
+    expect(body.data.deals).toEqual([])
+    expect(liveFetch).not.toHaveBeenCalled()
+    expect(waitUntil).not.toHaveBeenCalled()
+  })
+
+  it('rejects a forced refresh from a non-admin account before fetching sources', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { id: 'member-1', role: 'member' },
+    })
+    const liveFetch = vi.fn(async () => new Response('', { status: 503 }))
+    vi.stubGlobal('fetch', liveFetch)
+
+    const response = await onRequest({
+      data: {},
+      env: {
+        ASSETS: { fetch: async () => new Response('asset') },
+        DB: fakeDiscoveryDatabase(),
+      },
+      functionPath: '/api/discovery',
+      next: async () => new Response('next'),
+      passThroughOnException: () => undefined,
+      params: {},
+      request: new Request('https://trolleyscout.co.za/api/discovery?refresh=1'),
+      waitUntil: vi.fn(),
+    })
+
+    expect(response.status).toBe(403)
+    expect(liveFetch).not.toHaveBeenCalled()
+  })
+
+  it('allows an administrator to force a live source refresh', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { id: 'admin-1', role: 'admin' },
+    })
+    const liveFetch = vi.fn(async () => new Response('', { status: 503 }))
+    vi.stubGlobal('fetch', liveFetch)
+
+    const response = await onRequest({
+      data: {},
+      env: {
+        ASSETS: { fetch: async () => new Response('asset') },
+        DB: fakeDiscoveryDatabase(),
+      },
+      functionPath: '/api/discovery',
+      next: async () => new Response('next'),
+      passThroughOnException: () => undefined,
+      params: {},
+      request: new Request('https://trolleyscout.co.za/api/discovery?refresh=1'),
+      waitUntil: vi.fn(),
+    })
+
+    expect(response.status).toBe(200)
+    expect(liveFetch).toHaveBeenCalled()
+    expect(mocks.runDealRefreshWithAlerts).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('interactive catalogue manifest enrichment', () => {
@@ -402,8 +516,8 @@ function storedItem(overrides: Partial<StoredDealItem> = {}): StoredDealItem {
   }
 }
 
-function fakeDiscoveryDatabase(item: StoredDealItem) {
-  const row = {
+function fakeDiscoveryDatabase(item?: StoredDealItem) {
+  const row = item ? {
     captured_at: item.capturedAt,
     content_fingerprint: item.contentFingerprint,
     created_at: item.createdAt,
@@ -433,12 +547,14 @@ function fakeDiscoveryDatabase(item: StoredDealItem) {
     updated_at: item.updatedAt,
     valid_from: item.validFrom ?? null,
     valid_to: item.validTo ?? null,
-  }
+  } : undefined
 
   return {
     prepare(sql: string) {
       const statement = {
-        all: async () => ({ results: sql.includes('FROM deal_items') ? [row] : [] }),
+        all: async () => ({
+          results: sql.includes('FROM deal_items') && row ? [row] : [],
+        }),
         bind: () => statement,
         first: async () => undefined,
         run: async () => ({ meta: { changes: 0 } }),
@@ -464,5 +580,189 @@ describe('catalogue-scanned deals in the feed', () => {
     expect(checks).toHaveLength(1)
     expect(checks[0].source.sourceLabel).toBe('Catalogue scan')
     expect(checks[0].deals[0].sourceLabel).toBe('Catalogue scan')
+  })
+})
+
+describe('leaflet refresh retention', () => {
+  it('keeps prior rows for a failed retailer while replacing successful retailer rows', async () => {
+    const prior: StoreLeaflet[] = [{
+      capturedAt: '2026-07-18T10:00:00.000Z',
+      documentUrl: 'https://www.usave.co.za/catalogues/old.pdf',
+      id: 'usave-old',
+      name: 'Usave previous catalogue',
+      retailerId: 'usave',
+      retailerName: 'Usave',
+      url: 'https://www.usave.co.za/catalogues/old.pdf',
+    }, {
+      capturedAt: '2026-07-18T10:00:00.000Z',
+      documentUrl: 'https://www.okfoods.co.za/catalogues/old.pdf',
+      id: 'ok-foods-old',
+      name: 'OK Foods previous catalogue',
+      retailerId: 'ok-foods',
+      retailerName: 'OK Foods',
+      url: 'https://www.okfoods.co.za/catalogues/old.pdf',
+    }]
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('usave')) {
+        return new Response('temporary failure', { status: 503 })
+      }
+      return new Response(`
+        <a href="/content/dam/okfoods/specials/2026/week-29/WC-urban.pdf">
+          Western Cape specials
+        </a>
+      `, { status: 200 })
+    })
+    const saveSnapshot = vi.fn(async () => undefined)
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      prior,
+      {
+        fetcher,
+        saveSnapshot,
+        targets: [{
+          kind: 'html-pdf',
+          origin: 'https://www.usave.co.za',
+          pageUrl: 'https://www.usave.co.za/specials.html',
+          retailerId: 'usave',
+          retailerName: 'Usave',
+        }, {
+          kind: 'html-pdf',
+          origin: 'https://www.okfoods.co.za',
+          pageUrl: 'https://www.okfoods.co.za/specials.html',
+          retailerId: 'ok-foods',
+          retailerName: 'OK Foods',
+        }],
+      },
+    )
+
+    expect(leaflets.map((leaflet) => leaflet.id)).toContain('usave-old')
+    expect(leaflets.map((leaflet) => leaflet.id)).not.toContain('ok-foods-old')
+    expect(leaflets).toContainEqual(expect.objectContaining({
+      retailerId: 'ok-foods',
+      url: 'https://www.okfoods.co.za/content/dam/okfoods/specials/2026/week-29/WC-urban.pdf',
+    }))
+    expect(saveSnapshot).toHaveBeenCalledWith(
+      expect.anything(),
+      leaflets,
+      expect.any(String),
+    )
+  })
+})
+
+describe('Pick n Pay catalogue document enrichment', () => {
+  const pnpLeaflet: StoreLeaflet = {
+    capturedAt: '2026-07-16T10:00:00.000Z',
+    id: 'pick-n-pay-weekly-gauteng',
+    imageUrl: 'https://cdn-prd-02.pnp.co.za/catalogues/weekly.jpg',
+    name: 'Pick n Pay Weekly Specials (Gauteng)',
+    priceScope: { regionIds: ['Gauteng'], type: 'province' as const },
+    retailerId: 'pick-n-pay' as const,
+    retailerName: 'Pick n Pay',
+    url: 'https://pnpcatalogues.hflip.co/4b5699c20a.html',
+  }
+
+  it('adds the trusted direct PDF to the leaflet returned by discovery refresh', async () => {
+    const directPdf =
+      'https://cdn.heyzine.com/flip-book/pdf/4b5699c20afee4a6fed85ec8013c92382fcaa693.pdf'
+    const fetcher = vi.fn(async () => new Response(
+      `<a class="download" href="${directPdf}">Download</a>`,
+      { headers: { 'content-type': 'text/html' } },
+    ))
+
+    const result = await resolvePnpHflipDocuments([pnpLeaflet], { fetcher })
+
+    expect(result).toEqual([{ ...pnpLeaflet, documentUrl: directPdf }])
+    expect(fetcher).toHaveBeenCalledWith(
+      pnpLeaflet.url,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
+  it('rejects a PDF URL on a lookalike host', async () => {
+    const fetcher = vi.fn(async () => new Response(`
+      <a href="https://cdn.heyzine.com.evil.test/flip-book/pdf/4b5699c20afee4a6fed85ec8013c92382fcaa693.pdf">
+        Download
+      </a>`))
+
+    await expect(resolvePnpHflipDocuments([pnpLeaflet], { fetcher }))
+      .resolves.toEqual([pnpLeaflet])
+  })
+
+  it('keeps the source leaflet when the viewer response exceeds its byte limit', async () => {
+    const fetcher = vi.fn(async () => new Response('too large', {
+      headers: { 'content-length': String(300 * 1024) },
+    }))
+
+    await expect(resolvePnpHflipDocuments([pnpLeaflet], { fetcher }))
+      .resolves.toEqual([pnpLeaflet])
+  })
+
+  it('keeps the timeout active until the HFlip response body finishes', async () => {
+    vi.useFakeTimers()
+    let responseController: ReadableStreamDefaultController<Uint8Array> | undefined
+    let requestSignal: AbortSignal | undefined
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          responseController = controller
+          requestSignal?.addEventListener('abort', () => {
+            controller.error(new Error('request aborted'))
+          }, { once: true })
+        },
+      }))
+    })
+
+    try {
+      const pending = resolvePnpHflipDocuments(
+        [pnpLeaflet],
+        { fetcher, timeoutMs: 25 },
+      )
+      await vi.advanceTimersByTimeAsync(26)
+      const wasAborted = requestSignal?.aborted ?? false
+      if (!wasAborted) {
+        responseController?.error(new Error('test cleanup'))
+      }
+      await expect(pending).resolves.toEqual([pnpLeaflet])
+
+      expect(wasAborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('Pick n Pay generic catalogue suppression', () => {
+  it('removes the unusable store-scout catalogue when official viewers exist', () => {
+    const official = {
+      capturedAt: '2026-07-16T10:00:00.000Z',
+      documentUrl:
+        'https://cdn.heyzine.com/flip-book/pdf/4b5699c20afee4a6fed85ec8013c92382fcaa693.pdf',
+      id: 'pick-n-pay-weekly',
+      name: 'Pick n Pay Weekly Specials (Gauteng)',
+      retailerId: 'pick-n-pay' as const,
+      retailerName: 'Pick n Pay',
+      url: 'https://pnpcatalogues.hflip.co/4b5699c20a.html',
+    }
+    const generic = {
+      capturedAt: '2026-07-16T10:00:00.000Z',
+      documentUrl: 'https://www.pnp.co.za/catalogues',
+      id: 'store-scout-pnp',
+      name: 'Pick n Pay catalogues',
+      retailerId: 'pick-n-pay' as const,
+      retailerName: 'Pick n Pay',
+      sourceLabel: 'Store scout',
+      url: 'https://www.pnp.co.za/catalogues',
+    }
+    const other = {
+      ...generic,
+      id: 'other-catalogue',
+      retailerId: 'spar' as const,
+      retailerName: 'SPAR',
+      url: 'https://www.spar.co.za/catalogues',
+    }
+
+    expect(dedupeLeaflets([generic, other, official])).toEqual([other, official])
   })
 })

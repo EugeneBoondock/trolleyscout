@@ -25,7 +25,7 @@ const faqs: Faq[] = [
   {
     question: 'Why did a price not match the shop?',
     answer:
-      'Prices change often and specials expire. Every deal shows when it was last checked, and the board refreshes automatically. If a price looks off, open the “Product” link to see the shop’s live page, and use Check now to force a fresh pull.',
+      'Prices change often and specials expire. Every deal shows when it was last checked, and scheduled checks update the board every three hours. If a price looks off, open the “Product” link to see the shop’s live page. Administrators can run an extra source check when needed.',
   },
   {
     question: 'Is it really free?',

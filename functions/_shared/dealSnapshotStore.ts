@@ -63,6 +63,47 @@ export async function readDealSnapshots(env: TrolleyScoutEnv): Promise<Map<strin
   return snapshots
 }
 
+// Alert batching must never interpret a missing table or corrupt row as an
+// empty snapshot. Public discovery keeps using the tolerant reader above.
+export async function readDealSnapshotsStrict(
+  env: TrolleyScoutEnv,
+): Promise<Map<string, DealSnapshot>> {
+  if (!hasSnapshotStore(env)) {
+    throw new Error('Strict deal snapshot reads require a database binding.')
+  }
+
+  const result = await env.DB.prepare(
+    'SELECT source_key, checked_at, deals_json FROM deal_snapshots',
+  ).all<SnapshotRow>()
+  const snapshots = new Map<string, DealSnapshot>()
+
+  for (const row of result.results) {
+    if (row.source_key === LEAFLET_SNAPSHOT_KEY) {
+      continue
+    }
+
+    let deals: unknown
+    try {
+      deals = JSON.parse(row.deals_json)
+    } catch (error) {
+      throw new Error(`Deal snapshot ${row.source_key} contains invalid JSON.`, { cause: error })
+    }
+    if (!Array.isArray(deals)) {
+      throw new Error(`Deal snapshot ${row.source_key} must contain a JSON array.`)
+    }
+    if (deals.some((deal) => deal === null || typeof deal !== 'object')) {
+      throw new Error(`Deal snapshot ${row.source_key} contains an invalid deal row.`)
+    }
+
+    snapshots.set(row.source_key, {
+      checkedAt: row.checked_at,
+      deals: deals as DiscoveredDeal[],
+    })
+  }
+
+  return snapshots
+}
+
 export async function saveDealSnapshots(
   env: TrolleyScoutEnv,
   entries: Array<{

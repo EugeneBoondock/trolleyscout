@@ -14,8 +14,8 @@ class CachedDiscovery {
       result.deals.map((deal) => deal.id).where((id) => id.isNotEmpty).toSet();
 }
 
-/// Last successful Find-deals payload, kept on-device so the screen renders
-/// instantly (and still works offline) while a fresh copy loads.
+/// Last successful Find-deals payload, kept on-device so reopening the screen
+/// is instant and does not repeat a server read inside the three-hour window.
 class DiscoveryCache {
   static const _key = 'discovery_cache_v1';
 

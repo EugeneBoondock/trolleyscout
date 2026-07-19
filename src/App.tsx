@@ -298,6 +298,7 @@ function App() {
   )
   const [discoveryKey, setDiscoveryKey] = useState(0)
   const forceLiveDiscoveryRef = useRef(false)
+  const hasLoadedDiscoveryRef = useRef(false)
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -584,6 +585,9 @@ function App() {
 
     const forceLive = forceLiveDiscoveryRef.current
     forceLiveDiscoveryRef.current = false
+    if (!forceLive && hasLoadedDiscoveryRef.current) {
+      return () => controller.abort()
+    }
 
     setIsDiscovering(true)
     setDiscoveryState((current) => ({
@@ -593,7 +597,10 @@ function App() {
     }))
 
     loadDiscovery(controller.signal, { forceLive })
-      .then(setDiscoveryState)
+      .then((state) => {
+        hasLoadedDiscoveryRef.current = true
+        setDiscoveryState(state)
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return
@@ -1801,6 +1808,7 @@ function MemberShell({
 
         {activeView === 'discovery' && (
           <DiscoveryPanel
+            canRunDiscovery={account.role === 'admin'}
             canWatchItems
             initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
@@ -3634,6 +3642,7 @@ function PublicSignInGate({ view, onSignIn }: { view: ActiveView; onSignIn: () =
 }
 
 function DiscoveryPanel({
+  canRunDiscovery = false,
   canWatchItems = false,
   initialFilter,
   isDiscovering,
@@ -3646,6 +3655,7 @@ function DiscoveryPanel({
   savingDealUrl,
   state,
 }: {
+  canRunDiscovery?: boolean
   canWatchItems?: boolean
   initialFilter?: { retailerId?: string; query?: string }
   isDiscovering: boolean
@@ -3741,10 +3751,12 @@ function DiscoveryPanel({
           <h2>Source-backed specials</h2>
           <p className="freshness-line">{describeFreshness(discovery.refreshedAt)}</p>
         </div>
-        <button className="primary-button" disabled={isDiscovering} onClick={onRunDiscovery} type="button">
-          <ArrowClockwise size={18} className={clsx(isDiscovering && 'is-spinning')} />
-          {isDiscovering ? 'Checking' : 'Check now'}
-        </button>
+        {canRunDiscovery && (
+          <button className="primary-button" disabled={isDiscovering} onClick={onRunDiscovery} type="button">
+            <ArrowClockwise size={18} className={clsx(isDiscovering && 'is-spinning')} />
+            {isDiscovering ? 'Checking' : 'Check now'}
+          </button>
+        )}
       </div>
 
       {state.status === 'loading' && <LoadingStrip label="Checking official deal pages" />}

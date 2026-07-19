@@ -69,7 +69,7 @@ void main() {
     );
   });
 
-  testWidgets('pulling down on the first deal requests a fresh deal-site feed',
+  testWidgets('pulling down on the first deal re-reads the stored deal feed',
       (tester) async {
     final api = _WindowApi(
       initialDeals: const [_deal1],
@@ -83,12 +83,12 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(0, 600));
     await tester.pumpAndSettle();
 
-    expect(api.dealSiteForceLiveCalls, [false, true]);
+    expect(api.dealSiteForceLiveCalls, [false, false]);
     expect(api.discoveryForceLiveCalls, [false, false]);
     expect(find.text('Unseen deal'), findsOneWidget);
   });
 
-  testWidgets('overlapping refresh gestures share one live request',
+  testWidgets('overlapping refresh gestures share one stored-feed request',
       (tester) async {
     final api = _WindowApi(
       initialDeals: const [_deal1],
@@ -106,7 +106,7 @@ void main() {
     unawaited(secondRefresh.then((_) => secondCompleted = true));
     await tester.pump();
 
-    expect(api.dealSiteForceLiveCalls, [false, true]);
+    expect(api.dealSiteForceLiveCalls, [false, false]);
     expect(secondCompleted, isFalse);
     api.completeForcedDealSites();
     await Future.wait([firstRefresh, secondRefresh]);
@@ -289,7 +289,7 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, 600));
     await tester.pumpAndSettle();
-    expect(api.dealSiteForceLiveCalls, [false, true, true]);
+    expect(api.dealSiteForceLiveCalls, [false, false, false]);
   });
 
   testWidgets('a long app background refreshes and skips the displayed card',
@@ -474,10 +474,12 @@ class _WindowApi extends Api {
     if (failDealSitesAfterFirst && dealSiteForceLiveCalls.length > 1) {
       throw StateError('deal sites unavailable');
     }
-    if (forceLive && holdForcedDealSites) {
+    if (dealSiteForceLiveCalls.length > 1 && holdForcedDealSites) {
       return _forcedDealSitesCompleter.future;
     }
-    return forceLive ? refreshedDeals : initialDeals;
+    return dealSiteForceLiveCalls.length > 1 && refreshedDeals.isNotEmpty
+        ? refreshedDeals
+        : initialDeals;
   }
 
   @override

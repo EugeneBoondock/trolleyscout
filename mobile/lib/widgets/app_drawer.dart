@@ -49,9 +49,15 @@ class AppMenuDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final account = session.account;
-    final destinations = AppDestination.values
-        .where((item) => item != AppDestination.admin)
-        .toList();
+    final destinations = <AppDestination>[
+      AppDestination.dashboard,
+      ...AppDestination.values.where(
+        (item) =>
+            item != AppDestination.home &&
+            item != AppDestination.dashboard &&
+            item != AppDestination.admin,
+      ),
+    ];
     if (account?.isAdmin == true) {
       destinations.insert(6, AppDestination.admin);
     }

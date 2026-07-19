@@ -97,6 +97,35 @@ void main() {
     expect(openedUri, Uri.parse('https://market.example.test/catalogue'));
   });
 
+  testWidgets('offers the official source when every page image fails',
+      (tester) async {
+    Uri? openedUri;
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: CatalogueReader(
+        catalogue: const Catalogue(
+          name: 'Unavailable image catalogue',
+          url: 'https://cdn.market.example.test/catalogue-preview',
+          sourceUrl: 'https://market.example.test/catalogue',
+          pages: [
+            CataloguePage(pageNumber: 1, imageUrl: ''),
+          ],
+        ),
+        openExternal: (uri) async => openedUri = uri,
+      ),
+    ));
+    await tester.pump();
+
+    final sourceButton = find.text('Open official source');
+    expect(find.text('Catalogue page unavailable.'), findsOneWidget);
+    expect(sourceButton, findsOneWidget);
+
+    await tester.tap(sourceButton);
+    await tester.pump();
+
+    expect(openedUri, Uri.parse('https://market.example.test/catalogue'));
+  });
+
   for (final themeMode in [ThemeMode.light, ThemeMode.dark]) {
     testWidgets('shows an official source fallback in ${themeMode.name} mode',
         (tester) async {

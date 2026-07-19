@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_controller.dart';
 import 'biometric_gate.dart';
+import 'deal_alert_background.dart';
+import 'deal_alert_scheduler.dart';
+import 'notification_prefs_store.dart';
 import 'screens/advertise_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/about_screen.dart';
@@ -32,7 +35,13 @@ import 'widgets/app_drawer.dart';
 import 'widgets/scout_mark.dart';
 import 'widgets/watch_bell.dart';
 
-void main() => runApp(const TrolleyScoutApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDealAlertBackground();
+  final alertsEnabled = await NotificationPrefsStore().loadOptIn();
+  await DealAlertScheduler().setEnabled(alertsEnabled);
+  runApp(const TrolleyScoutApp());
+}
 
 class TrolleyScoutApp extends StatefulWidget {
   const TrolleyScoutApp({super.key, this.api});
@@ -86,20 +95,42 @@ class RootShell extends StatefulWidget {
 }
 
 class _RootShellState extends State<RootShell> {
-  AppDestination _destination = AppDestination.home;
+  AppDestination _destination = AppDestination.dashboard;
   int _primaryIndex = 0;
   String? _authIntent;
   String? _dealsRetailerId;
   String? _dealsQuery;
   bool? _bioEnabled;
   bool _unlocked = false;
+  late bool _wasAuthenticated;
 
   @override
   void initState() {
     super.initState();
+    _wasAuthenticated = widget.controller.session.isAuthenticated;
+    widget.controller.addListener(_handleSessionChanged);
     BiometricPrefs.isEnabled().then((enabled) {
       if (mounted) setState(() => _bioEnabled = enabled);
     });
+  }
+
+  void _handleSessionChanged() {
+    final authenticated = widget.controller.session.isAuthenticated;
+    if (authenticated == _wasAuthenticated) return;
+    _wasAuthenticated = authenticated;
+    if (!mounted) return;
+    setState(() {
+      _authIntent = null;
+      _destination = AppDestination.dashboard;
+      _primaryIndex = 0;
+      if (!authenticated) _unlocked = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleSessionChanged);
+    super.dispose();
   }
 
   // Near-me store card → open Find deals pre-filtered to that store's deals.
@@ -112,7 +143,7 @@ class _RootShellState extends State<RootShell> {
   }
 
   static const _primaryDestinations = [
-    AppDestination.home,
+    AppDestination.dashboard,
     AppDestination.money,
     AppDestination.near,
     AppDestination.deals,
@@ -182,7 +213,7 @@ class _RootShellState extends State<RootShell> {
               if (mounted) {
                 setState(() {
                   _unlocked = false;
-                  _destination = AppDestination.home;
+                  _destination = AppDestination.dashboard;
                   _primaryIndex = 0;
                 });
               }
@@ -273,7 +304,7 @@ class _RootShellState extends State<RootShell> {
                           await widget.controller.signOut();
                           if (mounted) {
                             setState(() {
-                              _destination = AppDestination.home;
+                              _destination = AppDestination.dashboard;
                               _primaryIndex = 0;
                             });
                           }
@@ -320,6 +351,7 @@ class _RootShellState extends State<RootShell> {
                       onAuthenticated: () => setState(() {
                         _authIntent = null;
                         _destination = AppDestination.dashboard;
+                        _primaryIndex = 0;
                       }),
                     ),
             ),
@@ -339,9 +371,9 @@ class _RootShellState extends State<RootShell> {
                         _selectDestination(_primaryDestinations[index]),
                     destinations: const [
                       NavigationDestination(
-                        icon: Icon(Icons.home_outlined),
-                        selectedIcon: Icon(Icons.home),
-                        label: 'Home',
+                        icon: Icon(Icons.dashboard_outlined),
+                        selectedIcon: Icon(Icons.dashboard),
+                        label: 'Dashboard',
                       ),
                       NavigationDestination(
                         icon: Icon(Icons.volunteer_activism_outlined),

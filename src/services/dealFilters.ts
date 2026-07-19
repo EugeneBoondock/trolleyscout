@@ -40,7 +40,12 @@ export function filterDiscoveryDeals(
     let matchesCategory = true
 
     if (category !== 'all' || foodSubcategory !== 'all') {
-      const classification = classifyDeal(deal.title, deal.retailerId)
+      const classification = classifyDeal(deal.title, deal.retailerId, {
+        evidenceText: deal.evidenceText,
+        retailerName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        sourceUrl: deal.sourceUrl,
+      })
       matchesCategory =
         (category === 'all' || classification.category === category) &&
         (foodSubcategory === 'all' || classification.foodSubcategory === foodSubcategory)

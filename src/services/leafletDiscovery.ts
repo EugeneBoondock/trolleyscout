@@ -7,7 +7,7 @@ import type { RetailerId, StoreLeaflet } from '../types'
 export interface LeafletTarget {
   retailerId: RetailerId
   retailerName: string
-  kind: 'sixty60-api' | 'html-list' | 'html-pdf' | 'sitebuilder-pdf'
+  kind: 'sixty60-api' | 'html-list' | 'html-pdf' | 'sitebuilder-pdf' | 'pnp-cms'
   // For sixty60-api: the leaflet API base + a representative national store id.
   apiBase?: string
   storeId?: string
@@ -20,6 +20,13 @@ export interface LeafletTarget {
 }
 
 export const leafletTargets: LeafletTarget[] = [
+  {
+    kind: 'pnp-cms',
+    pageUrl:
+      'https://www.pnp.co.za/pnphybris/v2/pnp-spa/cms/pages?pageType=ContentPage&pageLabelOrId=%2Fcatalogues&baseStore=WC21&lang=en&curr=ZAR',
+    retailerId: 'pick-n-pay',
+    retailerName: 'Pick n Pay',
+  },
   {
     apiBase: 'https://www.shoprite.co.za',
     kind: 'sixty60-api',
@@ -79,6 +86,199 @@ const MONTHS: Record<string, string> = {
   october: 'October',
   november: 'November',
   december: 'December',
+}
+
+const PNP_PROVINCES: Record<string, string> = {
+  'eastern cape': 'Eastern Cape',
+  'free state': 'Free State',
+  gauteng: 'Gauteng',
+  'kwa zulu natal': 'KwaZulu-Natal',
+  'kwazulu natal': 'KwaZulu-Natal',
+  kwazulunatal: 'KwaZulu-Natal',
+  kzn: 'KwaZulu-Natal',
+  limpopo: 'Limpopo',
+  mpumalanga: 'Mpumalanga',
+  'north west': 'North West',
+  'northern cape': 'Northern Cape',
+  'western cape': 'Western Cape',
+}
+
+interface PnpCmsBanner {
+  content?: unknown
+  media?: { url?: unknown }
+  name?: unknown
+  typeCode?: unknown
+  uid?: unknown
+}
+
+export function extractPnpCmsLeaflets(
+  target: LeafletTarget,
+  payload: unknown,
+  capturedAt: string,
+  limit = 48,
+): StoreLeaflet[] {
+  const banners: PnpCmsBanner[] = []
+  collectPnpBannerComponents(payload, banners, 64)
+  const leaflets: StoreLeaflet[] = []
+  const seen = new Set<string>()
+
+  for (const banner of banners) {
+    if (leaflets.length >= limit) {
+      break
+    }
+    if (typeof banner.content !== 'string') {
+      continue
+    }
+
+    const content = banner.content
+    const headingMatch = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i.exec(content)
+    const title = cleanText(headingMatch?.[1] ?? (typeof banner.name === 'string' ? banner.name : ''))
+    const imageUrl = absoluteHttpUrl(banner.media?.url, 'https://www.pnp.co.za')
+    const validity = pnpValidityDates(content, capturedAt)
+    const viewers = pnpViewerScopes(content)
+
+    for (const [url, scopeNames] of viewers) {
+      if (leaflets.length >= limit || seen.has(url)) {
+        continue
+      }
+      seen.add(url)
+      const national = scopeNames.includes('National')
+      const regions = scopeNames.filter((scope) => scope !== 'National')
+      const scopeLabel = national ? 'National' : regions.join(', ')
+      const priceScope: StoreLeaflet['priceScope'] = national
+        ? { type: 'national' }
+        : regions.length > 0
+          ? { regionIds: [regions[0], ...regions.slice(1)], type: 'province' }
+          : undefined
+
+      leaflets.push({
+        capturedAt,
+        id: leafletId(target.retailerId, url),
+        imageUrl,
+        name: `${title || target.retailerName + ' specials'} (${scopeLabel})`,
+        priceScope,
+        retailerId: target.retailerId,
+        retailerName: target.retailerName,
+        url,
+        validFrom: validity.validFrom,
+        validTo: validity.validTo,
+      })
+    }
+  }
+
+  return leaflets
+}
+
+function collectPnpBannerComponents(
+  value: unknown,
+  banners: PnpCmsBanner[],
+  limit: number,
+): void {
+  if (banners.length >= limit || value === null || typeof value !== 'object') {
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectPnpBannerComponents(item, banners, limit)
+    }
+    return
+  }
+
+  const record = value as Record<string, unknown>
+  if (record.typeCode === 'BannerComponent') {
+    banners.push(record as PnpCmsBanner)
+    return
+  }
+  for (const child of Object.values(record)) {
+    collectPnpBannerComponents(child, banners, limit)
+  }
+}
+
+function pnpViewerScopes(content: string): Map<string, string[]> {
+  const viewers = new Map<string, string[]>()
+  const anchorPattern = /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = anchorPattern.exec(content)) !== null) {
+    const url = trustedPnpViewerUrl(match[2].replace(/&amp;/gi, '&'))
+    const label = cleanText(match[3])
+    const normalized = label.toLowerCase().replace(/[^a-z]+/g, ' ').trim()
+    const scope = normalized === 'national' ? 'National' : PNP_PROVINCES[normalized]
+    if (!url || !scope) {
+      continue
+    }
+    const scopes = viewers.get(url) ?? []
+    if (!scopes.includes(scope)) {
+      scopes.push(scope)
+    }
+    viewers.set(url, scopes)
+  }
+
+  return viewers
+}
+
+function trustedPnpViewerUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'pnpcatalogues.hflip.co' ||
+      url.port ||
+      !/^\/[a-z0-9]{6,64}\.html$/i.test(url.pathname)
+    ) {
+      return undefined
+    }
+    url.hash = ''
+    url.search = ''
+    return url.toString()
+  } catch {
+    return undefined
+  }
+}
+
+function pnpValidityDates(content: string, capturedAt: string) {
+  const text = cleanText(content)
+  const match = /\bValid\s+(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{4}))?\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{4}))?/i.exec(text)
+  if (!match) {
+    return {} as { validFrom?: string; validTo?: string }
+  }
+
+  const capturedYear = new Date(capturedAt).getUTCFullYear()
+  const startMonth = monthNumber(match[2])
+  const endMonth = monthNumber(match[5])
+  if (!startMonth || !endMonth || !Number.isFinite(capturedYear)) {
+    return {} as { validFrom?: string; validTo?: string }
+  }
+
+  let startYear = Number(match[3] || match[6] || capturedYear)
+  let endYear = Number(match[6] || match[3] || capturedYear)
+  if (!match[3] && match[6] && startMonth > endMonth) {
+    startYear -= 1
+  } else if (!match[6] && startMonth > endMonth) {
+    endYear += 1
+  }
+
+  return {
+    validFrom: isoCalendarDate(startYear, startMonth, Number(match[1])),
+    validTo: isoCalendarDate(endYear, endMonth, Number(match[4])),
+  }
+}
+
+function monthNumber(value: string): number | undefined {
+  const index = Object.keys(MONTHS).indexOf(value.toLowerCase())
+  return index >= 0 ? index + 1 : undefined
+}
+
+function isoCalendarDate(year: number, month: number, day: number): string | undefined {
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
 export function buildLeafletApiUrl(apiBase: string): string {

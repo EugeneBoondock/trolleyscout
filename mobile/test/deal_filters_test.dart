@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/api_models.dart';
+import 'package:trolley_scout/deal_categories.dart';
 import 'package:trolley_scout/deal_filters.dart';
 
 void main() {
@@ -20,6 +21,15 @@ void main() {
       retailerName: 'Shoprite',
       sourceLabel: 'Weekly specials',
     ),
+    Deal(
+      id: 'three',
+      title: 'Weekly value pack',
+      retailerId: 'local',
+      retailerName: 'Local Market',
+      sourceLabel: 'Food and grocery specials',
+      sourceUrl: 'https://market.test/groceries',
+      evidenceText: 'Weekly value pack',
+    ),
   ];
 
   test('filters deals by text, retailer, source, image, and savings', () {
@@ -33,5 +43,12 @@ void main() {
         filterDeals(deals, imagesOnly: true).map((deal) => deal.id), ['one']);
     expect(
         filterDeals(deals, savingsOnly: true).map((deal) => deal.id), ['one']);
+  });
+
+  test('uses source metadata when a title has no product signal', () {
+    expect(
+      filterDeals(deals, category: DealCategory.food).map((deal) => deal.id),
+      contains('three'),
+    );
   });
 }

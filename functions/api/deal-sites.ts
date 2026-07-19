@@ -1,15 +1,15 @@
 // Public feed of deals from the external deal sites (OneDayOnly, Hyperli,
 // Daddy's Deals, MyRunway). Powers the "Scroll" window-shopping reel and can be
-// mixed into the deals board. Reads the D1 cache, and when the cache is empty or
-// stale it fetches fresh data (inline on a cold cache, in the background
-// otherwise) so a shopper never waits on four upstream sites.
+// mixed into the deals board. Normal requests only read D1. Scheduled scouting
+// and explicit administrator requests are the only upstream refresh owners.
 
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { runDealRefreshWithAlerts } from '../_shared/dealAlertStore'
 import {
-  dealSitesNeedRefresh,
   readDealSiteFeed,
   refreshDealSites,
 } from '../_shared/dealSiteScout'
+import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const publicHeaders = {
@@ -23,7 +23,6 @@ const refreshHeaders = {
 }
 
 const FORCE_REFRESH_BACKOFF_MS = 15_000
-const BACKGROUND_REFRESH_BACKOFF_MS = 5 * 60 * 1000
 const REFRESH_LEASE_MS = 30_000
 
 async function requestDealSiteRefresh(
@@ -36,22 +35,32 @@ async function requestDealSiteRefresh(
   if (!claimed) return
 
   try {
-    await refreshDealSites(env)
+    await runDealRefreshWithAlerts(env, () => refreshDealSites(env))
   } finally {
     await releaseRefreshLease(env, token)
   }
 }
 
-export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method, 'GET')
   }
 
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
+  if (forceLive) {
+    const session = await getMemberSession(env, request)
+    if (session.account?.role !== 'admin') {
+      return json(
+        { message: 'Admin access is required.' },
+        { headers: refreshHeaders, status: 403 },
+      )
+    }
+  }
+
   let feed = await readDealSiteFeed(env)
 
-  // Pull-to-refresh bypasses response caches and waits for the upstream scouts
-  // so the shopper receives the newest available rows in this response.
+  // An administrator refresh bypasses response caches and waits for the
+  // upstream scouts so the response contains the newest stored rows.
   if (forceLive) {
     try {
       await requestDealSiteRefresh(env, FORCE_REFRESH_BACKOFF_MS)
@@ -64,19 +73,6 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       { deals: feed.deals, refreshedAt: feed.refreshedAt, sources: feed.sources },
       { headers: refreshHeaders },
     )
-  }
-
-  // Cold cache: fetch once inline so the first visitor sees deals. A populated
-  // but stale cache is served immediately and refreshed in the background.
-  if (feed.deals.length === 0) {
-    try {
-      await requestDealSiteRefresh(env, FORCE_REFRESH_BACKOFF_MS)
-    } catch {
-      // Fall through with whatever (empty) feed we have.
-    }
-    feed = await readDealSiteFeed(env)
-  } else if (await dealSitesNeedRefresh(env, Date.now())) {
-    waitUntil(requestDealSiteRefresh(env, BACKGROUND_REFRESH_BACKOFF_MS).catch(() => undefined))
   }
 
   return json(
