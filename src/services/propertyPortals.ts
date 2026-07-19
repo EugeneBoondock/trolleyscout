@@ -315,6 +315,97 @@ export function resolvePrivatePropertyLocation(
   return locations.find((l) => normalizeLocationToken(l.name) === token) ?? locations[0]
 }
 
+// ---------------------------------------------------------------------------
+// Live location-id resolvers (pure parsers)
+//
+// Pam Golding, MyRoof and Private Property carry an internal numeric location id
+// in their URLs. Rather than curate a table by hand, we resolve the id live from
+// each portal's own data (autocomplete API / homepage index / shapes sitemap)
+// and cache it. These pure functions parse the fetched payloads; propertyScout
+// orchestrates the fetch + D1 cache. All three: id is required, slug cosmetic.
+// ---------------------------------------------------------------------------
+
+// Pam Golding: webapi.pamgolding.co.za/api/locations/autocomplete-alt?searchTerm=
+// returns an array ranked best-first; each item has {id, path (slug), description}.
+export function parsePamGoldingAutocomplete(
+  payload: unknown,
+  query: string,
+): { id: number; path: string } | undefined {
+  if (!Array.isArray(payload)) return undefined
+  const token = normalizeLocationToken(query)
+  const items = payload.filter(
+    (x): x is Record<string, unknown> => !!x && typeof x === 'object' && typeof (x as any).id === 'number',
+  )
+  const exact = items.find((x) => normalizeLocationToken(String(x.description ?? '')) === token)
+  const pick = exact ?? items[0]
+  if (!pick) return undefined
+  return { id: pick.id as number, path: typeof pick.path === 'string' ? pick.path : slug(query) }
+}
+
+export interface PortalPlace {
+  name: string
+  slug: string
+  id: number
+}
+
+// MyRoof homepage lists place links: /property-for-sale-in-{Slug}-{id}/ . The slug
+// may embed a parent ("Northern-Suburbs-in-Cape-Town"); the place name is the part
+// before the first "-in-".
+export function parseMyroofPlaces(html: string): PortalPlace[] {
+  const out: PortalPlace[] = []
+  const seen = new Set<number>()
+  for (const m of html.matchAll(/property-for-sale-in-([A-Za-z0-9%'\-]+?)-(\d+)\//g)) {
+    const rawSlug = m[1]
+    const id = Number(m[2])
+    if (!Number.isFinite(id) || seen.has(id)) continue
+    seen.add(id)
+    const namePart = rawSlug.split('-in-')[0]
+    let name = namePart
+    try {
+      name = decodeURIComponent(namePart)
+    } catch {
+      // keep raw when the slug isn't valid percent-encoding
+    }
+    out.push({ name: name.replace(/-/g, ' '), slug: rawSlug, id })
+  }
+  return out
+}
+
+// Private Property shapes sitemap: every <loc> is a canonical results URL whose
+// final path segment is the itemId. We keep only city-level (province/city/id)
+// entries so buildPrivatePropertyUrl reproduces the exact path from name+province.
+export function parsePrivatePropertyShapes(xml: string): PrivatePropertyLocation[] {
+  const out: PrivatePropertyLocation[] = []
+  const seen = new Set<number>()
+  for (const m of xml.matchAll(
+    /<loc>https?:\/\/www\.privateproperty\.co\.za\/for-sale\/([a-z0-9-]+)\/([a-z0-9-]+)\/(\d+)<\/loc>/g,
+  )) {
+    const province = m[1]
+    const citySlug = m[2]
+    const id = Number(m[3])
+    if (!Number.isFinite(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name: citySlug.replace(/-/g, ' '), descriptor: province.replace(/-/g, ' ') })
+  }
+  return out
+}
+
+// Shared name matcher for a list of {name} places: exact-normalized first, then
+// the shortest partial (prefers the higher-level location on a tie).
+export function matchPlaceByName<T extends { name: string }>(places: T[], query: string): T | undefined {
+  const token = normalizeLocationToken(query)
+  if (!token) return undefined
+  const exact = places.find((p) => normalizeLocationToken(p.name) === token)
+  if (exact) return exact
+  const partials = places
+    .filter((p) => {
+      const n = normalizeLocationToken(p.name)
+      return n.includes(token) || token.includes(n)
+    })
+    .sort((a, b) => a.name.length - b.name.length)
+  return partials[0]
+}
+
 export function buildPrivatePropertyUrl(
   location: PrivatePropertyLocation,
   listingType: PropertyListingType,

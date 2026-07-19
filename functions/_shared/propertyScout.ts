@@ -16,9 +16,15 @@ import {
   PROPERTY24_AUTOCOMPLETE_URL,
   filterAndSortListings,
   interleaveByPortal,
+  matchPlaceByName,
+  parsePamGoldingAutocomplete,
+  parseMyroofPlaces,
+  parsePrivatePropertyShapes,
   parseProperty24LocationCatalog,
   resolveProperty24Location,
   slug,
+  type PortalPlace,
+  type PrivatePropertyLocation,
   type PropertyFilters,
   type PropertySort,
 } from '../../src/services/propertyPortals'
@@ -205,6 +211,120 @@ async function getProperty24Catalog(env: TrolleyScoutEnv) {
 }
 
 // ---------------------------------------------------------------------------
+// Live location-id resolution (Pam Golding, MyRoof, Private Property)
+//
+// These three portals need an internal numeric location id in their URLs. Rather
+// than curate a table by hand, we resolve the id live from each portal's own data
+// and cache it in D1 — so any location resolves, nothing is hand-populated. The
+// static catalogue still seeds the common cities as a fast path; whatever it
+// lacks is filled here.
+// ---------------------------------------------------------------------------
+
+const PG_AUTOCOMPLETE = 'https://webapi.pamgolding.co.za/api/locations/autocomplete-alt?searchTerm='
+const MYROOF_HOME = 'https://www.myroof.co.za/'
+const PP_SITEMAP = 'https://www.privateproperty.co.za/SiteMap/residential-shapes-0.xml'
+const MYROOF_PLACES_KEY = '__myroof_places__'
+const PP_CITIES_KEY = '__pp_cities__'
+const LOC_STALE_MS = 7 * 24 * 60 * 60 * 1000
+
+// Fetch text direct-first, then via the reader proxy (portals block CF IPs).
+async function fetchResolving(env: TrolleyScoutEnv, url: string, format: 'html' | 'text'): Promise<string | undefined> {
+  const direct = await fetchDirect(url)
+  if (direct && direct.length > 100) return direct
+  return fetchViaReader(url, env.JINA_API_KEY, format)
+}
+
+async function resolvePamGoldingId(env: TrolleyScoutEnv, query: string): Promise<number | undefined> {
+  const q = query.trim()
+  if (q.length < 2) return undefined
+  const key = `pgid:${slug(q)}`
+  const cached = await readCache(env, key)
+  if (isFresh(cached, LOC_STALE_MS, Date.now())) {
+    const p = safeJson(cached!.payload_json) as { id?: number } | undefined
+    if (p && typeof p.id === 'number') return p.id
+  }
+  const url = `${PG_AUTOCOMPLETE}${encodeURIComponent(q)}`
+  let parsed = parsePamGoldingAutocomplete(safeJson(await fetchResolving(env, url, 'text')), q)
+  if (!parsed) parsed = parsePamGoldingAutocomplete(safeJson(await fetchViaReader(url, env.JINA_API_KEY, 'text')), q)
+  if (parsed) {
+    await writeCache(env, key, { id: parsed.id, path: parsed.path }, 1)
+    return parsed.id
+  }
+  if (cached) {
+    const p = safeJson(cached.payload_json) as { id?: number } | undefined
+    if (p && typeof p.id === 'number') return p.id
+  }
+  return undefined
+}
+
+async function getMyroofPlaces(env: TrolleyScoutEnv): Promise<PortalPlace[]> {
+  const cached = await readCache(env, MYROOF_PLACES_KEY)
+  if (isFresh(cached, LOC_STALE_MS, Date.now())) {
+    const p = safeJson(cached!.payload_json)
+    if (Array.isArray(p) && p.length > 0) return p as PortalPlace[]
+  }
+  const html = await fetchResolving(env, MYROOF_HOME, 'html')
+  const places = html ? parseMyroofPlaces(html) : []
+  if (places.length > 0) {
+    await writeCache(env, MYROOF_PLACES_KEY, places, places.length)
+    return places
+  }
+  return cached ? ((safeJson(cached.payload_json) as PortalPlace[]) ?? []) : []
+}
+
+async function getPpCities(env: TrolleyScoutEnv): Promise<PrivatePropertyLocation[]> {
+  const cached = await readCache(env, PP_CITIES_KEY)
+  if (isFresh(cached, LOC_STALE_MS, Date.now())) {
+    const p = safeJson(cached!.payload_json)
+    if (Array.isArray(p) && p.length > 0) return p as PrivatePropertyLocation[]
+  }
+  const xml = await fetchResolving(env, PP_SITEMAP, 'html')
+  const cities = xml ? parsePrivatePropertyShapes(xml) : []
+  if (cities.length > 0) {
+    await writeCache(env, PP_CITIES_KEY, cities, cities.length)
+    return cities
+  }
+  return cached ? ((safeJson(cached.payload_json) as PrivatePropertyLocation[]) ?? []) : []
+}
+
+// Fill any missing portal ids on the resolved location, live and in parallel.
+// Every resolver swallows its own errors so a lookup miss never fails the search.
+async function enrichLocationIds(env: TrolleyScoutEnv, loc: PortalLocationInput): Promise<PortalLocationInput> {
+  const query = loc.name
+  const patches: Array<Promise<Partial<PortalLocationInput>>> = []
+  if (loc.pamgolding === undefined) {
+    patches.push(
+      resolvePamGoldingId(env, query)
+        .then((id) => (id ? { pamgolding: id } : {}))
+        .catch(() => ({})),
+    )
+  }
+  if (!loc.myroof) {
+    patches.push(
+      getMyroofPlaces(env)
+        .then((places) => {
+          const m = matchPlaceByName(places, query)
+          return m ? { myroof: { id: m.id, slug: m.slug } } : {}
+        })
+        .catch(() => ({})),
+    )
+  }
+  if (!loc.pp) {
+    patches.push(
+      getPpCities(env)
+        .then((cities) => {
+          const m = matchPlaceByName(cities, query)
+          return m ? { pp: { id: m.id, name: m.name, descriptor: m.descriptor ?? loc.province } } : {}
+        })
+        .catch(() => ({})),
+    )
+  }
+  if (patches.length === 0) return loc
+  const resolved = await Promise.all(patches)
+  return Object.assign({}, loc, ...resolved)
+}
+
+// ---------------------------------------------------------------------------
 // Per-portal fetch (cached)
 // ---------------------------------------------------------------------------
 
@@ -277,6 +397,10 @@ export async function searchProperties(
       refreshedAt: new Date().toISOString(),
     }
   }
+
+  // Fill any portal ids the static catalogue / P24 fallback didn't provide,
+  // live from each portal's own location data (cached in D1).
+  loc = await enrichLocationIds(env, loc)
 
   const locKey = `${slug(loc.name)}|${slug(loc.province)}`
   const settled = await Promise.allSettled(

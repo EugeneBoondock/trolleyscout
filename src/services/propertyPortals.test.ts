@@ -4,8 +4,12 @@ import {
   buildProperty24Url,
   filterAndSortListings,
   interleaveByPortal,
+  matchPlaceByName,
+  parseMyroofPlaces,
+  parsePamGoldingAutocomplete,
   parsePrivatePropertyListings,
   parsePrivatePropertyLocations,
+  parsePrivatePropertyShapes,
   parseProperty24Listings,
   parseProperty24LocationCatalog,
   parseRandValue,
@@ -218,5 +222,53 @@ describe('interleaveByPortal', () => {
     const p24 = [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }] as PropertyListing[]
     const pp = [{ id: 'q1' }] as PropertyListing[]
     expect(interleaveByPortal([p24, pp]).map((l) => l.id)).toEqual(['p1', 'q1', 'p2', 'p3'])
+  })
+})
+
+describe('live location-id resolvers', () => {
+  it('parses Pam Golding autocomplete, preferring an exact description match', () => {
+    const payload = [
+      { id: 999, path: 'cape-town-suburb', description: 'Some Suburb' },
+      { id: 3080, path: 'cape-town', description: 'Cape Town' },
+    ]
+    expect(parsePamGoldingAutocomplete(payload, 'Cape Town')).toEqual({ id: 3080, path: 'cape-town' })
+    // no exact match -> first (best-ranked) item
+    expect(parsePamGoldingAutocomplete(payload, 'Nowhere')).toEqual({ id: 999, path: 'cape-town-suburb' })
+    expect(parsePamGoldingAutocomplete('not-an-array', 'x')).toBeUndefined()
+    expect(parsePamGoldingAutocomplete([], 'x')).toBeUndefined()
+  })
+
+  it('parses MyRoof homepage place links (name before -in-, id last)', () => {
+    const html = `<a href="/property-for-sale/south-africa/property-for-sale-in-Cape-Town-City-26/">Cape Town City</a>
+      <a href="/property-for-sale-in-Northern-Suburbs-in-Cape-Town-82/">Northern Suburbs</a>
+      <a href="/property-for-sale-in-Cape-Town-City-26/">dup id ignored</a>`
+    const places = parseMyroofPlaces(html)
+    expect(places).toContainEqual({ name: 'Cape Town City', slug: 'Cape-Town-City', id: 26 })
+    expect(places.find((p) => p.id === 82)?.name).toBe('Northern Suburbs')
+    expect(places.filter((p) => p.id === 26)).toHaveLength(1) // de-duped
+  })
+
+  it('parses Private Property shapes sitemap to city-level {id,name,province}', () => {
+    const xml = `<url><loc>https://www.privateproperty.co.za/for-sale/western-cape/cape-town/55</loc></url>
+      <url><loc>https://www.privateproperty.co.za/for-sale/gauteng/sandton/34</loc></url>
+      <url><loc>https://www.privateproperty.co.za/for-sale/western-cape/cape-town/sea-point/900</loc></url>
+      <url><loc>https://www.privateproperty.co.za/to-rent/gauteng/sandton/34</loc></url>`
+    const cities = parsePrivatePropertyShapes(xml)
+    // Only province/city/id (depth-4) sale entries; suburb (depth-5) & to-rent excluded.
+    expect(cities).toEqual([
+      { id: 55, name: 'cape town', descriptor: 'western cape' },
+      { id: 34, name: 'sandton', descriptor: 'gauteng' },
+    ])
+  })
+
+  it('matchPlaceByName prefers exact then shortest partial', () => {
+    const places = [
+      { name: 'Cape Town City Bowl', id: 1 },
+      { name: 'Cape Town', id: 2 },
+      { name: 'Durban', id: 3 },
+    ]
+    expect(matchPlaceByName(places, 'cape town')?.id).toBe(2)
+    expect(matchPlaceByName(places, 'Durban')?.id).toBe(3)
+    expect(matchPlaceByName(places, 'zzz nowhere')).toBeUndefined()
   })
 })
