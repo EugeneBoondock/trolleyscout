@@ -318,6 +318,16 @@ export type PropertyPortalId =
   | 'chaseveritt'
   | 'jawitz'
   | 'immoafrica'
+  | 'wakefields'
+  | 'tysonprop'
+  | 'century21'
+  | 'huizemark'
+  | 'justproperty'
+  | 'lewgeffen'
+  | 'dormehlphalane'
+  | 'fineandcountry'
+  | 'engelvoelkers'
+  | 'roomies'
 
 export interface PropertyListing {
   id: string

@@ -23,15 +23,43 @@ describe('portal adapter registry', () => {
     for (const id of [
       'property24', 'privateproperty', 'gumtree', 'seeff', 'harcourts', 'chaseveritt',
       'jawitz', 'rawson', 'remax', 'immoafrica', 'sahometraders', 'pamgolding', 'myroof',
+      // Wave 1 additions
+      'wakefields', 'tysonprop', 'century21', 'huizemark', 'justproperty', 'lewgeffen',
+      'dormehlphalane', 'fineandcountry', 'engelvoelkers', 'roomies',
     ]) {
       expect(ids).toContain(id)
     }
   })
 
-  it('every adapter can address a fully-populated location', () => {
+  it('every adapter can address a fully-populated location (sale or rent)', () => {
     for (const a of PORTAL_ADAPTERS) {
-      expect(a.buildUrl(CAPE_TOWN, 'sale', 1), a.id).toBeTruthy()
+      const addressable = a.buildUrl(CAPE_TOWN, 'sale', 1) || a.buildUrl(CAPE_TOWN, 'rent', 1)
+      expect(addressable, a.id).toBeTruthy()
     }
+  })
+
+  it('rooms portals are rent-only', () => {
+    const roomies = adapter('roomies')
+    expect(roomies.buildUrl(CAPE_TOWN, 'sale', 1)).toBeUndefined()
+    expect(roomies.buildUrl(CAPE_TOWN, 'rent', 1)).toBe('https://www.roomies.co.za/rooms/cape-town')
+  })
+
+  it('builds Wave 1 slug/agency URLs', () => {
+    expect(adapter('wakefields').buildUrl(CAPE_TOWN, 'rent', 1)).toBe(
+      'https://www.wakefields.co.za/results/residential/to-let/cape-town/',
+    )
+    expect(adapter('dormehlphalane').buildUrl(CAPE_TOWN, 'sale', 1)).toBe(
+      'https://www.dpgprop.co.za/results/residential/for-sale/cape-town/all/',
+    )
+    expect(adapter('justproperty').buildUrl(CAPE_TOWN, 'sale', 1)).toBe(
+      'https://www.just.property/results/residential/for-sale/cape-town/',
+    )
+    expect(adapter('fineandcountry').buildUrl(CAPE_TOWN, 'sale', 1)).toBe(
+      'https://www.fineandcountry.co.za/sales/property-for-sale/cape-town',
+    )
+    expect(adapter('engelvoelkers').buildUrl(CAPE_TOWN, 'rent', 1)).toBe(
+      'https://www.engelvoelkers.com/za/en/properties/res/rent/real-estate/western-cape/cape-town',
+    )
   })
 
   it('builds correct slug/id search URLs', () => {
@@ -127,5 +155,70 @@ describe('RE/MAX parser (JSON-LD graph)', () => {
       bedrooms: 2,
     })
     expect(out[0].imageUrl).toContain('cdn.remax.co.za')
+  })
+})
+
+describe('Roomies parser (JSON-LD, rent-only)', () => {
+  const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Rooms","mainEntity":{"@type":"ItemList","itemListElement":[
+    {"@type":"ListItem","item":{"@type":"Room","name":"Furnished room in a house | Cape Town, Western Cape 7925 | A furnished room in Woodstock.","numberOfBedrooms":3,"numberOfBathroomsTotal":2,"url":"https://www.roomies.co.za/rooms/936625","photo":{"@type":"Photograph","url":"https://cloudinary.roomies.pics/image/upload/x/uj9"},"offers":{"@type":"Offer","price":9000,"priceCurrency":"ZAR"},"address":{"@type":"PostalAddress","addressRegion":"Western Cape"}}}
+  ]}}</script>`
+  it('reads rooms with inline offers and pipe-delimited names', () => {
+    const out = adapter('roomies').parse(html, 'rent')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      id: 'roomies:936625',
+      priceValue: 9000,
+      bedrooms: 3,
+      bathrooms: 2,
+      location: 'Cape Town',
+      listingType: 'rent',
+    })
+    expect(out[0].title).toBe('Furnished room in a house')
+    expect(out[0].priceText).toContain('/mo')
+  })
+  it('returns nothing for sale', () => {
+    expect(adapter('roomies').parse(html, 'sale')).toHaveLength(0)
+  })
+})
+
+describe('Fine & Country parser', () => {
+  it('reads price (ZAR span), beds from slug, and image by id', () => {
+    const html = `<div class="card__content-body"><h4><a href="https://www.fineandcountry.co.za/x/property-sale/3-bedroom-apartment-for-sale-in-cape-town-bantry-bay/4929365" class="property-title-link" data-propertyid="4929365"><span>Bantry Bay, Cape Town</span></a></h4>
+      <div class="card__text"><div class="property-price"><span class="text-gold"><span class="notranslate">ZAR</span>45,000,000</span></div></div>
+      <div class="slide__image" style="background-image: url(https://cdn.members.nurtur.tech/properties/8/972/2941/4929365/IMG_abc_larger.jpg);"></div>`
+    const out = adapter('fineandcountry').parse(html, 'sale')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      id: 'fineandcountry:4929365',
+      priceValue: 45000000,
+      bedrooms: 3,
+      location: 'Bantry Bay, Cape Town',
+    })
+    expect(out[0].imageUrl).toContain('nurtur.tech')
+  })
+})
+
+describe('Engel & Völkers parser (data-testid cards)', () => {
+  it('reads fields preceding the trailing exposes link', () => {
+    const uuid = '444e6fbd-25a8-510a-9b0e-df8df689b250'
+    const html = `<img data-src="https://uploadcare.engelvoelkers.com/aaaaaaaa-1111-2222-3333-444444444444/">
+      <p data-testid="search-components_result-card_location">Kalk Bay, Cape Town, Western Cape, South Africa</p>
+      <h2 data-testid="search-components_result-card_headline">Charming Home in Kalk Bay</h2>
+      <p data-testid="search-components_result-card_price">ZAR 10,950,000</p>
+      <span data-testid="search-components_result-card_attribute_${uuid}-bedrooms">3 Bedrooms</span>
+      <span data-testid="search-components_result-card_attribute_${uuid}-bathrooms">2 Bathrooms</span>
+      <a href="/za/en/exposes/${uuid}">View</a>`
+    const out = adapter('engelvoelkers').parse(html, 'sale')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      id: `engelvoelkers:${uuid}`,
+      priceValue: 10950000,
+      bedrooms: 3,
+      bathrooms: 2,
+      location: 'Kalk Bay, Cape Town',
+      title: 'Charming Home in Kalk Bay',
+      listingUrl: `https://www.engelvoelkers.com/za/en/exposes/${uuid}`,
+    })
+    expect(out[0].imageUrl).toContain('uploadcare.engelvoelkers.com')
   })
 })

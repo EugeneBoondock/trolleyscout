@@ -499,6 +499,156 @@ function parseMyroof(html: string, type: PropertyListingType): PropertyListing[]
 }
 
 // ---------------------------------------------------------------------------
+// Roomies — rooms/flatshares (rentals only), JSON-LD CollectionPage/ItemList
+// ---------------------------------------------------------------------------
+
+function parseRoomies(html: string, type: PropertyListingType): PropertyListing[] {
+  if (type !== 'rent') return [] // Roomies is a rooms-to-rent platform; no sales.
+  const out: PropertyListing[] = []
+  const seen = new Set<string>()
+  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: any
+    try {
+      data = JSON.parse(m[1])
+    } catch {
+      continue
+    }
+    if (!data || data['@type'] !== 'CollectionPage') continue
+    const list = data.mainEntity?.itemListElement
+    if (!Array.isArray(list)) continue
+    for (const el of list) {
+      const it = el?.item ?? el
+      if (!it || typeof it !== 'object') continue
+      const url: string = typeof it.url === 'string' ? it.url : ''
+      if (!url) continue
+      const idm = /\/rooms\/(\d+)/.exec(url)
+      const key = `roomies:${idm ? idm[1] : url}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const offer = it.offers ?? {}
+      const price = typeof offer.price === 'number' ? offer.price : parseRandValue(offer.price)
+      // name is pipe-delimited: "<title> | <City, Region postal> | <description>"
+      const parts = String(it.name ?? '').split('|').map((s) => collapseSpace(s))
+      const title = parts[0] || 'Room to rent'
+      const location = parts[1]
+        ? collapseSpace(parts[1].split(',')[0])
+        : it.address?.addressRegion
+          ? String(it.address.addressRegion)
+          : undefined
+      const photo = it.photo?.url ?? (typeof it.photo === 'string' ? it.photo : undefined)
+      out.push({
+        id: key,
+        portal: 'roomies',
+        portalName: 'Roomies',
+        title,
+        priceText: price ? `R ${price.toLocaleString('en-ZA')}/mo` : undefined,
+        priceValue: price || undefined,
+        location,
+        bedrooms: typeof it.numberOfBedrooms === 'number' ? it.numberOfBedrooms : undefined,
+        bathrooms: typeof it.numberOfBathroomsTotal === 'number' ? it.numberOfBathroomsTotal : undefined,
+        imageUrl: photo ? String(photo) : undefined,
+        listingUrl: url,
+        listingType: 'rent',
+      })
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Fine & Country — <a class="property-title-link" data-propertyid> cards
+// ---------------------------------------------------------------------------
+
+function parseFineAndCountry(html: string, type: PropertyListingType): PropertyListing[] {
+  const out: PropertyListing[] = []
+  const seen = new Set<string>()
+  const re = /href="(https?:\/\/[^"]+)"\s+class="property-title-link"\s+data-propertyid="(\d+)"[^>]*>\s*(?:<span>)?([^<]+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    const href = cleanUrl(m[1])
+    const id = m[2]
+    const key = `fineandcountry:${id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const locationText = collapseSpace(m[3])
+    const win = html.slice(m.index, m.index + 1800)
+    const priceDigits = cap(/ZAR<\/span>\s*([\d,]+)/, win) ?? cap(/ZAR<\/span>\s*([\d,]+)/, win)
+    const slugPart = href.toLowerCase()
+    const beds = cap(/(\d+)-bedroom/, slugPart)
+    const typeWord = cap(/\d+-bedroom-([a-z]+)-(?:for|to)/, slugPart)
+    const img = cap(
+      new RegExp(`(https://cdn\\.members\\.nurtur\\.tech/properties/[^"'\\) ]*/${id}/[^"'\\) ]+\\.(?:jpg|jpeg|png|webp))`, 'i'),
+      html,
+    )
+    const title = beds
+      ? `${beds} Bedroom ${typeWord ? typeWord[0].toUpperCase() + typeWord.slice(1) : 'Property'} ${
+          type === 'rent' ? 'to rent' : 'for sale'
+        } in ${locationText}`
+      : locationText
+    out.push({
+      id: key,
+      portal: 'fineandcountry',
+      portalName: 'Fine & Country',
+      title: collapseSpace(title),
+      priceText: priceDigits ? `R ${priceDigits}` : undefined,
+      priceValue: priceDigits ? parseRandValue(`R${priceDigits}`) : undefined,
+      location: locationText,
+      bedrooms: beds ? Number(beds) : undefined,
+      imageUrl: img,
+      listingUrl: href,
+      listingType: type,
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Engel & Völkers — data-testid cards; each ends with href="/za/en/exposes/{uuid}"
+// ---------------------------------------------------------------------------
+
+function parseEngelVoelkers(html: string, type: PropertyListingType): PropertyListing[] {
+  const out: PropertyListing[] = []
+  const seen = new Set<string>()
+  const marker = /href="\/za\/en\/exposes\/([a-f0-9-]{36})"/g
+  let m: RegExpExecArray | null
+  let prevEnd = 0
+  while ((m = marker.exec(html)) !== null) {
+    const id = m[1]
+    // Card fields (location/headline/price/beds/image) all precede the trailing
+    // exposes link; clip to the previous card's end so we never bleed across.
+    const chunk = html.slice(Math.max(prevEnd, m.index - 4000), m.index + 40)
+    prevEnd = m.index + m[0].length
+    const key = `engelvoelkers:${id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const locationText = collapseSpace(cap(/result-card_location"[^>]*>\s*([^<]+?)\s*</, chunk) ?? '')
+    const title = collapseSpace(
+      cap(/result-card_headline"[^>]*>\s*([^<]+?)\s*</, chunk) ?? locationText.split(',')[0] ?? 'Property',
+    )
+    const priceDigits = cap(/result-card_price"[^>]*>\s*ZAR\s*([\d,]+)/, chunk)
+    const beds = cap(/-bedrooms"[^>]*>\s*(\d+)/, chunk)
+    const baths = cap(/-bathrooms"[^>]*>\s*(\d+)/, chunk)
+    const img = cap(/(https:\/\/uploadcare\.engelvoelkers\.com\/[a-f0-9-]{36}\/)/, chunk)
+    if (!title && !locationText) continue
+    out.push({
+      id: key,
+      portal: 'engelvoelkers',
+      portalName: 'Engel & Völkers',
+      title: title || 'Property',
+      priceText: priceDigits ? `R ${priceDigits}` : undefined,
+      priceValue: priceDigits ? parseRandValue(`R${priceDigits}`) : undefined,
+      location: locationText ? collapseSpace(locationText.split(',').slice(0, 2).join(', ')) : undefined,
+      bedrooms: beds ? Number(beds) : undefined,
+      bathrooms: baths ? Number(baths) : undefined,
+      imageUrl: img ? `${img}-/format/webp/-/resize/800x/` : undefined,
+      listingUrl: `https://www.engelvoelkers.com/za/en/exposes/${id}`,
+      listingType: type,
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Adapters registry
 // ---------------------------------------------------------------------------
 
@@ -624,5 +774,77 @@ export const PORTAL_ADAPTERS: PortalAdapter[] = [
         ? `https://www.myroof.co.za/property-${RESULTS_PREFIX[t]}/south-africa/property-${RESULTS_PREFIX[t]}-in-${l.myroof.slug}-${l.myroof.id}/?search_view=List`
         : undefined,
     parse: parseMyroof,
+  },
+  // --- PropData platform (same markup as Harcourts / Chas Everitt) -----------
+  {
+    id: 'wakefields',
+    label: 'Wakefields',
+    buildUrl: (l, t, p) =>
+      `https://www.wakefields.co.za/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'wakefields', 'https://www.wakefields.co.za'),
+  },
+  {
+    id: 'tysonprop',
+    label: 'Tyson Properties',
+    buildUrl: (l, t, p) =>
+      `https://www.tysonprop.co.za/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'tysonprop', 'https://www.tysonprop.co.za'),
+  },
+  {
+    id: 'century21',
+    label: 'Century 21',
+    buildUrl: (l, t, p) =>
+      `https://www.century21.co.za/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'century21', 'https://www.century21.co.za'),
+  },
+  {
+    id: 'huizemark',
+    label: 'Huizemark',
+    buildUrl: (l, t, p) =>
+      `https://www.huizemark.com/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'huizemark', 'https://www.huizemark.com'),
+  },
+  {
+    id: 'justproperty',
+    label: 'Just Property',
+    buildUrl: (l, t, p) =>
+      `https://www.just.property/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'justproperty', 'https://www.just.property'),
+  },
+  {
+    id: 'lewgeffen',
+    label: "Lew Geffen Sotheby's",
+    buildUrl: (l, t, p) =>
+      `https://www.sothebysrealty.co.za/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/${p > 1 ? `?page=${p}` : ''}`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'lewgeffen', 'https://www.sothebysrealty.co.za'),
+  },
+  {
+    id: 'dormehlphalane',
+    label: 'Dormehl Phalane',
+    buildUrl: (l, t) =>
+      `https://www.dpgprop.co.za/results/residential/${RESULTS_PREFIX_LET[t]}/${slug(l.name)}/all/`,
+    parse: (h, t) => parsePropDataCardSm(h, t, 'dormehlphalane', 'https://www.dpgprop.co.za'),
+  },
+  // --- custom-HTML agency sites ---------------------------------------------
+  {
+    id: 'fineandcountry',
+    label: 'Fine & Country',
+    buildUrl: (l, t, p) =>
+      `https://www.fineandcountry.co.za/${t === 'sale' ? 'sales/property-for-sale' : 'lettings/property-to-rent'}/${slug(l.name)}${p > 1 ? `?page=${p}` : ''}`,
+    parse: parseFineAndCountry,
+  },
+  {
+    id: 'engelvoelkers',
+    label: 'Engel & Völkers',
+    buildUrl: (l, t) =>
+      `https://www.engelvoelkers.com/za/en/properties/res/${t === 'sale' ? 'sale' : 'rent'}/real-estate/${slug(l.province)}/${slug(l.name)}`,
+    parse: parseEngelVoelkers,
+  },
+  // --- rooms / flatshares (rentals only) ------------------------------------
+  {
+    id: 'roomies',
+    label: 'Roomies',
+    buildUrl: (l, t) => (t === 'rent' ? `https://www.roomies.co.za/rooms/${slug(l.name)}` : undefined),
+    parse: parseRoomies,
   },
 ]

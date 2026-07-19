@@ -34,6 +34,16 @@ export const PROPERTY_PORTAL_LABELS: Record<PropertyPortalId, string> = {
   chaseveritt: 'Chas Everitt',
   jawitz: 'Jawitz',
   immoafrica: 'ImmoAfrica',
+  wakefields: 'Wakefields',
+  tysonprop: 'Tyson Properties',
+  century21: 'Century 21',
+  huizemark: 'Huizemark',
+  justproperty: 'Just Property',
+  lewgeffen: "Lew Geffen Sotheby's",
+  dormehlphalane: 'Dormehl Phalane',
+  fineandcountry: 'Fine & Country',
+  engelvoelkers: 'Engel & Völkers',
+  roomies: 'Roomies',
 }
 
 const PROPERTY24_ORIGIN = 'https://www.property24.com'
