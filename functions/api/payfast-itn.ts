@@ -2,6 +2,7 @@ import { hasMemberStore } from '../_shared/memberStore'
 import { resolvePayFastConfig } from '../_shared/payfast'
 import { processPayFastNotification } from '../_shared/payfastNotification'
 import { createPayFastBillingRepository } from '../_shared/payfastStore'
+import { cancelPayFastSubscription } from '../_shared/payfastSubscriptionApi'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
 
@@ -40,7 +41,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     mode: payfast.mode,
     passphrase: payfast.passphrase ?? '',
     payload,
-    repository: createPayFastBillingRepository(env.DB),
+    repository: createPayFastBillingRepository(env.DB, (token) =>
+      cancelPayFastSubscription(token, {
+        merchantId: payfast.merchantId,
+        mode: payfast.mode,
+        passphrase: payfast.passphrase,
+      }),
+    ),
   })
 
   if (!result.received) {

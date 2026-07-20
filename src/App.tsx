@@ -13,6 +13,7 @@ import {
   HandCoins,
   HouseLine,
   Info,
+  Lifebuoy,
   LinkSimple,
   List,
   Lock,
@@ -70,6 +71,7 @@ import {
   loadAdminOverview,
   setMemberPropertiesAccess,
   setMemberPlan,
+  setSupportStatus,
   loadDiscovery,
   loadBasket,
   loadSavedDeals,
@@ -79,6 +81,7 @@ import {
   saveSourceForMember,
   saveDealForMember,
   startMemberSession,
+  cancelScheduledPlanChange,
   startSubscriptionCheckout,
   updateAccountProfile,
   updateBasketItemForMember,
@@ -139,7 +142,9 @@ import {
 import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/storeGroups'
 import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
+import { LegalView } from './views/LegalView'
 import { MoneyHelpView } from './views/MoneyHelpView'
+import { SupportView } from './views/SupportView'
 import { ToolkitView } from './views/ToolkitView'
 import { NearMeView } from './views/NearMeView'
 import { VouchersView } from './views/VouchersView'
@@ -163,6 +168,10 @@ type ActiveView =
   | 'offers'
   | 'scanner'
   | 'rules'
+  | 'support'
+  | 'privacy'
+  | 'terms'
+  | 'cookies'
 type MemberView =
   | 'dashboard'
   | 'near'
@@ -182,6 +191,7 @@ type MemberView =
   | 'profile'
   | 'admin'
   | 'rules'
+  | 'support'
 
 // Logged-out shoppers see a trimmed public nav: Near me, Tools, and Stores are
 // members-only, so they are left out here and gated on direct navigation.
@@ -221,10 +231,14 @@ const VIEW_PATHS: Record<ActiveView, string> = {
   offers: '/offers',
   scanner: '/scanner',
   rules: '/rules',
+  support: '/support',
+  privacy: '/privacy',
+  terms: '/terms',
+  cookies: '/cookies',
 }
 
 const VIEW_TITLES: Record<ActiveView, string> = {
-  home: 'Trolley Scout — grocery deals & money help for South Africa',
+  home: 'Trolley Scout: grocery deals & money help for South Africa',
   discovery: 'Find a deal — this week’s grocery specials | Trolley Scout',
   near: 'Near me — supermarkets and specials around you | Trolley Scout',
   help: 'Money help — SASSA grants, exemptions, free electricity | Trolley Scout',
@@ -235,6 +249,10 @@ const VIEW_TITLES: Record<ActiveView, string> = {
   offers: 'Verified offers | Trolley Scout',
   scanner: 'Offer scanner | Trolley Scout',
   rules: 'Data rules | Trolley Scout',
+  support: 'Support | Trolley Scout',
+  privacy: 'Privacy Policy | Trolley Scout',
+  terms: 'Terms of Use | Trolley Scout',
+  cookies: 'Cookie Policy | Trolley Scout',
 }
 
 function viewFromPath(pathname: string): ActiveView {
@@ -260,6 +278,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <CreditCard size={20} />, label: 'Subscription', value: 'subscription' },
   { icon: <UserCircle size={20} />, label: 'Profile', value: 'profile' },
   { icon: <Info size={20} />, label: 'About & help', value: 'about' },
+  { icon: <Lifebuoy size={20} />, label: 'Support', value: 'support' },
   { icon: <ClipboardText size={20} />, label: 'Rules', value: 'rules' },
 ]
 
@@ -984,6 +1003,17 @@ function App() {
     }
   }
 
+  async function cancelScheduledChange() {
+    setMemberNotice(undefined)
+
+    const result = await cancelScheduledPlanChange()
+    setMemberNotice(result.message)
+
+    if (result.ok) {
+      setSubscriptionState(await loadSubscription())
+    }
+  }
+
   function updateScannerDraft(field: keyof OfferDraft, value: string) {
     setWriteNotice(undefined)
     setScannerDraft((current) => ({
@@ -1155,6 +1185,7 @@ function App() {
         memberState={memberState}
         offerState={offerState}
         onAddToBasket={addSavedDealToBasket}
+        onCancelScheduledChange={cancelScheduledChange}
         onCheckout={requestCheckout}
         onCloseSidebar={() => setIsMemberSidebarOpen(false)}
         onDeleteBasketItem={removeBasketItem}
@@ -1304,6 +1335,22 @@ function App() {
           <AboutView onOpen={(destination: AboutDestination) => setActiveView(destination)} />
         )}
 
+        {activeView === 'support' && (
+          <SupportView
+            defaultEmail={memberSession.account?.email}
+            defaultName={memberSession.account?.displayName}
+          />
+        )}
+        {activeView === 'privacy' && (
+          <LegalView docId="privacy" onOpenSupport={() => setActiveView('support')} />
+        )}
+        {activeView === 'terms' && (
+          <LegalView docId="terms" onOpenSupport={() => setActiveView('support')} />
+        )}
+        {activeView === 'cookies' && (
+          <LegalView docId="cookies" onOpenSupport={() => setActiveView('support')} />
+        )}
+
         {(activeView === 'sources' || activeView === 'discovery' || activeView === 'offers' || activeView === 'scanner') && (
           <RuntimeBanner retailerState={retailerState} offerState={offerState} />
         )}
@@ -1411,6 +1458,28 @@ function App() {
         )}
       </main>
       <footer className="site-foot">
+        <nav className="foot-links" aria-label="Legal and support">
+          {([
+            { label: 'Privacy', view: 'privacy' },
+            { label: 'Terms', view: 'terms' },
+            { label: 'Cookies', view: 'cookies' },
+            { label: 'Support', view: 'support' },
+          ] as Array<{ label: string; view: ActiveView }>).map((link) => (
+            // Real hrefs so the pages are crawlable and shareable; the SPA
+            // handles the click without a full reload.
+            <a
+              className="foot-link"
+              href={VIEW_PATHS[link.view]}
+              key={link.view}
+              onClick={(event) => {
+                event.preventDefault()
+                setActiveView(link.view)
+              }}
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
         <p>
           Trolley Scout is property of{' '}
           <a
@@ -1585,6 +1654,7 @@ function MemberShell({
   offerState,
   onAddToBasket,
   onClaimVoucher,
+  onCancelScheduledChange,
   onCheckout,
   onCloseSidebar,
   onDeleteBasketItem,
@@ -1652,6 +1722,7 @@ function MemberShell({
   offerState: ResourceState<OfferResource>
   onAddToBasket: (savedDealId: string) => void
   onClaimVoucher: (voucherId: string) => void | Promise<void>
+  onCancelScheduledChange: () => void
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
   onCloseSidebar: () => void
   onDeleteBasketItem: (id: string) => void
@@ -1813,6 +1884,10 @@ function MemberShell({
           <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
         )}
 
+        {activeView === 'support' && (
+          <SupportView defaultEmail={account.email} defaultName={account.displayName} />
+        )}
+
         {activeView === 'sources' && (
           <>
             <section className="member-section-head">
@@ -1925,6 +2000,7 @@ function MemberShell({
             account={account}
             checkoutPlanId={checkoutPlanId}
             memberNotice={memberNotice}
+            onCancelScheduledChange={onCancelScheduledChange}
             onCheckout={onCheckout}
             subscriptionState={subscriptionState}
           />
@@ -2486,20 +2562,46 @@ function SavedSourcesPanel({
   )
 }
 
+// Plans are compared on what they cost a member each month so a downgrade is
+// recognised across billing cycles, not just across plan names.
+function monthlyEquivalent(planId: MemberPlanId, cycle: BillingCycle) {
+  const prices = getMemberPlan(planId).prices
+
+  return cycle === 'annual' ? Math.round(prices.annual / 12) : prices.monthly
+}
+
+function formatPlanDate(value: string) {
+  const parsed = new Date(value)
+
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 function SubscriptionPanel({
   account,
   checkoutPlanId,
   memberNotice,
+  onCancelScheduledChange,
   onCheckout,
   subscriptionState,
 }: {
   account: NonNullable<MemberSession['account']>
   checkoutPlanId?: MemberPlanId
   memberNotice?: string
+  onCancelScheduledChange: () => void
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
   subscriptionState: ResourceState<SubscriptionResource>
 }) {
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual')
+  // The subscription payload carries the freshest billing state, including any
+  // queued change, and falls back to the session account while it loads.
+  const billingAccount = subscriptionState.data.account ?? account
+  // Default the toggle to the cycle the member already pays on, so the panel
+  // opens showing what they actually have rather than a price they don't.
+  const planCycle = billingAccount.billingCycle
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(planCycle ?? 'annual')
+  const pendingPlanId = billingAccount.pendingPlanId
+  const pendingEffectiveAt = billingAccount.pendingEffectiveAt
 
   return (
     <section className="subscription-panel" aria-label="Subscription">
@@ -2515,6 +2617,25 @@ function SubscriptionPanel({
         <span className="plan-pill">{subscriptionState.data.billingReady ? 'Billing ready' : 'Billing setup needed'}</span>
       </div>
       {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
+      {pendingPlanId && pendingEffectiveAt && (
+        <div className="plan-scheduled-notice" role="status">
+          <div>
+            <strong>
+              {pendingPlanId === 'free'
+                ? 'Your subscription is cancelled'
+                : `${getMemberPlan(pendingPlanId).name} starts on ${formatPlanDate(pendingEffectiveAt)}`}
+            </strong>
+            <p>
+              {pendingPlanId === 'free'
+                ? `You keep ${billingAccount.planName} until ${formatPlanDate(pendingEffectiveAt)}, and you will not be charged again.`
+                : `You keep ${billingAccount.planName} until then, and nothing is charged today.`}
+            </p>
+          </div>
+          <button className="ghost-button" onClick={onCancelScheduledChange} type="button">
+            Keep {billingAccount.planName}
+          </button>
+        </div>
+      )}
 
       <div className="billing-toggle" role="group" aria-label="Billing cycle">
         <button
@@ -2537,18 +2658,42 @@ function SubscriptionPanel({
 
       <div className="plan-grid">
         {subscriptionState.data.plans.map((plan) => {
-          const isCurrent = plan.id === account.planId
+          const isCurrentPlan = plan.id === billingAccount.planId
+          // A paid plan is only fully "current" when the billing cycle matches
+          // too, so a monthly member browsing annual prices can still act on
+          // their own plan instead of hitting a dead button. A plan granted by
+          // an admin has no subscription and so no cycle to switch away from.
+          const isCurrentCycle = planCycle === undefined || planCycle === billingCycle
+          const isCurrent = isCurrentPlan && (!plan.isPaid || isCurrentCycle)
+          const isCycleSwitch = isCurrentPlan && plan.isPaid && !isCurrentCycle
           const priceCents = plan.prices[billingCycle]
+          const needsBilling = plan.isPaid && !subscriptionState.data.billingReady
+          // Moving to something cheaper is queued for the end of the period the
+          // member already paid for, so the button must not promise a payment.
+          const isDowngrade =
+            monthlyEquivalent(plan.id, billingCycle) <
+            monthlyEquivalent(billingAccount.planId, planCycle ?? billingCycle)
+          const isComingSoon = plan.comingSoon === true
           const buttonText = isCurrent
             ? 'Current plan'
-            : plan.isPaid && !subscriptionState.data.billingReady
+            : isComingSoon
+              ? 'Coming soon'
+              : needsBilling
               ? 'Billing needed'
-              : plan.isPaid
-                ? 'Pay with PayFast'
-                : 'Use free'
+              : isCycleSwitch
+                ? billingCycle === 'annual'
+                  ? 'Switch to annual'
+                  : 'Switch to monthly'
+                : isDowngrade
+                  ? plan.id === 'free'
+                    ? 'Cancel subscription'
+                    : 'Schedule downgrade'
+                  : plan.isPaid
+                    ? 'Pay with PayFast'
+                    : 'Use free'
 
           return (
-            <article className={clsx('plan-card', isCurrent && 'is-current')} key={plan.id}>
+            <article className={clsx('plan-card', isCurrentPlan && 'is-current')} key={plan.id}>
               <span>{plan.badge}</span>
               <h2>{plan.name}</h2>
               <p className="plan-price">
@@ -2562,6 +2707,11 @@ function SubscriptionPanel({
                 )}
               </p>
               <p>{plan.description}</p>
+              {isCycleSwitch && (
+                <p className="plan-switch-note">
+                  {`You pay ${planCycle} on this plan. Switching replaces it from your next payment.`}
+                </p>
+              )}
               <ul>
                 {plan.features.map((feature) => (
                   <li key={feature}>
@@ -2572,7 +2722,7 @@ function SubscriptionPanel({
               </ul>
               <button
                 className={isCurrent ? 'ghost-button' : 'primary-button'}
-                disabled={isCurrent || checkoutPlanId === plan.id || (plan.isPaid && !subscriptionState.data.billingReady)}
+                disabled={isCurrent || isComingSoon || checkoutPlanId === plan.id || needsBilling}
                 onClick={() => onCheckout(plan.id, billingCycle)}
                 type="button"
               >
@@ -2999,13 +3149,38 @@ function AdminConsole() {
     }
   }
 
+  async function onSetSupportStatus(messageId: string, status: 'open' | 'resolved') {
+    setPendingId(messageId)
+    const result = await setSupportStatus(messageId, status)
+    setPendingId(undefined)
+
+    if (result.ok && result.support) {
+      const support = result.support
+      const supportOpenCount = result.supportOpenCount
+      setOverview((current) =>
+        current
+          ? {
+              ...current,
+              support,
+              summary: {
+                ...current.summary,
+                supportOpenCount: supportOpenCount ?? current.summary.supportOpenCount,
+              },
+            }
+          : current,
+      )
+    } else {
+      setMessage(result.message)
+    }
+  }
+
   return (
     <section className="admin-console" aria-label="Admin console">
       <div className="member-section-head">
         <div>
           <p className="eyebrow">Admin</p>
           <h1>Console</h1>
-          <p className="section-lede">Accounts, plans, and scout health.</p>
+          <p className="section-lede">Accounts, plans, support, and scout health.</p>
         </div>
       </div>
 
@@ -3024,6 +3199,11 @@ function AdminConsole() {
               value={`${overview.summary.accountCount}`}
             />
             <Metric icon={<Tag size={22} />} label="Stored deals" value={`${overview.scout.dealCount}`} />
+            <Metric
+              icon={<Lifebuoy size={22} />}
+              label="Open support"
+              value={`${overview.summary.supportOpenCount}`}
+            />
             <Metric
               icon={<Storefront size={22} />}
               label="Leaflets"
@@ -3123,6 +3303,57 @@ function AdminConsole() {
               )
             })}
           </div>
+
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Support</p>
+              <h2>Support messages</h2>
+            </div>
+          </div>
+
+          {overview.support.length === 0 ? (
+            <p className="admin-access-note">No support messages yet.</p>
+          ) : (
+            <div className="admin-support-list">
+              {overview.support.map((msg) => (
+                <article
+                  className={clsx('admin-support-card', msg.status === 'open' && 'is-open')}
+                  key={msg.id}
+                >
+                  <header className="admin-support-head">
+                    <div>
+                      <strong>{msg.name}</strong>
+                      <a href={`mailto:${msg.email}`}>{msg.email}</a>
+                    </div>
+                    <span className="admin-support-topic">{msg.topic}</span>
+                  </header>
+                  <p className="admin-support-message">{msg.message}</p>
+                  <footer className="admin-support-foot">
+                    <span className="admin-support-meta">
+                      {new Date(msg.createdAt).toLocaleString('en-ZA', {
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        month: 'short',
+                      })}
+                      {' · '}
+                      {msg.status === 'open' ? 'Open' : 'Resolved'}
+                    </span>
+                    <button
+                      className={clsx('admin-access-toggle', msg.status === 'resolved' && 'is-on')}
+                      disabled={pendingId === msg.id}
+                      onClick={() =>
+                        onSetSupportStatus(msg.id, msg.status === 'open' ? 'resolved' : 'open')
+                      }
+                      type="button"
+                    >
+                      {msg.status === 'open' ? 'Mark resolved' : 'Reopen'}
+                    </button>
+                  </footer>
+                </article>
+              ))}
+            </div>
+          )}
         </>
       )}
     </section>

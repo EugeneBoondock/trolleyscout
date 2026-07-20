@@ -1,3 +1,10 @@
+# The Organisation tier's own address. Until the merchant tools ship there is
+# no separate console to serve, so it lands on the main site rather than
+# failing to resolve. Host rules must precede the SPA fallback below, and this
+# only takes effect once org.trolleyscout.co.za is attached to the Pages
+# project as a custom domain.
+https://org.trolleyscout.co.za/*    https://trolleyscout.co.za/    302
+
 # SPA fallback: deep links to client-side views (/deals, /near-me, …) serve the
 # app shell with a 200 so they are crawlable and shareable. Pages Functions
 # (/, /api/*, /mcp) and real static files are matched first and are unaffected.

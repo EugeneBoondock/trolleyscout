@@ -1,13 +1,17 @@
-import type { BillingCycle } from '../../src/types'
+import type { BillingCycle, MemberPlanId } from '../../src/types'
 import { confirmPayFastItn, validatePayFastItn } from './payfastBilling'
 import type { PayFastMode } from './payfast'
+
+// Every plan a member can pay for. 'free' never reaches billing: moving to it
+// is a scheduled cancellation, not a payment.
+export type PaidPlanId = Exclude<MemberPlanId, 'free'>
 
 export interface PayFastBillingAttempt {
   accountId: string
   amountCents: number
   billingCycle: BillingCycle
   id: string
-  planId: 'scout' | 'household'
+  planId: PaidPlanId
 }
 
 export interface PayFastBillingRepository {
@@ -24,7 +28,7 @@ export interface PayFastBillingRepository {
     attemptId: string
     billingCycle: BillingCycle
     paymentId: string
-    planId: 'scout' | 'household'
+    planId: PaidPlanId
     token: string
   }): Promise<void>
   findAttempt(attemptId: string): Promise<PayFastBillingAttempt | undefined>

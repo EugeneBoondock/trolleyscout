@@ -255,11 +255,17 @@ export interface OfferValidationResult {
   normalizedOffer?: VerifiedOffer
 }
 
-export type MemberPlanId = 'free' | 'scout' | 'household'
+export type MemberPlanId = 'free' | 'scout' | 'household' | 'organization'
 
 export type BillingCycle = 'monthly' | 'annual'
 
-export type MemberPlanStatus = 'active' | 'billing_not_configured' | 'checkout_required'
+// 'scheduled' means the member asked for a cheaper plan and it is queued for the
+// end of the period they already paid for, rather than taking effect now.
+export type MemberPlanStatus =
+  | 'active'
+  | 'billing_not_configured'
+  | 'checkout_required'
+  | 'scheduled'
 
 export interface MemberPlanLimits {
   savedSources: number
@@ -267,15 +273,27 @@ export interface MemberPlanLimits {
   basketItems: number
 }
 
+// What a business on the Organisation plan may do. Absent on shopper plans,
+// which is what gates the merchant features rather than an id comparison.
+export interface MemberPlanMerchant {
+  includedAdsPerMonth: number
+  livePromos: number
+  shopProfiles: number
+}
+
 export interface MemberPlan {
   id: MemberPlanId
   name: string
   description: string
   badge: string
+  // Announced on the pricing page but not yet open for sign-ups, because the
+  // features it promises are still being built. Nobody can be charged for one.
+  comingSoon?: boolean
   isPaid: boolean
   statusText: string
   features: string[]
   limits: MemberPlanLimits
+  merchant?: MemberPlanMerchant
   prices: {
     annual: number
     monthly: number
@@ -298,6 +316,14 @@ export interface MemberAccount {
   propertiesAccess: boolean
   createdAt: string
   updatedAt: string
+  billingCycle?: BillingCycle
+  // End of the period already paid for, and the downgrade queued to land on it.
+  // Both are absent unless the member has an active paid subscription; the
+  // pending fields are absent unless they have asked to move to a cheaper plan.
+  currentPeriodEnd?: string
+  pendingBillingCycle?: BillingCycle
+  pendingEffectiveAt?: string
+  pendingPlanId?: MemberPlanId
 }
 
 // Properties Scout — a Household-tier tool that finds homes to buy or rent from
@@ -371,6 +397,19 @@ export interface PropertySearchResult {
   refreshedAt?: string
 }
 
+export interface SupportMessage {
+  id: string
+  accountId?: string
+  name: string
+  email: string
+  topic: string
+  message: string
+  status: 'open' | 'resolved'
+  adminNote?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AdminOverview {
   accounts: MemberAccount[]
   scout: {
@@ -382,7 +421,9 @@ export interface AdminOverview {
   summary: {
     accountCount: number
     planCounts: Record<string, number>
+    supportOpenCount: number
   }
+  support: SupportMessage[]
 }
 
 export interface MemberSession {
@@ -464,6 +505,8 @@ export interface SubscriptionCheckoutRequest {
 export interface SubscriptionCheckoutResult {
   billingCycle: BillingCycle
   billingReady: boolean
+  // Set when status is 'scheduled': the date the queued downgrade takes effect.
+  effectiveAt?: string
   engineUrl?: string
   message: string
   onsiteUuid?: string

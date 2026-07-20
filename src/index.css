@@ -1468,6 +1468,36 @@ main {
   font-size: 0.92rem;
 }
 
+/* A queued downgrade. Solid rather than dashed so it reads as a standing state
+   the member can act on, not a transient notice. */
+.plan-scheduled-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.9rem;
+  padding: 0.85rem 1rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.plan-scheduled-notice strong {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.plan-scheduled-notice p {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.plan-scheduled-notice button {
+  flex-shrink: 0;
+}
+
 .loading-strip {
   display: flex;
   gap: 0.6rem;
@@ -4075,6 +4105,16 @@ main {
   font-size: 0.92rem;
 }
 
+/* Explains what pressing "Switch to annual" actually changes, so a member
+   swapping billing cycle knows it replaces their current subscription. */
+.plan-card .plan-switch-note {
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 14%, transparent);
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
 .plan-card ul {
   display: grid;
   gap: 0.4rem;
@@ -4645,6 +4685,200 @@ main {
 
 .site-foot a:hover {
   color: var(--red-bright);
+}
+
+/* Footer legal + support links */
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin-bottom: 12px;
+}
+
+.foot-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: none;
+  padding: 2px 0;
+}
+
+.foot-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* Inline text button that reads as a link, used inside legal copy. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  color: var(--red);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--red-bright);
+}
+
+/* Legal documents: Privacy, Terms, Cookies */
+.legal-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 760px;
+}
+
+.legal-updated {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.legal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.legal-section h2 {
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.legal-section p {
+  margin-bottom: 8px;
+  color: var(--paper-ink);
+  line-height: 1.6;
+}
+
+.legal-contact {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.legal-contact p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Support page */
+.support-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.support-form {
+  max-width: 40rem;
+}
+
+.support-form textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.support-sent {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 40rem;
+  padding: 18px;
+  border: 2px solid var(--green);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.support-sent h2 {
+  margin-bottom: 6px;
+}
+
+.support-sent p {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+/* Admin console: support messages */
+.admin-support-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-support-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.admin-support-card.is-open {
+  border-color: var(--yellow);
+}
+
+.admin-support-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.admin-support-head strong {
+  display: block;
+}
+
+.admin-support-head a {
+  color: var(--red);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.admin-support-topic {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-faint);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-support-message {
+  color: var(--paper-ink);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.admin-support-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-support-meta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 /* ---------------------------------------------------------------------------

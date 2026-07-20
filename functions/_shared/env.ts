@@ -9,7 +9,10 @@ export interface TrolleyScoutEnv {
   PAYFAST_MERCHANT_ID?: string
   PAYFAST_MERCHANT_KEY?: string
   PAYFAST_MODE?: 'sandbox' | 'live'
-  PAYFAST_NOTIFY_URL?: string
+  // Host-only override for PayFast notifications. The path is always chosen by
+  // purpose — see payfastNotifyUrl.ts. Leave unset to notify our own origin,
+  // which is what every deployment wants unless a gateway sits in front.
+  PAYFAST_NOTIFY_ORIGIN?: string
   PAYFAST_PASSPHRASE?: string
   SCOUT_DEBUG?: string
 }

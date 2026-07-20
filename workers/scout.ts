@@ -13,6 +13,15 @@ import { expireDealItems } from '../functions/_shared/dealItemStore'
 import { matchPendingWatches } from '../functions/_shared/dealWatchStore'
 import type { TrolleyScoutEnv } from '../functions/_shared/env'
 import { hasTrolleyScoutDatabase } from '../functions/_shared/env'
+import { resolvePayFastConfig } from '../functions/_shared/payfast'
+import {
+  adjustPayFastSubscription,
+  cancelPayFastSubscription,
+} from '../functions/_shared/payfastSubscriptionApi'
+import {
+  applyDuePlanChanges,
+  type PlanChangeSweepDependencies,
+} from '../functions/_shared/planChangeSweep'
 import { purgeExpired } from '../functions/_shared/locationStore'
 import { readAllStoreCatalogues } from '../functions/_shared/locationStore'
 import { readDueDiscoveredStores } from '../functions/_shared/locationStore'
@@ -38,6 +47,7 @@ type ScoutFetch = (
 ) => Promise<Response>
 
 export interface ScheduledScoutDependencies {
+  applyDuePlanChanges?: typeof applyDuePlanChanges
   expireDealItems: typeof expireDealItems
   matchPendingWatches?: typeof matchPendingWatches
   purgeExpired: typeof purgeExpired
@@ -58,6 +68,7 @@ export interface ScheduledScoutOptions {
 }
 
 const defaultDependencies: ScheduledScoutDependencies = {
+  applyDuePlanChanges,
   expireDealItems,
   matchPendingWatches,
   purgeExpired,
@@ -201,6 +212,25 @@ export async function runScheduledScout(
     }
   }
 
+  // Queued downgrades land here. A member who moved to a cheaper plan keeps
+  // what they paid for until this sweep reaches their effective date.
+  let planChangesApplied = 0
+  let planChangeFailureCount = 0
+  if (hasTrolleyScoutDatabase(env)) {
+    try {
+      const swept = await (dependencies.applyDuePlanChanges ?? applyDuePlanChanges)(
+        env.DB,
+        createPlanChangeDependencies(env),
+        new Date(),
+      )
+      planChangesApplied = swept.applied
+      planChangeFailureCount = swept.failed
+    } catch {
+      // Retried on the next run. Nothing is lost: a change is only cleared once
+      // PayFast confirms it, so a failure here leaves it queued.
+    }
+  }
+
   return {
     catalogueDealCount: catalogue.dealCount,
     catalogueScoutFailed,
@@ -218,6 +248,8 @@ export async function runScheduledScout(
     externalDealCount,
     externalDealRefreshFailed,
     legacyRefreshFailed,
+    planChangeFailureCount,
+    planChangesApplied,
     refreshedDealCount: refreshDealSources ? discovery?.summary.foundDealCount ?? 0 : 0,
     refreshedSourceCount: refreshDealSources ? discovery?.summary.checkedSourceCount ?? 0 : 0,
     scannedDocumentCount: catalogue.scannedDocumentCount,
@@ -232,6 +264,33 @@ export async function runScheduledScout(
     voucherSourceCount,
     voucherWrittenCount,
     watchAlertCount,
+  }
+}
+
+function createPlanChangeDependencies(env: ScoutEnv): PlanChangeSweepDependencies {
+  const payfast = resolvePayFastConfig(env)
+
+  // With no billing keys there is nothing to move at the provider, so both
+  // calls report failure and the change stays queued rather than being applied
+  // locally while the member carries on being charged.
+  if (!payfast) {
+    const issue = 'PayFast billing is not configured.'
+
+    return {
+      adjust: async () => ({ adjusted: false, issue }),
+      cancel: async () => ({ cancelled: false, issue }),
+    }
+  }
+
+  const credentials = {
+    merchantId: payfast.merchantId,
+    mode: payfast.mode,
+    passphrase: payfast.passphrase,
+  }
+
+  return {
+    adjust: (token, amountCents) => adjustPayFastSubscription(token, { amountCents }, credentials),
+    cancel: (token) => cancelPayFastSubscription(token, credentials),
   }
 }
 

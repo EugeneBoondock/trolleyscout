@@ -43,6 +43,7 @@ describe('processPayFastNotification', () => {
       processPayFastNotification({
         fetcher,
         fields: createNotification(),
+        payload: createNotification().toString(),
         merchantId: '10000100',
         mode: 'live',
         passphrase: 'secret phrase',
@@ -67,6 +68,7 @@ describe('processPayFastNotification', () => {
       processPayFastNotification({
         fetcher,
         fields: createNotification(),
+        payload: createNotification().toString(),
         merchantId: '10000100',
         mode: 'live',
         passphrase: 'secret phrase',
@@ -84,6 +86,7 @@ describe('processPayFastNotification', () => {
       processPayFastNotification({
         fetcher,
         fields: createNotification(),
+        payload: createNotification().toString(),
         merchantId: '10000100',
         mode: 'live',
         passphrase: 'secret phrase',

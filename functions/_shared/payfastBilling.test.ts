@@ -121,18 +121,19 @@ describe('payfastBilling', () => {
     ).toEqual({ issue: 'Payment amount does not match.', valid: false })
   })
 
-  it('confirms an ITN against the matching PayFast validation endpoint', async () => {
-    const fields = new URLSearchParams()
-    fields.append('m_payment_id', 'billing-test')
-    fields.append('payment_status', 'COMPLETE')
-    fields.append('signature', 'signature-test')
+  // PayFast validates the notification byte-for-byte, so the raw request body
+  // is echoed back untouched — re-serialising the parsed fields would reorder
+  // or re-encode them and the validation would fail.
+  it('confirms an ITN by echoing the raw payload to the matching endpoint', async () => {
+    const payload =
+      'm_payment_id=billing-test&payment_status=COMPLETE&signature=signature-test'
     const fetcher = vi.fn().mockResolvedValue(new Response('VALID', { status: 200 }))
 
-    await expect(confirmPayFastItn(fields, 'live', fetcher)).resolves.toBe(true)
+    await expect(confirmPayFastItn(payload, 'live', fetcher)).resolves.toBe(true)
     expect(fetcher).toHaveBeenCalledWith(
       'https://www.payfast.co.za/eng/query/validate',
       expect.objectContaining({
-        body: 'm_payment_id=billing-test&payment_status=COMPLETE',
+        body: payload,
         method: 'POST',
       }),
     )

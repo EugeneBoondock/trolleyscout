@@ -73,7 +73,45 @@ export const memberPlans: MemberPlan[] = [
     },
     statusText: 'Checkout required',
   },
+  {
+    badge: 'For businesses',
+    description:
+      'For shops and brands: list your store, post your own specials, and reach shoppers near you.',
+    features: [
+      'Everything in Household, including Properties',
+      'Your own shop profile on Near me',
+      'Publish your specials straight to the deals board',
+      '3 sponsored campaigns included every month',
+    ],
+    // The shop profile and self-published promos are still being built, so the
+    // tier is announced at its real price but cannot be bought yet.
+    comingSoon: true,
+    id: 'organization',
+    isPaid: true,
+    limits: {
+      basketItems: 1000,
+      savedDeals: 1000,
+      savedSources: 1000,
+    },
+    merchant: {
+      includedAdsPerMonth: 3,
+      livePromos: 25,
+      shopProfiles: 1,
+    },
+    name: 'Organisation',
+    prices: {
+      annual: 499000,
+      monthly: 49900,
+    },
+    statusText: 'Coming soon',
+  },
 ]
+
+// Merchant features are gated on the plan carrying an allowance rather than on
+// an id comparison, so a future tier grants them by declaring one.
+export function getPlanMerchantAllowance(planId: MemberPlanId) {
+  return getMemberPlan(planId).merchant
+}
 
 export function getMemberPlan(planId: MemberPlanId) {
   return memberPlans.find((plan) => plan.id === planId) ?? memberPlans[0]

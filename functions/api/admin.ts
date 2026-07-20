@@ -5,7 +5,13 @@ import {
   setMemberPlan,
 } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
+import {
+  countOpenSupportMessages,
+  listSupportMessages,
+  setSupportMessageStatus,
+} from '../_shared/supportStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import type { AdminOverview } from '../../src/types'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -16,6 +22,29 @@ interface AdminActionBody {
   accountId?: string
   granted?: boolean
   planId?: string
+  messageId?: string
+  status?: string
+}
+
+// Support messages live in their own store to avoid a circular import between
+// memberStore and supportStore, so the console overview is assembled here.
+async function buildAdminOverview(env: TrolleyScoutEnv): Promise<AdminOverview | undefined> {
+  const base = await getAdminOverview(env)
+
+  if (!base) {
+    return undefined
+  }
+
+  const [support, supportOpenCount] = await Promise.all([
+    listSupportMessages(env),
+    countOpenSupportMessages(env),
+  ])
+
+  return {
+    ...base,
+    support,
+    summary: { ...base.summary, supportOpenCount },
+  }
 }
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
@@ -56,7 +85,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update access.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await getAdminOverview(env)
+      const overview = await buildAdminOverview(env)
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -75,14 +104,29 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update plan.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await getAdminOverview(env)
+      const overview = await buildAdminOverview(env)
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
+    }
+
+    if (body.action === 'set_support_status') {
+      if (!body.messageId || (body.status !== 'open' && body.status !== 'resolved')) {
+        return json(
+          { message: 'messageId and a status of open or resolved are required.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      const result = await setSupportMessageStatus(env, body.messageId, body.status)
+      if ('issues' in result) {
+        return json({ message: result.issues[0] }, { headers: privateHeaders, status: 400 })
+      }
+      const overview = await buildAdminOverview(env)
+      return json({ ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
     return json({ message: 'Unknown admin action.' }, { headers: privateHeaders, status: 400 })
   }
 
-  const overview = await getAdminOverview(env)
+  const overview = await buildAdminOverview(env)
 
   if (!overview) {
     return json(

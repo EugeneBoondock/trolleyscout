@@ -5,6 +5,7 @@
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberSession } from '../_shared/memberStore'
 import { getPayFastEndpoints, resolvePayFastConfig } from '../_shared/payfast'
+import { resolvePayFastNotifyUrl } from '../_shared/payfastNotifyUrl'
 import { attachAdCheckout, getAd } from '../_shared/adStore'
 import {
   createPayFastAdCheckoutFields,
@@ -70,7 +71,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     itemName: `Trolley Scout ad: ${ad.title}`.slice(0, 100),
     merchantId: payfast.merchantId,
     merchantKey: payfast.merchantKey,
-    notifyUrl: env.PAYFAST_NOTIFY_URL || new URL('/api/payfast-ad-itn', origin).toString(),
+    notifyUrl: resolvePayFastNotifyUrl(env, origin, '/api/payfast-ad-itn'),
     passphrase: payfast.passphrase ?? '',
   })
 

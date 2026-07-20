@@ -13,6 +13,7 @@ import type {
   SavedDealDraft,
   SavedSource,
   SourceKind,
+  SubscriptionCheckoutResult,
 } from '../../src/types'
 import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
 import { computeLineEconomics, parseMultibuy } from '../../src/services/multibuy'
@@ -20,6 +21,8 @@ import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
 import { hashPassword, validatePassword, verifyPassword } from './password'
 import { getPayFastEndpoints, resolvePayFastConfig } from './payfast'
+import { resolvePayFastNotifyUrl } from './payfastNotifyUrl'
+import { classifyPlanChange, resolveEffectiveAt } from './planChanges'
 import {
   createPayFastCheckoutFields,
   requestPayFastOnsitePayment,
@@ -39,6 +42,11 @@ interface MemberAccountRow {
   properties_access?: number | null
   role?: string | null
   updated_at: string
+  billing_cycle?: string | null
+  current_period_end?: string | null
+  pending_billing_cycle?: string | null
+  pending_effective_at?: string | null
+  pending_plan_id?: string | null
 }
 
 // The account owner. Signing up (or logging in) with this address always
@@ -48,18 +56,41 @@ const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
 const ACCOUNT_COLUMNS =
   'id, email, display_name, plan_id, plan_status, role, properties_access, password_hash, created_at, updated_at'
 
+// The billing cycle lives on the subscription rather than the account, so any
+// read that feeds the member UI joins the active subscription to learn whether
+// a paid member is on monthly or annual. A plan granted by an admin has no
+// subscription row and correctly reports no cycle.
+const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, member_accounts.display_name,
+  member_accounts.plan_id, member_accounts.plan_status, member_accounts.role,
+  member_accounts.properties_access,
+  member_accounts.created_at, member_accounts.updated_at,
+  billing_subscriptions.billing_cycle,
+  billing_subscriptions.current_period_end,
+  billing_subscriptions.pending_plan_id,
+  billing_subscriptions.pending_billing_cycle,
+  billing_subscriptions.pending_effective_at`
+
+const ACCOUNT_BILLING_JOIN = `LEFT JOIN billing_subscriptions
+  ON billing_subscriptions.account_id = member_accounts.id
+  AND billing_subscriptions.status = 'active'`
+
+const ACCOUNT_WITH_BILLING_SELECT = `SELECT ${ACCOUNT_BILLING_COLUMNS}
+  FROM member_accounts
+  ${ACCOUNT_BILLING_JOIN}`
+
 export function isAdminEmail(email: string): boolean {
   return ADMIN_EMAILS.has(email.trim().toLowerCase())
 }
 
-// Effective Properties Scout access: the Household plan grants it, admins always
-// have it, and an admin can grant it to any single member (properties_access).
+// Effective Properties Scout access: the Household and Organisation plans grant
+// it, admins always have it, and an admin can grant it to any single member
+// (properties_access).
 export function computePropertiesAccess(
   planId: MemberPlanId,
   role: 'member' | 'admin',
   grant: number | null | undefined,
 ): boolean {
-  return planId === 'household' || role === 'admin' || grant === 1
+  return planId === 'household' || planId === 'organization' || role === 'admin' || grant === 1
 }
 
 interface SavedSourceRow {
@@ -162,12 +193,10 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
   await env.DB.prepare('DELETE FROM member_sessions WHERE expires_at < ?').bind(now).run()
 
   const row = await env.DB.prepare(
-    `SELECT member_accounts.id, member_accounts.email, member_accounts.display_name,
-      member_accounts.plan_id, member_accounts.plan_status, member_accounts.role,
-      member_accounts.properties_access,
-      member_accounts.created_at, member_accounts.updated_at
+    `SELECT ${ACCOUNT_BILLING_COLUMNS}
       FROM member_sessions
       INNER JOIN member_accounts ON member_accounts.id = member_sessions.account_id
+      ${ACCOUNT_BILLING_JOIN}
       WHERE member_sessions.token = ? AND member_sessions.expires_at >= ?`,
   )
     .bind(token, now)
@@ -360,7 +389,9 @@ export async function setMemberPropertiesAccess(
     return { issues: ['Member account was not found.'] }
   }
 
-  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+  const row = await env.DB.prepare(
+    `${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.id = ?`,
+  )
     .bind(accountId)
     .first<MemberAccountRow>()
 
@@ -387,7 +418,9 @@ export async function setMemberPlan(
     return { issues: ['Member account was not found.'] }
   }
 
-  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+  const row = await env.DB.prepare(
+    `${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.id = ?`,
+  )
     .bind(accountId)
     .first<MemberAccountRow>()
 
@@ -944,7 +977,7 @@ export async function startSubscriptionCheckout(
   planId: MemberPlanId,
   billingCycle: BillingCycle,
   preferRedirect = false,
-) {
+): Promise<SubscriptionCheckoutResult> {
   if (!hasMemberStore(env) || !account) {
     return {
       billingCycle,
@@ -956,18 +989,29 @@ export async function startSubscriptionCheckout(
     }
   }
 
-  if (planId === 'free') {
+  // Paying more takes effect now; paying less waits for the period already paid
+  // for to run out. Without that split, moving to a cheaper plan mid-cycle threw
+  // away the rest of a month the member had already handed over money for.
+  const change = classifyPlanChange({
+    currentBillingCycle: account.billingCycle ?? billingCycle,
+    currentPlanId: account.planId,
+    nextBillingCycle: billingCycle,
+    nextPlanId: planId,
+  })
+
+  if (change === 'none') {
     return {
       billingCycle,
       billingReady: true,
-      message:
-        account.planId === 'free'
-          ? 'Free plan is active.'
-          : 'Paid-plan cancellation will be available from subscription settings.',
+      message: `${getMemberPlan(planId).name} is already your plan.`,
       planId,
       provider: 'payfast' as const,
-      status: (account.planId === 'free' ? 'active' : 'checkout_required') as MemberPlanStatus,
+      status: 'active' as MemberPlanStatus,
     }
+  }
+
+  if (change === 'downgrade') {
+    return schedulePlanDowngrade(env, { account, billingCycle, planId })
   }
 
   const billingOption = getPlanBillingOption(planId, billingCycle)
@@ -1013,7 +1057,7 @@ export async function startSubscriptionCheckout(
     cancelUrl: new URL('/Subscription?payfast=cancelled', origin).toString(),
     merchantId: payfast.merchantId,
     merchantKey: payfast.merchantKey,
-    notifyUrl: env.PAYFAST_NOTIFY_URL || new URL('/api/payfast-itn', origin).toString(),
+    notifyUrl: resolvePayFastNotifyUrl(env, origin, '/api/payfast-itn'),
     option: billingOption,
     passphrase: payfast.passphrase ?? '',
     returnUrl: new URL('/Subscription?payfast=success', origin).toString(),
@@ -1073,12 +1117,106 @@ export async function startSubscriptionCheckout(
   }
 }
 
+// A queued downgrade needs a subscription to hang off. When there is none the
+// member is on a plan an admin granted, so no money was taken, there is no paid
+// period to protect, and the change simply applies now.
+async function schedulePlanDowngrade(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  input: {
+    account: MemberAccount
+    billingCycle: BillingCycle
+    planId: MemberPlanId
+  },
+): Promise<SubscriptionCheckoutResult> {
+  const now = new Date()
+  const timestamp = now.toISOString()
+  const subscription = await env.DB.prepare(
+    `SELECT billing_cycle, current_period_end FROM billing_subscriptions
+      WHERE account_id = ? AND provider = 'payfast' AND status = 'active'`,
+  )
+    .bind(input.account.id)
+    .first<{ billing_cycle: string | null; current_period_end: string | null }>()
+
+  if (!subscription) {
+    await env.DB.prepare(
+      `UPDATE member_accounts SET plan_id = ?, plan_status = 'active', updated_at = ?
+        WHERE id = ?`,
+    )
+      .bind(input.planId, timestamp, input.account.id)
+      .run()
+
+    return {
+      billingCycle: input.billingCycle,
+      billingReady: true,
+      message: `You are now on ${getMemberPlan(input.planId).name}.`,
+      planId: input.planId,
+      provider: 'payfast' as const,
+      status: 'active' as MemberPlanStatus,
+    }
+  }
+
+  const effectiveAt = resolveEffectiveAt({
+    billingCycle: subscription.billing_cycle === 'annual' ? 'annual' : 'monthly',
+    currentPeriodEnd: subscription.current_period_end,
+    now,
+  })
+
+  await env.DB.prepare(
+    `UPDATE billing_subscriptions
+      SET pending_plan_id = ?, pending_billing_cycle = ?, pending_effective_at = ?, updated_at = ?
+      WHERE account_id = ? AND provider = 'payfast' AND status = 'active'`,
+  )
+    .bind(input.planId, input.billingCycle, effectiveAt, timestamp, input.account.id)
+    .run()
+
+  const effectiveDate = effectiveAt.slice(0, 10)
+
+  return {
+    billingCycle: input.billingCycle,
+    billingReady: true,
+    effectiveAt,
+    message:
+      input.planId === 'free'
+        ? `Your subscription is cancelled. You keep ${input.account.planName} until ${effectiveDate} and will not be charged again.`
+        : `${getMemberPlan(input.planId).name} starts on ${effectiveDate}. You keep ${input.account.planName} until then, and nothing is charged today.`,
+    planId: input.planId,
+    provider: 'payfast' as const,
+    status: 'scheduled' as MemberPlanStatus,
+  }
+}
+
+// Lets a member change their mind while the change is still queued.
+export async function cancelPendingPlanChange(
+  env: TrolleyScoutEnv,
+  account: MemberAccount | undefined,
+) {
+  if (!hasMemberStore(env) || !account) {
+    return { issues: ['Sign in to manage your plan.'] }
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE billing_subscriptions
+      SET pending_plan_id = NULL, pending_billing_cycle = NULL,
+          pending_effective_at = NULL, updated_at = ?
+      WHERE account_id = ? AND provider = 'payfast' AND pending_plan_id IS NOT NULL`,
+  )
+    .bind(new Date().toISOString(), account.id)
+    .run()
+
+  if (result.meta.changes === 0) {
+    return { issues: ['There is no scheduled plan change to cancel.'] }
+  }
+
+  const row = await env.DB.prepare(`${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.id = ?`)
+    .bind(account.id)
+    .first<MemberAccountRow>()
+
+  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+}
+
 async function getAccountByEmail(env: TrolleyScoutEnv & { DB: D1Database }, email: string) {
   const row = await env.DB.prepare(
-    `SELECT id, email, display_name, plan_id, plan_status, role, properties_access,
-      created_at, updated_at
-      FROM member_accounts
-      WHERE email = ?`,
+    `${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.email = ?`,
   )
     .bind(email)
     .first<MemberAccountRow>()
@@ -1104,6 +1242,17 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
     propertiesAccess: computePropertiesAccess(planId, role, row.properties_access),
     role,
     updatedAt: row.updated_at,
+    billingCycle: normalizeBillingCycle(row.billing_cycle),
+    currentPeriodEnd: row.current_period_end ?? undefined,
+    // A queued downgrade is only meaningful with a date to land on, so an
+    // incomplete pair is reported as no pending change at all.
+    ...(row.pending_plan_id && row.pending_effective_at
+      ? {
+          pendingBillingCycle: normalizeBillingCycle(row.pending_billing_cycle),
+          pendingEffectiveAt: row.pending_effective_at,
+          pendingPlanId: normalizePlanId(row.pending_plan_id),
+        }
+      : {}),
   }
 }
 
@@ -1278,15 +1427,23 @@ function getInitials(displayName: string) {
 }
 
 function normalizePlanId(value: string): MemberPlanId {
-  return value === 'scout' || value === 'household' ? value : 'free'
+  return value === 'scout' || value === 'household' || value === 'organization' ? value : 'free'
 }
 
 function normalizePlanStatus(value: string): MemberPlanStatus {
-  if (value === 'billing_not_configured' || value === 'checkout_required') {
+  if (
+    value === 'billing_not_configured' ||
+    value === 'checkout_required' ||
+    value === 'scheduled'
+  ) {
     return value
   }
 
   return 'active'
+}
+
+function normalizeBillingCycle(value: string | null | undefined): BillingCycle | undefined {
+  return value === 'annual' || value === 'monthly' ? value : undefined
 }
 
 function normalizeRetailerId(value: string): RetailerId {

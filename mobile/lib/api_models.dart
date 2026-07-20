@@ -35,6 +35,9 @@ class MemberAccount {
     required this.propertiesAccess,
     required this.createdAt,
     required this.updatedAt,
+    this.billingCycle,
+    this.pendingPlanId,
+    this.pendingEffectiveAt,
   });
 
   final String id;
@@ -48,8 +51,17 @@ class MemberAccount {
   final bool propertiesAccess;
   final String createdAt;
   final String updatedAt;
+  // The cycle this member is actually billed on. Null for free members and for
+  // plans an admin granted directly, where there is no subscription behind it.
+  final String? billingCycle;
+  // A downgrade the member queued. They keep the plan above until this date,
+  // so the app must show what they still have, not what is coming.
+  final String? pendingPlanId;
+  final String? pendingEffectiveAt;
 
   bool get isAdmin => role == 'admin';
+
+  bool get hasScheduledPlanChange => pendingPlanId != null && pendingEffectiveAt != null;
 
   factory MemberAccount.fromJson(Map<String, dynamic> json) => MemberAccount(
         id: _string(json['id']),
@@ -63,6 +75,11 @@ class MemberAccount {
         propertiesAccess: json['propertiesAccess'] == true,
         createdAt: _string(json['createdAt']),
         updatedAt: _string(json['updatedAt']),
+        billingCycle: json['billingCycle'] == 'monthly' || json['billingCycle'] == 'annual'
+            ? json['billingCycle'] as String
+            : null,
+        pendingPlanId: _optionalString(json['pendingPlanId']),
+        pendingEffectiveAt: _optionalString(json['pendingEffectiveAt']),
       );
 }
 

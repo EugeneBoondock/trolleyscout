@@ -49,6 +49,7 @@ import type {
   SourceKind,
   StoreLeaflet,
   SubscriptionCheckoutRequest,
+  SupportMessage,
   VerifiedOffer,
 } from '../types'
 
@@ -771,6 +772,43 @@ export async function loadSubscription(signal?: AbortSignal): Promise<ResourceSt
   }
 }
 
+// Drops a queued downgrade so the member stays on the plan they already have.
+export async function cancelScheduledPlanChange(
+  signal?: AbortSignal,
+): Promise<{ account?: MemberSession['account']; message: string; ok: boolean }> {
+  try {
+    const response = await fetch('/api/subscription', {
+      headers: {
+        accept: 'application/json',
+      },
+      method: 'DELETE',
+      signal,
+    })
+    const envelope = (await response.json()) as {
+      data?: { account?: MemberSession['account']; issues?: string[] }
+    }
+
+    if (!response.ok) {
+      return {
+        message: envelope.data?.issues?.[0] ?? 'The scheduled change could not be cancelled.',
+        ok: false,
+      }
+    }
+
+    return {
+      account: envelope.data?.account,
+      message: 'Scheduled change cancelled. Your plan carries on as it is.',
+      ok: true,
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+
+    return { message: 'Subscription API unavailable.', ok: false }
+  }
+}
+
 export async function startSubscriptionCheckout(
   draft: SubscriptionCheckoutRequest,
   signal?: AbortSignal,
@@ -1455,6 +1493,60 @@ export async function setMemberPlan(accountId: string, planId: string) {
       accounts: envelope.data?.accounts,
       message: envelope.data?.message ?? (response.ok ? 'Plan updated.' : 'Could not update plan.'),
       ok: response.ok,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
+  }
+}
+
+// Public: raise a support message from the Support page. Signed-in members are
+// linked to their account server-side; signed-out visitors can send too.
+export async function submitSupportMessage(input: {
+  name: string
+  email: string
+  topic: string
+  message: string
+}): Promise<{ ok: boolean; message: string }> {
+  try {
+    const response = await fetch('/api/support', {
+      body: JSON.stringify(input),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as { data?: { message?: string } }
+
+    return {
+      message:
+        envelope.data?.message ??
+        (response.ok ? 'Thanks — your message has reached the team.' : 'Could not send your message.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Support is unavailable right now. Please try again later.', ok: false }
+  }
+}
+
+// Admin-only: mark a support message open or resolved. Returns the refreshed
+// support list so the console can update in place.
+export async function setSupportStatus(
+  messageId: string,
+  status: 'open' | 'resolved',
+): Promise<{ ok: boolean; message: string; support?: SupportMessage[]; supportOpenCount?: number }> {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({ action: 'set_support_status', messageId, status }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { support?: SupportMessage[]; summary?: { supportOpenCount?: number }; message?: string }
+    }
+
+    return {
+      message: envelope.data?.message ?? (response.ok ? 'Support message updated.' : 'Could not update.'),
+      ok: response.ok,
+      support: envelope.data?.support,
+      supportOpenCount: envelope.data?.summary?.supportOpenCount,
     }
   } catch {
     return { message: 'Admin API unavailable.', ok: false }
