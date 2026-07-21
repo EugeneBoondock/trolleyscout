@@ -112,9 +112,53 @@ const LISTING_PREFIX: Record<PropertyListingType, string> = {
   rent: 'to-rent',
 }
 
+// Sanity bounds for room counts. A real home tops out well below these; anything
+// above is a mis-parse (a street number, an area code, a listing id) and is
+// dropped rather than shown. Guesthouses can be large, so the cap is generous.
+const MAX_BEDROOMS = 30
+const MAX_BATHROOMS = 30
+const MAX_GARAGES = 20
+
+// Pulls a bedroom count out of a listing title. Requires "bed"/"bedroom(s)" as a
+// whole word right after the number, so street and suburb names that merely start
+// with "Bed" ("24 Bedfordview Road", "Bedford Gardens") are NOT read as bedrooms.
+// Only 1–2 digit counts are considered, and the result is bounded to a sane range.
 export function bedroomsFromTitle(title: string): number | undefined {
-  const match = /(\d+)\s*bed/i.exec(title)
-  return match ? Number(match[1]) : undefined
+  const match = /(\d{1,2})[\s-]*bed(?:room)?s?\b/i.exec(title)
+  if (!match) return undefined
+  const value = Number(match[1])
+  return value > 0 && value <= MAX_BEDROOMS ? value : undefined
+}
+
+// Rounds and bounds a raw room count. Bedrooms/garages are whole numbers;
+// bathrooms allow half steps (an en-suite counts as 0.5). Anything out of range
+// or non-finite becomes undefined so the card shows nothing rather than nonsense.
+function cleanRoomCount(
+  value: number | undefined,
+  max: number,
+  allowHalf = false,
+): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = allowHalf ? Math.round(value * 2) / 2 : Math.round(value)
+  return rounded > 0 && rounded <= max ? rounded : undefined
+}
+
+// A single normalization pass applied to every listing before it reaches the UI,
+// regardless of which portal parser produced it. This is where the cross-portal
+// "beds/baths are a mess" is fixed once: consistent whole-number bedrooms and
+// garages, half-step bathrooms, and out-of-range values dropped.
+export function normalizePropertyListing(listing: PropertyListing): PropertyListing {
+  const bedrooms = cleanRoomCount(listing.bedrooms, MAX_BEDROOMS)
+  const bathrooms = cleanRoomCount(listing.bathrooms, MAX_BATHROOMS, true)
+  const garages = cleanRoomCount(listing.garages, MAX_GARAGES)
+  if (
+    bedrooms === listing.bedrooms &&
+    bathrooms === listing.bathrooms &&
+    garages === listing.garages
+  ) {
+    return listing
+  }
+  return { ...listing, bedrooms, bathrooms, garages }
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +233,29 @@ export function resolveProperty24Location(
   return contains.sort(
     (a, b) => p24Rank(a.type) - p24Rank(b.type) || a.name.length - b.name.length,
   )[0]
+}
+
+// P24's location tree is suburb → city → province. A suburb's `parentName` is
+// its city, not its province, but several portals (RE/MAX, ImmoAfrica, Engel &
+// Völkers, RealNet) are addressed by province. Climb the catalogue from the match
+// up to the type-5 province node so those portals get the right province slug and
+// actually return listings instead of silently 404-ing.
+export function resolveProperty24Province(
+  catalog: Property24Location[],
+  match: Property24Location,
+): string | undefined {
+  if (match.type === 5) return match.name
+  // P24 normalizes `normalizedName` (no spaces) and `normalizedParentName` (with
+  // spaces) differently, so they can't be compared to each other. Re-normalize
+  // both sides with the same function while climbing suburb → city → province.
+  let parentToken = normalizeLocationToken(match.parentName ?? '')
+  for (let hops = 0; hops < 4 && parentToken; hops += 1) {
+    const parent = catalog.find((l) => normalizeLocationToken(l.name) === parentToken)
+    if (!parent) break
+    if (parent.type === 5) return parent.name
+    parentToken = normalizeLocationToken(parent.parentName ?? '')
+  }
+  return match.parentName
 }
 
 export function buildProperty24Url(

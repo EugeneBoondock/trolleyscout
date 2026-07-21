@@ -1,17 +1,23 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
+  Bathtub,
+  Bed,
   Bookmarks,
   Buildings,
+  Car,
   CaretLeft,
   CaretRight,
   Check,
+  ClockCounterClockwise,
   Heart,
   Lock,
   MagnifyingGlass,
   NavigationArrow,
   ShareNetwork,
+  TrendUp,
 } from '@phosphor-icons/react'
 import { searchProperties } from '../services/apiClient'
+import { ScoutMark } from '../components/ScoutMark'
 import { useSavedProperties } from '../hooks/useSavedProperties'
 import type { MemberAccount, PropertyListing, PropertyListingType } from '../types'
 
@@ -40,6 +46,48 @@ function galleryOf(listing: PropertyListing): string[] {
   return listing.imageUrl ? [listing.imageUrl] : []
 }
 
+// Recent searches power the recognition-over-recall chips on the start screen.
+// On-device only (localStorage), deduped case-insensitively and capped.
+const RECENT_KEY = 'ts_recent_property_searches_v1'
+const RECENT_MAX = 6
+const POPULAR_LOCATIONS = [
+  'Cape Town',
+  'Johannesburg',
+  'Pretoria',
+  'Durban',
+  'Sandton',
+  'Centurion',
+  'Port Elizabeth',
+  'Bloemfontein',
+]
+
+function loadRecentSearches(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string').slice(0, RECENT_MAX)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function saveRecentSearch(query: string): string[] {
+  const trimmed = query.trim()
+  if (trimmed.length < 2) return loadRecentSearches()
+  const lower = trimmed.toLowerCase()
+  const next = [trimmed, ...loadRecentSearches().filter((q) => q.toLowerCase() !== lower)].slice(
+    0,
+    RECENT_MAX,
+  )
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+  } catch {
+    // best-effort; chips just won't persist
+  }
+  return next
+}
+
 export function PropertiesView({ account, onUpgrade }: Props) {
   const [query, setQuery] = useState('')
   const [listingType, setListingType] = useState<PropertyListingType>('sale')
@@ -55,6 +103,10 @@ export function PropertiesView({ account, onUpgrade }: Props) {
   const [locating, setLocating] = useState(false)
   const [view, setView] = useState<ViewMode>('search')
   const [flash, setFlash] = useState('')
+  // Remembers the last search so an error can be retried in one click — near-me
+  // re-runs with the same coordinates, a text search re-reads the field.
+  const [lastCoords, setLastCoords] = useState<{ lat: number; lon: number } | undefined>()
+  const [recent, setRecent] = useState<string[]>(() => loadRecentSearches())
 
   const { saved, savedCount, isSaved, toggle } = useSavedProperties(true)
 
@@ -95,8 +147,8 @@ export function PropertiesView({ account, onUpgrade }: Props) {
     showFlash(wasSaved ? 'Removed from saved' : 'Saved')
   }
 
-  async function doSearch(coords?: { lat: number; lon: number }) {
-    const trimmed = query.trim()
+  async function doSearch(coords?: { lat: number; lon: number }, queryOverride?: string) {
+    const trimmed = (queryOverride ?? query).trim()
     if (!coords && trimmed.length < 2) {
       setMessage('Enter a city, suburb, or area to search.')
       setStatus('error')
@@ -106,6 +158,7 @@ export function PropertiesView({ account, onUpgrade }: Props) {
     setView('search')
     setStatus('loading')
     setMessage('')
+    setLastCoords(coords)
     const outcome = await searchProperties({
       query: coords ? '' : trimmed,
       listingType,
@@ -130,7 +183,15 @@ export function PropertiesView({ account, onUpgrade }: Props) {
     setStatus('ready')
     if (outcome.result.listings.length === 0) {
       setMessage(`No ${listingType === 'rent' ? 'rentals' : 'listings'} found near ${where}.`)
+    } else if (!coords) {
+      // Remember the canonical resolved place for the recognition chips.
+      setRecent(saveRecentSearch(where))
     }
+  }
+
+  function runSuggestion(location: string) {
+    setQuery(location)
+    void doSearch(undefined, location)
   }
 
   function runSearch(event: React.FormEvent) {
@@ -289,8 +350,11 @@ export function PropertiesView({ account, onUpgrade }: Props) {
       )}
 
       {view === 'search' && status === 'error' && (
-        <div className="write-notice" role="status">
-          {message}
+        <div className="properties-error" role="alert">
+          <p>{message}</p>
+          <button type="button" className="properties-submit" onClick={() => void doSearch(lastCoords)}>
+            Try again
+          </button>
         </div>
       )}
 
@@ -337,15 +401,16 @@ export function PropertiesView({ account, onUpgrade }: Props) {
       )}
 
       {view === 'search' && status === 'idle' && (
-        <div className="properties-empty">
-          Search a location above to see homes for sale or to rent.
-        </div>
+        <PropertyStartSuggestions recent={recent} onPick={runSuggestion} />
       )}
 
       {view === 'saved' && savedCount === 0 && (
-        <div className="properties-empty">
-          Tap the heart on any home to save it here — your saved homes follow your account across
-          devices.
+        <div className="properties-empty properties-empty-mascot">
+          <ScoutMark motion="scout" size={56} />
+          <p>
+            No saved homes yet — tap the heart on any home to keep it here. Your saved homes follow
+            your account across devices.
+          </p>
         </div>
       )}
 
@@ -367,11 +432,6 @@ type CardProps = {
 
 function PropertyCard({ listing, saved, onToggleSave, onShare }: CardProps) {
   const images = galleryOf(listing)
-  const facts = [
-    listing.bedrooms ? `${listing.bedrooms} bed` : undefined,
-    listing.bathrooms ? `${listing.bathrooms} bath` : undefined,
-    listing.garages ? `${listing.garages} garage` : undefined,
-  ].filter(Boolean)
 
   return (
     <article className="property-card">
@@ -414,7 +474,7 @@ function PropertyCard({ listing, saved, onToggleSave, onShare }: CardProps) {
           {listing.title}
         </a>
         {listing.location && <p className="property-card-location">{listing.location}</p>}
-        {facts.length > 0 && <p className="property-card-facts">{facts.join(' · ')}</p>}
+        <PropertyFeatures listing={listing} />
         <a
           className="property-card-view"
           href={listing.listingUrl}
@@ -425,6 +485,52 @@ function PropertyCard({ listing, saved, onToggleSave, onShare }: CardProps) {
         </a>
       </div>
     </article>
+  )
+}
+
+type Feature = { key: string; icon: ReactNode; value: number; label: string }
+
+// The bed / bath / garage icon row every property portal (Property24, Private
+// Property, Airbnb, Zillow) shows on a card. Matching that shared convention —
+// Jakob's Law — means shoppers read our cards without relearning anything. Each
+// figure carries a full text label for screen readers; empty facts are omitted.
+function PropertyFeatures({ listing }: { listing: PropertyListing }) {
+  const features: Feature[] = []
+  if (listing.bedrooms != null) {
+    features.push({
+      key: 'bed',
+      icon: <Bed size={16} weight="bold" aria-hidden />,
+      value: listing.bedrooms,
+      label: listing.bedrooms === 1 ? 'bedroom' : 'bedrooms',
+    })
+  }
+  if (listing.bathrooms != null) {
+    features.push({
+      key: 'bath',
+      icon: <Bathtub size={16} weight="bold" aria-hidden />,
+      value: listing.bathrooms,
+      label: listing.bathrooms === 1 ? 'bathroom' : 'bathrooms',
+    })
+  }
+  if (listing.garages != null) {
+    features.push({
+      key: 'garage',
+      icon: <Car size={16} weight="bold" aria-hidden />,
+      value: listing.garages,
+      label: listing.garages === 1 ? 'garage' : 'garages',
+    })
+  }
+  if (features.length === 0) return null
+
+  return (
+    <ul className="property-card-features">
+      {features.map((feature) => (
+        <li key={feature.key} className="property-card-feature">
+          {feature.icon}
+          <span aria-label={`${feature.value} ${feature.label}`}>{feature.value}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -506,6 +612,51 @@ function PropertyGallery({ images, alt }: { images: string[]; alt: string }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// The "start here" state: recent searches first (recognition over recall), then
+// popular metros — somewhere to begin instead of a blank prompt.
+function PropertyStartSuggestions({
+  recent,
+  onPick,
+}: {
+  recent: string[]
+  onPick: (location: string) => void
+}) {
+  return (
+    <div className="properties-start">
+      <p className="properties-start-lede">
+        <Buildings size={18} aria-hidden /> Search any city, suburb or area to see homes for sale or
+        to rent.
+      </p>
+      {recent.length > 0 && (
+        <div className="properties-chip-group">
+          <p className="properties-chip-label">Recent searches</p>
+          <ul className="properties-chips">
+            {recent.map((item) => (
+              <li key={`recent-${item}`}>
+                <button type="button" className="properties-chip" onClick={() => onPick(item)}>
+                  <ClockCounterClockwise size={15} weight="bold" aria-hidden /> {item}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="properties-chip-group">
+        <p className="properties-chip-label">Popular areas</p>
+        <ul className="properties-chips">
+          {POPULAR_LOCATIONS.map((item) => (
+            <li key={`popular-${item}`}>
+              <button type="button" className="properties-chip" onClick={() => onPick(item)}>
+                <TrendUp size={15} weight="bold" aria-hidden /> {item}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

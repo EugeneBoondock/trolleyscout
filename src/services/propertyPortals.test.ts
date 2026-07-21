@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bedroomsFromTitle,
   buildPrivatePropertyUrl,
   buildProperty24Url,
   filterAndSortListings,
   interleaveByPortal,
   matchPlaceByName,
+  normalizePropertyListing,
   parseMyroofPlaces,
   parsePamGoldingAutocomplete,
   parsePrivatePropertyListings,
@@ -15,7 +17,9 @@ import {
   parseRandValue,
   resolvePrivatePropertyLocation,
   resolveProperty24Location,
+  resolveProperty24Province,
 } from './propertyPortals'
+import type { Property24Location } from './propertyPortals'
 import type { PropertyListing } from '../types'
 
 // A trimmed slice of the real /autocomplete/propertiesgrouped payload.
@@ -270,5 +274,70 @@ describe('live location-id resolvers', () => {
     expect(matchPlaceByName(places, 'cape town')?.id).toBe(2)
     expect(matchPlaceByName(places, 'Durban')?.id).toBe(3)
     expect(matchPlaceByName(places, 'zzz nowhere')).toBeUndefined()
+  })
+})
+
+describe('bedroomsFromTitle', () => {
+  it('reads a genuine bedroom count', () => {
+    expect(bedroomsFromTitle('3 Bedroom House for sale in Claremont')).toBe(3)
+    expect(bedroomsFromTitle('2 bed apartment')).toBe(2)
+    expect(bedroomsFromTitle('4-bedroom home')).toBe(4)
+    expect(bedroomsFromTitle('Studio, 1 Bed')).toBe(1)
+  })
+  it('does not read a street/suburb name that merely starts with "Bed"', () => {
+    // The classic false positive: a numbered address on a "Bed…" road.
+    expect(bedroomsFromTitle('24 Bedfordview Road, Bedfordview')).toBeUndefined()
+    expect(bedroomsFromTitle('House in Bedford Gardens')).toBeUndefined()
+  })
+  it('drops implausible counts (mis-parsed numbers)', () => {
+    expect(bedroomsFromTitle('99 bedroom mansion')).toBeUndefined() // > cap
+    expect(bedroomsFromTitle('0 bedroom')).toBeUndefined()
+  })
+})
+
+describe('normalizePropertyListing', () => {
+  const base: PropertyListing = {
+    id: 'x',
+    portal: 'property24',
+    portalName: 'Property24',
+    title: 'Home',
+    listingUrl: 'https://x',
+    listingType: 'sale',
+  }
+  it('rounds bedrooms/garages to whole numbers and keeps half bathrooms', () => {
+    const out = normalizePropertyListing({ ...base, bedrooms: 3.2, bathrooms: 2.5, garages: 1.6 })
+    expect(out.bedrooms).toBe(3)
+    expect(out.bathrooms).toBe(2.5)
+    expect(out.garages).toBe(2)
+  })
+  it('drops out-of-range and non-finite counts', () => {
+    const out = normalizePropertyListing({ ...base, bedrooms: 250, bathrooms: 0, garages: Number.NaN })
+    expect(out.bedrooms).toBeUndefined()
+    expect(out.bathrooms).toBeUndefined()
+    expect(out.garages).toBeUndefined()
+  })
+  it('returns the same object when nothing needs cleaning', () => {
+    const clean = { ...base, bedrooms: 3, bathrooms: 2 }
+    expect(normalizePropertyListing(clean)).toBe(clean)
+  })
+})
+
+describe('resolveProperty24Province', () => {
+  const catalog: Property24Location[] = [
+    { id: 9, name: 'Gauteng', type: 5, normalizedName: 'gauteng' },
+    { id: 12, name: 'Kempton Park', parentName: 'Gauteng', type: 2, normalizedName: 'kemptonpark', normalizedParentName: 'gauteng' },
+    { id: 500, name: 'Edenvale', parentName: 'Kempton Park', type: 1, normalizedName: 'edenvale', normalizedParentName: 'kempton park' },
+  ]
+  it('climbs suburb → city → province', () => {
+    const suburb = catalog.find((l) => l.id === 500)!
+    expect(resolveProperty24Province(catalog, suburb)).toBe('Gauteng')
+  })
+  it('returns a city\'s own province directly', () => {
+    const city = catalog.find((l) => l.id === 12)!
+    expect(resolveProperty24Province(catalog, city)).toBe('Gauteng')
+  })
+  it('returns a province node as itself', () => {
+    const province = catalog.find((l) => l.id === 9)!
+    expect(resolveProperty24Province(catalog, province)).toBe('Gauteng')
   })
 })

@@ -37,6 +37,9 @@ describe('PropertiesView saved homes', () => {
 
     expect(screen.getByText('1 saved home')).toBeTruthy()
     expect(screen.getByText('3 Bed House in Claremont')).toBeTruthy()
+    // Jakob's Law feature row: bed/bath figures each carry a screen-reader label.
+    expect(screen.getByLabelText('3 bedrooms')).toBeTruthy()
+    expect(screen.getByLabelText('2 bathrooms')).toBeTruthy()
     // Gallery renders one <img> per image, plus a photo counter.
     expect(screen.getAllByRole('img')).toHaveLength(3)
     expect(screen.getByText('1/3')).toBeTruthy()

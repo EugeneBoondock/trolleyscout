@@ -17,27 +17,27 @@ import {
   filterAndSortListings,
   interleaveByPortal,
   matchPlaceByName,
+  normalizePropertyListing,
   parsePamGoldingAutocomplete,
   parseMyroofPlaces,
   parsePrivatePropertyShapes,
   parseProperty24LocationCatalog,
   resolveProperty24Location,
+  resolveProperty24Province,
   slug,
   type PortalPlace,
   type PrivatePropertyLocation,
+  type Property24Location,
   type PropertyFilters,
   type PropertySort,
 } from '../../src/services/propertyPortals'
+import { reverseGeocodePlace } from './reverseGeocode'
 import {
   PORTAL_ADAPTERS,
   type PortalAdapter,
   type PortalLocationInput,
 } from '../../src/services/propertyAdapters'
-import {
-  nearestSaLocation,
-  resolveSaLocation,
-  type SaPropertyLocation,
-} from '../../src/services/saPropertyLocations'
+import { nearestSaLocation, resolveSaLocation } from '../../src/services/saPropertyLocations'
 import type {
   PropertyListing,
   PropertyListingType,
@@ -356,6 +356,64 @@ async function fetchPortalListings(
 // Public entry point
 // ---------------------------------------------------------------------------
 
+// Build a portal-agnostic location from a Property24 catalogue match, deriving
+// the real province (climbing suburb → city → province) unless the caller already
+// knows it (e.g. from the reverse geocode). Without this a suburb's province is
+// its parent city, which breaks the province-addressed portals.
+function locFromP24Match(
+  catalog: Property24Location[],
+  match: Property24Location,
+  provinceHint?: string,
+): PortalLocationInput {
+  const province = provinceHint || resolveProperty24Province(catalog, match) || match.parentName || ''
+  return {
+    name: match.name,
+    province,
+    p24: { id: match.id, type: match.type, name: match.name, parent: match.parentName ?? '' },
+  }
+}
+
+// Text search: the static catalogue first (fast, and the metros carry every
+// portal id), then the full Property24 catalogue for long-tail suburbs.
+async function resolveByText(
+  env: TrolleyScoutEnv,
+  query: string,
+): Promise<{ loc: PortalLocationInput; locationName: string } | undefined> {
+  const trimmed = query.trim()
+  if (trimmed.length < 2) return undefined
+  const staticLoc = resolveSaLocation(trimmed)
+  if (staticLoc) return { loc: staticLoc, locationName: staticLoc.name }
+  const catalog = await getProperty24Catalog(env)
+  const match = resolveProperty24Location(catalog, trimmed)
+  return match ? { loc: locFromP24Match(catalog, match), locationName: match.name } : undefined
+}
+
+// Near me: reverse-geocode the coordinates to the real town/suburb and resolve
+// THAT against the catalogues, so a shopper in Edenvale gets Edenvale — not the
+// nearest hard-coded metro (which used to surface Kempton Park). Only when the
+// reverse lookup is unavailable or unresolvable do we fall back to the nearest
+// catalogue city, preserving the previous behaviour as a safety net.
+async function resolveNearMe(
+  env: TrolleyScoutEnv,
+  lat: number,
+  lon: number,
+): Promise<{ loc: PortalLocationInput; locationName: string } | undefined> {
+  const place = await reverseGeocodePlace(env, lat, lon)
+  if (place) {
+    for (const name of place.names) {
+      const staticLoc = resolveSaLocation(name)
+      if (staticLoc) return { loc: staticLoc, locationName: staticLoc.name }
+    }
+    const catalog = await getProperty24Catalog(env)
+    for (const name of place.names) {
+      const match = resolveProperty24Location(catalog, name)
+      if (match) return { loc: locFromP24Match(catalog, match, place.province), locationName: match.name }
+    }
+  }
+  const nearest = nearestSaLocation(lat, lon)
+  return nearest ? { loc: nearest, locationName: nearest.name } : undefined
+}
+
 export async function searchProperties(
   env: TrolleyScoutEnv,
   params: PropertySearchParams,
@@ -363,31 +421,11 @@ export async function searchProperties(
   const page = Math.max(1, Math.min(params.page ?? 1, 5))
   const nearMe = params.lat !== undefined && params.lon !== undefined
 
-  // Resolve the location to a portal-agnostic input.
-  const staticLoc: SaPropertyLocation | undefined = nearMe
-    ? nearestSaLocation(params.lat!, params.lon!)
-    : resolveSaLocation(params.query)
+  const resolved = nearMe
+    ? await resolveNearMe(env, params.lat!, params.lon!)
+    : await resolveByText(env, params.query)
 
-  let loc: PortalLocationInput | undefined = staticLoc
-  let locationName = staticLoc?.name ?? params.query
-
-  // Long-tail text: resolve against the full Property24 catalogue. This gives
-  // Property24 + SA Home Traders addressing (both use the P24 taxonomy) even for
-  // suburbs not in the static catalogue.
-  if (!loc && !nearMe && params.query.trim().length >= 2) {
-    const catalog = await getProperty24Catalog(env)
-    const match = resolveProperty24Location(catalog, params.query)
-    if (match) {
-      loc = {
-        name: match.name,
-        province: match.parentName ?? '',
-        p24: { id: match.id, type: match.type, name: match.name, parent: match.parentName ?? '' },
-      }
-      locationName = match.name
-    }
-  }
-
-  if (!loc) {
+  if (!resolved) {
     return {
       listings: [],
       sources: PORTAL_ADAPTERS.map((a) => ({ id: a.id, label: a.label, count: 0, ok: false })),
@@ -397,6 +435,9 @@ export async function searchProperties(
       refreshedAt: new Date().toISOString(),
     }
   }
+
+  let loc: PortalLocationInput = resolved.loc
+  const locationName = resolved.locationName
 
   // Fill any portal ids the static catalogue / P24 fallback didn't provide,
   // live from each portal's own location data (cached in D1).
@@ -418,7 +459,11 @@ export async function searchProperties(
   for (let i = 0; i < settled.length; i += 1) {
     const adapter = PORTAL_ADAPTERS[i]
     const value = settled[i].status === 'fulfilled' ? (settled[i] as PromiseFulfilledResult<any>).value : undefined
-    const listings: PropertyListing[] = value?.listings ?? []
+    // Normalize beds/baths/garages once, for every portal, before they feed the
+    // bed filter, the sort, and the UI — so the counts are consistent no matter
+    // which parser produced them (and cached-but-pre-normalization rows are fixed
+    // on read too).
+    const listings: PropertyListing[] = (value?.listings ?? []).map(normalizePropertyListing)
     grouped.push(listings)
     sources.push({ id: adapter.id, label: adapter.label, count: listings.length, ok: value?.ok ?? false })
   }

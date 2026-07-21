@@ -4,8 +4,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
+import '../recent_searches_store.dart';
 import '../saved_properties_store.dart';
 import '../theme.dart';
+import '../ux.dart';
+import '../widgets/common.dart';
+import '../widgets/scout_mark.dart';
+import '../widgets/skeleton.dart';
 
 /// Properties Scout — a Household-tier tool that searches the SA property
 /// portals (Property24, Private Property) for homes to buy or rent. Everyone
@@ -36,6 +41,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   final _minPriceController = TextEditingController();
   final _maxPriceController = TextEditingController();
   final _store = SavedPropertiesStore();
+  final _recentStore = RecentPropertySearchesStore();
+  List<String> _recent = const [];
 
   String _listingType = 'sale';
   int? _minBeds;
@@ -49,6 +56,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   bool _locating = false;
   bool _searched = false;
   bool _filtersExpanded = true;
+  bool _lastWasNearMe = false;
   String? _error;
   String? _resultLocation;
 
@@ -56,6 +64,19 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   void initState() {
     super.initState();
     _loadSaved();
+    _loadRecent();
+  }
+
+  Future<void> _loadRecent() async {
+    final items = await _recentStore.load();
+    if (!mounted) return;
+    setState(() => _recent = items);
+  }
+
+  /// Runs a search for a tapped suggestion chip — fills the field and searches.
+  void _runSuggestion(String query) {
+    _searchController.text = query;
+    _search();
   }
 
   Future<void> _loadSaved() async {
@@ -70,7 +91,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Future<void> _toggleSave(PropertyListing listing) async {
     final key = SavedPropertiesStore.keyOf(listing);
     final wasSaved = _savedKeys.contains(key);
-    HapticFeedback.selectionClick();
+    uxTap();
     final items = await _store.toggle(listing);
     if (!mounted) return;
     setState(() {
@@ -112,12 +133,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Future<void> _search({double? lat, double? lon}) async {
     final query = _searchController.text.trim();
     final hasCoords = lat != null && lon != null;
+    _lastWasNearMe = hasCoords;
     if (!hasCoords && query.length < 2) {
       setState(() => _error = 'Enter a city, suburb, or area to search.');
       return;
     }
     FocusScope.of(context).unfocus();
-    HapticFeedback.selectionClick();
+    uxTap();
     setState(() {
       _loading = true;
       _error = null;
@@ -134,6 +156,17 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         sort: _sort,
       );
       if (!mounted) return;
+      if (result.listings.isNotEmpty) uxSuccess();
+      // Remember successful searches for the recognition-over-recall chips. Save
+      // the canonical resolved place (e.g. "Edenvale") so re-tapping it re-resolves.
+      if (!hasCoords && result.listings.isNotEmpty) {
+        final label = result.locationText?.trim().isNotEmpty == true
+            ? result.locationText!.trim()
+            : query;
+        _recentStore.add(label).then((items) {
+          if (mounted) setState(() => _recent = items);
+        });
+      }
       setState(() {
         _listings = result.listings;
         _resultLocation = result.locationText;
@@ -152,6 +185,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         _loading = false;
         _error = 'Properties Scout is unavailable right now. Try again.';
       });
+    }
+  }
+
+  /// Re-runs whatever the shopper last tried — near-me re-reads the location,
+  /// a text search re-reads the field — so an error is one tap from recovery.
+  void _retryLast() {
+    if (_lastWasNearMe) {
+      _nearMe();
+    } else {
+      _search();
     }
   }
 
@@ -196,7 +239,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     // Uri.parse('') succeeds as a scheme-less URI, so guard on scheme too.
     final uri = Uri.tryParse(listing.listingUrl);
     if (uri == null || !uri.hasScheme) return;
-    HapticFeedback.selectionClick();
+    uxTap();
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
@@ -278,8 +321,9 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   Widget _buildSaved() {
     if (_saved.isEmpty) {
       return const _Message(
+        mascot: true,
         icon: Icons.favorite_border,
-        text: 'Tap the heart on any home to save it here. '
+        text: 'No saved homes yet — tap the heart on any home to keep it here. '
             'Your saved homes follow your account across devices.',
       );
     }
@@ -311,15 +355,22 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      // Property-shaped skeletons keep the layout stable and read as
+      // "photos are seconds away", never a dead spinner.
+      return const SkeletonPane(rows: 3, rowHeight: 260, media: true);
     }
     if (_error != null) {
-      return _Message(icon: Icons.error_outline, text: _error!);
+      // Errors always offer a way forward (retry the last search), never a
+      // dead end. _retryLast re-runs near-me or the text search as appropriate.
+      return ErrorPane(message: _error!, onRetry: _retryLast);
     }
     if (!_searched) {
-      return const _Message(
-        icon: Icons.apartment_outlined,
-        text: 'Search a location above to see homes for sale or to rent.',
+      // A place to start, not a blank page: recent searches (recognition over
+      // recall) plus a few popular metros to tap.
+      return _StartSuggestions(
+        recent: _recent,
+        popular: kPopularPropertyLocations,
+        onPick: _runSuggestion,
       );
     }
     if (_listings.isEmpty) {
@@ -650,15 +701,11 @@ class _PropertyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final facts = <String>[
-      if (listing.bedrooms != null) '${listing.bedrooms} bed',
-      if (listing.bathrooms != null) '${_trim(listing.bathrooms!)} bath',
-      if (listing.garages != null) '${listing.garages} garage',
-    ];
     final isRent = listing.listingType == 'rent';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
+      child: PressableScale(
+        child: InkWell(
         onTap: () => onOpen(listing),
         child: Container(
           decoration: TS.card(context),
@@ -761,14 +808,7 @@ class _PropertyCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: TS.mutedOf(context))),
                     ],
-                    if (facts.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(facts.join(' · '),
-                          style: TextStyle(
-                              color: TS.faintOf(context),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13)),
-                    ],
+                    _FeatureRow(listing: listing),
                   ],
                 ),
               ),
@@ -776,10 +816,61 @@ class _PropertyCard extends StatelessWidget {
           ),
         ),
       ),
+      ),
+    );
+  }
+}
+
+/// The bed / bath / garage icon row that every property portal (Property24,
+/// Private Property, Airbnb) shows on a card. Matching that shared convention —
+/// Jakob's Law — lets shoppers read our cards at a glance without relearning a
+/// bespoke layout. Missing figures are omitted; each carries a screen-reader
+/// label. Bathrooms may be a half (an en-suite), so they are trimmed, not floored.
+class _FeatureRow extends StatelessWidget {
+  const _FeatureRow({required this.listing});
+
+  final PropertyListing listing;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <Widget>[
+      if (listing.bedrooms != null)
+        _feature(context, Icons.bed_outlined, '${listing.bedrooms}',
+            listing.bedrooms == 1 ? 'bedroom' : 'bedrooms'),
+      if (listing.bathrooms != null)
+        _feature(context, Icons.bathtub_outlined, _trimCount(listing.bathrooms!),
+            listing.bathrooms == 1 ? 'bathroom' : 'bathrooms'),
+      if (listing.garages != null)
+        _feature(context, Icons.garage_outlined, '${listing.garages}',
+            listing.garages == 1 ? 'garage' : 'garages'),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(spacing: 14, runSpacing: 4, children: items),
     );
   }
 
-  static String _trim(num value) =>
+  Widget _feature(
+      BuildContext context, IconData icon, String value, String semantic) {
+    return Semantics(
+      label: '$value $semantic',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: TS.faintOf(context)),
+          const SizedBox(width: 4),
+          Text(value,
+              style: TextStyle(
+                  color: TS.mutedOf(context),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  static String _trimCount(num value) =>
       value == value.roundToDouble() ? '${value.toInt()}' : '$value';
 }
 
@@ -1080,11 +1171,93 @@ class _GateCard extends StatelessWidget {
   }
 }
 
+/// The "start here" state for Properties Scout: recent searches first (tap to
+/// re-run — recognition over recall), then a few popular metros. Somewhere to
+/// begin instead of a blank page.
+class _StartSuggestions extends StatelessWidget {
+  const _StartSuggestions({
+    required this.recent,
+    required this.popular,
+    required this.onPick,
+  });
+
+  final List<String> recent;
+  final List<String> popular;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.apartment_outlined,
+                  size: 20, color: TS.faintOf(context)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Search any city, suburb or area to see homes for sale or to rent.',
+                  style: TextStyle(color: TS.mutedOf(context)),
+                ),
+              ),
+            ],
+          ),
+          if (recent.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            _label(context, 'Recent searches'),
+            const SizedBox(height: 8),
+            _chips(context, recent, Icons.history),
+          ],
+          const SizedBox(height: 22),
+          _label(context, 'Popular areas'),
+          const SizedBox(height: 8),
+          _chips(context, popular, Icons.trending_up),
+        ],
+      ),
+    );
+  }
+
+  Widget _label(BuildContext context, String text) => Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          color: TS.faintOf(context),
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          letterSpacing: 0.4,
+        ),
+      );
+
+  Widget _chips(BuildContext context, List<String> items, IconData icon) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final item in items)
+          ActionChip(
+            avatar: Icon(icon, size: 16, color: TS.inkOf(context)),
+            label: Text(item),
+            onPressed: () => onPick(item),
+            side: BorderSide(color: TS.lineOf(context), width: 1.5),
+            shape: const RoundedRectangleBorder(),
+          ),
+      ],
+    );
+  }
+}
+
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text});
+  const _Message({required this.icon, required this.text, this.mascot = false});
 
   final IconData icon;
   final String text;
+
+  /// When true, the friendly Scout mark greets the shopper instead of a flat
+  /// icon — a little personality for the moments they'll see most (Video 8).
+  final bool mascot;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,7 +1267,10 @@ class _Message extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 44, color: TS.faintOf(context)),
+            if (mascot)
+              const AnimatedScoutMark(motion: ScoutMarkMotion.scout, size: 60)
+            else
+              Icon(icon, size: 44, color: TS.faintOf(context)),
             const SizedBox(height: 12),
             Text(text,
                 textAlign: TextAlign.center,
