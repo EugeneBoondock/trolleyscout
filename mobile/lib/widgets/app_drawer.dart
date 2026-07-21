@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../theme.dart';
+import 'scout_avatar_view.dart';
 
 enum AppDestination {
   home('Home', Icons.home_outlined, false),
@@ -91,15 +92,34 @@ class AppMenuDrawer extends StatelessWidget {
                           child: Text('TROLLEY SCOUT', style: TS.display)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    account == null
-                        ? 'Stretch every rand.'
-                        : account.displayName,
-                    style: TextStyle(color: TS.mutedOf(context)),
-                  ),
-                  if (account != null)
-                    Text(account.planName, style: TS.eyebrowOf(context)),
+                  const SizedBox(height: 12),
+                  if (account == null)
+                    Text(
+                      'Stretch every rand.',
+                      style: TextStyle(color: TS.mutedOf(context)),
+                    )
+                  else
+                    Row(
+                      children: [
+                        ScoutAvatarView(initials: account.initials, size: 40),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                account.displayName,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800),
+                              ),
+                              Text(account.planName,
+                                  style: TS.eyebrowOf(context)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),

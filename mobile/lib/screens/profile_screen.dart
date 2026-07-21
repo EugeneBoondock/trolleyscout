@@ -6,6 +6,7 @@ import '../biometric_gate.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
+import '../widgets/scout_avatar_view.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.controller});
@@ -88,11 +89,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    backgroundColor: TS.yellow,
-                    foregroundColor: TS.ink,
-                    child: Text(account?.initials ?? '?',
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                  // The tile is the button — tapping your own picture to change
+                  // it is the gesture people already expect from every other app.
+                  Semantics(
+                    button: true,
+                    label: 'Change your profile picture',
+                    child: PressableScale(
+                      child: GestureDetector(
+                        onTap: () => showScoutAvatarPicker(context),
+                        child: ScoutAvatarView(
+                            initials: account?.initials ?? '?', size: 56),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -104,6 +112,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 const TextStyle(fontWeight: FontWeight.w700)),
                         Text(
                             '${account?.planName ?? 'Free'} plan · ${account?.role ?? 'member'}'),
+                        const SizedBox(height: 2),
+                        GestureDetector(
+                          onTap: () => showScoutAvatarPicker(context),
+                          child: Text(
+                            'Change picture',
+                            style: TextStyle(
+                              color: TS.redOf(context),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              decoration: TextDecoration.underline,
+                              decorationColor: TS.redOf(context),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

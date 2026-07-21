@@ -65,7 +65,7 @@ class _DealsApi extends Api {
   final List<bool> forceLiveCalls = [];
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async {
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
     discoveryCalls += 1;
     forceLiveCalls.add(forceLive);
     return const DiscoveryResult(

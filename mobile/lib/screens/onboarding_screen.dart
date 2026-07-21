@@ -120,7 +120,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 itemBuilder: (context, index) => _SlideView(slide: _slides[index]),
               ),
             ),
-            _Dots(count: _slides.length, index: _page),
+            _OnboardingProgress(step: _page + 1, total: _slides.length),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
               child: Column(
@@ -210,29 +210,62 @@ class _SlideView extends StatelessWidget {
   }
 }
 
-class _Dots extends StatelessWidget {
-  const _Dots({required this.count, required this.index});
+/// Onboarding momentum bar. Goal-gradient effect: the very first slide already
+/// reads as progress (1 of N, never 0%), so the flow feels like it's moving from
+/// the first tap. The label warms up to "You're ready to start" on the last slide.
+class _OnboardingProgress extends StatelessWidget {
+  const _OnboardingProgress({required this.step, required this.total});
 
-  final int count;
-  final int index;
+  final int step;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (var i = 0; i < count; i++)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            width: i == index ? 22 : 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: i == index ? TS.red : TS.lineSoftOf(context),
-              borderRadius: BorderRadius.circular(4),
+    final fraction = total == 0 ? 0.0 : (step / total).clamp(0.0, 1.0);
+    final isLast = step >= total;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isLast ? "You're ready to start" : 'Getting started',
+                style: TextStyle(
+                    color: TS.mutedOf(context),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12),
+              ),
+              Text(
+                '$step of $total',
+                style: TextStyle(
+                    color: TS.faintOf(context),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: fraction),
+              duration:
+                  reduceMotion ? Duration.zero : const Duration(milliseconds: 340),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
+                minHeight: 8,
+                backgroundColor: TS.lineSoftOf(context),
+                valueColor: const AlwaysStoppedAnimation<Color>(TS.red),
+              ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -126,7 +126,7 @@ class _ToggleApi extends Api {
   final bool initialServerPreference;
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async =>
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,

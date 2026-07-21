@@ -27,9 +27,18 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text('Member dashboard'), findsOneWidget);
-    expect(find.text('1 saved deal'), findsOneWidget);
-    expect(find.text('R123.45'), findsOneWidget);
+    // The dashboard leads with the shopper by name, then with the money kept.
+    expect(find.text('Sam Shopper'), findsOneWidget);
+    expect(find.text('FREE PLAN'), findsOneWidget);
+    // Savings hero: R10.00 kept off a R133.45 full-price basket.
+    expect(find.text('R10.00'), findsOneWidget);
+    expect(
+      find.textContaining('would have cost R133.45'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('you pay R123.45'), findsOneWidget);
+    // Saved deals appear as real product cards, not as a count.
+    expect(find.text('Example maize meal'), findsOneWidget);
   });
 
   testWidgets('stores can save an official source', (tester) async {
@@ -64,8 +73,19 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    // The supporting counts sit below the fold by design — the hero and the
+    // saved deals come first — so scroll them into view before asserting.
+    // Target the outer page list explicitly: the saved-deals strip is a second
+    // (horizontal) scrollable, so an unqualified scroll is ambiguous.
+    await tester.scrollUntilVisible(
+      find.text('stores covered'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('2'), findsWidgets);
-    expect(find.text('covered stores'), findsOneWidget);
+    expect(find.text('stores covered'), findsOneWidget);
   });
 
   testWidgets('saved deals can be removed', (tester) async {
@@ -147,7 +167,7 @@ class _FeatureApi extends Api {
   var _basket = _exampleBasket;
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async =>
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [_deal],
         foundDealCount: 1,
@@ -190,6 +210,9 @@ class _FeatureApi extends Api {
     savedSourceCalls += 1;
     return const [_savedSource];
   }
+
+  @override
+  Future<int> verifiedOfferCount() async => 1;
 
   @override
   Future<Basket> basket() async => _basket;

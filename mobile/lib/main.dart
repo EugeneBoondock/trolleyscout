@@ -32,6 +32,8 @@ import 'screens/vouchers_screen.dart';
 import 'theme.dart';
 import 'ux.dart';
 import 'widgets/app_drawer.dart';
+import 'widgets/common.dart';
+import 'widgets/scout_avatar_view.dart';
 import 'widgets/scout_mark.dart';
 import 'widgets/watch_bell.dart';
 
@@ -291,10 +293,29 @@ class _RootShellState extends State<RootShell> {
                 ],
               ] else ...[
                 WatchBell(controller: widget.controller),
-                IconButton(
-                  tooltip: 'Profile',
-                  onPressed: () => _selectDestination(AppDestination.profile),
-                  icon: const Icon(Icons.account_circle_outlined),
+                // The shopper's own tile, not a generic person glyph — the app
+                // bar is where they most often check "am I still me?".
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Tooltip(
+                    message: 'Profile',
+                    child: Semantics(
+                      button: true,
+                      label: 'Profile',
+                      child: PressableScale(
+                        child: GestureDetector(
+                          onTap: () =>
+                              _selectDestination(AppDestination.profile),
+                          child: ScoutAvatarView(
+                            initials: session.account?.initials ?? '?',
+                            size: 34,
+                            borderWidth: 1.5,
+                            showShadow: false,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 IconButton(
                   tooltip: 'Sign out',

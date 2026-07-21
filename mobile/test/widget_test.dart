@@ -209,7 +209,7 @@ class _FakeApi extends Api {
   }
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async =>
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,
@@ -252,6 +252,9 @@ class _FakeApi extends Api {
 
   @override
   Future<List<VerifiedOffer>> offers() async => const [];
+
+  @override
+  Future<int> verifiedOfferCount() async => 0;
 
   @override
   Future<List<DealWatch>> dealWatches() async => const [];

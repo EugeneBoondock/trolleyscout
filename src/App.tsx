@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
+  ArrowRight,
   Bell,
   BellRinging,
   BookmarkSimple,
@@ -608,7 +609,6 @@ function App() {
   const filteredRetailers = retailerState.data.retailers
   const officialSourceCount = retailerState.data.summary.sourceCount
   const retailerCount = retailerState.data.summary.retailerCount
-  const apiMode = retailerState.meta.source === 'cloudflare-pages' ? 'API live' : 'Local list'
   const memberSession = memberState.data.session
   const discoveryVisible =
     activeView === 'home' ||
@@ -1167,7 +1167,6 @@ function App() {
         discoveryFilter={discoveryFilter}
         onViewStoreDeals={viewStoreDeals}
         addingBasketDealId={addingBasketDealId}
-        apiMode={apiMode}
         basketItemCount={basketItemCount}
         basketSavedDealIds={basketSavedDealIds}
         basketState={basketState}
@@ -1634,7 +1633,6 @@ function MemberAuthScreen({
 function MemberShell({
   activeView,
   addingBasketDealId,
-  apiMode,
   basketItemCount,
   basketSavedDealIds,
   basketState,
@@ -1702,7 +1700,6 @@ function MemberShell({
 }: {
   activeView: MemberView
   addingBasketDealId?: string
-  apiMode: string
   basketItemCount: number
   basketSavedDealIds: Set<string>
   basketState: ResourceState<BasketResource>
@@ -1849,10 +1846,9 @@ function MemberShell({
         {activeView === 'dashboard' && (
           <MemberDashboard
             account={account}
-            apiMode={apiMode}
             basketItemCount={basketItemCount}
-            basketSavings={formatRand(basketState.data.basket.summary.savingsCents)}
-            basketTotal={formatRand(basketState.data.basket.summary.totalCents)}
+            basketSavingsCents={basketState.data.basket.summary.savingsCents}
+            basketTotalCents={basketState.data.basket.summary.totalCents}
             discoveryCount={discoveryState.data.discovery.summary.foundDealCount}
             onRefresh={onRefresh}
             onSetView={onSetView}
@@ -2153,12 +2149,51 @@ function PlanUsage({
   )
 }
 
+const GREETING_DAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+]
+const GREETING_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]
+
+function greetingFor(now: Date): string {
+  if (now.getHours() < 12) return 'Good morning'
+  if (now.getHours() < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function greetingDateLine(now: Date): string {
+  return `${GREETING_DAYS[now.getDay()]} ${now.getDate()} ${GREETING_MONTHS[now.getMonth()]}`
+}
+
+/**
+ * The member's landing screen, so it leads with the person and with the money
+ * they kept rather than with a wall of equal-weight counters. The supporting
+ * numbers stay, demoted to chips: reassurance that the app is working, not the
+ * headline. Mirrors the mobile dashboard so the two feel like one product.
+ */
 function MemberDashboard({
   account,
-  apiMode,
   basketItemCount,
-  basketSavings,
-  basketTotal,
+  basketSavingsCents,
+  basketTotalCents,
   discoveryCount,
   onRefresh,
   onSetView,
@@ -2168,10 +2203,9 @@ function MemberDashboard({
   verifiedOfferCount,
 }: {
   account: NonNullable<MemberSession['account']>
-  apiMode: string
   basketItemCount: number
-  basketSavings: string
-  basketTotal: string
+  basketSavingsCents: number
+  basketTotalCents: number
   discoveryCount: number
   onRefresh: () => void
   onSetView: (view: MemberView) => void
@@ -2180,30 +2214,33 @@ function MemberDashboard({
   savedSourceCount: number
   verifiedOfferCount: number
 }) {
+  const now = new Date()
+  const fullPriceCents = basketTotalCents + basketSavingsCents
+
   return (
     <section className="member-dashboard" aria-label="Member dashboard">
-      <div className="member-section-head">
+      <header className="dash-greeting">
         <div>
-          <p className="eyebrow">Dashboard</p>
-          <h1>Welcome, {account.displayName}</h1>
+          <p className="eyebrow">{greetingFor(now)}</p>
+          <h1 className="dash-greeting-name">{account.displayName}</h1>
+          <p className="dash-greeting-meta">
+            <span className="dash-plan-pill">{account.planName} plan</span>
+            <span>{greetingDateLine(now)}</span>
+          </p>
         </div>
-        <button className="primary-button" onClick={onRefresh} type="button">
+        <button className="ghost-button" onClick={onRefresh} type="button">
           <ArrowClockwise size={18} />
           Refresh
         </button>
-      </div>
+      </header>
 
-      <div className="member-metrics">
-        <Metric icon={<Storefront size={22} />} label="Retailers" value={`${retailerState.data.summary.retailerCount}`} />
-        <Metric icon={<LinkSimple size={22} />} label="Official links" value={`${retailerState.data.summary.sourceCount}`} />
-        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discoveryCount}`} />
-        <Metric icon={<Wallet size={22} />} label="Saved deals" value={`${savedDealCount}`} />
-        <Metric icon={<ShoppingCart size={22} />} label="Basket total" value={basketTotal} />
-        <Metric icon={<HandCoins size={22} />} label="Total savings" value={basketSavings} />
-        <Metric icon={<ShoppingCart size={22} />} label="Basket items" value={`${basketItemCount}`} />
-        <Metric icon={<BookmarkSimple size={22} />} label="Saved sources" value={`${savedSourceCount}`} />
-        <Metric icon={<ReceiptX size={22} />} label="Verified offers" value={`${verifiedOfferCount}`} />
-      </div>
+      <SavingsHero
+        basketItemCount={basketItemCount}
+        fullPriceCents={fullPriceCents}
+        onSetView={onSetView}
+        savingsCents={basketSavingsCents}
+        totalCents={basketTotalCents}
+      />
 
       <PlanUsage
         account={account}
@@ -2213,64 +2250,180 @@ function MemberDashboard({
         savedSourceCount={savedSourceCount}
       />
 
-      <div className="dashboard-grid">
-        <article className="dashboard-panel">
-          <div>
-            <p className="eyebrow">Plan</p>
-            <h2>{account.planName}</h2>
-          </div>
-          <p>{planStatusText(account.planStatus)}</p>
-          <button className="ghost-button" onClick={() => onSetView('subscription')} type="button">
-            <CreditCard size={18} />
-            Manage plan
-          </button>
-        </article>
-        <article className="dashboard-panel">
-          <div>
-            <p className="eyebrow">Backend</p>
-            <h2>{apiMode}</h2>
-          </div>
-          <p>Member data uses Cloudflare Pages Functions and D1 when the preview is running.</p>
-          <button className="ghost-button" onClick={() => onSetView('sources')} type="button">
-            <Storefront size={18} />
-            Open sources
-          </button>
-        </article>
-        <article className="dashboard-panel">
-          <div>
-            <p className="eyebrow">Deal finder</p>
-            <h2>Source-backed rows</h2>
-          </div>
-          <p>Check official deal pages and send useful rows to the scanner for review.</p>
-          <button className="ghost-button" onClick={() => onSetView('discovery')} type="button">
-            <Tag size={18} />
-            Find deals
-          </button>
-        </article>
-        <article className="dashboard-panel">
-          <div>
-            <p className="eyebrow">Saved deals</p>
-            <h2>Review later</h2>
-          </div>
-          <p>Keep useful rows from discovery and open them in the scanner when ready.</p>
-          <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
-            <Wallet size={18} />
-            Saved deals
-          </button>
-        </article>
-        <article className="dashboard-panel">
-          <div>
-            <p className="eyebrow">Basket</p>
-            <h2>Plan spend</h2>
-          </div>
-          <p>Add saved deals to a basket and watch the rand total before checkout.</p>
-          <button className="ghost-button" onClick={() => onSetView('basket')} type="button">
-            <ShoppingCart size={18} />
-            Basket
-          </button>
-        </article>
+      <h2 className="dash-section-label">Jump straight in</h2>
+      <div className="dash-actions">
+        <DashAction icon={<Tag size={24} />} label="Find deals" onClick={() => onSetView('discovery')} />
+        <DashAction icon={<Wallet size={24} />} label="Saved deals" onClick={() => onSetView('savedDeals')} />
+        <DashAction icon={<ShoppingCart size={24} />} label="Basket" onClick={() => onSetView('basket')} />
+        <DashAction icon={<CreditCard size={24} />} label="Your plan" onClick={() => onSetView('subscription')} />
+      </div>
+
+      <h2 className="dash-section-label">What Trolley Scout is watching for you</h2>
+      <div className="dash-chips">
+        <DashChip icon={<Tag size={20} />} label="live deals" onClick={() => onSetView('discovery')} value={`${discoveryCount}`} />
+        <DashChip
+          icon={<Storefront size={20} />}
+          label="stores covered"
+          onClick={() => onSetView('sources')}
+          value={`${retailerState.data.summary.retailerCount}`}
+        />
+        <DashChip
+          icon={<LinkSimple size={20} />}
+          label="official links"
+          onClick={() => onSetView('sources')}
+          value={`${retailerState.data.summary.sourceCount}`}
+        />
+        <DashChip
+          icon={<ReceiptX size={20} />}
+          label="verified offers"
+          onClick={() => onSetView('offers')}
+          value={`${verifiedOfferCount}`}
+        />
+        <DashChip
+          icon={<Wallet size={20} />}
+          label="saved deals"
+          onClick={() => onSetView('savedDeals')}
+          value={`${savedDealCount}`}
+        />
+        <DashChip
+          icon={<BookmarkSimple size={20} />}
+          label="saved sources"
+          onClick={() => onSetView('sources')}
+          value={`${savedSourceCount}`}
+        />
       </div>
     </section>
+  )
+}
+
+/**
+ * The one figure that answers "is this app doing anything for me?". The ring
+ * shows the share of full price kept, not progress towards an invented target:
+ * a made-up goal can only ever be missed, and a household on a tight budget
+ * does not need another screen telling them they fell short.
+ */
+function SavingsHero({
+  basketItemCount,
+  fullPriceCents,
+  onSetView,
+  savingsCents,
+  totalCents,
+}: {
+  basketItemCount: number
+  fullPriceCents: number
+  onSetView: (view: MemberView) => void
+  savingsCents: number
+  totalCents: number
+}) {
+  if (fullPriceCents <= 0) {
+    return (
+      <article className="dash-savings dash-savings-empty">
+        <p className="eyebrow">Money you keep</p>
+        <div className="dash-savings-empty-body">
+          <span aria-hidden="true" className="dash-savings-empty-mark">
+            <HandCoins size={28} />
+          </span>
+          <p>Add a deal to your basket and this shows exactly how much you saved on the shop.</p>
+        </div>
+        <button className="primary-button" onClick={() => onSetView('discovery')} type="button">
+          <Tag size={18} />
+          Find your first deal
+        </button>
+      </article>
+    )
+  }
+
+  const keptPercent = Math.round((savingsCents / fullPriceCents) * 100)
+
+  return (
+    <article className="dash-savings">
+      <p className="eyebrow">Money you kept</p>
+      <div className="dash-savings-body">
+        <SavingsRing percent={keptPercent} />
+        <div>
+          <p className="dash-savings-figure">{formatRand(savingsCents)}</p>
+          <p className="dash-savings-note">
+            off a basket that would have cost {formatRand(fullPriceCents)}.
+          </p>
+        </div>
+      </div>
+      <button className="dash-savings-foot" onClick={() => onSetView('basket')} type="button">
+        <ShoppingCart size={17} />
+        <span>
+          {basketItemCount} {basketItemCount === 1 ? 'item' : 'items'} in your basket · you pay{' '}
+          {formatRand(totalCents)}
+        </span>
+        <ArrowRight size={16} />
+      </button>
+    </article>
+  )
+}
+
+function SavingsRing({ percent }: { percent: number }) {
+  const radius = 38
+  const circumference = 2 * Math.PI * radius
+  const filled = Math.max(0, Math.min(100, percent)) / 100
+
+  return (
+    <svg
+      aria-label={`${percent}% off the full price`}
+      className="dash-ring"
+      height="92"
+      role="img"
+      viewBox="0 0 92 92"
+      width="92"
+    >
+      <circle className="dash-ring-track" cx="46" cy="46" fill="none" r={radius} strokeWidth="9" />
+      <circle
+        className="dash-ring-fill"
+        cx="46"
+        cy="46"
+        fill="none"
+        r={radius}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - filled)}
+        strokeLinecap="round"
+        strokeWidth="9"
+        transform="rotate(-90 46 46)"
+      />
+      <text className="dash-ring-value" dy="0.05em" textAnchor="middle" x="46" y="46">
+        {percent}%
+      </text>
+      <text className="dash-ring-unit" textAnchor="middle" x="46" y="62">
+        off
+      </text>
+    </svg>
+  )
+}
+
+function DashAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button className="dash-action" onClick={onClick} type="button">
+      {icon}
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function DashChip({
+  icon,
+  label,
+  onClick,
+  value,
+}: {
+  icon: ReactNode
+  label: string
+  onClick: () => void
+  value: string
+}) {
+  return (
+    <button className="dash-chip" onClick={onClick} type="button">
+      {icon}
+      <span className="dash-chip-copy">
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </span>
+    </button>
   )
 }
 
@@ -2706,6 +2859,16 @@ function SubscriptionPanel({
                   <strong>Free</strong>
                 )}
               </p>
+              {plan.isPaid && billingCycle === 'annual' && (
+                <p className="plan-price-equiv">
+                  ≈ {formatRand(Math.round(plan.prices.annual / 12))}/month
+                  {plan.prices.monthly * 12 > plan.prices.annual && (
+                    <span className="plan-save-badge">
+                      Save {formatRand(plan.prices.monthly * 12 - plan.prices.annual)}/year
+                    </span>
+                  )}
+                </p>
+              )}
               <p>{plan.description}</p>
               {isCycleSwitch && (
                 <p className="plan-switch-note">
@@ -2729,6 +2892,9 @@ function SubscriptionPanel({
                 <Wallet size={18} />
                 {checkoutPlanId === plan.id ? 'Checking' : buttonText}
               </button>
+              {plan.isPaid && !isCurrent && !isComingSoon && !isDowngrade && (
+                <p className="plan-reassure">Switch or cancel anytime</p>
+              )}
             </article>
           )
         })}

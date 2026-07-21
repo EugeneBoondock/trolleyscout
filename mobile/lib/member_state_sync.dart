@@ -21,10 +21,12 @@ class MemberStateSync {
   static const nearbyHistoryKey = 'nearby_history_v1';
   static const savedAddressesKey = 'saved_addresses_v1';
   static const savedPropertiesKey = 'saved_properties_v1';
+  static const scoutAvatarKey = 'scout_avatar_v1';
   static const syncedKeys = [
     nearbyHistoryKey,
     savedAddressesKey,
     savedPropertiesKey,
+    scoutAvatarKey,
   ];
 
   Api? _api;

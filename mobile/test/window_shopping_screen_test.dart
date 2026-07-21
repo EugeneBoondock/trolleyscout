@@ -483,7 +483,7 @@ class _WindowApi extends Api {
   }
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async {
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
     discoveryForceLiveCalls.add(forceLive);
     if (failDiscoveryAfterFirst && discoveryForceLiveCalls.length > 1) {
       throw StateError('discovery unavailable');

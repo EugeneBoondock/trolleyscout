@@ -102,7 +102,7 @@ class _CatalogueApi extends Api {
   _CatalogueApi() : super(baseUrl: 'https://example.test');
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false}) async =>
+  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,

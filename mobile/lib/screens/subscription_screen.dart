@@ -87,17 +87,51 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                     .textTheme
                                     .headlineSmall
                                     ?.merge(TS.display))),
-                        Text(
-                          plan.isPaid
-                              ? '${formatRand(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)}/${_billingCycle == 'monthly' ? 'mo' : 'yr'}'
-                              : 'Free',
-                          style: TextStyle(
-                              color: TS.redOf(context),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              plan.isPaid
+                                  ? '${formatRand(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)}/${_billingCycle == 'monthly' ? 'mo' : 'yr'}'
+                                  : 'Free',
+                              style: TextStyle(
+                                  color: TS.redOf(context),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18),
+                            ),
+                            // Annual sticker-shock softener: the honest monthly
+                            // equivalent, so a year's price reads as "≈ Rx/mo".
+                            if (plan.isPaid && _billingCycle == 'annual')
+                              Text(
+                                '≈ ${formatRand((plan.annualCents / 12).round())}/mo',
+                                style: TextStyle(
+                                    color: TS.mutedOf(context),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11),
+                              ),
+                          ],
                         ),
                       ],
                     ),
+                    // Honest anchor: the real saving of paying yearly vs monthly.
+                    if (plan.isPaid &&
+                        _billingCycle == 'annual' &&
+                        plan.monthlyCents * 12 > plan.annualCents) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        color: TS.greenOf(context).withValues(alpha: 0.16),
+                        child: Text(
+                          'Save ${formatRand(plan.monthlyCents * 12 - plan.annualCents)} a year vs monthly',
+                          style: TextStyle(
+                              color: TS.greenOf(context),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
                     Text(plan.description),
                     const SizedBox(height: 8),
                     for (final feature in plan.features)
@@ -127,11 +161,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               : _busyPlan == plan.id
                                   ? 'Opening checkout'
                                   : plan.isPaid
-                                      ? 'Choose ${plan.name}'
+                                      ? 'Start ${plan.name}'
                                       : 'Use Free',
                         ),
                       ),
                     ),
+                    // Safety-net reassurance: choosing a paid plan isn't a trap.
+                    if (plan.isPaid && data.account?.planId != plan.id) ...[
+                      const SizedBox(height: 6),
+                      Center(
+                        child: Text(
+                          'Switch or cancel anytime',
+                          style: TextStyle(
+                              color: TS.faintOf(context), fontSize: 12),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

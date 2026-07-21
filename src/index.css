@@ -3786,36 +3786,279 @@ main {
   gap: 1rem;
 }
 
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.1rem;
-}
+/* Member dashboard — greeting first, then the money kept, then the counts.
+   All colours come from the theme tokens, so dark mode needs no overrides. */
 
-.dashboard-panel {
-  display: grid;
-  gap: 0.6rem;
-  align-content: start;
-  padding: 1.2rem;
+.dash-greeting {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 1.25rem 1.4rem;
   border: 2px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-soft);
 }
 
-.dashboard-panel h2 {
-  margin: 0.2rem 0 0;
-  font-size: 1.25rem;
+.dash-greeting-name {
+  margin: 0.15rem 0 0;
+  font-family: var(--display);
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
 }
 
-.dashboard-panel p {
+.dash-greeting-meta {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.dash-plan-pill {
+  padding: 0.15rem 0.55rem;
+  border: 1.5px solid var(--line);
+  background: var(--yellow);
+  color: #1c1710;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dash-savings {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.4rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+}
+
+.dash-savings-body {
+  display: flex;
+  gap: 1.3rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.dash-savings-figure {
+  margin: 0;
+  color: var(--green);
+  font-family: var(--display);
+  font-size: clamp(2.4rem, 7vw, 3.6rem);
+  line-height: 1;
+}
+
+.dash-savings-note {
+  margin: 0.35rem 0 0;
+  max-width: 32ch;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.dash-savings-foot {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.85rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dash-savings-foot span {
+  flex: 1;
+}
+
+.dash-savings-foot svg:last-child {
+  color: var(--red);
+  transition: transform 0.16s ease;
+}
+
+.dash-savings-foot:hover svg:last-child {
+  transform: translateX(0.2rem);
+}
+
+.dash-savings-empty-body {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.dash-savings-empty-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid var(--line);
+  background: var(--yellow);
+  color: #1c1710;
+}
+
+.dash-savings-empty-body p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.92rem;
 }
 
-.dashboard-panel .ghost-button {
+.dash-savings-empty .primary-button {
   justify-self: start;
+}
+
+.dash-ring {
+  flex: none;
+}
+
+.dash-ring-track {
+  stroke: var(--line-soft);
+}
+
+.dash-ring-fill {
+  stroke: var(--green);
+  /* Fills on load: an unclosed loop asks to be closed. */
+  animation: dash-ring-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes dash-ring-in {
+  from {
+    stroke-dashoffset: 999;
+  }
+}
+
+.dash-ring-value {
+  fill: var(--green);
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.dash-ring-unit {
+  fill: var(--muted);
+  font-size: 0.66rem;
+}
+
+.dash-section-label {
+  margin: 0.4rem 0 -0.5rem;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.dash-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dash-action {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  padding: 1rem 0.5rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
   box-shadow: var(--shadow-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.dash-action svg {
+  color: var(--red);
+}
+
+.dash-action:hover {
+  transform: translate(-0.1rem, -0.1rem);
+  box-shadow: var(--shadow-hard);
+}
+
+.dash-action:active {
+  transform: translate(0.05rem, 0.05rem);
+  box-shadow: none;
+}
+
+.dash-chips {
+  display: grid;
+  /* Fixed 3 across rather than auto-fit: there are six chips, and auto-fit
+     lands on five columns at common widths, stranding one on its own row. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.dash-chip {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  border: 1.5px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease;
+}
+
+.dash-chip:hover {
+  border-color: var(--line);
+}
+
+.dash-chip svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.dash-chip-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.dash-chip-copy strong {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.dash-chip-copy span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 640px) {
+  .dash-actions,
+  .dash-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-ring-fill {
+    animation: none;
+  }
+
+  .dash-action,
+  .dash-savings-foot svg:last-child {
+    transition: none;
+  }
+
+  .dash-action:hover {
+    transform: none;
+  }
 }
 
 /* Plan usage meters — makes free capacity visible and upgrades tangible. */
@@ -4057,6 +4300,36 @@ main {
 .plan-price span {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+/* Honest annual framing: monthly equivalent + real saving vs paying monthly. */
+.plan-price-equiv {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.plan-save-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  background: color-mix(in srgb, var(--green, #1a7f4b) 16%, transparent);
+  color: var(--green, #1a7f4b);
+  font-weight: 800;
+  font-size: 0.74rem;
+}
+
+/* Safety-net reassurance under a paid plan's CTA. */
+.plan-reassure {
+  margin: 0.5rem 0 0;
+  text-align: center;
+  color: var(--faint);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .plan-grid {
@@ -5080,6 +5353,24 @@ main {
   box-shadow: var(--shadow-hard);
 }
 
+/* Press feedback: the card dips back on tap so a touch feels registered — the
+   micro-interaction that reads as "premium/responsive" on touch devices. */
+.property-card:active {
+  transform: translate(-1px, -1px) scale(0.995);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Tap feedback on the search action buttons, matching the primary/ghost buttons. */
+.properties-submit,
+.properties-nearme {
+  transition: transform 100ms ease, filter 100ms ease;
+}
+
+.properties-submit:active,
+.properties-nearme:active {
+  transform: scale(0.97);
+}
+
 .property-card-image {
   position: relative;
   aspect-ratio: 4 / 3;
@@ -5143,10 +5434,28 @@ main {
   font-size: 0.85rem;
 }
 
-.property-card-facts {
+.property-card-features {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.property-card-feature {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.property-card-feature svg {
   color: var(--faint);
-  font-size: 0.82rem;
-  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .property-card-view {
@@ -5432,6 +5741,98 @@ main {
   padding: 2rem;
   text-align: center;
   color: var(--muted);
+}
+
+/* Mascot empty state: the Scout greets the shopper — a little warmth (Video 8). */
+.properties-empty-mascot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.properties-empty-mascot p {
+  margin: 0;
+  max-width: 30rem;
+}
+
+/* Error state: the message plus a one-click way forward (retry), never a dead end. */
+.properties-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 2px solid var(--red);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+  padding: 1rem 1.1rem;
+}
+
+.properties-error p {
+  margin: 0;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Start state: recent + popular search chips (recognition over recall). */
+.properties-start {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.5rem 0;
+}
+
+.properties-start-lede {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--muted);
+}
+
+.properties-chip-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.properties-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.properties-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: transform 100ms ease, background 100ms ease, border-color 100ms ease;
+}
+
+.properties-chip svg {
+  color: var(--faint);
+}
+
+.properties-chip:hover {
+  background: var(--surface-soft);
+  border-color: var(--ink);
+}
+
+.properties-chip:active {
+  transform: scale(0.96);
 }
 
 .properties-locked {

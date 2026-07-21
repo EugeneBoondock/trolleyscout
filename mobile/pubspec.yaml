@@ -1,7 +1,7 @@
 name: trolley_scout
 description: Stretch every rand with money help, tools, and live grocery deals for South Africa.
 publish_to: 'none'
-version: 1.6.6+16
+version: 1.6.7+17
 
 environment:
   sdk: ^3.5.0
@@ -21,6 +21,7 @@ dependencies:
   audioplayers: ^6.1.0
   local_auth: ^2.3.0
   workmanager: ^0.9.0+3
+  phosphor_flutter: ^2.1.0
 
 dev_dependencies:
   flutter_test:

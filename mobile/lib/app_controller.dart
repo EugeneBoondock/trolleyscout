@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api.dart';
 import 'deal_alert_lifecycle.dart';
 import 'member_state_sync.dart';
+import 'scout_avatar.dart';
 
 class AppController extends ChangeNotifier {
   AppController(this.api, {DealAlertLifecycle? dealAlerts})
@@ -36,6 +37,9 @@ class AppController extends ChangeNotifier {
       if (session.isAuthenticated) {
         MemberStateSync.instance.configure(api);
         await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
+        // After hydrate, so a shopper on a new phone sees the profile picture
+        // they picked on the old one.
+        await ScoutAvatarStore.instance.load();
         await _dealAlerts.syncAuthenticated(api);
       } else {
         await _dealAlerts.signedOut();
@@ -101,6 +105,7 @@ class AppController extends ChangeNotifier {
       if (session.isAuthenticated) {
         MemberStateSync.instance.configure(api);
         await MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
+        await ScoutAvatarStore.instance.load();
         await refreshWatches();
         await _dealAlerts.syncAuthenticated(api);
       }
@@ -123,6 +128,7 @@ class AppController extends ChangeNotifier {
       // Clear account-synced local data so the next shopper on a shared device
       // never sees the previous one's history/addresses.
       await MemberStateSync.instance.clearLocal();
+      ScoutAvatarStore.instance.clear();
       await _dealAlerts.signedOut();
     } on ApiException catch (error) {
       notice = error.message;
