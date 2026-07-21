@@ -1,0 +1,24 @@
+# Copy to key.properties (same folder) and fill in your own values.
+# key.properties is already gitignored — it holds the keystore passwords in
+# clear text, so it must never be committed.
+#
+# Create the keystore first, choosing your own password when prompted. PKCS12
+# is the current standard format; keytool warns if you ask for the older JKS.
+#
+#   keytool -genkeypair -v \
+#     -keystore "$HOME/trolley-scout-upload.p12" \
+#     -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 \
+#     -alias upload -dname "CN=Trolley Scout, O=Boondock Labs, C=ZA"
+#
+# Keep the keystore OUTSIDE this repo and back it up somewhere you will still
+# have in five years. With Play App Signing enrolled you can recover from a
+# lost upload key, but it is a support round-trip you would rather not need.
+#
+# When this file is absent the release build falls back to the debug key, so
+# `flutter run --release` still works — but that output is not publishable.
+
+# Absolute path, or a path relative to mobile/android/.
+storeFile=C:/Users/USER/trolley-scout-upload.p12
+storePassword=CHANGE_ME
+keyAlias=upload
+keyPassword=CHANGE_ME
