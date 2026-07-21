@@ -1,7 +1,7 @@
 name: trolley_scout
 description: Stretch every rand with money help, tools, and live grocery deals for South Africa.
 publish_to: 'none'
-version: 1.6.7+17
+version: 1.7.0+18
 
 environment:
   sdk: ^3.5.0
