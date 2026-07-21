@@ -49,6 +49,48 @@ class ScreenHeader extends StatelessWidget {
   }
 }
 
+/// Wraps a tappable surface so it dips slightly while pressed — the tactile
+/// micro-interaction that makes taps feel instant and premium. Uses a [Listener]
+/// (pointer events only), so it never competes with the child's own InkWell/tap
+/// in the gesture arena; it is purely a visual layer. Honours reduce-motion.
+class PressableScale extends StatefulWidget {
+  const PressableScale({
+    super.key,
+    required this.child,
+    this.pressedScale = 0.97,
+  });
+
+  final Widget child;
+  final double pressedScale;
+
+  @override
+  State<PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<PressableScale> {
+  bool _pressed = false;
+
+  void _set(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    return Listener(
+      onPointerDown: (_) => _set(true),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedScale(
+        scale: (_pressed && !reduceMotion) ? widget.pressedScale : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 class PaperCard extends StatelessWidget {
   const PaperCard(
       {super.key,
@@ -141,7 +183,8 @@ class MetricCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) => PressableScale(
+        child: InkWell(
         onTap: onTap,
         child: PaperCard(
           child: Row(
@@ -168,6 +211,7 @@ class MetricCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
       );
 }
 

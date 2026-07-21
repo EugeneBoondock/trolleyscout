@@ -6,10 +6,20 @@ import '../theme.dart';
 /// instantly instead of holding a spinner. Honours the system reduced-motion
 /// setting by rendering static placeholders.
 class SkeletonPane extends StatefulWidget {
-  const SkeletonPane({super.key, this.rows = 6, this.rowHeight = 96});
+  const SkeletonPane({
+    super.key,
+    this.rows = 6,
+    this.rowHeight = 96,
+    this.media = false,
+  });
 
   final int rows;
   final double rowHeight;
+
+  /// When true each placeholder is an image-topped card (a big shimmer block
+  /// with two text bars at the base) — the shape of a property/deal/scroll card,
+  /// so the layout is recognisable before the real content arrives.
+  final bool media;
 
   @override
   State<SkeletonPane> createState() => _SkeletonPaneState();
@@ -47,6 +57,7 @@ class _SkeletonPaneState extends State<SkeletonPane>
         animation: _controller,
         builder: (context, _) => _SkeletonCard(
           height: widget.rowHeight,
+          media: widget.media,
           shimmerPosition: reduceMotion ? 0.5 : _controller.value,
         ),
       ),
@@ -55,10 +66,15 @@ class _SkeletonPaneState extends State<SkeletonPane>
 }
 
 class _SkeletonCard extends StatelessWidget {
-  const _SkeletonCard({required this.height, required this.shimmerPosition});
+  const _SkeletonCard({
+    required this.height,
+    required this.shimmerPosition,
+    this.media = false,
+  });
 
   final double height;
   final double shimmerPosition;
+  final bool media;
 
   @override
   Widget build(BuildContext context) {
@@ -67,21 +83,43 @@ class _SkeletonCard extends StatelessWidget {
     // The highlight sweeps across the card once per animation cycle.
     final sweep = shimmerPosition * 2 - 0.5;
 
+    final decoration = BoxDecoration(
+      border: Border.all(color: TS.lineSoftOf(context), width: 2),
+      gradient: LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        stops: [
+          (sweep - 0.25).clamp(0.0, 1.0),
+          sweep.clamp(0.0, 1.0),
+          (sweep + 0.25).clamp(0.0, 1.0),
+        ],
+        colors: [base, glint, base],
+      ),
+    );
+
+    // Image-topped card: the whole card shimmers like a loading photo, with two
+    // text bars (price + title) pinned to the base — the property/deal shape.
+    if (media) {
+      return Container(
+        height: height,
+        decoration: decoration,
+        alignment: Alignment.bottomLeft,
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _bar(context, widthFactor: 0.4, height: 16),
+            const SizedBox(height: 8),
+            _bar(context, widthFactor: 0.7, height: 12),
+          ],
+        ),
+      );
+    }
+
     return Container(
       height: height,
-      decoration: BoxDecoration(
-        border: Border.all(color: TS.lineSoftOf(context), width: 2),
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          stops: [
-            (sweep - 0.25).clamp(0.0, 1.0),
-            sweep.clamp(0.0, 1.0),
-            (sweep + 0.25).clamp(0.0, 1.0),
-          ],
-          colors: [base, glint, base],
-        ),
-      ),
+      decoration: decoration,
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
