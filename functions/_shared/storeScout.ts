@@ -1,6 +1,14 @@
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import {
+  SHOPRITE_GROUP_CHAINS,
+  onPromotionRequest,
+  parseShopriteGroupPromotions,
+  selectNearestBranchId,
+  storesByLocationRequest,
+  type ShopriteGroupPromotion,
+} from '../../src/services/shopriteGroupDeals'
+import {
   buildDuckDuckGoUrl,
   buildJinaReaderUrl,
   buildStoreSpecialsQuery,
@@ -250,6 +258,16 @@ async function scoutStore(
   nowMs: number,
 ): Promise<ScoutOutcome> {
   const attempts: ScoutOutcome[] = []
+
+  // A discovered Shoprite/Checkers branch can serve its OWN current specials
+  // through the anonymous browse-by-store API, keyed off the store's location.
+  if (store.retailerId && SHOPRITE_GROUP_CHAINS[store.retailerId]) {
+    const group = await scoutShopriteGroupBranch(store, nowMs)
+    attempts.push(group)
+    if (group.promotions.length > 0) {
+      return group
+    }
+  }
 
   if (store.retailerId === 'spar') {
     const spar = await scoutSparBranch(store, nowMs)
@@ -753,6 +771,94 @@ async function persistStorePathCursor(
     })
   } catch {
     // Cursor storage is optional for older deployments.
+  }
+}
+
+// Fetches a discovered Shoprite/Checkers branch's own current specials from
+// the anonymous browse-by-store API: resolve the nearest branch id from the
+// store's coordinates, then read its on-promotion feed and keep only the
+// products carrying a real, in-date, in-branch bonus-buy promotion.
+async function scoutShopriteGroupBranch(
+  store: NearbyStore,
+  nowMs: number,
+): Promise<ScoutOutcome> {
+  const config = store.retailerId ? SHOPRITE_GROUP_CHAINS[store.retailerId] : undefined
+  if (!config || !Number.isFinite(store.lat) || !Number.isFinite(store.lon)) {
+    return outcome('permanent_unverified')
+  }
+
+  const location = storesByLocationRequest(config.host, store.lat, store.lon)
+  const stores = await fetchShopriteGroupJson(location.url, location.body)
+  if (stores.status !== 'success') {
+    return outcome(stores.status)
+  }
+  const storeId = selectNearestBranchId(stores.json, config)
+  if (!storeId) {
+    return outcome('permanent_unverified')
+  }
+
+  const promoRequest = onPromotionRequest(config.host, storeId)
+  const feed = await fetchShopriteGroupJson(promoRequest.url, promoRequest.body)
+  if (feed.status !== 'success') {
+    return outcome(feed.status)
+  }
+
+  const promotions = parseShopriteGroupPromotions(config.host, storeId, feed.json, nowMs)
+    .map((promotion) => shopriteGroupToStorePromotion(store, promotion))
+  return promotions.length > 0 ? outcome('success', promotions) : outcome('empty')
+}
+
+function shopriteGroupToStorePromotion(
+  store: NearbyStore,
+  promotion: ShopriteGroupPromotion,
+): StorePromotion {
+  return {
+    id: `${store.placeId}-sg-${hashString(promotion.title + promotion.productUrl)}`,
+    imageUrl: promotion.imageUrl,
+    kind: 'deal',
+    placeId: store.placeId,
+    previousPriceText: promotion.previousPriceText,
+    priceText: promotion.priceText,
+    productUrl: promotion.productUrl,
+    retailerId: store.retailerId,
+    savingText: promotion.savingText,
+    sourceUrl: promotion.productUrl,
+    storeName: store.name,
+    title: promotion.title,
+    validFrom: promotion.validFrom,
+    validTo: promotion.validTo,
+  }
+}
+
+async function fetchShopriteGroupJson(
+  url: string,
+  body: string,
+): Promise<{ status: StoreScoutOutcomeStatus; json?: unknown }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const response = await fetch(url, {
+      body,
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'user-agent': BROWSER_UA,
+      },
+      method: 'POST',
+      signal: controller.signal,
+    })
+    if (response.status === 408 || response.status === 429 || response.status >= 500) {
+      return { status: 'transient_failure' }
+    }
+    if (!response.ok) {
+      return { status: 'permanent_unverified' }
+    }
+    const text = await readBoundedBody(response, MAX_BODY_BYTES)
+    return { json: JSON.parse(text) as unknown, status: 'success' }
+  } catch {
+    return { status: 'transient_failure' }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
