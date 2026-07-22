@@ -17,12 +17,13 @@ import {
   TrendUp,
 } from '@phosphor-icons/react'
 import { searchProperties } from '../services/apiClient'
-import { ScoutMark } from '../components/ScoutMark'
+import { ScoutMascot } from '../components/ScoutMascot'
 import { useSavedProperties } from '../hooks/useSavedProperties'
-import type { MemberAccount, PropertyListing, PropertyListingType } from '../types'
+import type { CountryContext, MemberAccount, PropertyListing, PropertyListingType } from '../types'
 
 type Props = {
   account: MemberAccount
+  country: CountryContext
   onUpgrade: () => void
 }
 
@@ -88,7 +89,7 @@ function saveRecentSearch(query: string): string[] {
   return next
 }
 
-export function PropertiesView({ account, onUpgrade }: Props) {
+export function PropertiesView({ account, country, onUpgrade }: Props) {
   const [query, setQuery] = useState('')
   const [listingType, setListingType] = useState<PropertyListingType>('sale')
   const [minBeds, setMinBeds] = useState('')
@@ -111,7 +112,7 @@ export function PropertiesView({ account, onUpgrade }: Props) {
   const { saved, savedCount, isSaved, toggle } = useSavedProperties(true)
 
   if (!account.propertiesAccess) {
-    return <PropertiesUpsell onUpgrade={onUpgrade} />
+    return <PropertiesUpsell countryName={country.name} onUpgrade={onUpgrade} />
   }
 
   function showFlash(text: string) {
@@ -229,7 +230,9 @@ export function PropertiesView({ account, onUpgrade }: Props) {
           <p className="eyebrow">Household · Properties Scout</p>
           <h1>Find a home</h1>
           <p className="section-lede">
-            Search homes to buy or rent across South Africa, pulled live from 25 property portals.
+            {country.code === 'ZA'
+              ? 'Search homes to buy or rent across South Africa, pulled live from 25 property portals.'
+              : `Search homes to buy or rent across ${country.name}. Trolley Scout finds local property platforms and reads their live listing data.`}
           </p>
         </div>
         <div className="properties-view-switch" role="tablist" aria-label="Search or saved">
@@ -286,7 +289,7 @@ export function PropertiesView({ account, onUpgrade }: Props) {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="City, suburb or area (e.g. Cape Town)"
+                placeholder={`City, suburb or area${country.capital ? ` (e.g. ${country.capital})` : ''}`}
                 autoComplete="off"
               />
             </label>
@@ -323,7 +326,7 @@ export function PropertiesView({ account, onUpgrade }: Props) {
                 inputMode="numeric"
                 value={minPrice}
                 onChange={(event) => setMinPrice(event.target.value)}
-                placeholder="R"
+                placeholder={country.currencyCode}
               />
             </label>
             <label className="properties-field">
@@ -332,7 +335,7 @@ export function PropertiesView({ account, onUpgrade }: Props) {
                 inputMode="numeric"
                 value={maxPrice}
                 onChange={(event) => setMaxPrice(event.target.value)}
-                placeholder="R"
+                placeholder={country.currencyCode}
               />
             </label>
             <label className="properties-field">
@@ -401,14 +404,19 @@ export function PropertiesView({ account, onUpgrade }: Props) {
       )}
 
       {view === 'search' && status === 'idle' && (
-        <PropertyStartSuggestions recent={recent} onPick={runSuggestion} />
+        <PropertyStartSuggestions
+          countryName={country.name}
+          onPick={runSuggestion}
+          popular={country.code === 'ZA' ? POPULAR_LOCATIONS : country.capital ? [country.capital] : []}
+          recent={recent}
+        />
       )}
 
       {view === 'saved' && savedCount === 0 && (
         <div className="properties-empty properties-empty-mascot">
-          <ScoutMark motion="scout" size={56} />
+          <ScoutMascot pose="point" size={112} />
           <p>
-            No saved homes yet — tap the heart on any home to keep it here. Your saved homes follow
+            No saved homes yet. Tap the heart on any home to keep it here. Your saved homes follow
             your account across devices.
           </p>
         </div>
@@ -621,15 +629,19 @@ function PropertyGallery({ images, alt }: { images: string[]; alt: string }) {
 function PropertyStartSuggestions({
   recent,
   onPick,
+  popular,
+  countryName,
 }: {
   recent: string[]
   onPick: (location: string) => void
+  popular: string[]
+  countryName: string
 }) {
   return (
     <div className="properties-start">
       <p className="properties-start-lede">
         <Buildings size={18} aria-hidden /> Search any city, suburb or area to see homes for sale or
-        to rent.
+        to rent in {countryName}.
       </p>
       {recent.length > 0 && (
         <div className="properties-chip-group">
@@ -645,23 +657,25 @@ function PropertyStartSuggestions({
           </ul>
         </div>
       )}
-      <div className="properties-chip-group">
-        <p className="properties-chip-label">Popular areas</p>
-        <ul className="properties-chips">
-          {POPULAR_LOCATIONS.map((item) => (
-            <li key={`popular-${item}`}>
-              <button type="button" className="properties-chip" onClick={() => onPick(item)}>
-                <TrendUp size={15} weight="bold" aria-hidden /> {item}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {popular.length > 0 && (
+        <div className="properties-chip-group">
+          <p className="properties-chip-label">Popular areas</p>
+          <ul className="properties-chips">
+            {popular.map((item) => (
+              <li key={`popular-${item}`}>
+                <button type="button" className="properties-chip" onClick={() => onPick(item)}>
+                  <TrendUp size={15} weight="bold" aria-hidden /> {item}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
 
-function PropertiesUpsell({ onUpgrade }: { onUpgrade: () => void }) {
+function PropertiesUpsell({ countryName, onUpgrade }: { countryName: string; onUpgrade: () => void }) {
   return (
     <section className="properties" aria-label="Properties Scout">
       <div className="properties-locked">
@@ -671,14 +685,14 @@ function PropertiesUpsell({ onUpgrade }: { onUpgrade: () => void }) {
         <p className="eyebrow">Household plan</p>
         <h1>Properties Scout</h1>
         <p className="properties-locked-lede">
-          Search homes to buy or rent across South Africa — 25 portals in one place, with swipeable
-          photos, saved homes and one-tap sharing. Properties Scout is included with the Household
-          plan.
+          Search homes to buy or rent across {countryName}. Trolley Scout finds local property
+          platforms, with swipeable photos, saved homes and one-tap sharing. Properties Scout is
+          included with the Household plan.
         </p>
         <ul className="properties-locked-list">
           <li>Homes to buy and to rent, nationwide</li>
           <li>Swipe photos, save favourites, share links</li>
-          <li>Live listings from the major SA portals</li>
+          <li>Live listings from property platforms in {countryName}</li>
         </ul>
         <button type="button" className="properties-submit" onClick={onUpgrade}>
           Upgrade to Household

@@ -17,7 +17,7 @@ export interface SaPropertyLocation {
   lat: number
   lon: number
   p24?: { id: number; type: number; name: string; parent: string }
-  pp?: { id: number; name: string; descriptor: string }
+  pp?: { id: number; name: string; descriptor: string; path?: string }
   pamgolding?: number
   myroof?: { id: number; slug: string }
 }
@@ -47,6 +47,7 @@ export const SA_PROPERTY_LOCATIONS: SaPropertyLocation[] = [
   { name: "Soweto", province: "Gauteng", lat: -26.2227778, lon: 27.89, p24: { id: 102, type: 2, name: "Soweto", parent: "Gauteng" }, pp: { id: 25, name: "Soweto", descriptor: "Johannesburg" }, pamgolding: 6840, myroof: { id: 62, slug: "Soweto" } },
   { name: "Benoni", province: "Gauteng", lat: -26.1930356, lon: 28.3082376, p24: { id: 22, type: 2, name: "Benoni", parent: "Gauteng" }, pp: { id: 46, name: "Benoni", descriptor: "East Rand" }, pamgolding: 581, myroof: { id: 65, slug: "Benoni" } },
   { name: "Boksburg", province: "Gauteng", lat: -26.2124639, lon: 28.2617471, p24: { id: 20, type: 2, name: "Boksburg", parent: "Gauteng" }, pp: { id: 44, name: "Boksburg", descriptor: "East Rand" }, pamgolding: 583, myroof: { id: 67, slug: "Boksburg" } },
+  { name: "Edenvale", province: "Gauteng", lat: -26.1417, lon: 28.1528, p24: { id: 14, type: 2, name: "Edenvale", parent: "Gauteng" }, pp: { id: 45, name: "Edenvale", descriptor: "Gauteng", path: "gauteng/east-rand/edenvale" } },
   { name: "Kempton Park", province: "Gauteng", lat: -26.0964372, lon: 28.2336325, p24: { id: 12, type: 2, name: "Kempton Park", parent: "Gauteng" }, pp: { id: 42, name: "Kempton Park", descriptor: "East Rand" }, pamgolding: 3272, myroof: { id: 175, slug: "Kempton-Park---JHB-East" } },
   { name: "Alberton", province: "Gauteng", lat: -26.2669894, lon: 28.1220546, p24: { id: 19, type: 2, name: "Alberton", parent: "Gauteng" }, pp: { id: 927, name: "Alberton", descriptor: "East Rand" }, pamgolding: 713 },
   { name: "Fourways", province: "Gauteng", lat: -26.004472, lon: 28.0042447, p24: { id: 5811, type: 1, name: "Fourways", parent: "Sandton" }, pp: { id: 373, name: "Fourways", descriptor: "Sandton" }, pamgolding: 635 },
@@ -120,7 +121,7 @@ export function toPrivatePropertyLocation(
   loc: SaPropertyLocation,
 ): PrivatePropertyLocation | undefined {
   if (!loc.pp) return undefined
-  return { id: loc.pp.id, name: loc.pp.name, descriptor: loc.pp.descriptor }
+  return { id: loc.pp.id, name: loc.pp.name, descriptor: loc.pp.descriptor, path: loc.pp.path }
 }
 
 /** Resolves free text to a catalogue location (exact → prefix → substring). */

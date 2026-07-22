@@ -1,23 +1,15 @@
 # Trolley Scout
 
-Stretch every rand. A cost-of-living toolkit for South African households: money help that
-people are entitled to but rarely claim, in-store price tools, and grocery deal tracking from
-official retailer sources.
+Stretch every budget with product comparison, grocery deal tracking, nearby store discovery,
+and property search across multiple platforms.
 
 Suggested domain: `trolleyscout.co.za`
 
 ## For households (no sign-in needed)
 
-- **Money help**: every SASSA grant with current amounts (effective 2026-04-01), school fee
-  exemptions, free basic electricity and water via the municipal indigent register, UIF, the
-  22 zero-rated (VAT-free) foods, and grant fraud safety. Every fact links to its official
-  source with the date it was checked (`src/data/moneyHelp.ts`).
-- **Unit price checker**: client-side pack comparison (rand per kg/litre/item) that works
-  offline once loaded (`src/services/unitPrice.ts`).
-- **Fair-price benchmark**: the PMBEJD Household Affordability Index headline figure with
-  source link.
-- **Data-light by design**: no hero imagery on the money pages, a service worker for flaky
-  connections (`public/sw.js`), and an installable web manifest.
+- **Product and store comparison**: search selected retailers for one product or compare a full list.
+- **Data-light by design**: a service worker for flaky connections (`public/sw.js`) and an
+  installable web manifest.
 
 ## What is here
 
@@ -27,7 +19,7 @@ Suggested domain: `trolleyscout.co.za`
 - D1-backed member sessions, saved source lists, saved deal lists, basket items, and subscription state.
 - Official retailer source directory for Pick n Pay, Checkers, Shoprite, Woolworths, SPAR, Boxer, Food Lovers Market, Makro, Dis-Chem, Clicks, Usave, OK Foods, Takealot, Amazon South Africa, Game, Builders, and Yuppiechef.
 - Source-backed deal discovery for approved official pages that expose static rows, official listing JSON, or embedded product JSON: Clicks (Hybris promotions results JSON), Takealot (public search API), Amazon South Africa, Dis-Chem, and Yuppiechef. Shoprite, Checkers, Pick n Pay, and Woolworths render products client-side only (verified July 2026) and are reported as checked without rows.
-- Design language: the South African specials-insert — newsprint cream, ink rules, specials-red prices, marker-yellow highlights, hard cut-paper shadows, Anton price-card display type, and the till-slip hero.
+- Design language: the South African specials insert with newsprint cream, ink rules, specials-red prices, marker-yellow highlights, hard cut-paper shadows, and Anton price-card display type.
 - Generated Trolley Scout brand mark and grocery hero image in `public/assets`.
 
 ## API routes
@@ -35,6 +27,7 @@ Suggested domain: `trolleyscout.co.za`
 - `GET /api/health`: service status.
 - `GET /api/summary`: retailer, source, and verified-offer counts.
 - `GET /api/retailers`: official retailer sources, with optional `q` and `kind` query params.
+- `GET /api/country`: detected or account country plus display currency and the current rand rate.
 - `GET /api/offers`: verified offers from D1, or an empty local board when D1 is unavailable.
 - `GET /api/discovery`: checks approved official deal pages and returns extracted source-backed rows plus source status.
 - `POST /api/offers`: validates and saves one source-backed offer draft to D1.
@@ -91,15 +84,25 @@ npx wrangler d1 migrations apply trolley-scout --local
 npx wrangler pages dev dist --port 8792 --ip 127.0.0.1
 ```
 
+Member and support email addresses require `EMAIL_ENCRYPTION_KEY`, a URL-safe base64 value
+that decodes to exactly 32 random bytes. Keep the same key for the life of the stored data.
+For local Pages development, place it in an ignored `.dev.vars` file. For production, set it
+with Wrangler:
+
+```bash
+npx wrangler pages secret put EMAIL_ENCRYPTION_KEY --project-name trolley-scout
+```
+
 Paid subscription checkout expects these Cloudflare environment variables:
 
 - `APP_URL`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_SCOUT_PRICE_ID`
-- `STRIPE_HOUSEHOLD_PRICE_ID`
-- `STRIPE_WEBHOOK_SECRET`
+- `PAYFAST_MERCHANT_ID`
+- `PAYFAST_MERCHANT_KEY`
+- `PAYFAST_MODE`
+- `PAYFAST_NOTIFY_ORIGIN`
+- `PAYFAST_PASSPHRASE`
 
-If those keys are missing, paid plans stay visible but checkout is blocked with a billing setup message. Point the Stripe webhook at `/api/stripe-webhook` and send `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`.
+If the live PayFast values are missing, the app uses the public PayFast sandbox configuration.
 
 ## Verify
 

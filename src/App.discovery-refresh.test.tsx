@@ -54,7 +54,6 @@ it('loads Find Deals once per app session and hides manual refresh from public u
   expect(await screen.findByRole('heading', { name: 'Source-backed specials' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Check now' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Money help' }))
     fireEvent.click(screen.getByRole('button', { name: 'Deals' }))
 
   await waitFor(() => expect(discoveryRequests).toEqual(['/api/discovery']))

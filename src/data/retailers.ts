@@ -396,6 +396,23 @@ export const retailers: Retailer[] = [
     ],
   },
   {
+    id: 'fair-price',
+    name: 'Fair Price',
+    shortName: 'Fair Price',
+    group: 'General retailer',
+    program: 'Sale items',
+    sourceNote: 'Official Fair Price storefront with regular and sale prices per product.',
+    verifiedOn: '2026-07-22',
+    accentColor: '#e2231a',
+    sources: [
+      {
+        label: 'Sale items',
+        url: 'https://www.fairprice.co.za/',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
     id: 'yuppiechef',
     name: 'Yuppiechef',
     shortName: 'Yuppiechef',

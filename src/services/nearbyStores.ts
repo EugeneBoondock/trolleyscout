@@ -26,6 +26,8 @@ export interface NearbyStore {
   lon: number
   website?: string
   distanceM?: number
+  countryCode?: string
+  countryName?: string
   // Set when the store name maps to a chain Trolley Scout already scouts, so
   // we can attach that chain's deals and leaflets straight away.
   retailerId?: RetailerId
@@ -83,7 +85,7 @@ interface GeoapifyFeature {
   }
 }
 
-export function mapGeoapifyStores(payload: unknown, limit = 40): NearbyStore[] {
+export function mapGeoapifyStores(payload: unknown, limit = 40, countryCode = 'ZA', countryName = 'South Africa'): NearbyStore[] {
   const features = (payload as { features?: unknown })?.features
 
   if (!Array.isArray(features)) {
@@ -123,12 +125,14 @@ export function mapGeoapifyStores(payload: unknown, limit = 40): NearbyStore[] {
 
     stores.push({
       address: firstString(props.formatted) ?? firstString(props.address_line2),
+      countryCode,
+      countryName,
       distanceM: Number.isFinite(Number(props.distance)) ? Number(props.distance) : undefined,
       lat,
       lon,
       name,
       placeId: firstString(props.place_id) ?? key,
-      retailerId: matchKnownRetailer(name),
+      retailerId: countryCode === 'ZA' ? matchKnownRetailer(name) : undefined,
       website: website ? normalizeWebsite(website) : undefined,
     })
   }

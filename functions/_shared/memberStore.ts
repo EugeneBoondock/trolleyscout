@@ -8,17 +8,20 @@ import type {
   MemberAccount,
   MemberPlanId,
   MemberPlanStatus,
+  Retailer,
   RetailerId,
   SavedDeal,
   SavedDealDraft,
   SavedSource,
   SourceKind,
   SubscriptionCheckoutResult,
+  CountryOption,
 } from '../../src/types'
 import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
 import { computeLineEconomics, parseMultibuy } from '../../src/services/multibuy'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
+import type { DealSiteItem } from '../../src/services/dealSites'
 import { hashPassword, validatePassword, verifyPassword } from './password'
 import { getPayFastEndpoints, resolvePayFastConfig } from './payfast'
 import { resolvePayFastNotifyUrl } from './payfastNotifyUrl'
@@ -27,6 +30,14 @@ import {
   createPayFastCheckoutFields,
   requestPayFastOnsitePayment,
 } from './payfastBilling'
+import { countryFromCode, listCountryOptions } from './countryContext'
+import {
+  emailLookup,
+  hasEmailProtection,
+  isProtectedEmail,
+  protectEmail,
+  revealEmail,
+} from './emailProtection'
 
 const sessionCookieName = 'ts_member_session'
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 30
@@ -35,6 +46,7 @@ interface MemberAccountRow {
   created_at: string
   display_name: string
   email: string
+  email_lookup?: string | null
   id: string
   password_hash?: string | null
   plan_id: string
@@ -47,6 +59,9 @@ interface MemberAccountRow {
   pending_billing_cycle?: string | null
   pending_effective_at?: string | null
   pending_plan_id?: string | null
+  country_code?: string | null
+  country_name?: string | null
+  currency_code?: string | null
 }
 
 // The account owner. Signing up (or logging in) with this address always
@@ -54,15 +69,18 @@ interface MemberAccountRow {
 const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
 
 const ACCOUNT_COLUMNS =
-  'id, email, display_name, plan_id, plan_status, role, properties_access, password_hash, created_at, updated_at'
+  `id, email, email_lookup, display_name, plan_id, plan_status, role, properties_access,
+    password_hash, country_code, country_name, currency_code, created_at, updated_at`
 
 // The billing cycle lives on the subscription rather than the account, so any
 // read that feeds the member UI joins the active subscription to learn whether
 // a paid member is on monthly or annual. A plan granted by an admin has no
 // subscription row and correctly reports no cycle.
-const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, member_accounts.display_name,
+const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, member_accounts.email_lookup,
+  member_accounts.display_name,
   member_accounts.plan_id, member_accounts.plan_status, member_accounts.role,
   member_accounts.properties_access,
+  member_accounts.country_code, member_accounts.country_name, member_accounts.currency_code,
   member_accounts.created_at, member_accounts.updated_at,
   billing_subscriptions.billing_cycle,
   billing_subscriptions.current_period_end,
@@ -144,12 +162,14 @@ export interface MemberSessionInput {
 }
 
 export interface MemberSignUpInput {
+  country: CountryOption
   displayName: string
   email: string
   password: string
 }
 
 export interface MemberLogInInput {
+  country: CountryOption
   email: string
   password: string
 }
@@ -203,7 +223,7 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
     .first<MemberAccountRow>()
 
   return {
-    account: row ? accountRowToMember(row) : undefined,
+    account: row ? await accountRowToMember(env, row) : undefined,
     isAuthenticated: Boolean(row),
   }
 }
@@ -244,10 +264,18 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
     return { issues }
   }
 
+  if (!hasEmailProtection(env)) {
+    return { issues: ['Account security is not configured yet. Please try again later.'] }
+  }
+
+  const lookup = await emailLookup(env, email)
+  const protectedEmail = await protectEmail(env, email)
+
   const existing = await env.DB.prepare(
-    'SELECT id, password_hash FROM member_accounts WHERE email = ?',
+    `SELECT id, password_hash FROM member_accounts
+      WHERE email_lookup = ? OR (email_lookup IS NULL AND email = ?)`,
   )
-    .bind(email)
+    .bind(lookup, email)
     .first<{ id: string; password_hash: string | null }>()
 
   if (existing?.password_hash) {
@@ -263,13 +291,19 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
   if (existing) {
     await env.DB.prepare(
       `UPDATE member_accounts
-        SET display_name = ?, password_hash = ?, role = ?, updated_at = ?
+        SET display_name = ?, password_hash = ?, role = ?, email = ?, email_lookup = ?,
+          country_code = ?, country_name = ?, currency_code = ?, updated_at = ?
         WHERE id = ?`,
     )
       .bind(
         displayName,
         await hashPassword(input.password),
         isAdminEmail(email) ? 'admin' : 'member',
+        protectedEmail,
+        lookup,
+        input.country.code,
+        input.country.name,
+        input.country.currencyCode,
         timestamp,
         existing.id,
       )
@@ -282,17 +316,22 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
 
   await env.DB.prepare(
     `INSERT INTO member_accounts (
-      id, email, display_name, plan_id, plan_status, role, password_hash, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, email, email_lookup, display_name, plan_id, plan_status, role, password_hash,
+      country_code, country_name, currency_code, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       `member-${crypto.randomUUID()}`,
-      email,
+      protectedEmail,
+      lookup,
       displayName,
       'free',
       'active',
       isAdminEmail(email) ? 'admin' : 'member',
       await hashPassword(input.password),
+      input.country.code,
+      input.country.name,
+      input.country.currencyCode,
       timestamp,
       timestamp,
     )
@@ -313,8 +352,16 @@ export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput)
   }
 
   const email = input.email.trim().toLowerCase()
-  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE email = ?`)
-    .bind(email)
+  if (!hasEmailProtection(env)) {
+    return { issues: ['Account security is not configured yet. Please try again later.'] }
+  }
+
+  const lookup = await emailLookup(env, email)
+  const row = await env.DB.prepare(
+    `SELECT ${ACCOUNT_COLUMNS} FROM member_accounts
+      WHERE email_lookup = ? OR (email_lookup IS NULL AND email = ?)`,
+  )
+    .bind(lookup, email)
     .first<MemberAccountRow>()
 
   // Always run a verification so a missing account and a wrong password take
@@ -326,11 +373,29 @@ export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput)
   }
 
   // Keep the owner's admin role correct even if the row predates roles.
-  if (isAdminEmail(email) && row.role !== 'admin') {
-    await env.DB.prepare('UPDATE member_accounts SET role = ?, updated_at = ? WHERE id = ?')
-      .bind('admin', new Date().toISOString(), row.id)
-      .run()
-  }
+  // Country is only backfilled when the account has none: overwriting it on
+  // every login flipped travellers and VPN users to the wrong catalogue and
+  // currency each time they signed in.
+  const timestamp = new Date().toISOString()
+  await env.DB.prepare(
+    `UPDATE member_accounts SET
+      email = ?, email_lookup = ?, role = ?,
+      country_code = COALESCE(country_code, ?),
+      country_name = COALESCE(country_name, ?),
+      currency_code = COALESCE(currency_code, ?),
+      updated_at = ? WHERE id = ?`,
+  )
+    .bind(
+      isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
+      lookup,
+      isAdminEmail(email) ? 'admin' : (row.role ?? 'member'),
+      input.country.code,
+      input.country.name,
+      input.country.currencyCode,
+      timestamp,
+      row.id,
+    )
+    .run()
 
   const account = await getAccountByEmail(env, email)
 
@@ -364,7 +429,7 @@ export async function updateMemberProfile(
     .bind(accountId)
     .first<MemberAccountRow>()
 
-  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+  return row ? { account: await accountRowToMember(env, row) } : { issues: ['Account could not be loaded.'] }
 }
 
 // Admin-only: grant or revoke a single member's Properties Scout access. Only
@@ -395,7 +460,7 @@ export async function setMemberPropertiesAccess(
     .bind(accountId)
     .first<MemberAccountRow>()
 
-  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+  return row ? { account: await accountRowToMember(env, row) } : { issues: ['Account could not be loaded.'] }
 }
 
 export async function setMemberPlan(
@@ -424,7 +489,7 @@ export async function setMemberPlan(
     .bind(accountId)
     .first<MemberAccountRow>()
 
-  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+  return row ? { account: await accountRowToMember(env, row) } : { issues: ['Account could not be loaded.'] }
 }
 
 export async function changeMemberPassword(
@@ -459,63 +524,73 @@ export async function changeMemberPassword(
 
 // Admin console data. Only ever called after the caller's admin role is
 // checked at the endpoint; never exposes password hashes.
-export async function getAdminOverview(env: TrolleyScoutEnv) {
+export async function getAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA') {
   if (!hasMemberStore(env)) {
     return undefined
   }
 
-  const [accounts, planRows, dealRows, leafletRow] = await Promise.all([
+  const selectedCountry = countryFromCode(countryCode)
+  const [accounts, planRows, storeStats, pendingEmailRow] = await Promise.all([
     env.DB.prepare(
-      `SELECT id, email, display_name, plan_id, plan_status, role, properties_access,
-        created_at, updated_at
+      `SELECT ${ACCOUNT_COLUMNS}
         FROM member_accounts
+        WHERE country_code = ?
         ORDER BY created_at DESC
         LIMIT 100`,
-    ).all<MemberAccountRow>(),
-    env.DB.prepare('SELECT plan_id, COUNT(*) AS total FROM member_accounts GROUP BY plan_id').all<{
+    ).bind(selectedCountry.code).all<MemberAccountRow>(),
+    env.DB.prepare(
+      `SELECT plan_id, COUNT(*) AS total FROM member_accounts
+        WHERE country_code = ? GROUP BY plan_id`,
+    ).bind(selectedCountry.code).all<{
       plan_id: string
       total: number
     }>(),
     env.DB.prepare(
-      "SELECT source_key, checked_at, deals_json FROM deal_snapshots WHERE source_key != '__leaflets__'",
-    ).all<{ source_key: string; checked_at: string; deals_json: string }>(),
+      `SELECT
+        COUNT(*) AS store_count,
+        SUM(CASE WHEN website IS NOT NULL THEN 1 ELSE 0 END) AS source_count,
+        MAX(last_scout_at) AS last_scout_at
+        FROM discovered_stores WHERE country_code = ?`,
+    ).bind(selectedCountry.code).first<{
+      last_scout_at: string | null
+      source_count: number | null
+      store_count: number
+    }>(),
     env.DB.prepare(
-      "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__leaflets__'",
-    ).first<{ checked_at: string; deals_json: string }>(),
+      `SELECT COUNT(*) AS total FROM member_accounts
+        WHERE email_lookup IS NULL OR email NOT LIKE 'enc:v1:%'`,
+    ).first<{ total: number }>(),
   ])
 
-  let dealCount = 0
-  let newestCheckedAt: string | undefined
+  const promotionStats = await env.DB.prepare(
+    `SELECT
+      SUM(CASE WHEN kind = 'deal' THEN 1 ELSE 0 END) AS deal_count,
+      SUM(CASE WHEN kind = 'catalogue' THEN 1 ELSE 0 END) AS leaflet_count,
+      MAX(captured_at) AS last_scout_at
+      FROM store_promotions WHERE country_code = ? AND expires_at >= ?`,
+  ).bind(selectedCountry.code, new Date().toISOString()).first<{
+    deal_count: number | null
+    last_scout_at: string | null
+    leaflet_count: number | null
+  }>()
 
-  for (const row of dealRows.results) {
-    try {
-      dealCount += (JSON.parse(row.deals_json) as unknown[]).length
-    } catch {
-      // A corrupt row must not break the console.
-    }
-
-    if (!newestCheckedAt || row.checked_at > newestCheckedAt) {
-      newestCheckedAt = row.checked_at
-    }
-  }
-
-  let leafletCount = 0
-
-  if (leafletRow) {
-    try {
-      leafletCount = (JSON.parse(leafletRow.deals_json) as unknown[]).length
-    } catch {
-      leafletCount = 0
-    }
-  }
+  const memberRows = await Promise.all(accounts.results.map((row) => accountRowToMember(env, row)))
 
   return {
-    accounts: accounts.results.map(accountRowToMember),
+    accounts: memberRows,
+    countries: listCountryOptions(),
+    emailProtection: {
+      configured: hasEmailProtection(env),
+      pendingAccounts: Number(pendingEmailRow?.total ?? 0),
+      pendingSupport: 0,
+    },
+    selectedCountry,
     scout: {
-      dealCount,
-      leafletCount,
-      lastScoutedAt: newestCheckedAt,
-      sourceCount: dealRows.results.length,
+      dealCount: Number(promotionStats?.deal_count ?? 0),
+      leafletCount: Number(promotionStats?.leaflet_count ?? 0),
+      lastScoutedAt: promotionStats?.last_scout_at ?? storeStats?.last_scout_at ?? undefined,
+      sourceCount: Number(storeStats?.source_count ?? 0),
+      storeCount: Number(storeStats?.store_count ?? 0),
     },
     summary: {
       accountCount: accounts.results.length,
@@ -618,8 +693,13 @@ export async function saveMemberSource(env: TrolleyScoutEnv, accountId: string |
     }
   }
 
-  const retailer = retailers.find((candidate) => candidate.id === input.retailerId)
-  const source = retailer?.sources.find((candidate) => candidate.url === input.sourceUrl)
+  const staticRetailer = retailers.find((candidate) => candidate.id === input.retailerId)
+  const dynamicRetailer = staticRetailer
+    ? undefined
+    : await findCachedCountryRetailer(env, accountId, input.retailerId, input.sourceUrl)
+  const retailer = staticRetailer ?? dynamicRetailer?.retailer
+  const source = staticRetailer?.sources.find((candidate) => candidate.url === input.sourceUrl)
+    ?? dynamicRetailer?.source
 
   if (!retailer || !source) {
     return {
@@ -663,6 +743,37 @@ export async function saveMemberSource(env: TrolleyScoutEnv, accountId: string |
 
   return {
     savedSource: savedSource ? savedSourceRowToSource(savedSource) : undefined,
+  }
+}
+
+async function findCachedCountryRetailer(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  accountId: string,
+  retailerId: string,
+  sourceUrl: string,
+) {
+  const countryMatch = /^country:([a-z]{2}):[a-z0-9-]+$/i.exec(retailerId)
+  if (!countryMatch) return undefined
+
+  const account = await env.DB.prepare('SELECT country_code FROM member_accounts WHERE id = ?')
+    .bind(accountId)
+    .first<{ country_code: string }>()
+  const countryCode = countryMatch[1].toUpperCase()
+  if (account?.country_code !== countryCode) return undefined
+
+  const cache = await env.DB.prepare(
+    'SELECT retailers_json FROM country_retailer_cache WHERE country_code = ?',
+  ).bind(countryCode).first<{ retailers_json: string }>()
+  if (!cache) return undefined
+
+  try {
+    const entries = JSON.parse(cache.retailers_json) as unknown
+    if (!Array.isArray(entries)) return undefined
+    const retailer = (entries as Retailer[]).find((candidate) => candidate.id === retailerId)
+    const source = retailer?.sources.find((candidate) => candidate.url === sourceUrl)
+    return retailer && source ? { retailer, source } : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -724,18 +835,19 @@ export async function saveMemberDeal(
     }
   }
 
-  const retailer = retailers.find((candidate) => candidate.id === input.retailerId)
-  const source = retailer?.sources.find((candidate) => candidate.url === input.sourceUrl)
+  const trusted = await resolveTrustedSavedDeal(env, input)
 
-  if (!retailer || !source || !matchesRetailerSourceUrl(input.productUrl, retailer)) {
+  if (!trusted) {
     return {
-      issues: ['Save deals only from official retailer sources.'],
+      issues: ['Save deals only from verified Trolley Scout sources.'],
     }
   }
 
+  const deal = trusted.deal
+
   const capacityIssue = await findPlanCapacityIssue(env, accountId, {
     countSql: 'SELECT COUNT(*) AS n FROM member_saved_deals WHERE account_id = ?',
-    existsKey: input.productUrl,
+    existsKey: deal.productUrl,
     existsSql: 'SELECT id FROM member_saved_deals WHERE account_id = ? AND product_url = ?',
     limitKey: 'savedDeals',
     noun: 'saved deals',
@@ -747,7 +859,7 @@ export async function saveMemberDeal(
     }
   }
 
-  const id = `${accountId}-${hashString(`${input.retailerId}:${input.productUrl}`)}`
+  const id = `${accountId}-${hashString(`${deal.retailerId}:${deal.productUrl}`)}`
   const timestamp = new Date().toISOString()
 
   await env.DB.prepare(
@@ -769,17 +881,17 @@ export async function saveMemberDeal(
     .bind(
       id,
       accountId,
-      input.id,
-      retailer.id,
-      source.label,
-      source.url,
-      input.productUrl,
-      input.title.trim(),
-      input.capturedAt,
-      input.priceText ?? null,
-      input.previousPriceText ?? null,
-      input.savingText ?? null,
-      input.evidenceText.trim(),
+      deal.id,
+      deal.retailerId,
+      trusted.sourceLabel,
+      trusted.sourceUrl,
+      deal.productUrl,
+      deal.title.trim(),
+      deal.capturedAt,
+      deal.priceText ?? null,
+      deal.previousPriceText ?? null,
+      deal.savingText ?? null,
+      deal.evidenceText.trim(),
       timestamp,
     )
     .run()
@@ -790,7 +902,7 @@ export async function saveMemberDeal(
       FROM member_saved_deals
       WHERE account_id = ? AND product_url = ?`,
   )
-    .bind(accountId, input.productUrl)
+    .bind(accountId, deal.productUrl)
     .first<SavedDealRow>()
 
   return {
@@ -1211,29 +1323,117 @@ export async function cancelPendingPlanChange(
     .bind(account.id)
     .first<MemberAccountRow>()
 
-  return row ? { account: accountRowToMember(row) } : { issues: ['Account could not be loaded.'] }
+  return row ? { account: await accountRowToMember(env, row) } : { issues: ['Account could not be loaded.'] }
+}
+
+interface TrustedSavedDeal {
+  deal: SavedDealDraft
+  sourceLabel: string
+  sourceUrl: string
+}
+
+async function resolveTrustedSavedDeal(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  input: SavedDealDraft,
+): Promise<TrustedSavedDeal | undefined> {
+  const retailer = retailers.find((candidate) => candidate.id === input.retailerId)
+
+  // A deal is trusted when it points at the retailer's own domain family.
+  // Requiring an exact registry source URL rejected every legitimate feed and
+  // catalogue deal (their sourceUrl is the feed endpoint or leaflet document,
+  // not the registry landing page), which shoppers saw as a refusal to save.
+  if (
+    retailer &&
+    matchesRetailerSourceUrl(input.productUrl, retailer) &&
+    matchesRetailerSourceUrl(input.sourceUrl, retailer)
+  ) {
+    const source = retailer.sources.find((candidate) => candidate.url === input.sourceUrl)
+    return {
+      deal: input,
+      sourceLabel: source?.label ?? (input.sourceLabel?.trim() || `${retailer.name} official source`),
+      sourceUrl: input.sourceUrl,
+    }
+  }
+
+  // Catalogue scans can deep-link to a hosted viewer domain (e.g. PnP's
+  // HFlip) — trust those through the stored deal item the scout wrote.
+  const storedDeal = await findStoredDealItem(env, input)
+  if (storedDeal) {
+    return storedDeal
+  }
+
+  const row = await env.DB.prepare(
+    'SELECT payload_json FROM deal_site_cache WHERE source_key = ?',
+  )
+    .bind(input.retailerId)
+    .first<{ payload_json: string }>()
+
+  if (!row) {
+    return undefined
+  }
+
+  let items: DealSiteItem[]
+  try {
+    const parsed = JSON.parse(row.payload_json) as unknown
+    if (!Array.isArray(parsed)) return undefined
+    items = parsed as DealSiteItem[]
+  } catch {
+    return undefined
+  }
+
+  const item = items.find((candidate) =>
+    candidate.source === input.retailerId &&
+    candidate.id === input.id &&
+    candidate.productUrl === input.productUrl,
+  )
+
+  if (!item) {
+    return undefined
+  }
+
+  return {
+    deal: {
+      ...input,
+      id: item.id,
+      previousPriceText: item.previousPriceText,
+      priceText: item.priceText,
+      productUrl: item.productUrl,
+      retailerId: item.source,
+      retailerName: item.retailerName,
+      savingText: item.savingText,
+      sourceLabel: item.sourceLabel,
+      sourceUrl: item.productUrl,
+      title: item.title,
+    },
+    sourceLabel: item.sourceLabel,
+    sourceUrl: item.productUrl,
+  }
 }
 
 async function getAccountByEmail(env: TrolleyScoutEnv & { DB: D1Database }, email: string) {
+  const lookup = await emailLookup(env, email)
   const row = await env.DB.prepare(
-    `${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.email = ?`,
+    `${ACCOUNT_WITH_BILLING_SELECT}
+      WHERE member_accounts.email_lookup = ?
+        OR (member_accounts.email_lookup IS NULL AND member_accounts.email = ?)`,
   )
-    .bind(email)
+    .bind(lookup, email)
     .first<MemberAccountRow>()
 
-  return row ? accountRowToMember(row) : undefined
+  return row ? accountRowToMember(env, row) : undefined
 }
 
-function accountRowToMember(row: MemberAccountRow): MemberAccount {
+async function accountRowToMember(env: TrolleyScoutEnv, row: MemberAccountRow): Promise<MemberAccount> {
   const planId = normalizePlanId(row.plan_id)
   const plan = getMemberPlan(planId)
-
-  const role = row.role === 'admin' || isAdminEmail(row.email) ? 'admin' : 'member'
+  const email = await revealEmail(env, row.email)
+  const role = row.role === 'admin' || isAdminEmail(email) ? 'admin' : 'member'
+  const country = countryFromCode(row.country_code ?? 'ZA')
 
   return {
     createdAt: row.created_at,
     displayName: row.display_name,
-    email: row.email,
+    email,
     id: row.id,
     initials: getInitials(row.display_name),
     planId,
@@ -1241,6 +1441,9 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
     planStatus: normalizePlanStatus(row.plan_status),
     propertiesAccess: computePropertiesAccess(planId, role, row.properties_access),
     role,
+    countryCode: country.code,
+    countryName: row.country_name ?? country.name,
+    currencyCode: row.currency_code ?? country.currencyCode,
     updatedAt: row.updated_at,
     billingCycle: normalizeBillingCycle(row.billing_cycle),
     currentPeriodEnd: row.current_period_end ?? undefined,
@@ -1256,6 +1459,42 @@ function accountRowToMember(row: MemberAccountRow): MemberAccount {
   }
 }
 
+export async function protectLegacyMemberEmails(
+  env: TrolleyScoutEnv,
+  limit = 500,
+): Promise<{ protected: number; remaining: number }> {
+  if (!hasMemberStore(env) || !hasEmailProtection(env)) {
+    return { protected: 0, remaining: 0 }
+  }
+
+  const rows = await env.DB.prepare(
+    `SELECT id, email FROM member_accounts
+      WHERE email_lookup IS NULL OR email NOT LIKE 'enc:v1:%'
+      LIMIT ?`,
+  ).bind(limit).all<{ email: string; id: string }>()
+
+  let protectedCount = 0
+  for (const row of rows.results) {
+    const email = await revealEmail(env, row.email)
+    const result = await env.DB.prepare(
+      'UPDATE member_accounts SET email = ?, email_lookup = ?, updated_at = ? WHERE id = ?',
+    ).bind(
+      isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
+      await emailLookup(env, email),
+      new Date().toISOString(),
+      row.id,
+    ).run()
+    protectedCount += Number(result.meta.changes ?? 0)
+  }
+
+  const remaining = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM member_accounts
+      WHERE email_lookup IS NULL OR email NOT LIKE 'enc:v1:%'`,
+  ).first<{ total: number }>()
+
+  return { protected: protectedCount, remaining: Number(remaining?.total ?? 0) }
+}
+
 function savedSourceRowToSource(row: SavedSourceRow): SavedSource {
   const retailer = retailers.find((candidate) => candidate.id === row.retailer_id)
 
@@ -1263,7 +1502,7 @@ function savedSourceRowToSource(row: SavedSourceRow): SavedSource {
     createdAt: row.created_at,
     id: row.id,
     retailerId: normalizeRetailerId(row.retailer_id),
-    retailerName: retailer?.name ?? row.retailer_id,
+    retailerName: retailer?.name ?? row.source_label ?? row.retailer_id,
     sourceKind: normalizeSourceKind(row.source_kind),
     sourceLabel: row.source_label,
     sourceUrl: row.source_url,
@@ -1281,7 +1520,7 @@ function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
     priceText: row.price_text ?? undefined,
     productUrl: row.product_url,
     retailerId: normalizeRetailerId(row.retailer_id),
-    retailerName: retailer?.name ?? row.retailer_id,
+    retailerName: retailer?.name ?? row.source_label ?? row.retailer_id,
     savedAt: row.created_at,
     savingText: row.saving_text ?? undefined,
     sourceLabel: row.source_label,
@@ -1364,8 +1603,8 @@ function emptyBasket(): Basket {
 function validateSavedDeal(input: SavedDealDraft) {
   const issues: string[] = []
 
-  if (!input.retailerId || !retailers.some((retailer) => retailer.id === input.retailerId)) {
-    issues.push('Choose a supported retailer.')
+  if (!input.retailerId) {
+    issues.push('Choose a retailer or deal source.')
   }
 
   if (!input.sourceUrl || !input.productUrl) {
@@ -1447,7 +1686,7 @@ function normalizeBillingCycle(value: string | null | undefined): BillingCycle |
 }
 
 function normalizeRetailerId(value: string): RetailerId {
-  return retailers.some((retailer) => retailer.id === value) ? (value as RetailerId) : 'pick-n-pay'
+  return (value.trim() || 'pick-n-pay') as RetailerId
 }
 
 function normalizeSourceKind(value: string): SourceKind {
@@ -1460,14 +1699,49 @@ function normalizeSourceKind(value: string): SourceKind {
 
 function matchesRetailerSourceUrl(value: string, retailer: { sources: Array<{ url: string }> }) {
   try {
-    const candidate = new URL(value)
+    const candidate = baseHostname(new URL(value).hostname)
 
     return retailer.sources.some((source) => {
-      const sourceUrl = new URL(source.url)
-      return candidate.hostname === sourceUrl.hostname || candidate.hostname.endsWith(`.${sourceUrl.hostname}`)
+      const sourceHost = baseHostname(new URL(source.url).hostname)
+      return candidate === sourceHost || candidate.endsWith(`.${sourceHost}`)
     })
   } catch {
     return false
+  }
+}
+
+// Registry sources are usually listed as www.<retailer>; deals live on
+// sibling subdomains like specials.<retailer>. Compare the registrable part.
+function baseHostname(hostname: string) {
+  return hostname.toLowerCase().replace(/^www\./, '')
+}
+
+// A deal the scout itself stored in deal_items is trusted regardless of the
+// domain it deep-links to (catalogue scans can point at hosted viewers).
+async function findStoredDealItem(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  input: SavedDealDraft,
+): Promise<TrustedSavedDeal | undefined> {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT retailer_id, source_url FROM deal_items
+        WHERE id = ? AND status = 'active'`,
+    )
+      .bind(input.id)
+      .first<{ retailer_id: string; source_url: string }>()
+
+    if (!row || row.retailer_id !== input.retailerId) {
+      return undefined
+    }
+
+    return {
+      deal: input,
+      sourceLabel: input.sourceLabel?.trim() || 'Official source',
+      sourceUrl: row.source_url,
+    }
+  } catch {
+    // Environments without the deal_items table fall through to other checks.
+    return undefined
   }
 }
 

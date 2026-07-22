@@ -8,6 +8,8 @@ import { json, methodNotAllowed } from '../_shared/respond'
 import type { PropertyListingType } from '../../src/types'
 import type { PropertySort } from '../../src/services/propertyPortals'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { countryFromCode } from '../_shared/countryContext'
+import { searchGlobalProperties } from '../_shared/globalPropertyScout'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -58,6 +60,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const lon = toFloat(url.searchParams.get('lon'))
   const hasCoords = lat !== undefined && lon !== undefined
 
+  if (query.length > 160) {
+    return json(
+      { error: 'Keep the location search under 160 characters.' },
+      { headers: privateHeaders, status: 400 },
+    )
+  }
+
   // Either a text query (>=2 chars) or a "near me" coordinate pair is required.
   if (!hasCoords && query.length < 2) {
     return json(
@@ -81,7 +90,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     sort: sortParam && SORTS.includes(sortParam) ? sortParam : 'relevance',
   }
 
-  const result = await searchProperties(env, params)
+  const country = countryFromCode(session.account.countryCode)
+  const result = country.code === 'ZA'
+    ? { ...(await searchProperties(env, params)), country }
+    : await searchGlobalProperties(env, params, country)
 
   return json(result, { headers: privateHeaders })
 }

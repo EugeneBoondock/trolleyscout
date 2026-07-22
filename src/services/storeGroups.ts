@@ -8,6 +8,7 @@ export interface DiscoveredStoreGroup {
   displayName: string
   id: string
   logoUrl?: string
+  nearestDistanceM?: number
   promotionCount: number
   retailerId?: string
 }
@@ -86,6 +87,14 @@ function toPublicGroup(group: MutableStoreGroup): DiscoveredStoreGroup {
     displayName,
     id: group.id,
     logoUrl: group.branches.find((branch) => branch.logoUrl)?.logoUrl,
+    nearestDistanceM: group.branches.reduce<number | undefined>(
+      (nearest, branch) => branch.distanceM === undefined
+        ? nearest
+        : nearest === undefined
+          ? branch.distanceM
+          : Math.min(nearest, branch.distanceM),
+      undefined,
+    ),
     promotionCount: group.branches.reduce(
       (total, branch) => total + (branch.promotionCount ?? branch.promotions?.length ?? 0),
       0,

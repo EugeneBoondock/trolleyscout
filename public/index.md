@@ -1,7 +1,7 @@
 # Trolley Scout: stretch every rand
 
-Trolley Scout helps South Africans find this week's grocery specials, compare
-prices across stores, and claim the money help they are entitled to.
+Trolley Scout helps shoppers find grocery specials, compare prices across
+stores, locate nearby retailers, and search property platforms.
 
 ## What you can do here
 
@@ -15,12 +15,9 @@ prices across stores, and claim the money help they are entitled to.
 - **Compare shops**: enter your shopping list with prices from two or more
   stores and see which store is cheapest overall, including buy-2-for and
   multibuy maths.
-- **Unit price checker**: work out price per kg/litre in the aisle so bigger
-  packs never trick you.
+- **Product and store comparison**: search selected retailers for one product
+  or compare a full list side by side.
 - **Watchlist**: track an item and get alerted when it goes on special.
-- **Money help**: current SASSA grant amounts and how to claim them, school
-  fee exemptions, free basic electricity, and other support that is free to
-  claim.
 - **Catalogues**: page through the latest store leaflets without hunting
   across retailer sites.
 

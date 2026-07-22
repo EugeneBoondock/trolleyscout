@@ -1,6 +1,5 @@
 import type { BillingCycle, MemberPlanId } from '../../src/types'
 import {
-  createPayFastParameterString,
   createPayFastSignature,
   getPayFastEndpoints,
   type PayFastMode,

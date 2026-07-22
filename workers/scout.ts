@@ -328,6 +328,7 @@ async function readStoredCataloguePages(
         nowIso,
         STORED_CATALOGUE_PAGE_SIZE,
         offset,
+        'ZA',
       )
       const remaining = STORED_CATALOGUE_ROW_LIMIT - catalogues.length
       catalogues.push(...page.slice(0, remaining))

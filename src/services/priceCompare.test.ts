@@ -150,6 +150,18 @@ describe('autoComparePrices', () => {
     expect(result.foundCount).toBe(3)
   })
 
+  test('does not call one returned price the cheapest comparison', () => {
+    const result = autoComparePrices(
+      [deal({ priceText: 'R17.99', retailerId: 'shoprite', title: 'White Bread 700g' })],
+      'white bread',
+      RETAILERS,
+    )
+
+    expect(result.foundCount).toBe(1)
+    expect(result.cheapestRetailerId).toBeUndefined()
+    expect(result.savingsCents).toBe(0)
+  })
+
   test('defaults gracefully when nothing matches anywhere', () => {
     const result = autoComparePrices(deals, 'caviar', RETAILERS)
 

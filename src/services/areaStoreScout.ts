@@ -31,8 +31,8 @@ const MIN_NAME_LENGTH = 4
 const MAX_NAME_LENGTH = 60
 const MAX_CANDIDATES = 6
 
-export function buildAreaStoresQuery(area: string): string {
-  return `supermarkets hyper cash and carry ${area} South Africa`
+export function buildAreaStoresQuery(area: string, countryName = 'South Africa'): string {
+  return `supermarkets hyper cash and carry ${area} ${countryName}`
 }
 
 // Pulls plausible store names out of search-result titles, skipping category
@@ -42,6 +42,7 @@ export function buildAreaStoresQuery(area: string): string {
 export function extractCandidateStoreNames(
   results: SearchResult[],
   existingStoreNames: string[],
+  countryCode = 'ZA',
 ): string[] {
   const existing = existingStoreNames.map(normalizeName)
   const seenBrands = new Set<string>()
@@ -54,7 +55,7 @@ export function extractCandidateStoreNames(
 
     const name = candidateNameFromTitle(result.title)
 
-    if (!name || matchKnownRetailer(name)) {
+    if (!name || (countryCode === 'ZA' && matchKnownRetailer(name))) {
       continue
     }
 
@@ -148,7 +149,7 @@ const PRECISE_RESULT_TYPES = new Set(['amenity', 'building', 'street'])
 export function mapGeocodedStore(
   name: string,
   payload: unknown,
-  fallback: { lat: number; lon: number; area: string },
+  fallback: { lat: number; lon: number; area: string; countryCode?: string; countryName?: string },
 ): NearbyStore {
   const feature = firstFeature(payload)
   const props = feature?.properties ?? {}
@@ -168,11 +169,13 @@ export function mapGeocodedStore(
     address: isPrecise
       ? (firstString(props.formatted) ?? fallback.area)
       : `${fallback.area} (location approximate)`,
+    countryCode: fallback.countryCode,
+    countryName: fallback.countryName,
     lat: isPrecise && isValidCoordinate(lat, lon) ? lat : fallback.lat,
     lon: isPrecise && isValidCoordinate(lat, lon) ? lon : fallback.lon,
     name,
     placeId: `area-scout:${slugify(name)}:${slugify(fallback.area)}`,
-    retailerId: matchKnownRetailer(name),
+    retailerId: fallback.countryCode === 'ZA' ? matchKnownRetailer(name) : undefined,
   }
 }
 

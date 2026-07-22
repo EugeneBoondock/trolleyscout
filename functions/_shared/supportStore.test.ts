@@ -37,7 +37,7 @@ describe('support store', () => {
       script: 'export default { fetch() { return new Response("ok") } }',
     })
     db = (await miniflare.getD1Database('DB')) as unknown as D1Database
-    env = { DB: db }
+    env = { DB: db, EMAIL_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
 
     for (const migrationUrl of [membershipMigrationUrl, supportMigrationUrl]) {
       const migration = (await readFile(migrationUrl, 'utf8')).replace(/^--.*$/gm, '').trim()
@@ -45,6 +45,8 @@ describe('support store', () => {
         await db.prepare(statement).run()
       }
     }
+    await db.prepare('ALTER TABLE member_accounts ADD COLUMN email_lookup TEXT').run()
+    await db.prepare('ALTER TABLE support_messages ADD COLUMN email_lookup TEXT').run()
   })
 
   afterEach(async () => {

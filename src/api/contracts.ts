@@ -18,6 +18,8 @@ import type {
   SubscriptionCheckoutRequest,
   SubscriptionCheckoutResult,
   VerifiedOffer,
+  CountryOption,
+  ProductComparisonResult,
 } from '../types'
 
 export interface ApiMeta {
@@ -39,9 +41,12 @@ export interface ApiEnvelope<T> {
 }
 
 export type RetailersResponse = ApiEnvelope<{
+  country?: CountryOption
   retailers: Retailer[]
   summary: SourceSummary
 }>
+
+export type ProductComparisonResponse = ApiEnvelope<ProductComparisonResult>
 
 export type OffersResponse = ApiEnvelope<{
   offers: VerifiedOffer[]

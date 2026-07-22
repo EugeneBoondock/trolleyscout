@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getMemberState, setMemberState } from '../services/apiClient'
 import type { PropertyListing } from '../types'
 
@@ -54,7 +54,7 @@ export function useSavedProperties(isAuthenticated: boolean) {
   const [saved, setSaved] = useState<SavedProperty[]>(() =>
     typeof window === 'undefined' ? [] : readLocal(),
   )
-  const savedKeys = new Set(saved.map(keyOf))
+  const savedKeys = useMemo(() => new Set(saved.map(keyOf)), [saved])
   // Keep the latest list in a ref so the debounced remote push isn't stale.
   const latest = useRef(saved)
   latest.current = saved

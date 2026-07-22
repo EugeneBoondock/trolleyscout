@@ -1,17 +1,21 @@
 import {
   getAdminOverview,
   getMemberSession,
+  protectLegacyMemberEmails,
   setMemberPropertiesAccess,
   setMemberPlan,
 } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import {
   countOpenSupportMessages,
+  countPendingSupportEmailProtection,
   listSupportMessages,
+  protectLegacySupportEmails,
   setSupportMessageStatus,
 } from '../_shared/supportStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import type { AdminOverview } from '../../src/types'
+import { hasEmailProtection } from '../_shared/emailProtection'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -24,24 +28,27 @@ interface AdminActionBody {
   planId?: string
   messageId?: string
   status?: string
+  countryCode?: string
 }
 
 // Support messages live in their own store to avoid a circular import between
 // memberStore and supportStore, so the console overview is assembled here.
-async function buildAdminOverview(env: TrolleyScoutEnv): Promise<AdminOverview | undefined> {
-  const base = await getAdminOverview(env)
+async function buildAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA'): Promise<AdminOverview | undefined> {
+  const base = await getAdminOverview(env, countryCode)
 
   if (!base) {
     return undefined
   }
 
-  const [support, supportOpenCount] = await Promise.all([
+  const [support, supportOpenCount, pendingSupport] = await Promise.all([
     listSupportMessages(env),
     countOpenSupportMessages(env),
+    countPendingSupportEmailProtection(env),
   ])
 
   return {
     ...base,
+    emailProtection: { ...base.emailProtection, pendingSupport },
     support,
     summary: { ...base.summary, supportOpenCount },
   }
@@ -85,7 +92,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update access.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env)
+      const overview = await buildAdminOverview(env, body.countryCode)
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -104,7 +111,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update plan.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env)
+      const overview = await buildAdminOverview(env, body.countryCode)
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -119,14 +126,36 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       if ('issues' in result) {
         return json({ message: result.issues[0] }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env)
+      const overview = await buildAdminOverview(env, body.countryCode)
       return json({ ...(overview ?? {}) }, { headers: privateHeaders })
+    }
+
+    if (body.action === 'protect_legacy_emails') {
+      if (!hasEmailProtection(env)) {
+        return json(
+          { message: 'Email encryption is not configured.' },
+          { headers: privateHeaders, status: 503 },
+        )
+      }
+      const [accounts, support] = await Promise.all([
+        protectLegacyMemberEmails(env),
+        protectLegacySupportEmails(env),
+      ])
+      const overview = await buildAdminOverview(env, body.countryCode)
+      return json(
+        {
+          ...(overview ?? {}),
+          message: `Protected ${accounts.protected + support.protected} email rows.`,
+        },
+        { headers: privateHeaders },
+      )
     }
 
     return json({ message: 'Unknown admin action.' }, { headers: privateHeaders, status: 400 })
   }
 
-  const overview = await buildAdminOverview(env)
+  const countryCode = new URL(request.url).searchParams.get('country') ?? 'ZA'
+  const overview = await buildAdminOverview(env, countryCode)
 
   if (!overview) {
     return json(

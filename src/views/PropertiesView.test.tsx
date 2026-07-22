@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { PropertiesView } from './PropertiesView'
-import type { MemberAccount, PropertyListing } from '../types'
+import type { CountryContext, MemberAccount, PropertyListing } from '../types'
 
 const account = { propertiesAccess: true } as MemberAccount
+const country: CountryContext = {
+  code: 'ZA',
+  currencyCode: 'ZAR',
+  flag: '🇿🇦',
+  locale: 'en-ZA',
+  name: 'South Africa',
+  rateFromZar: 1,
+}
 
 const listing: PropertyListing & { savedAt: number } = {
   id: '111',
@@ -30,7 +38,7 @@ afterEach(() => {
 describe('PropertiesView saved homes', () => {
   it('shows a saved home with a swipeable gallery and toggles off', () => {
     localStorage.setItem('ts_saved_properties_v1', JSON.stringify([listing]))
-    render(<PropertiesView account={account} onUpgrade={() => {}} />)
+    render(<PropertiesView account={account} country={country} onUpgrade={() => {}} />)
 
     // Switch to the Saved view.
     fireEvent.click(screen.getByRole('tab', { name: /Saved/ }))
@@ -56,7 +64,13 @@ describe('PropertiesView saved homes', () => {
   })
 
   it('shows the upsell when the member lacks access', () => {
-    render(<PropertiesView account={{ propertiesAccess: false } as MemberAccount} onUpgrade={() => {}} />)
+    render(
+      <PropertiesView
+        account={{ propertiesAccess: false } as MemberAccount}
+        country={country}
+        onUpgrade={() => {}}
+      />,
+    )
     expect(screen.getByText('Upgrade to Household')).toBeTruthy()
   })
 })

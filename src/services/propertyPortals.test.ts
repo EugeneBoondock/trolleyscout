@@ -4,6 +4,7 @@ import {
   buildPrivatePropertyUrl,
   buildProperty24Url,
   filterAndSortListings,
+  filterListingsByLocation,
   interleaveByPortal,
   matchPlaceByName,
   normalizePropertyListing,
@@ -229,6 +230,30 @@ describe('interleaveByPortal', () => {
   })
 })
 
+describe('property location quality', () => {
+  it('keeps Edenvale-area listings and rejects portal fallback results from other towns', () => {
+    const listings: PropertyListing[] = [
+      { id: '1', portal: 'property24', portalName: 'Property24', title: '2 Bedroom Apartment in Eden Glen', location: 'Eden Glen', listingUrl: 'https://www.property24.com/eden-glen/1', listingType: 'rent' },
+      { id: '2', portal: 'privateproperty', portalName: 'Private Property', title: 'Townhouse in Eastleigh, Edenvale', location: 'Eastleigh, Edenvale', listingUrl: 'https://www.privateproperty.co.za/edenvale/2', listingType: 'rent' },
+      { id: '3', portal: 'gumtree', portalName: 'Gumtree', title: 'Rentals Accommodation', location: 'Pietermaritzburg', listingUrl: 'https://www.gumtree.co.za/pietermaritzburg/3', listingType: 'rent' },
+      { id: '4', portal: 'justproperty', portalName: 'Just Property', title: '3 Bedroom House To Let in Postmasburg', location: 'Postmasburg', listingUrl: 'https://www.just.property/postmasburg/4', listingType: 'rent' },
+    ]
+
+    expect(filterListingsByLocation(listings, ['Edenvale', 'Eden Glen', 'Eastleigh']).map((listing) => listing.id).sort())
+      .toEqual(['1', '2'])
+  })
+
+  it('puts the closest detected suburb before wider matches in the same town', () => {
+    const listings: PropertyListing[] = [
+      { id: '1', portal: 'property24', portalName: 'Property24', title: 'House in Eastleigh', location: 'Eastleigh, Edenvale', listingUrl: 'https://www.property24.com/eastleigh/1', listingType: 'rent' },
+      { id: '2', portal: 'privateproperty', portalName: 'Private Property', title: 'Apartment in Eden Glen', location: 'Eden Glen, Edenvale', listingUrl: 'https://www.privateproperty.co.za/eden-glen/2', listingType: 'rent' },
+    ]
+
+    expect(filterListingsByLocation(listings, ['Eden Glen', 'Edenvale', 'Eastleigh']).map((listing) => listing.id))
+      .toEqual(['2', '1'])
+  })
+})
+
 describe('live location-id resolvers', () => {
   it('parses Pam Golding autocomplete, preferring an exact description match', () => {
     const payload = [
@@ -252,17 +277,20 @@ describe('live location-id resolvers', () => {
     expect(places.filter((p) => p.id === 26)).toHaveLength(1) // de-duped
   })
 
-  it('parses Private Property shapes sitemap to city-level {id,name,province}', () => {
+  it('keeps full Private Property paths for regions, cities, and suburbs', () => {
     const xml = `<url><loc>https://www.privateproperty.co.za/for-sale/western-cape/cape-town/55</loc></url>
-      <url><loc>https://www.privateproperty.co.za/for-sale/gauteng/sandton/34</loc></url>
-      <url><loc>https://www.privateproperty.co.za/for-sale/western-cape/cape-town/sea-point/900</loc></url>
-      <url><loc>https://www.privateproperty.co.za/to-rent/gauteng/sandton/34</loc></url>`
-    const cities = parsePrivatePropertyShapes(xml)
-    // Only province/city/id (depth-4) sale entries; suburb (depth-5) & to-rent excluded.
-    expect(cities).toEqual([
-      { id: 55, name: 'cape town', descriptor: 'western cape' },
-      { id: 34, name: 'sandton', descriptor: 'gauteng' },
+      <url><loc>https://www.privateproperty.co.za/for-sale/gauteng/east-rand/edenvale/45</loc></url>
+      <url><loc>https://www.privateproperty.co.za/for-sale/gauteng/east-rand/edenvale/eden-glen/606</loc></url>
+      <url><loc>https://www.privateproperty.co.za/to-rent/gauteng/east-rand/edenvale/45</loc></url>`
+    const places = parsePrivatePropertyShapes(xml)
+    expect(places).toEqual([
+      { id: 55, name: 'cape town', descriptor: 'western cape', path: 'western-cape/cape-town' },
+      { id: 45, name: 'edenvale', descriptor: 'gauteng', path: 'gauteng/east-rand/edenvale' },
+      { id: 606, name: 'eden glen', descriptor: 'gauteng', path: 'gauteng/east-rand/edenvale/eden-glen' },
     ])
+    expect(buildPrivatePropertyUrl(places[1], 'rent')).toBe(
+      'https://www.privateproperty.co.za/to-rent/gauteng/east-rand/edenvale/45',
+    )
   })
 
   it('matchPlaceByName prefers exact then shortest partial', () => {

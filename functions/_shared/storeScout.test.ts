@@ -721,6 +721,34 @@ describe('scheduled discovered-store scouting', () => {
     expect(rows.results[0]?.id).not.toBe('old-promo')
   })
 
+  it('rescues a bot-blocked store site through the reader proxy', async () => {
+    // Many store sites 403 datacenter fetches while serving the same public
+    // specials page to browsers — the reader fallback must still get them.
+    const nowMs = Date.parse('2026-07-16T10:00:00.000Z')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'market.test') {
+        return new Response('blocked', { status: 403 })
+      }
+      if (url.hostname === 'r.jina.ai' && String(input).includes('market.test')) {
+        return htmlResponse(jsonLdDeal('Reader-rescued weekly item', 'Market Place'))
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({ website: 'https://market.test/' })],
+      nowMs,
+      1,
+    )
+
+    const rows = await db.prepare(
+      `SELECT title FROM store_promotions WHERE place_id = 'market-place'`,
+    ).all<{ title: string }>()
+    expect(rows.results.map((row) => row.title)).toContain('Reader-rescued weekly item')
+  })
+
   it('uses a short retry for a transient failure and preserves old promotions', async () => {
     const nowMs = Date.parse('2026-07-16T10:00:00.000Z')
     await db.prepare(
@@ -803,7 +831,8 @@ async function createScoutTables(db: D1Database) {
       retailer_id TEXT, kind TEXT NOT NULL DEFAULT 'deal', title TEXT NOT NULL,
       price_text TEXT, previous_price_text TEXT, saving_text TEXT, source_url TEXT NOT NULL,
       product_url TEXT, image_url TEXT, valid_from TEXT, valid_to TEXT,
-      captured_at TEXT NOT NULL, expires_at TEXT NOT NULL
+      captured_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+      country_code TEXT NOT NULL DEFAULT 'ZA'
     )`,
     `CREATE TABLE store_scout_log (
       place_id TEXT PRIMARY KEY, store_name TEXT NOT NULL, website TEXT, retailer_id TEXT,
@@ -813,7 +842,8 @@ async function createScoutTables(db: D1Database) {
       place_id TEXT PRIMARY KEY, store_name TEXT NOT NULL, address TEXT, website TEXT,
       lat REAL NOT NULL, lon REAL NOT NULL, retailer_id TEXT, first_seen_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL, last_source_tile TEXT, last_scout_at TEXT,
-      next_scout_at TEXT NOT NULL, promotion_count INTEGER NOT NULL DEFAULT 0
+      next_scout_at TEXT NOT NULL, promotion_count INTEGER NOT NULL DEFAULT 0,
+      country_code TEXT NOT NULL DEFAULT 'ZA'
     )`,
     `CREATE TABLE deal_source_cursors (
       source_key TEXT PRIMARY KEY, cursor_kind TEXT NOT NULL,

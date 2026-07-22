@@ -2,7 +2,7 @@
 
 ## Scope
 
-The Flutter app will expose every public, member, and role-gated admin area available on the website. Existing Home, Money help, Near me, Find deals, and Tools views remain. New views cover authentication, Dashboard, Stores, Saved deals, Basket, Saved sources, Offers, Scanner, Subscription, Profile, About and help, Rules, and Admin console.
+The Flutter app will expose every public, member, and role-gated admin area available on the website. Existing Home, Near me, Find deals, and Tools views remain. New views cover authentication, Dashboard, Stores, Saved deals, Basket, Saved sources, Offers, Scanner, Subscription, Profile, About and help, Rules, and Admin console.
 
 The same generated Trolley Scout mark will appear in the website header, website manifest, Flutter header, Flutter web manifest, Android launcher, and iOS launcher.
 

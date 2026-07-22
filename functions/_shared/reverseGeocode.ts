@@ -11,7 +11,7 @@
 import type { TrolleyScoutEnv } from './env'
 
 export interface ReversePlace {
-  // Candidate place names, best-first (town/city before suburb before district),
+  // Candidate place names, best-first (suburb before city/town before district),
   // so the caller can try each against the portal catalogues and take the first
   // that resolves to a real listing location.
   names: string[]
@@ -43,8 +43,8 @@ function cleanDistrict(value: string | undefined): string | undefined {
 /**
  * Turns a Geoapify reverse-geocode payload into ordered candidate place names
  * plus the province. Pure and synchronous so it can be unit-tested against a
- * captured response. Prefers the town/city over the suburb so a shopper in a
- * neighbourhood of Edenvale resolves to "Edenvale", not the block they stand on.
+ * captured response. Prefers the closest suburb so a shopper in Edenvale does
+ * not get snapped to a neighbouring administrative city.
  */
 export function parseGeoapifyReverse(payload: unknown): ReversePlace | undefined {
   if (!payload || typeof payload !== 'object') return undefined
@@ -54,10 +54,10 @@ export function parseGeoapifyReverse(payload: unknown): ReversePlace | undefined
   const r = first as Record<string, unknown>
 
   const ordered = [
+    str(r.suburb),
     str(r.city),
     str(r.town),
     str(r.village),
-    str(r.suburb),
     str(r.name),
     cleanDistrict(str(r.county)),
   ]
@@ -81,18 +81,11 @@ export async function reverseGeocodePlace(
   lon: number,
 ): Promise<ReversePlace | undefined> {
   if (!env.GEOAPIFY_API_KEY) return undefined
-  const params = new URLSearchParams({
-    apiKey: env.GEOAPIFY_API_KEY,
-    lat: String(lat),
-    lon: String(lon),
-    format: 'json',
-    lang: 'en',
-    type: 'city',
-  })
+  const url = buildReverseGeocodeUrl(lat, lon, env.GEOAPIFY_API_KEY)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const response = await fetch(`${REVERSE_URL}?${params.toString()}`, {
+    const response = await fetch(url, {
       headers: { accept: 'application/json' },
       signal: controller.signal,
     })
@@ -103,4 +96,15 @@ export async function reverseGeocodePlace(
   } finally {
     clearTimeout(timer)
   }
+}
+
+export function buildReverseGeocodeUrl(lat: number, lon: number, apiKey: string): string {
+  const params = new URLSearchParams({
+    apiKey,
+    lat: String(lat),
+    lon: String(lon),
+    format: 'json',
+    lang: 'en',
+  })
+  return `${REVERSE_URL}?${params.toString()}`
 }

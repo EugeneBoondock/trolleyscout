@@ -48,10 +48,12 @@ export interface VoucherScoutSourceResult {
 
 export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   {
+    // /coupons now 301s to the deals collection; fetch the destination
+    // directly — it embeds the same clip-coupon product objects.
     parser: 'amazon',
     retailerId: 'amazon-za',
     sourceKey: 'amazon-za::vouchers',
-    url: 'https://www.amazon.co.za/coupons',
+    url: 'https://www.amazon.co.za/deals?bubble-id=deals-collection-coupons',
   },
   {
     parser: 'public-code',
@@ -59,17 +61,19 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
     sourceKey: 'woolworths::wrewards-vouchers',
     url: 'https://www.woolworths.co.za/content/article/wrewards/vouchers/_/A-cmp204081',
   },
-  {
-    parser: 'public-code',
-    retailerId: 'boxer',
-    sourceKey: 'boxer::ecoupons',
-    url: 'https://www.boxer.co.za/money-kiosk/boxer-ecoupons',
-  },
+  // Boxer's "eCoupons" are purchasable gift money, not discounts — never a
+  // voucher source.
   {
     parser: 'public-code',
     retailerId: 'builders',
     sourceKey: 'builders::plus-vouchers',
     url: 'https://www.builders.co.za/builders-plus',
+  },
+  {
+    parser: 'public-code',
+    retailerId: 'yuppiechef',
+    sourceKey: 'yuppiechef::specials-codes',
+    url: 'https://www.yuppiechef.com/specials.htm',
   },
 ]
 
@@ -97,11 +101,16 @@ export async function runVoucherScout(
           accept: 'text/html,application/xhtml+xml',
           'user-agent': 'TrolleyScout/1.0 (+https://trolleyscout.co.za)',
         },
-        redirect: 'error',
+        // Sources move behind redirects (Amazon's /coupons now 301s);
+        // follow them, but only within the retailer's official hosts.
+        redirect: 'follow',
         signal: AbortSignal.timeout(12_000),
       })
       if (!response.ok) {
         throw new Error(`Official source returned HTTP ${response.status}`)
+      }
+      if (response.url && !isOfficialRetailerHost(source.retailerId, response.url)) {
+        throw new Error('Voucher source redirected off the official retailer host')
       }
       const html = await readResponseTextWithLimit(response, maxBodyBytes)
       const candidates = source.parser === 'amazon'
@@ -229,18 +238,31 @@ function validatedSourceUrl(source: VoucherScoutSource) {
     throw new TypeError('Voucher source URL must be a public HTTPS URL')
   }
 
-  const officialRoots: Record<string, readonly string[]> = {
-    'amazon-za': ['amazon.co.za'],
-    boxer: ['boxer.co.za'],
-    builders: ['builders.co.za'],
-    woolworths: ['woolworths.co.za'],
-  }
-  const roots = officialRoots[source.retailerId]
-  if (roots && !roots.some((root) => host === root || host.endsWith(`.${root}`))) {
+  if (!matchesOfficialRoot(source.retailerId, host)) {
     throw new TypeError('Voucher source URL does not match the official retailer host')
   }
 
   return url.toString()
+}
+
+const OFFICIAL_VOUCHER_ROOTS: Record<string, readonly string[]> = {
+  'amazon-za': ['amazon.co.za'],
+  builders: ['builders.co.za'],
+  woolworths: ['woolworths.co.za'],
+  yuppiechef: ['yuppiechef.com'],
+}
+
+function matchesOfficialRoot(retailerId: string, host: string) {
+  const roots = OFFICIAL_VOUCHER_ROOTS[retailerId]
+  return !roots || roots.some((root) => host === root || host.endsWith(`.${root}`))
+}
+
+function isOfficialRetailerHost(retailerId: string, value: string) {
+  try {
+    return matchesOfficialRoot(retailerId, new URL(value).hostname.toLocaleLowerCase())
+  } catch {
+    return false
+  }
 }
 
 function isPrivateHost(host: string) {

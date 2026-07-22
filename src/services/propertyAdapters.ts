@@ -28,7 +28,7 @@ export interface PortalLocationInput {
   name: string
   province: string
   p24?: { id: number; type: number; name: string; parent: string }
-  pp?: { id: number; name: string; descriptor: string }
+  pp?: { id: number; name: string; descriptor: string; path?: string }
   pamgolding?: number
   myroof?: { id: number; slug: string }
 }
@@ -157,7 +157,7 @@ function parsePropDataCardSm(
     out.push({
       id: key,
       portal,
-      portalName: PROPERTY_PORTAL_LABELS[portal],
+      portalName: PROPERTY_PORTAL_LABELS[portal as keyof typeof PROPERTY_PORTAL_LABELS] ?? portal,
       title,
       priceText: priceRaw ? collapseSpace(priceRaw) : undefined,
       priceValue: parseRandValue(priceRaw),
@@ -794,7 +794,9 @@ function toP24(loc: PortalLocationInput): Property24Location | undefined {
 }
 
 function toPP(loc: PortalLocationInput): PrivatePropertyLocation | undefined {
-  return loc.pp ? { id: loc.pp.id, name: loc.pp.name, descriptor: loc.pp.descriptor } : undefined
+  return loc.pp
+    ? { id: loc.pp.id, name: loc.pp.name, descriptor: loc.pp.descriptor, path: loc.pp.path }
+    : undefined
 }
 
 const RESULTS_PREFIX: Record<PropertyListingType, string> = { sale: 'for-sale', rent: 'to-rent' }

@@ -1,4 +1,4 @@
-# Trolley Scout: grocery deals and money help for South Africans.
+# Trolley Scout: grocery deals, store comparisons, and property search.
 # Agents and crawlers welcome. Machine-readable entry points:
 #   https://trolleyscout.co.za/llms.txt
 #   https://trolleyscout.co.za/index.md

@@ -690,6 +690,7 @@ describe('runScheduledScout', () => {
       expect.any(String),
       1000,
       0,
+      'ZA',
     )
     expect(readAllStoreCatalogues).toHaveBeenNthCalledWith(
       2,
@@ -697,6 +698,7 @@ describe('runScheduledScout', () => {
       expect.any(String),
       1000,
       1000,
+      'ZA',
     )
     const leaflets = runCatalogueScout.mock.calls[0]?.[1] ?? []
     expect(leaflets).toHaveLength(1001)
@@ -879,6 +881,7 @@ describe('runScheduledScout', () => {
       expect.any(String),
       1000,
       9000,
+      'ZA',
     )
   })
 })

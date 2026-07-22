@@ -22,7 +22,6 @@ interface ModelContext {
 
 interface WebMcpDeps {
   goToDeals: (query?: string) => void
-  goToMoneyHelp: () => void
   goToNearMe: () => void
 }
 
@@ -102,16 +101,6 @@ export function useWebMcpTools(deps: WebMcpDeps): void {
               name: store.name,
             })),
           })
-        },
-      },
-      {
-        name: 'open_money_help',
-        description:
-          'Open the Money help page with current SASSA grant amounts and free money help for South Africans.',
-        inputSchema: { type: 'object', properties: {} },
-        execute: async () => {
-          deps.goToMoneyHelp()
-          return text({ opened: 'money-help', url: 'https://trolleyscout.co.za/money-help' })
         },
       },
     ]

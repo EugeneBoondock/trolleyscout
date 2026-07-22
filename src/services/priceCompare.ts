@@ -146,6 +146,17 @@ export function autoComparePrices(
     }
   }
 
+  if (priced.length === 1) {
+    return {
+      cheapestRetailerId: undefined,
+      foundCount: 1,
+      matches,
+      missingCount: matches.length - 1,
+      query,
+      savingsCents: 0,
+    }
+  }
+
   const cheapest = priced.reduce((best, match) =>
     (match.priceCents ?? 0) < (best.priceCents ?? 0) ? match : best,
   )

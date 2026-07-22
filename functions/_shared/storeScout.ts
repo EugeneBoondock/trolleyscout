@@ -41,6 +41,7 @@ import {
   type StoreScoutOutcomeStatus,
   type StorePromotion,
 } from './locationStore'
+import { countryFromCode } from './countryContext'
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -159,14 +160,18 @@ export async function scoutNearbyStores(
   for (const store of candidates) {
     try {
       const outcome = await scoutStore(env, store, nowMs)
-      const saved = await saveStorePromotions(env, outcome.promotions, nowMs)
-      if (saved && outcome.promotions.length > 0) {
+      const promotions = outcome.promotions.map((promotion) => ({
+        ...promotion,
+        countryCode: store.countryCode ?? 'ZA',
+      }))
+      const saved = await saveStorePromotions(env, promotions, nowMs)
+      if (saved && promotions.length > 0) {
         savedAnyPromotions = true
       }
-      if (saved && outcome.status === 'success' && outcome.promotions.length > 0) {
-        await reconcileSuccessfulStorePromotions(env, store.placeId, outcome.promotions)
+      if (saved && outcome.status === 'success' && promotions.length > 0) {
+        await reconcileSuccessfulStorePromotions(env, store.placeId, promotions)
       }
-      await recordStoreScout(env, store, outcome.promotions.length, nowMs, outcome.status)
+      await recordStoreScout(env, store, promotions.length, nowMs, outcome.status)
     } catch {
       // A malformed store or unexpected source response is isolated to this
       // queue item so every later due store still receives an attempt.
@@ -292,7 +297,12 @@ async function searchStoreCatalogue(
     : undefined
   const verifiedHost = knownRetailerHost ?? websiteHost
   const search = await searchOfficialWeb(
-    buildStoreSpecialsQuery(store.name, area, verifiedHost),
+    buildStoreSpecialsQuery(
+      store.name,
+      area,
+      verifiedHost,
+      store.countryName ?? countryFromCode(store.countryCode).name,
+    ),
     jinaApiKey,
   )
 
@@ -480,13 +490,17 @@ async function scoutStoreWebsite(
     ? pathPlan.slice(start, start + MAX_PATHS_PER_STORE)
     : pathPlan.slice(0, MAX_PATHS_PER_STORE)
   let nextPath = start
+  let sawTransientFailure = false
 
   for (const path of paths) {
     const pageUrl = `${origin}${path}`
-    const page = await fetchText(pageUrl)
+    const page = await fetchStorePage(pageUrl, env.JINA_API_KEY)
 
     if (page.status === 'transient_failure') {
-      return outcome('transient_failure')
+      // Keep probing the remaining specials paths — one blocked or flaky
+      // path must not write the whole store off for this run.
+      sawTransientFailure = true
+      continue
     }
 
     if (cursorState.resumable) {
@@ -530,7 +544,39 @@ async function scoutStoreWebsite(
     }
   }
 
-  return outcome('empty')
+  return outcome(sawTransientFailure ? 'transient_failure' : 'empty')
+}
+
+// Fetches a store page directly, then through the jina reader when the site
+// blocks datacenter fetches (bot-walled 403s or transient errors) — most
+// stores publish their specials publicly, so a blocked direct fetch should
+// never be the end of the road. The reader is asked for raw HTML so the
+// downstream extraction sees the same markup either way.
+async function fetchStorePage(
+  pageUrl: string,
+  jinaApiKey?: string,
+): Promise<FetchOutcome> {
+  const direct = await fetchText(pageUrl)
+  if (direct.status === 'success') {
+    return direct
+  }
+
+  const proxied = await fetchText(
+    buildJinaReaderUrl(pageUrl),
+    {
+      'x-return-format': 'html',
+      ...(jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : {}),
+    },
+    true,
+  )
+  if (proxied.status === 'success' && proxied.text) {
+    // Origin checks downstream must see the store's URL, not the reader's.
+    return { ...proxied, finalUrl: pageUrl }
+  }
+
+  // An empty or failed reader response proves nothing — report the direct
+  // failure so transient sites keep their short retry.
+  return direct
 }
 
 // Queries a detected Klevu store for on-promotion products and maps them to

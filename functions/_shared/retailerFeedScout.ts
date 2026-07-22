@@ -5,6 +5,10 @@ import {
   parseDischemKlevuCursor,
   parseDischemKlevuFeed,
 } from '../../src/services/retailerFeeds/dischem'
+import {
+  buildFairPriceGraphqlQuery,
+  parseFairPriceFeed,
+} from '../../src/services/retailerFeeds/fairPrice'
 import { parseFoodLoversFeed } from '../../src/services/retailerFeeds/foodLovers'
 import {
   decodeMakroInitialState,
@@ -195,6 +199,35 @@ const structuredSources: readonly RetailerFeedSource[] = [
     retailerName: 'Food Lovers Market',
     sourceLabel: 'Current specials',
     sourceUrl: 'https://foodloversmarket.co.za/specials/',
+  },
+  {
+    buildRequest(cursor) {
+      // Fair Price's Magento storefront serves its GraphQL products query to
+      // any client; markdown rows carry both the regular and final price.
+      const page = Math.max(1, requireCursor(cursor, 'page'))
+      return {
+        init: {
+          body: buildFairPriceGraphqlQuery(page),
+          headers: {
+            ...BROWSER_HEADERS,
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+        url: 'https://www.fairprice.co.za/graphql',
+      }
+    },
+    decode: (body) => JSON.parse(body) as unknown,
+    initialCursor: { kind: 'page', page: 1 },
+    key: 'fair-price::sale-items',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const page = Math.max(1, requireCursor(cursor, 'page'))
+      return parseFairPriceFeed(payload, { capturedAt, page, sourceUrl })
+    },
+    retailerId: retailerSlug('fair-price'),
+    retailerName: 'Fair Price',
+    sourceLabel: 'Sale items',
+    sourceUrl: 'https://www.fairprice.co.za/',
   },
   gameSource('game::bundle-deals', 'Bundle deals', ':relevance:promotions:Bundle+Deals'),
   gameSource('game::savings', 'Savings', ':relevance:promotions:Savings'),

@@ -70,21 +70,25 @@ describe('DiscoveredStoreDirectory', () => {
     const dialog = screen.getByRole('dialog', { name: /Pick n Pay locations/i })
     expect(within(dialog).getByText('1 Main Road, Cape Town')).toBeTruthy()
     expect(within(dialog).getByText('2 Oak Road, Cape Town')).toBeTruthy()
-    expect(within(dialog).getByRole('heading', { name: 'Pick n Pay Central' })).toBeTruthy()
-    expect(within(dialog).getByRole('heading', { name: 'Pick n Pay North' })).toBeTruthy()
+    expect(within(dialog).queryByText('Rice 2kg')).toBeNull()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Open Pick n Pay Central deals/i }))
     expect(within(dialog).getByText('Rice 2kg')).toBeTruthy()
     expect(within(dialog).getByText('R29.99')).toBeTruthy()
-    expect(within(dialog).getByRole('button', { name: /Read Weekly catalogue here/i })).toBeTruthy()
   })
 
   it('opens catalogue promotions in the in-platform leaflet viewer and closes on Escape', () => {
     const { container } = render(<DiscoveredStoreDirectory discovered={resource} />)
     fireEvent.click(screen.getByRole('button', { name: /Pick n Pay.*2 locations/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Pick n Pay North deals/i }))
     fireEvent.click(screen.getByRole('button', { name: /Read Weekly catalogue here/i }))
 
     expect(screen.getByRole('dialog', { name: 'Weekly catalogue' })).toBeTruthy()
-    expect(container.querySelector('object')?.getAttribute('data')).toBe(
-      'https://official.test/weekly-catalogue.pdf',
+    // The PDF catalogue reads inline through the same-origin relay.
+    const embed = container.querySelector('object')
+    expect(embed?.getAttribute('type')).toBe('application/pdf')
+    expect(embed?.getAttribute('data')).toBe(
+      '/api/catalogue-file?u=https%3A%2F%2Fofficial.test%2Fweekly-catalogue.pdf',
     )
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Weekly catalogue' })).toBeNull()

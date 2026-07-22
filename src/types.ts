@@ -1,6 +1,6 @@
 import type { RetailerDealScope } from './services/retailerFeeds/types'
 
-export type RetailerId =
+export type KnownRetailerId =
   | 'pick-n-pay'
   | 'checkers'
   | 'shoprite'
@@ -17,12 +17,15 @@ export type RetailerId =
   | 'amazon-za'
   | 'game'
   | 'builders'
+  | 'fair-price'
   | 'yuppiechef'
   | 'kit-kat'
   | 'president-hyper'
   | 'roots-butchery'
   | 'frontline'
   | 'walmart'
+
+export type RetailerId = KnownRetailerId | (string & {})
 
 // Discovery also represents validated supermarkets found outside the fixed
 // directory. Directory records themselves remain restricted to RetailerId.
@@ -311,6 +314,9 @@ export interface MemberAccount {
   planName: string
   planStatus: MemberPlanStatus
   role: MemberRole
+  countryCode: string
+  countryName: string
+  currencyCode: string
   // True when this member may open Properties Scout: the Household plan grants
   // it, admins always have it, and an admin can grant it to any single member.
   propertiesAccess: boolean
@@ -330,7 +336,7 @@ export interface MemberAccount {
 // the SA property portals (Property24, Private Property).
 export type PropertyListingType = 'sale' | 'rent'
 
-export type PropertyPortalId =
+export type KnownPropertyPortalId =
   | 'property24'
   | 'privateproperty'
   | 'gumtree'
@@ -357,6 +363,8 @@ export type PropertyPortalId =
   | 'realnet'
   | 'leapfrog'
 
+export type PropertyPortalId = KnownPropertyPortalId | (string & {})
+
 export interface PropertyListing {
   id: string
   portal: PropertyPortalId
@@ -379,6 +387,7 @@ export interface PropertyListing {
   images?: string[]
   listingUrl: string
   listingType: PropertyListingType
+  currencyCode?: string
 }
 
 export interface PropertyPortalSourceMeta {
@@ -389,6 +398,7 @@ export interface PropertyPortalSourceMeta {
 }
 
 export interface PropertySearchResult {
+  country?: CountryOption
   listings: PropertyListing[]
   sources: PropertyPortalSourceMeta[]
   listingType: PropertyListingType
@@ -412,11 +422,19 @@ export interface SupportMessage {
 
 export interface AdminOverview {
   accounts: MemberAccount[]
+  countries: CountryOption[]
+  emailProtection: {
+    configured: boolean
+    pendingAccounts: number
+    pendingSupport: number
+  }
+  selectedCountry: CountryOption
   scout: {
     dealCount: number
     leafletCount: number
     lastScoutedAt?: string
     sourceCount: number
+    storeCount: number
   }
   summary: {
     accountCount: number
@@ -424,6 +442,45 @@ export interface AdminOverview {
     supportOpenCount: number
   }
   support: SupportMessage[]
+}
+
+export interface CountryOption {
+  capital?: string
+  code: string
+  currencyCode: string
+  flag: string
+  name: string
+}
+
+export interface CountryContext extends CountryOption {
+  locale: string
+  rateFromZar?: number
+  rateUpdatedAt?: string
+}
+
+export type RetailerProductSearchStatus = 'priced' | 'found' | 'unavailable'
+
+export interface RetailerProductSearchMatch {
+  isCheapest?: boolean
+  priceCents?: number
+  productUrl?: string
+  retailerId: string
+  retailerName: string
+  sourceKind?: 'retailer-api' | 'official-site' | 'promotion'
+  status: RetailerProductSearchStatus
+  title?: string
+}
+
+export interface ProductComparisonResult {
+  checkedAt: string
+  cheapestRetailerId?: string
+  country: CountryOption
+  foundCount: number
+  matches: RetailerProductSearchMatch[]
+  pricedCount: number
+  query: string
+  savingsCents: number
+  unavailableCount: number
 }
 
 export interface MemberSession {

@@ -12,11 +12,13 @@ import {
   type StorePromotion,
 } from '../_shared/locationStore'
 import { json, methodNotAllowed } from '../_shared/respond'
+import { countryFromCode, detectRequestCountry } from '../_shared/countryContext'
+import { getMemberSession } from '../_shared/memberStore'
 
 // Public, cookieless data — same cross-origin policy as /api/nearby-stores.
-const publicHeaders = {
+const privateHeaders = {
   'access-control-allow-origin': '*',
-  'cache-control': 'public, max-age=300',
+  'cache-control': 'private, no-store',
 }
 
 const MAX_PROMOTIONS_PER_STORE = 24
@@ -55,22 +57,41 @@ function prioritizePromotionDetails(promotions: StorePromotion[]): StorePromotio
     .slice(0, MAX_PROMOTIONS_PER_STORE)
 }
 
-export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
+const EDGE_CACHE_SECONDS = 300
+
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method, 'GET')
   }
 
   const nowIso = new Date().toISOString()
+  const session = await getMemberSession(env, request)
+  const detected = detectRequestCountry(request)
+  const country = countryFromCode(session.account?.countryCode ?? detected.code)
+
+  // The directory is identical for every visitor in a country — one edge
+  // copy per country instead of three D1 sweeps per request.
+  const edgeCache = session.account ? undefined : await openEdgeCache()
+  const edgeCacheKey =
+    `https://edge-cache.trolleyscout.co.za/api/discovered-stores?country=${country.code}`
+  if (edgeCache) {
+    const cached = await edgeCache.match(edgeCacheKey)
+    if (cached) {
+      return cached
+    }
+  }
+
   const [{ stores, tileCount }, promotionCounts, promotions] = await Promise.all([
-    readAllDiscoveredStores(env, nowIso),
-    readPromotionCountsByPlace(env, nowIso),
-    readAllStorePromotions(env, nowIso),
+    readAllDiscoveredStores(env, nowIso, 2000, country.code),
+    readPromotionCountsByPlace(env, nowIso, country.code),
+    readAllStorePromotions(env, nowIso, 3000, country.code),
   ])
 
   const enriched = attachPromotionDetails(stores, promotionCounts, promotions)
 
-  return json(
+  const response = json(
     {
+      country,
       stores: enriched,
       summary: {
         areaCount: tileCount,
@@ -79,6 +100,28 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         withPromotionsCount: enriched.filter((store) => store.hasPromotions).length,
       },
     },
-    { headers: publicHeaders },
+    { headers: privateHeaders },
   )
+
+  if (edgeCache) {
+    const publicResponse = new Response(response.body, response)
+    publicResponse.headers.set(
+      'cache-control',
+      `public, max-age=60, s-maxage=${EDGE_CACHE_SECONDS}`,
+    )
+    waitUntil(edgeCache.put(edgeCacheKey, publicResponse.clone()).catch(() => undefined))
+    return publicResponse
+  }
+
+  return response
+}
+
+// The Cache API is absent in unit tests and some local runtimes — treat it
+// as an optional accelerator, never a requirement.
+async function openEdgeCache(): Promise<Cache | undefined> {
+  try {
+    return typeof caches === 'undefined' ? undefined : caches.default
+  } catch {
+    return undefined
+  }
 }

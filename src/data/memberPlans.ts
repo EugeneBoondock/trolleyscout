@@ -1,15 +1,13 @@
 import type { BillingCycle, MemberPlan, MemberPlanId } from '../types'
 
-// Plan philosophy: everything a household needs to eat and claim what is
-// theirs stays free, with honest capacity. Paid plans buy bigger lists for
-// power savers — and fund keeping the essentials free for everyone else.
+// Core shopping tools stay free. Paid plans buy bigger lists for power savers.
 export const memberPlans: MemberPlan[] = [
   {
     badge: 'Included',
     description: 'Everything a household needs to stretch the month, free forever.',
     features: [
-      'Money help, tools, and live deals',
-      '10 saved deals and 10 saved sources',
+      'Price tools and live deals',
+      '10 saved deals',
       'Basket planner with 15 items',
       'No card, no trial, no catch',
     ],
@@ -32,9 +30,9 @@ export const memberPlans: MemberPlan[] = [
     description: 'For one serious saver tracking deals across many stores every week.',
     features: [
       'Everything in Free',
-      '100 saved deals and 100 saved sources',
+      '100 saved deals',
       'Basket planner with 150 items',
-      'Funds free money help for others',
+      'More room for weekly shopping plans',
     ],
     id: 'scout',
     isPaid: true,
@@ -55,9 +53,9 @@ export const memberPlans: MemberPlan[] = [
     description: 'Plan a large household’s spend with room for everyone’s lists.',
     features: [
       'Everything in Scout',
-      '250 saved deals and 250 saved sources',
+      '250 saved deals',
       'Basket planner with 400 items',
-      'Funds free money help for others',
+      'More room for large household lists',
     ],
     id: 'household',
     isPaid: true,

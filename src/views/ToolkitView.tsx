@@ -1,216 +1,26 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Calculator, MagnifyingGlass, Plus, Trash, WifiSlash } from '@phosphor-icons/react'
+import { MagnifyingGlass, Plus, Trash } from '@phosphor-icons/react'
 import clsx from 'clsx'
-import {
-  compareUnitPrices,
-  formatUnitPrice,
-  type PackDraft,
-  type PackUnit,
-} from '../services/unitPrice'
 import { compareShops, formatCents, parsePriceInput } from '../services/shopCompare'
-import {
-  autoComparePrices,
-  defaultStoreIds,
-  storeOptionsFromDeals,
-  type AutoComparison,
-} from '../services/priceCompare'
-import { loadDiscovery } from '../services/apiClient'
-import type { DiscoveredDeal } from '../types'
-
-const unitOptions: Array<{ label: string; value: PackUnit }> = [
-  { label: 'g', value: 'g' },
-  { label: 'kg', value: 'kg' },
-  { label: 'ml', value: 'ml' },
-  { label: 'litre', value: 'l' },
-  { label: 'items', value: 'each' },
-]
-
-const MAX_PACKS = 4
-
-let packCounter = 2
-
-function blankPack(id: string): PackDraft {
-  return { id, priceText: '', quantityText: '', unit: 'kg' }
-}
+import { loadRetailers, searchProductPrices } from '../services/apiClient'
+import type { CountryOption, ProductComparisonResult, Retailer } from '../types'
 
 export function ToolkitView() {
-  const [packs, setPacks] = useState<PackDraft[]>([blankPack('pack-1'), blankPack('pack-2')])
-
-  const comparison = compareUnitPrices(packs)
-  const best = comparison.results.find((result) => result.isBest)
-  const others = comparison.results.filter((result) => !result.isBest)
-
-  function updatePack(id: string, field: 'priceText' | 'quantityText' | 'unit', value: string) {
-    setPacks((current) =>
-      current.map((pack) => (pack.id === id ? { ...pack, [field]: value } : pack)),
-    )
-  }
-
-  function addPack() {
-    packCounter += 1
-    setPacks((current) =>
-      current.length >= MAX_PACKS ? current : [...current, blankPack(`pack-${packCounter}`)],
-    )
-  }
-
-  function removePack(id: string) {
-    setPacks((current) => (current.length > 2 ? current.filter((pack) => pack.id !== id) : current))
-  }
-
   return (
     <div className="toolkit-view">
       <section className="member-section-head">
         <div>
           <p className="eyebrow">Tools</p>
-          <h1>Unit price checker</h1>
+          <h1>Compare before you buy</h1>
           <p className="section-lede">
-            The big pack is not always the cheap pack. Type in the shelf price and size of each
-            option, and see which one really costs less per kilogram, litre, or item.
+            Search the same product across selected stores, or compare a full shopping list side
+            by side.
           </p>
         </div>
       </section>
-
-      <div className="offline-note" role="note">
-        <WifiSlash size={18} />
-        <p>Works without signal once the page has loaded. Use it right in the aisle.</p>
-      </div>
-
-      <section className="unit-checker" aria-label="Pack comparison">
-        <div className="unit-pack-list">
-          {packs.map((pack, index) => {
-            const result = comparison.results.find((row) => row.id === pack.id)
-
-            return (
-              <article
-                className={clsx('unit-pack-card', result?.isBest && !comparison.hasMixedUnits && comparison.results.length > 1 && 'is-best')}
-                key={pack.id}
-              >
-                <header>
-                  <strong>Pack {index + 1}</strong>
-                  {result?.isBest && !comparison.hasMixedUnits && comparison.results.length > 1 && (
-                    <span className="best-tag">Cheapest</span>
-                  )}
-                  {packs.length > 2 && (
-                    <button
-                      aria-label={`Remove pack ${index + 1}`}
-                      className="icon-button"
-                      onClick={() => removePack(pack.id)}
-                      type="button"
-                    >
-                      <Trash size={16} />
-                    </button>
-                  )}
-                </header>
-
-                <div className="unit-pack-fields">
-                  <label className="field">
-                    Price
-                    <input
-                      inputMode="decimal"
-                      onChange={(event) => updatePack(pack.id, 'priceText', event.target.value)}
-                      placeholder="R 0,00"
-                      value={pack.priceText}
-                    />
-                  </label>
-                  <label className="field">
-                    Size
-                    <input
-                      inputMode="decimal"
-                      onChange={(event) => updatePack(pack.id, 'quantityText', event.target.value)}
-                      placeholder="0"
-                      value={pack.quantityText}
-                    />
-                  </label>
-                  <label className="field">
-                    Unit
-                    <select
-                      onChange={(event) => updatePack(pack.id, 'unit', event.target.value)}
-                      value={pack.unit}
-                    >
-                      {unitOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <footer className="unit-pack-result">
-                  {result ? (
-                    <strong>{formatUnitPrice(result.unitPriceCents, result.baseUnit)}</strong>
-                  ) : (
-                    <span>Enter price and size</span>
-                  )}
-                </footer>
-              </article>
-            )
-          })}
-        </div>
-
-        {packs.length < MAX_PACKS && (
-          <button className="ghost-button" onClick={addPack} type="button">
-            <Plus size={16} />
-            Add another pack
-          </button>
-        )}
-
-        <div className="unit-verdict" aria-live="polite">
-          {comparison.hasMixedUnits ? (
-            <p>
-              These packs use different kinds of units (weight vs volume vs items), so they cannot
-              be compared directly. Use the same unit type for every pack.
-            </p>
-          ) : best && others.length > 0 ? (
-            <p>
-              <strong>
-                Pack {packs.findIndex((pack) => pack.id === best.id) + 1} is the best value
-              </strong>{' '}
-              at {formatUnitPrice(best.unitPriceCents, best.baseUnit)}.
-              {others.map((other) => {
-                const packNumber = packs.findIndex((pack) => pack.id === other.id) + 1
-
-                return (
-                  <span key={other.id}>
-                    {' '}
-                    Pack {packNumber} costs{' '}
-                    {other.percentMoreThanBest !== undefined
-                      ? `${other.percentMoreThanBest}% more`
-                      : 'more'}{' '}
-                    per {other.baseUnit === 'each' ? 'item' : other.baseUnit}.
-                  </span>
-                )
-              })}
-            </p>
-          ) : (
-            <p>
-              <Calculator size={18} /> Fill in at least two packs to compare them.
-            </p>
-          )}
-        </div>
-      </section>
-
       <AutoShopCompare />
       <ShopCompare />
-
-      <section className="shelf-tips" aria-label="Shelf tips">
-        <h2>Three shelf habits that save real money</h2>
-        <ul>
-          <li>
-            <strong>Read the small grey price.</strong> Most shelf labels already show a price per
-            kg or per 100g in small print. It is the only number that lets you compare fairly.
-          </li>
-          <li>
-            <strong>Check the member price.</strong> If the shelf shows two prices, the lower one
-            usually needs the store’s free loyalty card. Signing up costs nothing.
-          </li>
-          <li>
-            <strong>Compare across brands, not just sizes.</strong> House brands are often the
-            same product from the same factory at a lower price per unit.
-          </li>
-        </ul>
-      </section>
     </div>
   )
 }
@@ -221,28 +31,30 @@ interface CompareRow {
   prices: string[]
 }
 
-// Auto compare: the shopper picks real stores we hold deals for, types an
-// item, and we search our own deal database for each store's price.
+// Auto compare searches each selected retailer when the shopper asks. This is
+// separate from discovery because regular shelf products may have no promotion.
 function AutoShopCompare() {
-  const [deals, setDeals] = useState<DiscoveredDeal[]>([])
+  const [retailers, setRetailers] = useState<Retailer[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSearching, setIsSearching] = useState(false)
+  const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   // undefined until the store list loads; [] afterwards is a real "none
   // picked" choice, so deselecting every store must not resurrect defaults.
   const [selectedIds, setSelectedIds] = useState<string[] | undefined>()
-  const [result, setResult] = useState<AutoComparison | undefined>()
+  const [result, setResult] = useState<ProductComparisonResult | undefined>()
 
   useEffect(() => {
     const controller = new AbortController()
 
-    loadDiscovery(controller.signal)
+    loadRetailers({ query: '', signal: controller.signal, sourceKind: 'all' })
       .then((state) => {
         if (controller.signal.aborted) {
           return
         }
-        const loaded = state.data?.discovery.deals ?? []
-        setDeals(loaded)
-        setSelectedIds((current) => current ?? defaultStoreIds(loaded))
+        const loaded = state.data.retailers
+        setRetailers(loaded)
+        setSelectedIds((current) => current ?? loaded.slice(0, 2).map((retailer) => retailer.id))
         setIsLoading(false)
       })
       .catch(() => setIsLoading(false))
@@ -250,23 +62,36 @@ function AutoShopCompare() {
     return () => controller.abort()
   }, [])
 
-  const storeOptions = storeOptionsFromDeals(deals)
+  const storeOptions = retailers.map((retailer) => ({ id: retailer.id, name: retailer.name }))
   const stores = selectedIds ?? []
 
   function toggleStore(id: string) {
     setResult(undefined)
+    setError('')
     setSelectedIds((current) => {
       const base = current ?? []
       return base.includes(id) ? base.filter((storeId) => storeId !== id) : [...base, id]
     })
   }
 
-  function compare() {
-    const chosen = storeOptions.filter((store) => stores.includes(store.id))
-    setResult(autoComparePrices(deals, query, chosen))
+  async function compare() {
+    if (!canCompare) return
+    setError('')
+    setResult(undefined)
+    setIsSearching(true)
+    const outcome = await searchProductPrices({
+      query: query.trim(),
+      retailerIds: stores,
+    })
+    if (outcome.ok) {
+      setResult(outcome.result)
+    } else {
+      setError(outcome.message)
+    }
+    setIsSearching(false)
   }
 
-  const canCompare = query.trim().length > 1 && stores.length >= 2
+  const canCompare = query.trim().length > 1 && stores.length >= 2 && !isSearching
 
   return (
     <section className="shop-compare auto-compare" aria-label="Automatic price comparison">
@@ -275,16 +100,16 @@ function AutoShopCompare() {
           <p className="eyebrow">Tools</p>
           <h1>Compare a product across stores</h1>
           <p className="section-lede">
-            Pick the stores you shop at, type what you are buying, and we check our deal
-            database for each store's price. Compare two stores or as many as you like.
+            Pick the stores you shop at and type what you are buying. We search regular products
+            and promotions at those stores now, using retailer product search where available.
           </p>
         </div>
       </div>
 
       {isLoading ? (
-        <p className="section-lede">Loading the stores we have prices for…</p>
+        <p className="section-lede">Loading stores available in your country…</p>
       ) : storeOptions.length === 0 ? (
-        <p className="section-lede">No store prices are loaded right now. Try again shortly.</p>
+        <p className="section-lede">No stores are available right now. Try again shortly.</p>
       ) : (
         <>
           <fieldset className="auto-compare-stores">
@@ -311,6 +136,7 @@ function AutoShopCompare() {
               onChange={(event) => {
                 setQuery(event.target.value)
                 setResult(undefined)
+                setError('')
               }}
               placeholder="e.g. white bread"
               value={query}
@@ -321,7 +147,8 @@ function AutoShopCompare() {
               onClick={compare}
               type="button"
             >
-              <MagnifyingGlass size={16} weight="bold" /> Compare
+              <MagnifyingGlass size={16} weight="bold" />
+              {isSearching ? 'Searching stores…' : 'Compare'}
             </button>
           </div>
 
@@ -329,6 +156,7 @@ function AutoShopCompare() {
             <p className="section-lede">Pick at least two stores to compare.</p>
           )}
 
+          {error && <p className="compare-verdict" role="alert">{error}</p>}
           {result && <AutoCompareResult result={result} />}
         </>
       )}
@@ -336,16 +164,7 @@ function AutoShopCompare() {
   )
 }
 
-function AutoCompareResult({ result }: { result: AutoComparison }) {
-  if (result.foundCount === 0) {
-    return (
-      <p className="compare-verdict">
-        No current deals match “{result.query}” at the stores you picked. Try a simpler word, or
-        add it to your watchlist and we will tell you when it goes on special.
-      </p>
-    )
-  }
-
+function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
   const cheapest = result.matches.find((match) => match.retailerId === result.cheapestRetailerId)
 
   return (
@@ -357,29 +176,70 @@ function AutoCompareResult({ result }: { result: AutoComparison }) {
             key={match.retailerId}
           >
             <span className="auto-compare-store-name">{match.retailerName}</span>
-            {match.priceCents === undefined ? (
-              <span className="auto-compare-missing">No match found</span>
+            {match.status === 'unavailable' ? (
+              <span className="auto-compare-missing">No verified live price returned</span>
             ) : (
               <>
-                <span className="auto-compare-title">{match.deal?.title}</span>
-                <span className="auto-compare-price">{formatCents(match.priceCents)}</span>
+                {match.productUrl ? (
+                  <a
+                    className="auto-compare-title"
+                    href={match.productUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {match.title ?? 'View product'}
+                  </a>
+                ) : (
+                  <span className="auto-compare-title">{match.title ?? 'Product found'}</span>
+                )}
+                {match.priceCents === undefined ? (
+                  <span className="auto-compare-status">Product found, live price unavailable</span>
+                ) : (
+                  <span className="auto-compare-price">
+                    {formatCountryMoney(match.priceCents, result.country)}
+                  </span>
+                )}
               </>
             )}
           </li>
         ))}
       </ul>
 
-      {cheapest && (
+      {result.pricedCount === 0 ? (
+        <p className="compare-verdict">
+          {result.foundCount > 0
+            ? `We found an official product page for “${result.query}”, but no selected store returned a live price.`
+            : `The selected stores returned no verified live price for “${result.query}” right now.`}
+        </p>
+      ) : result.pricedCount === 1 ? (
+        <p className="compare-verdict">
+          Only one selected store returned a live price for “{result.query}”. We need at least two
+          live prices before naming the cheapest.
+        </p>
+      ) : cheapest ? (
         <p className="compare-verdict">
           <strong>{cheapest.retailerName}</strong> is cheapest for “{result.query}”
-          {result.savingsCents > 0 && <>, saving you {formatCents(result.savingsCents)}</>}.
-          {result.missingCount > 0 && (
-            <> We hold no match at {result.missingCount} of the stores you picked.</>
+          {result.savingsCents > 0 && (
+            <>, saving you {formatCountryMoney(result.savingsCents, result.country)}</>
+          )}.
+          {result.unavailableCount > 0 && (
+            <> {result.unavailableCount} selected {result.unavailableCount === 1 ? 'store did' : 'stores did'} not return a verified live price.</>
           )}
         </p>
-      )}
+      ) : null}
     </div>
   )
+}
+
+function formatCountryMoney(cents: number, country: CountryOption): string {
+  try {
+    return new Intl.NumberFormat(`en-${country.code}`, {
+      currency: country.currencyCode,
+      style: 'currency',
+    }).format(cents / 100)
+  } catch {
+    return `${country.currencyCode} ${(cents / 100).toFixed(2)}`
+  }
 }
 
 const DEFAULT_SHOPS = ['Shop A', 'Shop B']

@@ -14,6 +14,7 @@ import type {
   OfferValidationResponse,
   OffersResponse,
   RetailersResponse,
+  ProductComparisonResponse,
   SavedDealCreateResponse,
   SavedDealDeleteResponse,
   SavedDealsResponse,
@@ -48,6 +49,9 @@ import type {
   SavedDealDraft,
   SourceKind,
   StoreLeaflet,
+  CountryContext,
+  CountryOption,
+  ProductComparisonResult,
   SubscriptionCheckoutRequest,
   SupportMessage,
   VerifiedOffer,
@@ -63,8 +67,13 @@ export interface ResourceState<T> {
 }
 
 export interface RetailerResource {
+  country?: CountryOption
   retailers: Retailer[]
   summary: SourceSummary
+}
+
+export interface CountryResource {
+  country: CountryContext
 }
 
 export interface OfferResource {
@@ -146,6 +155,41 @@ export function getInitialMemberState(): ResourceState<MemberResource> {
     message: 'Checking member session.',
     meta: defaultMeta,
     status: 'loading',
+  }
+}
+
+export function getInitialCountryState(): ResourceState<CountryResource> {
+  return {
+    data: {
+      country: {
+        code: 'ZA',
+        currencyCode: 'ZAR',
+        flag: '🇿🇦',
+        locale: 'en-ZA',
+        name: 'South Africa',
+        rateFromZar: 1,
+      },
+    },
+    message: 'Detecting your country.',
+    meta: defaultMeta,
+    status: 'loading',
+  }
+}
+
+export async function loadCountryContext(signal?: AbortSignal): Promise<ResourceState<CountryResource>> {
+  try {
+    const response = await fetch('/api/country', { headers: { accept: 'application/json' }, signal })
+    if (!response.ok) throw new Error(`API returned ${response.status}`)
+    const envelope = (await response.json()) as ApiEnvelope<CountryResource>
+    return {
+      data: envelope.data,
+      message: `${envelope.data.country.name} pricing loaded.`,
+      meta: envelope.meta,
+      status: 'ready',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return getInitialCountryState()
   }
 }
 
@@ -975,9 +1019,10 @@ export async function loadNearbyStores(
 
 export async function loadAdminOverview(
   signal?: AbortSignal,
+  countryCode = 'ZA',
 ): Promise<{ data?: AdminOverview; message: string; status: 'ready' | 'error' }> {
   try {
-    const response = await fetch('/api/admin', {
+    const response = await fetch(`/api/admin?country=${encodeURIComponent(countryCode)}`, {
       headers: { accept: 'application/json' },
       signal,
     })
@@ -1455,11 +1500,45 @@ export async function searchProperties(
   }
 }
 
+export interface ProductPriceSearchInput {
+  query: string
+  retailerIds: string[]
+}
+
+export type ProductPriceSearchOutcome =
+  | { ok: true; result: ProductComparisonResult }
+  | { ok: false; needsAuth?: boolean; message: string }
+
+export async function searchProductPrices(
+  input: ProductPriceSearchInput,
+): Promise<ProductPriceSearchOutcome> {
+  try {
+    const response = await fetch('/api/price-compare', {
+      body: JSON.stringify(input),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as ProductComparisonResponse & {
+      data?: ProductComparisonResult & { error?: string }
+    }
+    if (!response.ok || !envelope.data || !('matches' in envelope.data)) {
+      return {
+        needsAuth: response.status === 401,
+        message: envelope.data?.error ?? 'Could not search store prices right now.',
+        ok: false,
+      }
+    }
+    return { ok: true, result: envelope.data }
+  } catch {
+    return { message: 'Store price search is unavailable right now.', ok: false }
+  }
+}
+
 // Admin-only: grant or revoke a single member's Properties Scout access.
-export async function setMemberPropertiesAccess(accountId: string, granted: boolean) {
+export async function setMemberPropertiesAccess(accountId: string, granted: boolean, countryCode = 'ZA') {
   try {
     const response = await fetch('/api/admin', {
-      body: JSON.stringify({ action: 'set_properties_access', accountId, granted }),
+      body: JSON.stringify({ action: 'set_properties_access', accountId, countryCode, granted }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     })
@@ -1478,10 +1557,10 @@ export async function setMemberPropertiesAccess(accountId: string, granted: bool
 }
 
 // Admin-only: update a member's subscription plan directly.
-export async function setMemberPlan(accountId: string, planId: string) {
+export async function setMemberPlan(accountId: string, planId: string, countryCode = 'ZA') {
   try {
     const response = await fetch('/api/admin', {
-      body: JSON.stringify({ action: 'set_member_plan', accountId, planId }),
+      body: JSON.stringify({ action: 'set_member_plan', accountId, countryCode, planId }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     })
@@ -1531,10 +1610,11 @@ export async function submitSupportMessage(input: {
 export async function setSupportStatus(
   messageId: string,
   status: 'open' | 'resolved',
+  countryCode = 'ZA',
 ): Promise<{ ok: boolean; message: string; support?: SupportMessage[]; supportOpenCount?: number }> {
   try {
     const response = await fetch('/api/admin', {
-      body: JSON.stringify({ action: 'set_support_status', messageId, status }),
+      body: JSON.stringify({ action: 'set_support_status', countryCode, messageId, status }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     })
@@ -1547,6 +1627,24 @@ export async function setSupportStatus(
       ok: response.ok,
       support: envelope.data?.support,
       supportOpenCount: envelope.data?.summary?.supportOpenCount,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
+  }
+}
+
+export async function protectLegacyEmails(countryCode = 'ZA') {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({ action: 'protect_legacy_emails', countryCode }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as { data?: AdminOverview & { message?: string } }
+    return {
+      data: envelope.data,
+      message: envelope.data?.message ?? (response.ok ? 'Email rows protected.' : 'Could not protect email rows.'),
+      ok: response.ok,
     }
   } catch {
     return { message: 'Admin API unavailable.', ok: false }

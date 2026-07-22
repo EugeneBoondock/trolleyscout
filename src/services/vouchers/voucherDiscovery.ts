@@ -130,7 +130,78 @@ export function extractPublicVoucherCandidates(input: {
     })
   }
 
+  // Real retailer pages rarely mark vouchers up with data attributes — they
+  // write "use code SAVE20 for 20% off" in plain prose. Scan the page text
+  // for those announcements as well.
+  const capturedCodes = new Set(
+    vouchers.map((voucher) => voucher.code?.toLocaleUpperCase()).filter(Boolean),
+  )
+  for (const inline of extractInlineCodeCandidates(input.html)) {
+    if (vouchers.length >= limit) {
+      break
+    }
+
+    const identity = `${input.retailerId}:${inline.code}`
+    if (seen.has(identity) || capturedCodes.has(inline.code.toLocaleUpperCase())) {
+      continue
+    }
+    seen.add(identity)
+    capturedCodes.add(inline.code.toLocaleUpperCase())
+
+    vouchers.push({
+      accountRequired: false,
+      benefitText: inline.benefitText,
+      capturedAt: input.capturedAt,
+      code: inline.code,
+      evidenceText: inline.benefitText,
+      externalId: inline.code,
+      publicReusable: true,
+      redemptionMode: 'code',
+      redemptionUrl: sourceUrl,
+      retailerId: input.retailerId,
+      sourceUrl,
+      termsText: inline.benefitText,
+      title: `Promo code ${inline.code}`,
+      voucherKind: 'public_code',
+    })
+  }
+
   return vouchers
+}
+
+// Finds prose-announced promo codes ("use code SAVE20 and get 20% off").
+// Requires a benefit signal in the surrounding sentence so incidental
+// mentions of the word "code" never turn into a voucher.
+function extractInlineCodeCandidates(html: string) {
+  const text = normalizeText(stripTags(html))
+  const pattern =
+    /\b(?:use|with|enter|apply)\s+(?:the\s+)?(?:promo\s+|voucher\s+|discount\s+|coupon\s+)?code\s*[:\-]?\s*([A-Z0-9][A-Z0-9-]{2,19})\b/gi
+  const found: Array<{ benefitText: string; code: string }> = []
+  const seen = new Set<string>()
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text)) !== null && found.length < 20) {
+    const code = match[1]
+    if (seen.has(code) || /^\d+$/.test(code)) {
+      continue
+    }
+
+    const windowStart = Math.max(0, match.index - 160)
+    const windowEnd = Math.min(text.length, match.index + match[0].length + 160)
+    const context = text.slice(windowStart, windowEnd).trim()
+
+    if (
+      !/\b(off|save|saving|discount|free|less)\b/i.test(context) ||
+      isPrivateVoucherText(context)
+    ) {
+      continue
+    }
+
+    seen.add(code)
+    found.push({ benefitText: context, code })
+  }
+
+  return found
 }
 
 function publicVoucherBlocks(html: string) {

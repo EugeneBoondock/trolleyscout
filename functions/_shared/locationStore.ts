@@ -9,6 +9,7 @@ const PROMOTION_DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export interface StorePromotion {
   id: string
   capturedAt?: string
+  countryCode?: string
   placeId: string
   storeName: string
   retailerId?: string
@@ -43,6 +44,7 @@ export interface DiscoveredStoreRow {
   last_seen_at: string
   last_source_tile: string | null
   next_scout_at: string
+  country_code?: string | null
 }
 
 function hasDb(env: TrolleyScoutEnv): env is TrolleyScoutEnv & { DB: D1Database } {
@@ -99,6 +101,7 @@ export async function readAllDiscoveredStores(
   env: TrolleyScoutEnv,
   _nowIso: string,
   storeLimit = 2000,
+  countryCode?: string,
 ): Promise<{ stores: DiscoveredStore[]; tileCount: number }> {
   if (!hasDb(env)) {
     return { stores: [], tileCount: 0 }
@@ -108,18 +111,20 @@ export async function readAllDiscoveredStores(
     const [result, areaRow] = await Promise.all([
       env.DB.prepare(
         `SELECT place_id, store_name, address, website, lat, lon, retailer_id,
-          first_seen_at, last_seen_at, last_source_tile, next_scout_at
+          first_seen_at, last_seen_at, last_source_tile, next_scout_at, country_code
           FROM discovered_stores
+          ${countryCode ? 'WHERE country_code = ?' : ''}
           ORDER BY last_seen_at DESC
           LIMIT ?`,
       )
-        .bind(storeLimit)
+        .bind(...(countryCode ? [countryCode, storeLimit] : [storeLimit]))
         .all<DiscoveredStoreRow>(),
       env.DB.prepare(
         `SELECT COUNT(DISTINCT last_source_tile) AS area_count
           FROM discovered_stores
-          WHERE last_source_tile IS NOT NULL`,
-      ).first<{ area_count: number }>(),
+          WHERE last_source_tile IS NOT NULL
+          ${countryCode ? 'AND country_code = ?' : ''}`,
+      ).bind(...(countryCode ? [countryCode] : [])).first<{ area_count: number }>(),
     ])
 
     return {
@@ -134,6 +139,7 @@ export async function readAllDiscoveredStores(
 export function discoveredStoreFromRow(row: DiscoveredStoreRow): DiscoveredStore {
   return {
     address: row.address ?? undefined,
+    countryCode: row.country_code ?? 'ZA',
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     lastSourceTile: row.last_source_tile ?? undefined,
@@ -152,6 +158,7 @@ export async function writeDiscoveredStores(
   stores: NearbyStore[],
   nowMs: number,
   sourceTile?: string,
+  countryCode?: string,
 ): Promise<boolean> {
   if (!hasDb(env) || stores.length === 0) {
     return false
@@ -161,8 +168,8 @@ export async function writeDiscoveredStores(
   const statement = env.DB.prepare(
     `INSERT INTO discovered_stores (
       place_id, store_name, address, website, lat, lon, retailer_id,
-      first_seen_at, last_seen_at, last_source_tile, next_scout_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      first_seen_at, last_seen_at, last_source_tile, next_scout_at, country_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (place_id) DO UPDATE SET
       store_name = excluded.store_name,
       address = COALESCE(excluded.address, discovered_stores.address),
@@ -171,6 +178,7 @@ export async function writeDiscoveredStores(
       lon = excluded.lon,
       retailer_id = COALESCE(excluded.retailer_id, discovered_stores.retailer_id),
       last_seen_at = excluded.last_seen_at,
+      country_code = excluded.country_code,
       last_source_tile = COALESCE(excluded.last_source_tile, discovered_stores.last_source_tile)`,
   )
 
@@ -189,6 +197,7 @@ export async function writeDiscoveredStores(
           seenAt,
           sourceTile ?? null,
           seenAt,
+          countryCode ?? store.countryCode ?? 'ZA',
         ),
       ),
     )
@@ -211,7 +220,7 @@ export async function readDueDiscoveredStores(
   try {
     const result = await env.DB.prepare(
       `SELECT place_id, store_name, address, website, lat, lon, retailer_id,
-        first_seen_at, last_seen_at, last_source_tile, next_scout_at
+        first_seen_at, last_seen_at, last_source_tile, next_scout_at, country_code
         FROM discovered_stores
         WHERE next_scout_at <= ?
         ORDER BY next_scout_at ASC, last_seen_at DESC
@@ -251,6 +260,7 @@ export async function readPlacesWithPromotions(
 export async function readPromotionCountsByPlace(
   env: TrolleyScoutEnv,
   nowIso: string,
+  countryCode?: string,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>()
 
@@ -262,10 +272,10 @@ export async function readPromotionCountsByPlace(
     const result = await env.DB.prepare(
       `SELECT place_id, COUNT(*) AS promotion_count
         FROM store_promotions
-        WHERE expires_at >= ?
+        WHERE expires_at >= ? ${countryCode ? 'AND country_code = ?' : ''}
         GROUP BY place_id`,
     )
-      .bind(nowIso)
+      .bind(...(countryCode ? [nowIso, countryCode] : [nowIso]))
       .all<{ place_id: string; promotion_count: number }>()
 
     for (const row of result.results) {
@@ -282,6 +292,7 @@ export async function readAllStorePromotions(
   env: TrolleyScoutEnv,
   nowIso: string,
   limit = 3000,
+  countryCode?: string,
 ): Promise<StorePromotion[]> {
   if (!hasDb(env)) {
     return []
@@ -291,13 +302,13 @@ export async function readAllStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at
+        valid_from, valid_to, captured_at, country_code
         FROM store_promotions
-        WHERE expires_at >= ?
+        WHERE expires_at >= ? ${countryCode ? 'AND country_code = ?' : ''}
         ORDER BY captured_at DESC
         LIMIT ?`,
     )
-      .bind(nowIso, limit)
+      .bind(...(countryCode ? [nowIso, countryCode, limit] : [nowIso, limit]))
       .all<StorePromotionRow>()
 
     return result.results.map(rowToPromotion)
@@ -346,6 +357,7 @@ export async function readAllStoreCatalogues(
   nowIso: string,
   limit = 3000,
   offset = 0,
+  countryCode?: string,
 ): Promise<StorePromotion[]> {
   if (!hasDb(env)) {
     return []
@@ -358,13 +370,16 @@ export async function readAllStoreCatalogues(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at
+        valid_from, valid_to, captured_at, country_code
         FROM store_promotions
         WHERE kind = 'catalogue' AND expires_at >= ?
+          ${countryCode ? 'AND country_code = ?' : ''}
         ORDER BY captured_at DESC, id ASC
         LIMIT ? OFFSET ?`,
     )
-      .bind(nowIso, pageSize, pageOffset)
+      .bind(...(countryCode
+        ? [nowIso, countryCode, pageSize, pageOffset]
+        : [nowIso, pageSize, pageOffset]))
       .all<StorePromotionRow>()
 
     return result.results.map(rowToPromotion)
@@ -378,6 +393,7 @@ export async function writeCachedStores(
   tileKey: string,
   stores: NearbyStore[],
   nowMs: number,
+  countryCode?: string,
 ): Promise<boolean> {
   if (!hasDb(env) || stores.length === 0) {
     return false
@@ -385,21 +401,23 @@ export async function writeCachedStores(
 
   try {
     await env.DB.prepare(
-      `INSERT INTO nearby_store_cache (tile_key, stores_json, checked_at, expires_at)
-        VALUES (?, ?, ?, ?)
+      `INSERT INTO nearby_store_cache (tile_key, stores_json, checked_at, expires_at, country_code)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (tile_key) DO UPDATE SET
           stores_json = excluded.stores_json,
           checked_at = excluded.checked_at,
-          expires_at = excluded.expires_at`,
+          expires_at = excluded.expires_at,
+          country_code = excluded.country_code`,
     )
       .bind(
         tileKey,
         JSON.stringify(stores),
         new Date(nowMs).toISOString(),
         new Date(nowMs + STORE_LIST_TTL_MS).toISOString(),
+        countryCode ?? stores[0]?.countryCode ?? 'ZA',
       )
       .run()
-    return await writeDiscoveredStores(env, stores, nowMs, tileKey)
+    return await writeDiscoveredStores(env, stores, nowMs, tileKey, countryCode)
   } catch {
     // Best-effort cache; discovery already succeeded.
     return false
@@ -411,6 +429,7 @@ export async function readStorePromotions(
   env: TrolleyScoutEnv,
   placeIds: string[],
   nowIso: string,
+  countryCode?: string,
 ): Promise<Map<string, StorePromotion[]>> {
   const byPlace = new Map<string, StorePromotion[]>()
 
@@ -423,12 +442,13 @@ export async function readStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at
+        valid_from, valid_to, captured_at, country_code
         FROM store_promotions
         WHERE place_id IN (${placeholders}) AND expires_at >= ?
+          ${countryCode ? 'AND country_code = ?' : ''}
         ORDER BY captured_at DESC`,
     )
-      .bind(...placeIds, nowIso)
+      .bind(...placeIds, nowIso, ...(countryCode ? [countryCode] : []))
       .all<StorePromotionRow>()
 
     for (const row of result.results) {
@@ -457,8 +477,8 @@ export async function saveStorePromotions(
       `INSERT INTO store_promotions (
         id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        valid_from, valid_to, captured_at, expires_at, country_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         price_text = excluded.price_text,
         previous_price_text = excluded.previous_price_text,
@@ -466,7 +486,8 @@ export async function saveStorePromotions(
         valid_from = excluded.valid_from,
         valid_to = excluded.valid_to,
         captured_at = excluded.captured_at,
-        expires_at = excluded.expires_at`,
+        expires_at = excluded.expires_at,
+        country_code = excluded.country_code`,
     )
     const capturedAt = new Date(nowMs).toISOString()
 
@@ -489,6 +510,7 @@ export async function saveStorePromotions(
           promotion.validTo ?? null,
           capturedAt,
           promotionExpiryIso(promotion.validTo, nowMs),
+          promotion.countryCode ?? 'ZA',
         ),
       ),
     )
@@ -703,11 +725,13 @@ interface StorePromotionRow {
   image_url: string | null
   valid_from: string | null
   valid_to: string | null
+  country_code?: string | null
 }
 
 function rowToPromotion(row: StorePromotionRow): StorePromotion {
   return {
     capturedAt: row.captured_at,
+    countryCode: row.country_code ?? 'ZA',
     id: row.id,
     imageUrl: row.image_url ?? undefined,
     kind: row.kind === 'catalogue' ? 'catalogue' : 'deal',

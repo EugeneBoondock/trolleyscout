@@ -25,6 +25,7 @@ import {
 } from '../../src/services/leafletDiscovery'
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import type {
+  CataloguePage,
   DiscoveredDeal,
   DiscoveryRun,
   DiscoverySourceResult,
@@ -58,6 +59,7 @@ import {
   listMemberInterestWeights,
 } from '../_shared/dealLearningStore'
 import { getMemberSession } from '../_shared/memberStore'
+import { detectRequestCountry } from '../_shared/countryContext'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 // Public, cookieless data — allow any origin so the mobile app can read it.
@@ -85,6 +87,17 @@ const PAGER_PUBLIC_PAGE_LIMIT = 250
 const PNP_VIEWER_MAX_BYTES = 256 * 1024
 const PNP_VIEWER_TIMEOUT_MS = 8_000
 const PNP_VIEWER_CONCURRENCY = 3
+const DISCOVERY_EDGE_CACHE_SECONDS = 300
+
+// The Cache API is absent in unit tests and some local runtimes — treat it
+// as an optional accelerator, never a requirement.
+async function openEdgeCache(): Promise<Cache | undefined> {
+  try {
+    return typeof caches === 'undefined' ? undefined : caches.default
+  } catch {
+    return undefined
+  }
+}
 
 export interface NormalizedDealReadOptions {
   listItems?: typeof listActiveDealItems
@@ -92,7 +105,7 @@ export interface NormalizedDealReadOptions {
   safetyCap?: number
 }
 
-export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method)
   }
@@ -100,6 +113,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
   const summaryOnly = new URL(request.url).searchParams.get('summary') === '1'
   const session = await getMemberSession(env, request)
+  const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
+  const isSouthAfrica = countryCode === 'ZA'
   if (forceLive && session.account?.role !== 'admin') {
     return json(
       { message: 'Admin access is required.' },
@@ -107,14 +122,30 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
+  // Signed-out requests are identical for everyone in a country, and this is
+  // the heaviest endpoint we serve (several D1 reads + a few hundred KB of
+  // JSON). One edge-cached copy per country absorbs that traffic for free.
+  const edgeCache = !forceLive && !summaryOnly && !session.account
+    ? await openEdgeCache()
+    : undefined
+  const edgeCacheKey = `https://edge-cache.trolleyscout.co.za/api/discovery?country=${countryCode}`
+  if (edgeCache) {
+    const cached = await edgeCache.match(edgeCacheKey)
+    if (cached) {
+      return cached
+    }
+  }
+
   const nowIso = new Date().toISOString()
 
   // Try to load cached summary immediately if possible to avoid heavy D1 reads/dedupes
   if (!forceLive && summaryOnly) {
     try {
-      const summaryRow = await env.DB.prepare(
-        "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__summary__'",
-      ).first<{ checked_at: string; deals_json: string }>()
+      const summaryRow = env.DB
+        ? await env.DB.prepare(
+            "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__summary__'",
+          ).first<{ checked_at: string; deals_json: string }>()
+        : undefined
 
       if (summaryRow) {
         const parsed = JSON.parse(summaryRow.deals_json) as { foundDealCount?: number; leafletCount?: number }
@@ -142,10 +173,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
-    readDealSnapshots(env),
-    readLeafletSnapshot(env),
-    readAllStorePromotions(env, nowIso),
-    readNormalizedDealItems(env, nowIso),
+    isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
+    isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
+    readAllStorePromotions(env, nowIso, 3000, countryCode),
+    isSouthAfrica ? readNormalizedDealItems(env, nowIso) : Promise.resolve([]),
   ])
   const interests = await getRequestInterests(env, session.account?.id)
   const storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
@@ -174,20 +205,32 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       ...storeDiscovery.deals,
     ])
 
-    await env.DB.prepare(
-      `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
-       VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(source_key) DO UPDATE SET
-         checked_at = excluded.checked_at,
-         deals_json = excluded.deals_json,
-         updated_at = excluded.updated_at`,
-    )
-      .bind(
-        newestCheckedAt || nowIso,
-        JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+    if (env.DB) {
+      await env.DB.prepare(
+        `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
+         VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(source_key) DO UPDATE SET
+           checked_at = excluded.checked_at,
+           deals_json = excluded.deals_json,
+           updated_at = excluded.updated_at`,
       )
-      .run()
-      .catch(() => undefined)
+        .bind(
+          newestCheckedAt || nowIso,
+          JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+        )
+        .run()
+        .catch(() => undefined)
+    }
+
+    if (edgeCache) {
+      const publicResponse = new Response(response.body, response)
+      publicResponse.headers.set(
+        'cache-control',
+        `public, max-age=60, s-maxage=${DISCOVERY_EDGE_CACHE_SECONDS}`,
+      )
+      waitUntil(edgeCache.put(edgeCacheKey, publicResponse.clone()).catch(() => undefined))
+      return publicResponse
+    }
 
     return response
   }
@@ -218,20 +261,22 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     ...storeDiscovery.deals,
   ])
 
-  await env.DB.prepare(
-    `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
-     VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(source_key) DO UPDATE SET
-       checked_at = excluded.checked_at,
-       deals_json = excluded.deals_json,
-       updated_at = excluded.updated_at`,
-  )
-    .bind(
-      nowIso,
-      JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+  if (env.DB) {
+    await env.DB.prepare(
+      `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
+       VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(source_key) DO UPDATE SET
+         checked_at = excluded.checked_at,
+         deals_json = excluded.deals_json,
+         updated_at = excluded.updated_at`,
     )
-    .run()
-    .catch(() => undefined)
+      .bind(
+        nowIso,
+        JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+      )
+      .run()
+      .catch(() => undefined)
+  }
 
   return response
 }
@@ -447,36 +492,75 @@ export async function enrichInteractiveLeaflets(
   const enriched = [...leaflets]
   let nextIndex = 0
 
+  const loadPages = async (leaflet: StoreLeaflet): Promise<CataloguePage[]> => {
+    const pagerUrl = flippingBookPagerUrl(leaflet)
+    if (!pagerUrl) {
+      return []
+    }
+    const response = await fetchWithTimeout(fetcher, pagerUrl, {
+      headers: {
+        accept: 'application/json,text/javascript',
+        'user-agent': BROWSER_USER_AGENT,
+      },
+    }, timeoutMs)
+    if (!response.ok) {
+      return []
+    }
+    const pager = parseFlippingBookPager(await readBoundedText(
+      response,
+      PAGER_MANIFEST_MAX_BYTES,
+    ))
+    return buildFlippingBookPages(leaflet, pager, PAGER_PUBLIC_PAGE_LIMIT)
+  }
+
   const worker = async () => {
     while (nextIndex < leaflets.length) {
       const index = nextIndex
       nextIndex += 1
       const leaflet = leaflets[index]
-      const pagerUrl = flippingBookPagerUrl(leaflet)
-      if (!pagerUrl) {
+
+      try {
+        const pages = await loadPages(leaflet)
+        if (pages.length > 0) {
+          enriched[index] = { ...leaflet, pages }
+          continue
+        }
+      } catch {
+        // Keep the cover and source link when a retailer manifest is unavailable.
+      }
+
+      // Fallback probe: a leaflet with nothing to render but an HTML link may
+      // embed a hosted viewer (readable pages) or at least publish a cover.
+      if (leaflet.pages?.length || leaflet.imageUrl || !isProbablyHtmlUrl(leaflet.url)) {
         continue
       }
 
       try {
-        const response = await fetchWithTimeout(fetcher, pagerUrl, {
+        const { response, text } = await fetchBoundedTextWithTimeout(fetcher, leaflet.url, {
           headers: {
-            accept: 'application/json,text/javascript',
+            accept: 'text/html',
             'user-agent': BROWSER_USER_AGENT,
           },
-        }, timeoutMs)
-        if (!response.ok) {
+        }, timeoutMs, PNP_VIEWER_MAX_BYTES)
+        if (!response.ok || !text) {
           continue
         }
-        const pager = parseFlippingBookPager(await readBoundedText(
-          response,
-          PAGER_MANIFEST_MAX_BYTES,
-        ))
-        const pages = buildFlippingBookPages(leaflet, pager, PAGER_PUBLIC_PAGE_LIMIT)
-        if (pages.length > 0) {
-          enriched[index] = { ...leaflet, pages }
+
+        const viewerUrl = extractFlippingBookViewerUrl(text)
+        if (viewerUrl) {
+          const pages = await loadPages({ ...leaflet, url: viewerUrl })
+          if (pages.length > 0) {
+            enriched[index] = { ...leaflet, pages }
+            continue
+          }
+        }
+
+        const cover = absoluteHttpsImageUrl(extractViewerCoverImage(text), leaflet.url)
+        if (cover) {
+          enriched[index] = { ...leaflet, imageUrl: cover }
         }
       } catch {
-        // Keep the cover and source link when a retailer manifest is unavailable.
+        // A failed probe just leaves the official source link in place.
       }
     }
   }
@@ -486,6 +570,32 @@ export async function enrichInteractiveLeaflets(
     worker,
   ))
   return enriched
+}
+
+// A leaflet URL we could try to probe for an embedded viewer or cover: not a
+// document or image itself.
+function isProbablyHtmlUrl(value: string): boolean {
+  try {
+    const pathname = new URL(value).pathname.toLowerCase()
+    return !/\.(?:pdf|avif|gif|jpe?g|png|webp)$/.test(pathname)
+  } catch {
+    return false
+  }
+}
+
+function absoluteHttpsImageUrl(
+  value: string | undefined,
+  baseUrl: string,
+): string | undefined {
+  if (!value) {
+    return undefined
+  }
+  try {
+    const url = new URL(value, baseUrl)
+    return url.protocol === 'https:' ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
 }
 
 async function fetchWithTimeout(
@@ -721,16 +831,28 @@ function trustedHeyzinePdfUrl(html: string): string | undefined {
     try {
       const url = new URL(candidate.replace(/&amp;/gi, '&'))
       if (
-        url.protocol === 'https:' &&
-        url.hostname === 'cdn.heyzine.com' &&
-        !url.port &&
-        !url.username &&
-        !url.password &&
-        !url.search &&
-        !url.hash &&
-        /^\/flip-book\/pdf\/[a-f0-9]{32,128}\.pdf$/i.test(url.pathname)
+        url.protocol !== 'https:' ||
+        !/^cdnc?\.heyzine\.com$/.test(url.hostname) ||
+        url.port ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      ) {
+        continue
+      }
+      if (
+        /^\/flip-book\/pdf\/[a-f0-9]{32,128}\.pdf$/i.test(url.pathname) ||
+        /^\/files\/uploaded\/v\d+\/[a-f0-9]{32,128}\.pdf$/i.test(url.pathname)
       ) {
         return url.toString()
+      }
+      // Newer HFlip viewers only expose the PDF thumbnail; the PDF itself
+      // lives at the same path without the "-thumb.jpg" suffix.
+      const thumbMatch = /^(\/files\/uploaded\/v\d+\/[a-f0-9]{32,128}\.pdf)-thumb\.jpg$/i
+        .exec(url.pathname)
+      if (thumbMatch) {
+        return `${url.origin}${thumbMatch[1]}`
       }
     } catch {
       // Ignore malformed candidate URLs and keep looking.
@@ -1217,9 +1339,7 @@ function storedItemToDiscovery(
     expiresAt: item.expiresAt,
     id: item.id,
     imageUrl: item.imageUrl,
-    previousPriceText: item.previousPriceCents === undefined
-      ? undefined
-      : centsToRand(item.previousPriceCents),
+    previousPriceText: meaningfulPreviousPriceText(item.previousPriceCents, item.priceCents),
     priceScope: item.scope,
     priceText: centsToRand(item.priceCents),
     productId: item.productId,
@@ -1320,6 +1440,14 @@ function discoveryDealKeys(deal: DiscoveredDeal) {
     keys.push(`product:${deal.retailerId}:${deal.productId}:${scopeKey}`)
   }
 
+  // Catalogue-scanned deals all deep-link to the same leaflet document (only
+  // the #page anchor differs, and several deals share a page), so a URL key
+  // would collapse a whole catalogue into one deal. Their title fingerprint
+  // in productId already identifies each product.
+  if (deal.productId?.startsWith('catalogue-')) {
+    return keys
+  }
+
   try {
     const url = new URL(deal.productUrl)
     url.hash = ''
@@ -1346,6 +1474,18 @@ function discoveryScopeKey(deal: DiscoveredDeal) {
 
 function centsToRand(cents: number) {
   return `R${(cents / 100).toFixed(2)}`
+}
+
+// A "was" price of zero (feeds use 0 for "no previous price") or one at or
+// below the current price is noise — showing "R10.99, was R0.00" reads as a
+// broken deal, so treat it as absent.
+export function meaningfulPreviousPriceText(
+  previousPriceCents: number | undefined,
+  priceCents: number,
+): string | undefined {
+  return previousPriceCents !== undefined && previousPriceCents > priceCents
+    ? centsToRand(previousPriceCents)
+    : undefined
 }
 
 function readableSlug(value: string) {

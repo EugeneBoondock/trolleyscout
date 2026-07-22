@@ -24,6 +24,8 @@ import {
 import { scoutAreaStores } from '../_shared/areaScout'
 import { scoutNearbyStores } from '../_shared/storeScout'
 import { json, methodNotAllowed } from '../_shared/respond'
+import { countryFromCode, detectRequestCountry } from '../_shared/countryContext'
+import { getMemberSession } from '../_shared/memberStore'
 
 // Public, cookieless data — safe to allow any origin so the mobile app (and
 // any future client) can read it cross-origin.
@@ -63,6 +65,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const lat = Number(url.searchParams.get('lat'))
   const lon = Number(url.searchParams.get('lon'))
   const radius = clampRadius(Number(url.searchParams.get('radius')))
+  const session = await getMemberSession(env, request)
+  const detected = detectRequestCountry(request)
+  const country = countryFromCode(session.account?.countryCode ?? detected.code)
+  const isSouthAfrica = country.code === 'ZA'
 
   if (!isValidCoordinate(lat, lon)) {
     return json(
@@ -73,14 +79,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
 
   const nowMs = Date.now()
   const nowIso = new Date(nowMs).toISOString()
-  const tileKey = locationTileKey(lat, lon)
+  const tileKey = `${country.code}:${locationTileKey(lat, lon)}`
 
   const cached = await readCachedStores(env, tileKey, nowIso)
   let stores = cached
   let servedFrom: 'cache' | 'live' = 'cache'
 
   if (!stores) {
-    stores = await discoverStores(env, lat, lon, radius)
+    stores = await discoverStores(env, lat, lon, radius, country.code, country.name)
     servedFrom = 'live'
   }
 
@@ -94,10 +100,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   // Attach what we already know: known chains' live deals + valid leaflets, and
   // any promotions previously scouted for these stores (still within date).
   const [snapshots, leafletSnapshot, promotionsByPlace, normalizedItems] = await Promise.all([
-    readDealSnapshots(env),
-    readLeafletSnapshot(env),
-    readStorePromotions(env, stores.map((store) => store.placeId), nowIso),
-    readNormalizedItemsForRetailers(env, stores, nowIso),
+    isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
+    isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
+    readStorePromotions(env, stores.map((store) => store.placeId), nowIso, country.code),
+    isSouthAfrica ? readNormalizedItemsForRetailers(env, stores, nowIso) : Promise.resolve([]),
   ])
 
   const dealsByRetailer = groupDealsByRetailer(snapshots)
@@ -141,6 +147,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
 
   return json(
     {
+      country,
       servedFrom,
       stores: results,
       summary: {
@@ -162,12 +169,28 @@ export function selectStoresForAutomaticScouting(
     promotions?: unknown
   }>,
 ): NearbyStore[] {
-  return stores.map(({
-    deals: _deals,
-    leaflets: _leaflets,
-    promotions: _promotions,
-    ...store
-  }) => store)
+  // The scout only reaches a few stores per request, so stores that still
+  // have nothing to show must go first — otherwise already-populated chains
+  // keep consuming the budget and empty independents never get scouted.
+  const needsDeals = (store: {
+    deals?: unknown
+    leaflets?: unknown
+    promotions?: unknown
+  }) =>
+    emptyList(store.deals) && emptyList(store.leaflets) && emptyList(store.promotions)
+
+  return [...stores]
+    .sort((left, right) => Number(needsDeals(right)) - Number(needsDeals(left)))
+    .map(({
+      deals: _deals,
+      leaflets: _leaflets,
+      promotions: _promotions,
+      ...store
+    }) => store)
+}
+
+function emptyList(value: unknown): boolean {
+  return !Array.isArray(value) || value.length === 0
 }
 
 export async function persistAndScoutNearbyStores(
@@ -194,6 +217,8 @@ async function discoverStores(
   lat: number,
   lon: number,
   radius: number,
+  countryCode = 'ZA',
+  countryName = 'South Africa',
 ): Promise<NearbyStore[]> {
   if (!env.GEOAPIFY_API_KEY) {
     return []
@@ -208,7 +233,7 @@ async function discoverStores(
       return []
     }
 
-    return mapGeoapifyStores(await response.json())
+    return mapGeoapifyStores(await response.json(), 40, countryCode, countryName)
   } catch {
     return []
   }
@@ -421,9 +446,10 @@ function normalizedItemToDiscoveredDeal(
     expiresAt: item.expiresAt,
     id: item.id,
     imageUrl: item.imageUrl,
-    previousPriceText: item.previousPriceCents === undefined
-      ? undefined
-      : centsToRand(item.previousPriceCents),
+    previousPriceText:
+      item.previousPriceCents !== undefined && item.previousPriceCents > item.priceCents
+        ? centsToRand(item.previousPriceCents)
+        : undefined,
     priceScope: item.scope,
     priceText: centsToRand(item.priceCents),
     productId: item.productId,

@@ -22,6 +22,13 @@ describe('resolveSaLocation', () => {
   it('resolves an exact city name', () => {
     expect(resolveSaLocation('Sandton')?.name).toBe('Sandton')
   })
+  it('keeps Edenvale as a first-class location instead of snapping to Kempton Park', () => {
+    expect(resolveSaLocation('Edenvale')).toMatchObject({
+      name: 'Edenvale',
+      p24: { id: 14 },
+      pp: { id: 45 },
+    })
+  })
   it('is case- and punctuation-insensitive', () => {
     expect(resolveSaLocation('  cape TOWN ')?.name).toBe('Cape Town')
   })

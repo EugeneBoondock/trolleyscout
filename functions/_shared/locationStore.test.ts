@@ -7,6 +7,7 @@ import {
   discoveredStoreFromRow,
   promotionExpiryIso,
   readAllStoreCatalogues,
+  readStorePromotions,
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
   writeCachedStores,
@@ -42,6 +43,7 @@ describe('discoveredStoreFromRow', () => {
 
     expect(discoveredStoreFromRow(row)).toEqual({
       address: row.address,
+      countryCode: 'ZA',
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
       lastSourceTile: row.last_source_tile,
@@ -74,7 +76,8 @@ describe('discovered store scout timing', () => {
         place_id TEXT PRIMARY KEY, store_name TEXT NOT NULL, address TEXT, website TEXT,
         lat REAL NOT NULL, lon REAL NOT NULL, retailer_id TEXT, first_seen_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL, last_source_tile TEXT, last_scout_at TEXT,
-        next_scout_at TEXT NOT NULL, promotion_count INTEGER NOT NULL DEFAULT 0
+        next_scout_at TEXT NOT NULL, promotion_count INTEGER NOT NULL DEFAULT 0,
+        country_code TEXT NOT NULL DEFAULT 'ZA'
       )`,
     ).run()
     await db.prepare(
@@ -90,13 +93,15 @@ describe('discovered store scout timing', () => {
         retailer_id TEXT, kind TEXT NOT NULL DEFAULT 'deal', title TEXT NOT NULL,
         price_text TEXT, previous_price_text TEXT, saving_text TEXT, source_url TEXT NOT NULL,
         product_url TEXT, image_url TEXT, valid_from TEXT, valid_to TEXT,
-        captured_at TEXT NOT NULL, expires_at TEXT NOT NULL
+        captured_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        country_code TEXT NOT NULL DEFAULT 'ZA'
       )`,
     ).run()
     await db.prepare(
       `CREATE TABLE nearby_store_cache (
         tile_key TEXT PRIMARY KEY, stores_json TEXT NOT NULL,
-        checked_at TEXT NOT NULL, expires_at TEXT NOT NULL
+        checked_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        country_code TEXT NOT NULL DEFAULT 'ZA'
       )`,
     ).run()
   })
@@ -242,6 +247,45 @@ describe('discovered store scout timing', () => {
     expect(secondPage[0].capturedAt).toBe('2026-07-16T10:00:00.000Z')
   })
 
+  it('keeps catalogue rows inside the selected country', async () => {
+    await insertPromotion(db, promotion({
+      countryCode: 'ZA',
+      id: 'ok-foods-za',
+      kind: 'catalogue',
+      sourceUrl: 'https://za.market.test/catalogue',
+      title: 'South Africa catalogue',
+    }), '2026-07-16T12:00:00.000Z')
+    await insertPromotion(db, promotion({
+      countryCode: 'ZW',
+      id: 'ok-foods-zw',
+      kind: 'catalogue',
+      sourceUrl: 'https://zw.market.test/catalogue',
+      title: 'Zimbabwe catalogue',
+    }), '2026-07-16T11:00:00.000Z')
+
+    const zimbabweCatalogues = await readAllStoreCatalogues(
+      env,
+      '2026-07-16T09:00:00.000Z',
+      20,
+      0,
+      'ZW',
+    )
+
+    expect(zimbabweCatalogues).toEqual([
+      expect.objectContaining({ countryCode: 'ZW', id: 'ok-foods-zw' }),
+    ])
+
+    const byStore = await readStorePromotions(
+      env,
+      ['fresh-market'],
+      '2026-07-16T09:00:00.000Z',
+      'ZA',
+    )
+    expect(byStore.get('fresh-market')).toEqual([
+      expect.objectContaining({ countryCode: 'ZA', id: 'ok-foods-za' }),
+    ])
+  })
+
   it('removes missing rows only for the successful place and official source identity', async () => {
     const current = promotion({
       id: 'current',
@@ -309,8 +353,8 @@ async function insertPromotion(
     `INSERT INTO store_promotions (
       id, place_id, store_name, retailer_id, kind, title, price_text,
       previous_price_text, saving_text, source_url, product_url, image_url,
-      valid_from, valid_to, captured_at, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      valid_from, valid_to, captured_at, expires_at, country_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     value.id,
     value.placeId,
@@ -328,5 +372,6 @@ async function insertPromotion(
     value.validTo ?? null,
     capturedAt,
     '2026-07-20T00:00:00.000Z',
+    value.countryCode ?? 'ZA',
   ).run()
 }

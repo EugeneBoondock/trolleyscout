@@ -70,20 +70,69 @@ describe('LeafletViewer', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('embeds a direct official PDF inside the modal', () => {
+  it('embeds a PDF-only catalogue through the same-origin relay', () => {
     const { container } = render(
       <LeafletViewer
-        leaflet={leaflet({ documentUrl: 'https://official.test/catalogues/week-29.pdf' })}
+        leaflet={leaflet({
+          documentUrl: 'https://official.test/catalogues/week-29.pdf',
+          imageUrl: 'https://cdn.test/week-29-cover.jpg',
+        })}
         onClose={vi.fn()}
       />,
     )
 
-    expect(container.querySelector('object')?.getAttribute('data')).toBe(
-      'https://official.test/catalogues/week-29.pdf',
+    const embed = container.querySelector('object')
+    expect(embed?.getAttribute('type')).toBe('application/pdf')
+    expect(embed?.getAttribute('data')).toBe(
+      '/api/catalogue-file?u=https%3A%2F%2Fofficial.test%2Fcatalogues%2Fweek-29.pdf',
     )
+    // Browsers that cannot show PDFs inline get the cover and a direct link.
+    expect(
+      (screen.getByRole('img', { name: 'Shoprite catalogue cover' }) as HTMLImageElement).src,
+    ).toBe('https://cdn.test/week-29-cover.jpg')
+    expect(
+      screen.getByRole('link', { name: /Open the catalogue PDF/ }).getAttribute('href'),
+    ).toBe('/api/catalogue-file?u=https%3A%2F%2Fofficial.test%2Fcatalogues%2Fweek-29.pdf')
     expect(screen.getByRole('link', { name: 'Official source' }).getAttribute('href')).toBe(
       'https://official.test/catalogue',
     )
+  })
+
+  it('keeps published pages as the reader even when a PDF also exists', () => {
+    const { container } = render(
+      <LeafletViewer
+        leaflet={leaflet({
+          documentUrl: 'https://official.test/catalogues/week-29.pdf',
+          pages: [
+            { height: 1600, imageUrl: 'https://cdn.test/page-1.jpg', pageNumber: 1, width: 1100 },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(container.querySelector('object')).toBeNull()
+    expect(screen.getByText('Page 1 of 1')).toBeTruthy()
+  })
+
+  it('retries a failing page image through the same-origin relay before giving up', () => {
+    render(
+      <LeafletViewer
+        leaflet={leaflet({
+          pages: [
+            { height: 1600, imageUrl: 'https://cdn.test/page-1.jpg', pageNumber: 1, width: 1100 },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const image = screen.getByRole('img', { name: 'Shoprite catalogue page 1' }) as HTMLImageElement
+    expect(image.src).toBe('https://cdn.test/page-1.jpg')
+    fireEvent.error(image)
+    expect(image.src).toContain('/api/catalogue-file?u=https%3A%2F%2Fcdn.test%2Fpage-1.jpg')
+    fireEvent.error(image)
+    expect(screen.getByText('Page image unavailable')).toBeTruthy()
   })
 
   it('shows the cover when no pages or PDF are available', () => {
@@ -94,7 +143,7 @@ describe('LeafletViewer', () => {
       />,
     )
 
-    expect((screen.getByRole('img', { name: 'Shoprite catalogue cover' }) as HTMLImageElement).src)
+    expect((screen.getByRole('img', { name: 'Shoprite catalogue page 1' }) as HTMLImageElement).src)
       .toBe('https://cdn.test/cover.jpg')
   })
 })

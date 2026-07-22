@@ -27,7 +27,7 @@ export interface LegalDoc {
   sections: LegalSection[]
 }
 
-const UPDATED = '20 July 2026'
+const UPDATED = '21 July 2026'
 const OPERATOR = 'Boondock Labs (Pty) Ltd'
 
 export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
@@ -42,14 +42,14 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
         heading: 'Who is responsible',
         body: [
           `Trolley Scout is a product of ${OPERATOR}, a company registered in South Africa. Under POPIA we are the "responsible party" for the personal information described here.`,
-          'This policy covers the Trolley Scout website and mobile app. If you only browse the free deals, money-help and tools without signing in, we do not need an account from you at all.',
+          'This policy covers the Trolley Scout website and mobile app. If you only browse the free deals and tools without signing in, we do not need an account from you at all.',
         ],
       },
       {
         heading: 'What we collect',
         body: [
-          'Account details: your email address, display name and a securely hashed version of your password (we never store your password in plain text).',
-          'Things you save: saved deals, baskets, saved sources and your notification and address preferences, so the app can remember them for you.',
+          'Account details: your email address, encrypted before it is stored; your display name; and a securely hashed version of your password. We never store your password in plain text.',
+          'Things you save: saved deals, baskets, property favourites, deal watches, and your notification and address preferences, so the app can remember them for you.',
           'Location for "Near me": the suburb or address you type, or the GPS location you choose to share, which we convert to map coordinates to find nearby stores. You control whether to share this and can use the rest of the app without it.',
           'Payment records: when you subscribe, PayFast processes the payment. We receive a confirmation and a subscription reference — we never see or store your card or banking details.',
           'Technical information: basic logs such as your device type and app version, used to keep the service working and secure.',
@@ -80,7 +80,7 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
       {
         heading: 'Keeping it safe and how long we keep it',
         body: [
-          'We protect your information with encryption in transit and by hashing passwords. No system is perfectly secure, but we take reasonable steps expected under POPIA.',
+          'We protect your information with encryption in transit, field-level encryption for stored email addresses, and secure password hashing. No system is perfectly secure, but we take reasonable steps expected under POPIA.',
           'We keep your account information while your account is active. When you ask us to delete your account, we remove your personal information except where we must keep limited records (for example, proof of a payment) to meet a legal obligation.',
         ],
       },
@@ -122,9 +122,8 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
       {
         heading: 'What Trolley Scout is',
         body: [
-          'Trolley Scout is an information tool. It gathers grocery specials that retailers publish on their own official pages, together with public money-help information such as SASSA grant amounts and school-fee exemptions, and presents them in one place with the date each item was last checked.',
+          'Trolley Scout is an information tool. It gathers grocery specials, retailer catalogues, nearby store information, and property listings from their source platforms, then presents them in one place with the date each item was last checked.',
           'Prices, specials and catalogue dates belong to the retailers and can change or sell out at any time. We show the source link and checked date so you can confirm — we do not guarantee that a price is still current, and the deal is always subject to the retailer’s own terms.',
-          'Money-help information is provided for guidance only and is not financial, legal or tax advice. Always confirm on the official government or retailer page before you act.',
         ],
       },
       {
@@ -157,14 +156,14 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
       {
         heading: 'Our content',
         body: [
-          `The Trolley Scout name, brand, design and original content are owned by ${OPERATOR} and may not be copied or reused without permission. Retailer specials and government information remain the property of their respective owners.`,
+          `The Trolley Scout name, brand, design and original content are owned by ${OPERATOR} and may not be copied or reused without permission. Retailer specials and property listings remain the property of their respective owners.`,
         ],
       },
       {
         heading: 'Availability and liability',
         body: [
           'Trolley Scout is provided "as is". We work to keep it accurate and available but cannot promise it will always be uninterrupted or error-free.',
-          `To the fullest extent allowed by South African law, ${OPERATOR} is not liable for any loss arising from a price that changed, a special that ended, reliance on money-help information, or the app being unavailable. Nothing in these terms limits any right you have under the Consumer Protection Act.`,
+          `To the fullest extent allowed by South African law, ${OPERATOR} is not liable for any loss arising from a price that changed, a special that ended, a property listing that changed, or the app being unavailable. Nothing in these terms limits any right you have under the Consumer Protection Act.`,
         ],
       },
       {

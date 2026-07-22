@@ -1,17 +1,15 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { parseGeoapifyReverse } from './reverseGeocode'
+import { buildReverseGeocodeUrl, parseGeoapifyReverse } from './reverseGeocode'
 
 describe('parseGeoapifyReverse', () => {
-  it('prefers the town/city over the suburb and captures the province', () => {
-    // A shopper standing in a neighbourhood of Edenvale: the reverse result's
-    // suburb is the block ("Dowerglen"), but the city is the town we want.
+  it('prefers the closest suburb before a neighbouring administrative city', () => {
     const payload = {
       results: [
         {
-          suburb: 'Dowerglen',
-          city: 'Edenvale',
+          suburb: 'Edenvale',
+          city: 'Germiston',
           county: 'Ekurhuleni Metropolitan Municipality',
           state: 'Gauteng',
           formatted: 'Edenvale, 1609, South Africa',
@@ -20,8 +18,16 @@ describe('parseGeoapifyReverse', () => {
     }
     const place = parseGeoapifyReverse(payload)
     expect(place?.names[0]).toBe('Edenvale')
-    expect(place?.names).toContain('Dowerglen')
+    expect(place?.names).toContain('Germiston')
     expect(place?.province).toBe('Gauteng')
+  })
+
+  it('requests the full address result rather than snapping to the nearest city', () => {
+    const url = buildReverseGeocodeUrl(-26.1417, 28.1528, 'geo-key')
+
+    expect(url).not.toContain('type=city')
+    expect(url).toContain('lat=-26.1417')
+    expect(url).toContain('lon=28.1528')
   })
 
   it('falls back to town then suburb then a cleaned district', () => {

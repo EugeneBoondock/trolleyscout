@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react'
 import {
   CaretDown,
-  HandCoins,
   Info,
   MagnifyingGlass,
   ShieldCheck,
   Storefront,
   Tag,
 } from '@phosphor-icons/react'
+import { ScoutMascot } from '../components/ScoutMascot'
 
-export type AboutDestination = 'help' | 'tools' | 'discovery' | 'sources'
+export type AboutDestination = 'tools' | 'discovery' | 'sources'
 
 interface Faq {
   question: string
@@ -20,70 +20,59 @@ const faqs: Faq[] = [
   {
     question: 'Why don’t I see every product from every shop?',
     answer:
-      'Some big shops (Shoprite, Checkers) only publish a printed catalogue online, not a live product list. For those we show the current catalogue with its dates. For shops with a live product feed (Pick n Pay, Clicks, Dis-Chem and more) we show real prices and savings. We only ever show what comes from the shop’s own official page. We never guess.',
+      'Some shops publish catalogues instead of a searchable product feed. Trolley Scout shows searchable prices where a source returns them and catalogue pages for the rest. We do not invent missing prices.',
   },
   {
     question: 'Why did a price not match the shop?',
     answer:
-      'Prices change often and specials expire. Every deal shows when it was last checked, and scheduled checks update the board every three hours. If a price looks off, open the “Product” link to see the shop’s live page. Administrators can run an extra source check when needed.',
+      'Prices change often and specials expire. Every deal shows when it was last checked. If a price looks off, open its source link to see the shop’s current page.',
   },
   {
     question: 'Is it really free?',
     answer:
-      'Yes. All the money help, the price tools, live deals, and store catalogues are free and need no account. Paid plans only add bigger saved-deal and basket lists for power savers, which help keep the essentials free for everyone.',
+      'Yes. Deal search, store comparison, nearby stores, and catalogues are free. Paid plans add bigger saved-deal and basket limits.',
   },
   {
     question: 'Which shops are covered?',
     answer:
-      'Live product prices: Pick n Pay, Clicks, Dis-Chem, Takealot, Amazon, Yuppiechef. Weekly catalogues: Shoprite, Checkers, Boxer, Usave, OK Foods, Frontline Hyper, President Hyper, Kit Kat, and more. We keep adding, so ask for a shop and we’ll try to add it.',
-  },
-  {
-    question: 'How is my money help kept accurate?',
-    answer:
-      'Every grant amount, exemption, and right links to the official government or retailer page it came from, with the date we checked it. Grant amounts change each April. Always confirm on the official site before you act.',
+      'The directory changes with the selected country. Trolley Scout uses the known directory first, then scouts for local retailers, official store pages, and catalogue sources in that country.',
   },
 ]
 
 export function AboutView({ onOpen }: { onOpen: (destination: AboutDestination) => void }) {
   return (
     <div className="about-view">
-      <section className="member-section-head">
+      <section className="member-section-head about-intro">
         <div>
           <p className="eyebrow">About &amp; help</p>
           <h1>How Trolley Scout works</h1>
           <p className="section-lede">
-            One place to stretch every rand: money you can claim, tools to pay less, and real
-            specials from official shop pages. Here’s how to use each part.
+            One place for current deals, store catalogues, product comparison, nearby stores,
+            and property searches. Here’s how to use each part.
           </p>
         </div>
+        <ScoutMascot label="Scout, your Trolley Scout guide" pose="wave" size={188} />
       </section>
 
       <section className="about-steps" aria-label="What you can do">
         <AboutStep
-          icon={<HandCoins size={26} weight="duotone" />}
-          title="1. Claim what is yours"
-          text="Open Money help for every SASSA grant, school-fee exemptions, free basic electricity, and UIF, with the free, official way to apply."
-          actionLabel="Open money help"
-          onClick={() => onOpen('help')}
-        />
-        <AboutStep
           icon={<Tag size={26} weight="duotone" />}
-          title="2. Find real specials"
-          text="Open Deals to see live prices and this week’s store catalogues. Use the search box to filter to what you actually buy. Every row links to the shop’s own page."
+          title="1. Find real specials"
+          text="Open Deals to search live prices and this week’s store catalogues. Save a deal or add it straight to your basket."
           actionLabel="Find deals"
           onClick={() => onOpen('discovery')}
         />
         <AboutStep
           icon={<MagnifyingGlass size={26} weight="duotone" />}
-          title="3. Pay less at the shelf"
-          text="Open Tools to compare pack sizes by price per kilogram or litre. The big pack is not always the cheaper one. Works offline once loaded."
+          title="2. Compare across stores"
+          text="Open Tools to search the same product across the stores you choose, or compare a whole shopping list side by side."
           actionLabel="Open tools"
           onClick={() => onOpen('tools')}
         />
         <AboutStep
           icon={<Storefront size={26} weight="duotone" />}
-          title="4. Go to the source"
-          text="Open Stores for official specials, catalogue, and free loyalty sign-up pages for every major retailer, so you never rely on a forwarded screenshot."
+          title="3. Browse stores and catalogues"
+          text="Open a store card for its local deals and catalogues. Each catalogue opens in Trolley Scout’s page reader."
           actionLabel="Browse stores"
           onClick={() => onOpen('sources')}
         />
@@ -92,8 +81,8 @@ export function AboutView({ onOpen }: { onOpen: (destination: AboutDestination) 
       <section className="about-promise" aria-label="Our promise">
         <ShieldCheck size={24} weight="duotone" />
         <p>
-          <strong>Source-first, always.</strong> Every price, catalogue, and grant amount comes
-          from an official page and shows when it was checked. We never invent a number, and we’re
+          <strong>Source-first, always.</strong> Every price and catalogue comes from an official
+          page and shows when it was checked. We never invent a number, and we’re
           honest when a shop only publishes a catalogue instead of live prices.
         </p>
       </section>

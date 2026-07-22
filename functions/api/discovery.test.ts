@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DealSnapshot } from '../_shared/dealSnapshotStore'
 import type { StoredDealItem } from '../_shared/dealItemStore'
-import type { StoreLeaflet } from '../../src/types'
+import type { DiscoveredDeal, StoreLeaflet } from '../../src/types'
 
 const mocks = vi.hoisted(() => ({
   getMemberSession: vi.fn(),
@@ -484,6 +484,86 @@ describe('interactive catalogue manifest enrichment', () => {
     expect(enriched[1]).toEqual(leaflets[1])
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
+
+  it('probes a bare HTML leaflet for an embedded viewer and builds its pages', async () => {
+    const leaflet = {
+      capturedAt: '2026-07-16T10:00:00.000Z',
+      id: 'edgars-specials',
+      name: 'Edgars specials',
+      retailerId: 'edgars' as const,
+      retailerName: 'Edgars',
+      url: 'https://www.edgars.co.za/specials',
+    }
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/pager.js')) {
+        return new Response(`window.pager = ${JSON.stringify({
+          pages: {
+            defaults: {
+              substrateFormat: 'jpg',
+              substrateSizes: [1350],
+              substrateSizesReady: [true],
+              substrateWebPCount: 1,
+            },
+            structure: ['1'],
+          },
+        })};`, { headers: { 'content-type': 'text/javascript' } })
+      }
+      return new Response(
+        '<a href="https://online.flippingbook.com/view/53977247/">Read our leaflet</a>',
+        { headers: { 'content-type': 'text/html' } },
+      )
+    })
+
+    const enriched = await enrichInteractiveLeaflets([leaflet], { fetcher })
+
+    expect(enriched[0].pages).toEqual([
+      expect.objectContaining({
+        imageUrl:
+          'https://online.flippingbook.com/view/53977247/files/assets/common/page-html5-substrates/page0001_1.webp',
+        pageNumber: 1,
+      }),
+    ])
+    // The official source link must stay on the retailer page, not the viewer.
+    expect(enriched[0].url).toBe(leaflet.url)
+  })
+
+  it('falls back to the og:image cover when a probed page has no viewer', async () => {
+    const leaflet = {
+      capturedAt: '2026-07-16T10:00:00.000Z',
+      id: 'clicks-specials',
+      name: 'Clicks specials',
+      retailerId: 'clicks' as const,
+      retailerName: 'Clicks',
+      url: 'https://clicks.co.za/promotions',
+    }
+    const fetcher = vi.fn(async () => new Response(
+      '<meta property="og:image" content="/media/promo-cover.jpg">',
+      { headers: { 'content-type': 'text/html' } },
+    ))
+
+    const enriched = await enrichInteractiveLeaflets([leaflet], { fetcher })
+
+    expect(enriched[0].imageUrl).toBe('https://clicks.co.za/media/promo-cover.jpg')
+  })
+
+  it('leaves PDF-only leaflets untouched — readers embed those directly', async () => {
+    const leaflet = {
+      capturedAt: '2026-07-16T10:00:00.000Z',
+      documentUrl: 'https://www.okfoods.co.za/leaflets/CEN-Foods.pdf',
+      id: 'ok-foods-cen',
+      name: 'OK Foods specials',
+      retailerId: 'ok-foods' as const,
+      retailerName: 'OK Foods',
+      url: 'https://www.okfoods.co.za/leaflets/CEN-Foods.pdf',
+    }
+    const fetcher = vi.fn(async () => new Response('should not fetch'))
+
+    const enriched = await enrichInteractiveLeaflets([leaflet], { fetcher })
+
+    expect(enriched[0]).toEqual(leaflet)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
 })
 
 function storedItem(overrides: Partial<StoredDealItem> = {}): StoredDealItem {
@@ -583,6 +663,54 @@ describe('catalogue-scanned deals in the feed', () => {
   })
 })
 
+describe('catalogue deal dedupe', () => {
+  const catalogueDeal = (overrides: Partial<DiscoveredDeal>): DiscoveredDeal => ({
+    capturedAt: '2026-07-22T08:00:00.000Z',
+    evidenceText: '{}',
+    id: 'checkers-catalogue-1',
+    priceText: 'R36.99',
+    productId: 'catalogue-aaaaaaaaaaaaaaaaaaaaaaaa',
+    productUrl: 'https://specials.checkers.co.za/current/index.html#page=2',
+    priceScope: { storeIds: ['168228'], type: 'store' },
+    retailerId: 'checkers',
+    retailerName: 'Checkers',
+    sourceLabel: 'Catalogue scan',
+    sourceUrl: 'https://specials.checkers.co.za/current/index.html',
+    title: 'Albany Wraps All Variants 250g',
+    ...overrides,
+  })
+
+  it('keeps every product scanned from one catalogue despite the shared leaflet URL', () => {
+    // Regression: the URL key strips the #page anchor, so all 88 items of a
+    // Checkers catalogue collapsed into a single surviving deal.
+    const deals = dedupeDiscoveryDeals([
+      catalogueDeal({}),
+      catalogueDeal({
+        id: 'checkers-catalogue-2',
+        productId: 'catalogue-bbbbbbbbbbbbbbbbbbbbbbbb',
+        title: 'Nescafe Classic 200g',
+      }),
+      catalogueDeal({
+        id: 'checkers-catalogue-3',
+        productId: 'catalogue-cccccccccccccccccccccccc',
+        productUrl: 'https://specials.checkers.co.za/current/index.html#page=2',
+        title: 'Sunlight Liquid 750ml',
+      }),
+    ])
+
+    expect(deals).toHaveLength(3)
+  })
+
+  it('still removes the same catalogue product stored twice', () => {
+    const deals = dedupeDiscoveryDeals([
+      catalogueDeal({}),
+      catalogueDeal({ id: 'checkers-catalogue-duplicate' }),
+    ])
+
+    expect(deals).toHaveLength(1)
+  })
+})
+
 describe('leaflet refresh retention', () => {
   it('keeps prior rows for a failed retailer while replacing successful retailer rows', async () => {
     const prior: StoreLeaflet[] = [{
@@ -677,6 +805,36 @@ describe('Pick n Pay catalogue document enrichment', () => {
       pnpLeaflet.url,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+  })
+
+  it('derives the direct PDF from a cdnc v3 thumbnail when no PDF link exists', async () => {
+    // Newer HFlip viewers stopped linking cdn.heyzine.com/flip-book/pdf/…;
+    // they only reference the upload's thumbnail on cdnc.heyzine.com.
+    const hash = '43c46c1f1102cb881886c600965f039fab6e1ee3'
+    const fetcher = vi.fn(async () => new Response(
+      `<meta property="og:image"
+         content="https://cdnc.heyzine.com/files/uploaded/v3/${hash}.pdf-thumb.jpg">`,
+      { headers: { 'content-type': 'text/html' } },
+    ))
+
+    const result = await resolvePnpHflipDocuments([pnpLeaflet], { fetcher })
+
+    expect(result).toEqual([{
+      ...pnpLeaflet,
+      documentUrl: `https://cdnc.heyzine.com/files/uploaded/v3/${hash}.pdf`,
+    }])
+  })
+
+  it('accepts a direct v3 upload PDF on cdnc.heyzine.com', async () => {
+    const directPdf =
+      'https://cdnc.heyzine.com/files/uploaded/v3/43c46c1f1102cb881886c600965f039fab6e1ee3.pdf'
+    const fetcher = vi.fn(async () => new Response(
+      `<a href="${directPdf}">Download</a>`,
+      { headers: { 'content-type': 'text/html' } },
+    ))
+
+    await expect(resolvePnpHflipDocuments([pnpLeaflet], { fetcher }))
+      .resolves.toEqual([{ ...pnpLeaflet, documentUrl: directPdf }])
   })
 
   it('rejects a PDF URL on a lookalike host', async () => {

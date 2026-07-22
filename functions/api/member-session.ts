@@ -9,6 +9,7 @@ import {
 } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { detectRequestCountry } from '../_shared/countryContext'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -46,14 +47,20 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     }
 
     // "signup" creates the account with a password; "login" verifies one.
+    const country = detectRequestCountry(request)
     const result =
       draft.intent === 'signup'
         ? await signUpMember(env, {
+            country,
             displayName: draft.displayName ?? '',
             email: draft.email ?? '',
             password: draft.password ?? '',
           })
-        : await logInMember(env, { email: draft.email ?? '', password: draft.password ?? '' })
+        : await logInMember(env, {
+            country,
+            email: draft.email ?? '',
+            password: draft.password ?? '',
+          })
 
     if (!('account' in result)) {
       return json(

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { NearMeView } from './NearMeView'
@@ -59,6 +59,16 @@ describe('NearMeView catalogue reader', () => {
     render(<NearMeView />)
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }))
 
+    // The list shows one summary card per store; the deals and catalogues
+    // live on the store's own page.
+    const storeCard = await screen.findByRole('button', {
+      name: 'Open Pick n Pay Central deals and catalogues',
+    })
+    expect(storeCard.textContent).toContain('deals')
+    expect(storeCard.textContent).toContain('catalogue')
+    fireEvent.click(storeCard)
+    expect(screen.getByRole('dialog', { name: 'Pick n Pay Central' })).toBeTruthy()
+
     const weeklyButton = await screen.findByRole('button', { name: /Read Weekly leaflet/i })
     const monthlyButton = screen.getByRole('button', { name: /Read Monthly catalogue/i })
     const catalogueButtons = screen.getAllByRole('button').filter((button) =>
@@ -74,10 +84,13 @@ describe('NearMeView catalogue reader', () => {
     expect(monthlyButton.tagName).toBe('BUTTON')
     fireEvent.click(monthlyButton)
     expect(screen.getByRole('dialog', { name: 'Monthly catalogue' })).toBeTruthy()
-    await waitFor(() => {
-      expect(document.querySelector('object')?.getAttribute('data')).toBe(
-        'https://official.test/monthly.pdf',
-      )
-    })
+    // A PDF catalogue reads inline through the same-origin relay, keeping the
+    // cover as the fallback for browsers that cannot embed PDFs.
+    const embed = document.querySelector('object')
+    expect(embed?.getAttribute('type')).toBe('application/pdf')
+    expect(embed?.getAttribute('data')).toBe(
+      '/api/catalogue-file?u=https%3A%2F%2Fofficial.test%2Fmonthly.pdf',
+    )
+    expect(screen.getByRole('img', { name: 'Pick n Pay Central catalogue cover' })).toBeTruthy()
   })
 })

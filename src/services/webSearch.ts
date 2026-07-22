@@ -16,10 +16,11 @@ export function buildStoreSpecialsQuery(
   storeName: string,
   area?: string,
   verifiedHost?: string,
+  countryName = 'South Africa',
 ): string {
   const place = area ? ` ${area}` : ''
   const site = verifiedHost ? `site:${normalizeHost(verifiedHost)} ` : ''
-  return `${site}${storeName}${place} specials catalogue South Africa`
+  return `${site}${storeName}${place} specials catalogue ${countryName}`
 }
 
 // Reputable SA catalogue aggregators — trusted as a fallback when the store's

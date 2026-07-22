@@ -22,6 +22,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.3.2",
     "clsx": "^2.1.1",
+    "countries-list": "3.4.1",
     "leaflet": "^1.9.4",
     "motion": "^12.42.2",
     "react": "^19.2.7",

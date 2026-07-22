@@ -15,8 +15,10 @@
 import {
   PROPERTY24_AUTOCOMPLETE_URL,
   filterAndSortListings,
+  filterListingsByLocation,
   interleaveByPortal,
   matchPlaceByName,
+  normalizeLocationToken,
   normalizePropertyListing,
   parsePamGoldingAutocomplete,
   parseMyroofPlaces,
@@ -55,6 +57,8 @@ const MAX_BODY_BYTES = 2_800_000
 const P24_CATALOG_KEY = '__p24_locations__'
 const P24_CATALOG_STALE_MS = 7 * 24 * 60 * 60 * 1000
 const SEARCH_STALE_MS = 3 * 60 * 60 * 1000
+const MIN_HEALTHY_PORTAL_RESULTS = 10
+const SEARCH_CACHE_PREFIX = 'property-search-v2'
 
 interface PropertyCacheRow {
   cache_key: string
@@ -73,6 +77,12 @@ export interface PropertySearchParams {
   maxPrice?: number
   minBeds?: number
   sort?: PropertySort
+}
+
+interface ResolvedPropertyLocation {
+  loc: PortalLocationInput
+  locationName: string
+  preferredName?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +127,8 @@ async function fetchViaReader(
 }
 
 // Fetch + parse a results page. Direct first (fast when it works); if that
-// returns nothing — a real empty page or, more often, a bot challenge — retry
-// through the reader proxy and keep whichever gives more.
+// returns suspiciously few listings, retry through the reader proxy and keep
+// whichever gives more.
 async function fetchAndParse(
   env: TrolleyScoutEnv,
   url: string,
@@ -126,7 +136,7 @@ async function fetchAndParse(
 ): Promise<PropertyListing[]> {
   const direct = await fetchDirect(url)
   let listings = direct ? parse(direct) : []
-  if (listings.length === 0) {
+  if (shouldUsePropertyReader(listings.length)) {
     const proxied = await fetchViaReader(url, env.JINA_API_KEY, 'html')
     if (proxied) {
       const proxiedListings = parse(proxied)
@@ -134,6 +144,10 @@ async function fetchAndParse(
     }
   }
   return listings.slice(0, MAX_PER_PORTAL)
+}
+
+export function shouldUsePropertyReader(listingCount: number): boolean {
+  return listingCount < MIN_HEALTHY_PORTAL_RESULTS
 }
 
 function safeJson(text: string | undefined): unknown {
@@ -224,7 +238,7 @@ const PG_AUTOCOMPLETE = 'https://webapi.pamgolding.co.za/api/locations/autocompl
 const MYROOF_HOME = 'https://www.myroof.co.za/'
 const PP_SITEMAP = 'https://www.privateproperty.co.za/SiteMap/residential-shapes-0.xml'
 const MYROOF_PLACES_KEY = '__myroof_places__'
-const PP_CITIES_KEY = '__pp_cities__'
+const PP_CITIES_KEY = '__pp_places_v2__'
 const LOC_STALE_MS = 7 * 24 * 60 * 60 * 1000
 
 // Fetch text direct-first, then via the reader proxy (portals block CF IPs).
@@ -378,7 +392,7 @@ function locFromP24Match(
 async function resolveByText(
   env: TrolleyScoutEnv,
   query: string,
-): Promise<{ loc: PortalLocationInput; locationName: string } | undefined> {
+): Promise<ResolvedPropertyLocation | undefined> {
   const trimmed = query.trim()
   if (trimmed.length < 2) return undefined
   const staticLoc = resolveSaLocation(trimmed)
@@ -397,21 +411,92 @@ async function resolveNearMe(
   env: TrolleyScoutEnv,
   lat: number,
   lon: number,
-): Promise<{ loc: PortalLocationInput; locationName: string } | undefined> {
+): Promise<ResolvedPropertyLocation | undefined> {
   const place = await reverseGeocodePlace(env, lat, lon)
   if (place) {
-    for (const name of place.names) {
-      const staticLoc = resolveSaLocation(name)
-      if (staticLoc) return { loc: staticLoc, locationName: staticLoc.name }
-    }
     const catalog = await getProperty24Catalog(env)
-    for (const name of place.names) {
-      const match = resolveProperty24Location(catalog, name)
-      if (match) return { loc: locFromP24Match(catalog, match, place.province), locationName: match.name }
-    }
+    const selected = selectNearMeLocation(place.names, catalog, place.province)
+    if (selected) return selected
   }
   const nearest = nearestSaLocation(lat, lon)
   return nearest ? { loc: nearest, locationName: nearest.name } : undefined
+}
+
+export function selectNearMeLocation(
+  names: string[],
+  catalog: Property24Location[],
+  province?: string,
+): { loc: PortalLocationInput; locationName: string; preferredName?: string } | undefined {
+  for (const name of names) {
+    const staticLoc = resolveSaLocation(name)
+    if (staticLoc) return { loc: staticLoc, locationName: staticLoc.name }
+
+    const match = resolveProperty24Location(catalog, name)
+    if (!match) continue
+    if (match.type === 1 && match.parentName) {
+      const parent = catalog.find((candidate) =>
+        candidate.type === 2
+        && candidate.normalizedName === normalizeLocationToken(match.parentName ?? ''),
+      )
+      if (parent) {
+        return {
+          loc: locFromP24Match(catalog, parent, province),
+          locationName: parent.name,
+          preferredName: match.name,
+        }
+      }
+    }
+    return {
+      loc: locFromP24Match(catalog, match, province),
+      locationName: match.name,
+    }
+  }
+  return undefined
+}
+
+export function preferredPortalPages(portalId: string, requestedPage: number): number[] {
+  return requestedPage === 1 && (portalId === 'property24' || portalId === 'privateproperty')
+    ? [1, 2, 3]
+    : [requestedPage]
+}
+
+export function propertySearchCacheKey(
+  portalId: string,
+  listingType: PropertyListingType,
+  locationKey: string,
+  page: number,
+): string {
+  return `${SEARCH_CACHE_PREFIX}:${portalId}:${listingType}:${locationKey}:${page}`
+}
+
+export function propertyAreaTerms(
+  catalog: Property24Location[],
+  rootName: string,
+  preferredName?: string,
+): string[] {
+  const terms: string[] = []
+  const seen = new Set<string>()
+  const add = (name: string | undefined) => {
+    if (!name) return false
+    const token = normalizeLocationToken(name)
+    if (!token || seen.has(token)) return false
+    seen.add(token)
+    terms.push(name)
+    return true
+  }
+
+  add(preferredName)
+  add(rootName)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const location of catalog) {
+      if (seen.has(normalizeLocationToken(location.parentName ?? ''))) {
+        changed = add(location.name) || changed
+      }
+    }
+  }
+  return terms
 }
 
 export async function searchProperties(
@@ -443,14 +528,34 @@ export async function searchProperties(
   // live from each portal's own location data (cached in D1).
   loc = await enrichLocationIds(env, loc)
 
+  const locationCatalog = await getProperty24Catalog(env)
+  const locationTerms = propertyAreaTerms(
+    locationCatalog,
+    locationName,
+    resolved.preferredName,
+  )
   const locKey = `${slug(loc.name)}|${slug(loc.province)}`
   const settled = await Promise.allSettled(
     PORTAL_ADAPTERS.map(async (adapter) => {
-      const url = adapter.buildUrl(loc!, params.listingType, page)
-      if (!url) return { portal: adapter, listings: [] as PropertyListing[], ok: false }
-      const cacheKey = `${adapter.id}:${params.listingType}:${locKey}:${page}`
-      const r = await fetchPortalListings(env, adapter, url, params.listingType, cacheKey)
-      return { portal: adapter, ...r }
+      const results = await Promise.all(preferredPortalPages(adapter.id, page).map(async (portalPage) => {
+        const url = adapter.buildUrl(loc!, params.listingType, portalPage)
+        if (!url) return { listings: [] as PropertyListing[], ok: false }
+        const cacheKey = propertySearchCacheKey(
+          adapter.id,
+          params.listingType,
+          locKey,
+          portalPage,
+        )
+        return fetchPortalListings(env, adapter, url, params.listingType, cacheKey)
+      }))
+      return {
+        listings: [...new Map(
+          results.flatMap((result) => result.listings)
+            .map((listing) => [listing.listingUrl, listing]),
+        ).values()],
+        ok: results.some((result) => result.ok),
+        portal: adapter,
+      }
     }),
   )
 
@@ -463,7 +568,10 @@ export async function searchProperties(
     // bed filter, the sort, and the UI — so the counts are consistent no matter
     // which parser produced them (and cached-but-pre-normalization rows are fixed
     // on read too).
-    const listings: PropertyListing[] = (value?.listings ?? []).map(normalizePropertyListing)
+    const listings = filterListingsByLocation(
+      (value?.listings ?? []).map(normalizePropertyListing),
+      locationTerms,
+    )
     grouped.push(listings)
     sources.push({ id: adapter.id, label: adapter.label, count: listings.length, ok: value?.ok ?? false })
   }

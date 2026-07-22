@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, LinkSimple, Minus, Plus, X } from '@phosphor-icons/react'
 
+import { catalogueFileUrl, leafletPdfUrl, withProxiedFallbacks } from '../services/catalogueFiles'
 import type { CataloguePage, StoreLeaflet } from '../types'
 
 const MIN_ZOOM = 0.75
@@ -14,26 +15,39 @@ export function LeafletViewer({
   leaflet: StoreLeaflet
   onClose: () => void
 }) {
+  // Reading order: published page images, then an embedded PDF, then the
+  // cover — each rendered with same-origin relay fallbacks so one blocked
+  // CDN never turns into "preview unavailable".
+  const pdfUrl = leafletPdfUrl(leaflet)
   const pages = useMemo(
-    () => [...(leaflet.pages ?? [])].sort((left, right) => left.pageNumber - right.pageNumber),
-    [leaflet.pages],
+    () => {
+      const publishedPages = [...(leaflet.pages ?? [])]
+        .sort((left, right) => left.pageNumber - right.pageNumber)
+      if (publishedPages.length > 0 || pdfUrl || !leaflet.imageUrl) {
+        return publishedPages
+      }
+      return [{
+        height: 0,
+        imageUrl: leaflet.imageUrl,
+        pageNumber: 1,
+        width: 0,
+      }]
+    },
+    [leaflet.imageUrl, leaflet.pages, pdfUrl],
   )
   const [pageIndex, setPageIndex] = useState(0)
   const [zoom, setZoom] = useState(1)
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0)
   const [imageFailed, setImageFailed] = useState(false)
-  const [coverFailed, setCoverFailed] = useState(false)
   const currentPage = pages[pageIndex]
   const imageCandidates = useMemo(
     () => currentPage ? uniqueImageUrls(currentPage) : [],
     [currentPage],
   )
-  const embeddedPdfUrl = pages.length === 0 ? embeddablePdfUrl(leaflet.documentUrl) : undefined
 
   useEffect(() => {
     setPageIndex(0)
     setZoom(1)
-    setCoverFailed(false)
   }, [leaflet.id])
 
   useEffect(() => {
@@ -230,22 +244,35 @@ export function LeafletViewer({
                 ))}
               </div>
             </div>
-          ) : embeddedPdfUrl ? (
+          ) : pdfUrl ? (
             <object
-              aria-label={`${cleanUiText(leaflet.retailerName)} catalogue document`}
-              data={embeddedPdfUrl}
+              aria-label={`${cleanUiText(leaflet.retailerName)} catalogue PDF`}
+              className="leaflet-pdf-embed"
+              data={catalogueFileUrl(pdfUrl) ?? pdfUrl}
               type="application/pdf"
             >
-              <CatalogueCover leaflet={leaflet} />
+              <div className="leaflet-pdf-fallback" role="status">
+                {leaflet.imageUrl && (
+                  <img
+                    alt={`${cleanUiText(leaflet.retailerName)} catalogue cover`}
+                    className="leaflet-cover-only"
+                    onError={(event) => { event.currentTarget.hidden = true }}
+                    referrerPolicy="no-referrer"
+                    src={leaflet.imageUrl}
+                  />
+                )}
+                <p>This catalogue is a PDF your browser cannot show inline.</p>
+                <a
+                  className="ghost-button"
+                  href={catalogueFileUrl(pdfUrl) ?? pdfUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Open the catalogue PDF
+                  <LinkSimple size={16} />
+                </a>
+              </div>
             </object>
-          ) : leaflet.imageUrl && !coverFailed ? (
-            <img
-              alt={`${cleanUiText(leaflet.retailerName)} catalogue cover`}
-              className="leaflet-cover-only"
-              onError={() => setCoverFailed(true)}
-              referrerPolicy="no-referrer"
-              src={leaflet.imageUrl}
-            />
           ) : (
             <div className="leaflet-image-failure" role="status">
               <strong>Catalogue preview unavailable</strong>
@@ -268,40 +295,8 @@ export function LeafletViewer({
   )
 }
 
-function CatalogueCover({ leaflet }: { leaflet: StoreLeaflet }) {
-  if (!leaflet.imageUrl) {
-    return <p>This browser could not display the catalogue document.</p>
-  }
-
-  return (
-    <img
-      alt={`${cleanUiText(leaflet.retailerName)} catalogue cover`}
-      referrerPolicy="no-referrer"
-      src={leaflet.imageUrl}
-    />
-  )
-}
-
 function uniqueImageUrls(page: CataloguePage): string[] {
-  return [...new Set([page.imageUrl, ...(page.fallbacks ?? [])].filter(Boolean))]
-}
-
-function embeddablePdfUrl(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined
-  }
-
-  try {
-    const url = new URL(value)
-
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      return undefined
-    }
-
-    return /\.pdf$/i.test(url.pathname) ? url.toString() : undefined
-  } catch {
-    return undefined
-  }
+  return withProxiedFallbacks([page.imageUrl, ...(page.fallbacks ?? [])])
 }
 
 function describeLeafletDates(validFrom?: string, validTo?: string): string {

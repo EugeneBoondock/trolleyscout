@@ -57,6 +57,50 @@ describe('voucher discovery', () => {
     ])
   })
 
+  it('finds prose-announced promo codes without any voucher markup', () => {
+    // Real retailer pages announce codes in plain copy, not data attributes.
+    const html = `
+      <main>
+        <h1>July specials</h1>
+        <p>This week only: use promo code WINTER15 for 15% off all heaters.</p>
+        <p>Delivery is free on orders over R450.</p>
+      </main>
+    `
+
+    const vouchers = extractPublicVoucherCandidates({
+      capturedAt,
+      html,
+      retailerId: 'builders',
+      sourceUrl: 'https://www.builders.co.za/builders-plus',
+    })
+
+    expect(vouchers).toEqual([
+      expect.objectContaining({
+        code: 'WINTER15',
+        publicReusable: true,
+        redemptionMode: 'code',
+        retailerId: 'builders',
+        title: 'Promo code WINTER15',
+        voucherKind: 'public_code',
+      }),
+    ])
+    expect(vouchers[0].benefitText).toContain('15% off')
+  })
+
+  it('ignores prose codes with no benefit nearby and personalised codes', () => {
+    const html = `
+      <p>Track your order: enter code ABC123X in the tracking box.</p>
+      <p>Your personal voucher: use code JUSTYOU9 for R50 off. Do not share.</p>
+    `
+
+    expect(extractPublicVoucherCandidates({
+      capturedAt,
+      html,
+      retailerId: 'builders',
+      sourceUrl: 'https://www.builders.co.za/builders-plus',
+    })).toEqual([])
+  })
+
   it('extracts a visibly published reusable code from an official page', () => {
     const html = `
       <section class="voucher-card" data-voucher-id="winter-25" data-voucher-code="SAVE25">

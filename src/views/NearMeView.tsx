@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Clock, LinkSimple, MapPin, NavigationArrow, Storefront, Tag, Trash } from '@phosphor-icons/react'
+import { ArrowRight, Clock, LinkSimple, MapPin, NavigationArrow, Storefront, Tag, Trash, X } from '@phosphor-icons/react'
 import {
   loadNearbyStores,
   type NearbyStoresState,
@@ -15,6 +15,7 @@ import type { StoreLeaflet } from '../types'
 import { LeafletViewer } from '../components/LeafletViewer'
 import { ScoutMark } from '../components/ScoutMark'
 import { sortLeafletsMostRecent } from '../services/catalogueOrdering'
+import { meaningfulWasPrice } from '../services/priceDisplay'
 
 const INITIAL: NearbyStoresState = {
   message: 'Find the supermarkets around you and this week’s specials for each.',
@@ -29,6 +30,7 @@ export function NearMeView({
 }) {
   const [state, setState] = useState<NearbyStoresState>(INITIAL)
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+  const [openStore, setOpenStore] = useState<NearbyStoreResult | undefined>()
   const [history, setHistory] = useState<NearbyHistoryEntry[]>([])
   const [viewingLabel, setViewingLabel] = useState<string>()
 
@@ -181,12 +183,20 @@ export function NearMeView({
           {state.stores.map((store) => (
             <StoreCard
               key={store.placeId}
-              onOpenLeaflet={setOpenLeaflet}
-              onViewDeals={onViewStoreDeals}
+              onOpen={setOpenStore}
               store={store}
             />
           ))}
         </div>
+      )}
+
+      {openStore && (
+        <StoreDetailModal
+          onClose={() => setOpenStore(undefined)}
+          onOpenLeaflet={setOpenLeaflet}
+          onViewDeals={onViewStoreDeals}
+          store={openStore}
+        />
       )}
 
       {openLeaflet && (
@@ -221,104 +231,222 @@ function formatWhen(iso: string): string {
   return `${Math.round(hours / 24)}d ago`
 }
 
+// One store, one compact card: name, distance, and a deal summary. The
+// deals themselves live on the store's own curated page (the modal), so the
+// Near me list stays scannable no matter how many specials a store has.
 function StoreCard({
+  onOpen,
+  store,
+}: {
+  onOpen: (store: NearbyStoreResult) => void
+  store: NearbyStoreResult
+}) {
+  const { catalogues, dealCount } = storeContent(store)
+  const catalogueCount = catalogues.length
+  const hasContent = dealCount > 0 || catalogueCount > 0
+
+  return (
+    <article className="store-card">
+      <button
+        aria-label={`Open ${store.name} deals and catalogues`}
+        className="store-card-open"
+        onClick={() => onOpen(store)}
+        type="button"
+      >
+        <header className="store-card-head">
+          {store.logoUrl ? (
+            <img alt="" className="store-logo" loading="lazy" src={store.logoUrl} />
+          ) : (
+            <span className="store-logo-fallback"><Storefront size={22} /></span>
+          )}
+          <div>
+            <h3>{store.name}</h3>
+            {store.address && <p className="store-address">{store.address}</p>}
+          </div>
+          <div className="store-tags">
+            {store.retailerId && <span className="store-chain-tag">Known chain</span>}
+            {typeof store.distanceM === 'number' && (
+              <span className="store-distance">{formatDistance(store.distanceM)}</span>
+            )}
+          </div>
+        </header>
+
+        {hasContent ? (
+          <p className="store-summary-line">
+            <Tag size={14} />
+            {dealCount} {dealCount === 1 ? 'deal' : 'deals'} · {catalogueCount}{' '}
+            {catalogueCount === 1 ? 'catalogue' : 'catalogues'}
+            <span className="store-summary-action">
+              View
+              <ArrowRight size={14} />
+            </span>
+          </p>
+        ) : (
+          <p className="store-empty">
+            {store.retailerId
+              ? 'No current deals loaded for this chain yet. Check back soon.'
+              : store.website
+                ? 'We’re checking this store’s specials. Come back shortly.'
+                : 'No online specials page found for this store.'}
+          </p>
+        )}
+      </button>
+    </article>
+  )
+}
+
+// The curated per-store page: every deal and catalogue this store published,
+// in one place.
+function StoreDetailModal({
+  onClose,
   onOpenLeaflet,
   onViewDeals,
   store,
 }: {
+  onClose: () => void
   onOpenLeaflet: (leaflet: StoreLeaflet) => void
   onViewDeals?: (store: NearbyStoreResult) => void
   store: NearbyStoreResult
 }) {
-  const dealCount = store.deals.length + store.promotions.filter((p) => p.kind === 'deal').length
-  const catalogues = sortLeafletsMostRecent([
-    ...store.leaflets,
-    ...store.promotions
-      .filter((promotion) => promotion.kind === 'catalogue')
-      .map((promotion) => promotionToLeaflet(store, promotion)),
-  ])
-  const catalogueCount = catalogues.length
+  const { catalogues, dealCount } = storeContent(store)
+  const promotionDeals = store.promotions.filter((promotion) => promotion.kind === 'deal')
 
-  const hasDeals =
-    store.deals.length > 0 || store.promotions.some((promotion) => promotion.kind === 'deal')
-  const canViewDeals = Boolean(onViewDeals) && hasDeals
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
 
   return (
-    <article className="store-card">
-      <header className="store-card-head">
-        {store.logoUrl ? (
-          <img alt="" className="store-logo" loading="lazy" src={store.logoUrl} />
-        ) : (
-          <span className="store-logo-fallback"><Storefront size={22} /></span>
-        )}
-        <div>
-          <h3>{store.name}</h3>
-          {store.address && <p className="store-address">{store.address}</p>}
-        </div>
-        <div className="store-tags">
-          {store.retailerId && <span className="store-chain-tag">Known chain</span>}
-          {typeof store.distanceM === 'number' && (
-            <span className="store-distance">{formatDistance(store.distanceM)}</span>
-          )}
-        </div>
-      </header>
+    <div
+      className="store-directory-modal-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+      role="presentation"
+    >
+      <div
+        aria-labelledby="near-store-title"
+        aria-modal="true"
+        className="store-directory-modal"
+        role="dialog"
+      >
+        <header className="store-directory-modal-head">
+          <div>
+            <p className="eyebrow">Store deals and catalogues</p>
+            <h3 id="near-store-title">{store.name}</h3>
+            <p>
+              {store.address ?? 'Near you'}
+              {typeof store.distanceM === 'number' && ` · ${formatDistance(store.distanceM)} away`}
+            </p>
+          </div>
+          <button
+            aria-label="Close store details"
+            autoFocus
+            className="icon-button"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={20} />
+          </button>
+        </header>
 
-      {canViewDeals && (
-        <button className="store-view-deals" onClick={() => onViewDeals?.(store)} type="button">
-          See {store.name}’s deals in Find deals
-          <ArrowRight size={14} />
-        </button>
-      )}
-
-      {dealCount === 0 && catalogueCount === 0 ? (
-        <p className="store-empty">
-          {store.retailerId
-            ? 'No current deals loaded for this chain yet. Check back soon.'
-            : store.website
-              ? 'We’re checking this store’s specials. Come back shortly.'
-              : 'No online specials page found for this store.'}
-        </p>
-      ) : (
-        <>
-          {store.deals.slice(0, 4).map((deal) => (
-            <div className="store-deal" key={deal.id}>
-              {deal.imageUrl && <img alt="" className="near-deal-image" loading="lazy" src={deal.imageUrl} />}
-              <span className="store-deal-title">{deal.title}</span>
-              <span className="store-deal-price">
-                {deal.priceText}
-                {deal.previousPriceText && <s>{deal.previousPriceText}</s>}
-              </span>
-            </div>
-          ))}
-
-          {catalogues.map((leaflet) => (
+        <div className="store-location-list">
+          {onViewDeals && dealCount > 0 && (
             <button
-              aria-label={`Read ${cleanUiText(leaflet.name)}`}
-              className="store-catalogue"
-              key={leaflet.id}
-              onClick={() => onOpenLeaflet(leaflet)}
+              className="store-view-deals"
+              onClick={() => onViewDeals(store)}
               type="button"
             >
-              {leaflet.imageUrl ? (
-                <img alt="" className="near-catalogue-image" loading="lazy" src={leaflet.imageUrl} />
-              ) : <Tag size={14} />}
-              {cleanUiText(leaflet.name)}
-              {describeValid(leaflet.validFrom, leaflet.validTo)}
-              <span className="store-catalogue-action">Read here</span>
+              See {store.name}’s deals in Find deals
+              <ArrowRight size={14} />
             </button>
-          ))}
+          )}
 
-        </>
-      )}
+          {dealCount > 0 && (
+            <section aria-label={`${store.name} deals`}>
+              <p className="eyebrow">Current deals</p>
+              {store.deals.map((deal) => (
+                <div className="store-deal" key={deal.id}>
+                  {deal.imageUrl && <img alt="" className="near-deal-image" loading="lazy" src={deal.imageUrl} />}
+                  <span className="store-deal-title">{deal.title}</span>
+                  <span className="store-deal-price">
+                    {deal.priceText}
+                    {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
+                      <s>{meaningfulWasPrice(deal.previousPriceText, deal.priceText)}</s>
+                    )}
+                  </span>
+                </div>
+              ))}
+              {promotionDeals.map((promotion) => (
+                <div className="store-deal" key={promotion.id}>
+                  {promotion.imageUrl && (
+                    <img alt="" className="near-deal-image" loading="lazy" src={promotion.imageUrl} />
+                  )}
+                  <span className="store-deal-title">{cleanUiText(promotion.title)}</span>
+                  <span className="store-deal-price">
+                    {promotion.priceText}
+                    {meaningfulWasPrice(promotion.previousPriceText, promotion.priceText) && (
+                      <s>{meaningfulWasPrice(promotion.previousPriceText, promotion.priceText)}</s>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
 
-      {store.website && (
-        <a className="store-website" href={store.website} rel="noreferrer" target="_blank">
-          Visit store site
-          <LinkSimple size={12} />
-        </a>
-      )}
-    </article>
+          {catalogues.length > 0 && (
+            <section aria-label={`${store.name} catalogues`}>
+              <p className="eyebrow">Catalogues</p>
+              {catalogues.map((leaflet) => (
+                <button
+                  aria-label={`Read ${cleanUiText(leaflet.name)}`}
+                  className="store-catalogue"
+                  key={leaflet.id}
+                  onClick={() => onOpenLeaflet(leaflet)}
+                  type="button"
+                >
+                  {leaflet.imageUrl ? (
+                    <img alt="" className="near-catalogue-image" loading="lazy" src={leaflet.imageUrl} />
+                  ) : <Tag size={14} />}
+                  {cleanUiText(leaflet.name)}
+                  {describeValid(leaflet.validFrom, leaflet.validTo)}
+                  <span className="store-catalogue-action">Read here</span>
+                </button>
+              ))}
+            </section>
+          )}
+
+          {store.website && (
+            <a className="store-website" href={store.website} rel="noreferrer" target="_blank">
+              Visit store site
+              <LinkSimple size={12} />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
   )
+}
+
+function storeContent(store: NearbyStoreResult) {
+  return {
+    catalogues: sortLeafletsMostRecent([
+      ...store.leaflets,
+      ...store.promotions
+        .filter((promotion) => promotion.kind === 'catalogue')
+        .map((promotion) => promotionToLeaflet(store, promotion)),
+    ]),
+    dealCount:
+      store.deals.length + store.promotions.filter((p) => p.kind === 'deal').length,
+  }
 }
 
 function promotionToLeaflet(

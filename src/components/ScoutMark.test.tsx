@@ -6,14 +6,16 @@ import { ScoutMark } from './ScoutMark'
 afterEach(cleanup)
 
 describe('ScoutMark', () => {
-  it('marks the navigation needle as scouting', () => {
+  it('marks the navigation mascot as scouting', () => {
     render(<ScoutMark motion="scout" />)
 
     expect(screen.getByTestId('scout-mark').className).toContain('is-scouting')
-    expect(screen.getByTestId('scout-mark-needle')).toBeTruthy()
+    expect(screen.getByTestId('scout-mark').querySelector('img')?.getAttribute('src')).toBe(
+      '/assets/scout-logo.png',
+    )
   })
 
-  it('marks the loading needle as spinning', () => {
+  it('marks the loading mascot as spinning', () => {
     render(<ScoutMark motion="spin" size={28} />)
 
     const mark = screen.getByTestId('scout-mark')

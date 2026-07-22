@@ -1,6 +1,6 @@
 # Trolley Scout
 
-> Trolley Scout finds this week's grocery specials across South African supermarkets, compares prices so shoppers can see which store is cheapest for their list, and explains government money help (SASSA grants, school fee exemptions, free basic electricity). Built for low-income South African households: the useful parts are free.
+> Trolley Scout finds grocery specials across supermarkets, compares store prices, locates nearby retailers, and searches property platforms. The useful shopping tools are free.
 
 Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a native Android app (see the GitHub releases). Deal data is scouted from official retailer sources (Woolworths, Checkers, Shoprite, Pick n Pay, Clicks, Dis-Chem, Boxer, OK Foods, SPAR, Usave, Game, Makro and independent local stores) and refreshed continuously.
 
@@ -23,7 +23,7 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 
 ## Agents
 
-- [MCP server](https://trolleyscout.co.za/mcp): Model Context Protocol over Streamable HTTP with read-only tools (search_deals, nearby_stores, flash_deals, money_help)
+- [MCP server](https://trolleyscout.co.za/mcp): Model Context Protocol over Streamable HTTP with read-only tools (search_deals, nearby_stores, flash_deals)
 - [MCP Server Card](https://trolleyscout.co.za/.well-known/mcp/server-card.json)
 - [Agent Skills index](https://trolleyscout.co.za/.well-known/agent-skills/index.json)
 - [Authentication for agents](https://trolleyscout.co.za/auth.md)

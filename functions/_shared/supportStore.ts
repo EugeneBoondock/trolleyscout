@@ -1,6 +1,13 @@
 import type { SupportMessage } from '../../src/types'
 import type { TrolleyScoutEnv } from './env'
 import { hasMemberStore } from './memberStore'
+import {
+  emailLookup,
+  hasEmailProtection,
+  isProtectedEmail,
+  protectEmail,
+  revealEmail,
+} from './emailProtection'
 
 // Support messages are written by the public Support page (members and
 // signed-out visitors) and read only by the admin console. Keeping the data
@@ -12,6 +19,7 @@ interface SupportMessageRow {
   account_id: string | null
   name: string
   email: string
+  email_lookup?: string | null
   topic: string
   message: string
   status: string
@@ -75,11 +83,19 @@ export async function createSupportMessage(
     return { issues }
   }
 
+  if (!hasEmailProtection(env)) {
+    return { issues: ['Support is temporarily unavailable while account security is configured.'] }
+  }
+
+  const normalizedEmail = email.toLowerCase()
+  const lookup = await emailLookup(env, normalizedEmail)
+
   const since = new Date(Date.now() - THROTTLE_WINDOW_MINUTES * 60 * 1000).toISOString()
   const recent = await env.DB.prepare(
-    'SELECT COUNT(*) AS total FROM support_messages WHERE email = ? AND created_at >= ?',
+    `SELECT COUNT(*) AS total FROM support_messages
+      WHERE (email_lookup = ? OR (email_lookup IS NULL AND email = ?)) AND created_at >= ?`,
   )
-    .bind(email.toLowerCase(), since)
+    .bind(lookup, normalizedEmail, since)
     .first<{ total: number }>()
 
   if ((recent?.total ?? 0) >= THROTTLE_MAX_PER_WINDOW) {
@@ -93,14 +109,15 @@ export async function createSupportMessage(
 
   await env.DB.prepare(
     `INSERT INTO support_messages (
-        id, account_id, name, email, topic, message, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+        id, account_id, name, email, email_lookup, topic, message, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
   )
     .bind(
       id,
       input.accountId ?? null,
       name,
-      email.toLowerCase(),
+      await protectEmail(env, normalizedEmail),
+      lookup,
       topic,
       message,
       timestamp,
@@ -122,7 +139,7 @@ export async function listSupportMessages(
   // Open messages first so anything still needing a reply sits at the top, then
   // most recent within each status.
   const rows = await env.DB.prepare(
-    `SELECT id, account_id, name, email, topic, message, status, admin_note, created_at, updated_at
+    `SELECT id, account_id, name, email, email_lookup, topic, message, status, admin_note, created_at, updated_at
       FROM support_messages
       ORDER BY (status = 'open') DESC, created_at DESC
       LIMIT ?`,
@@ -130,7 +147,7 @@ export async function listSupportMessages(
     .bind(limit)
     .all<SupportMessageRow>()
 
-  return rows.results.map(supportMessageFromRow)
+  return Promise.all(rows.results.map((row) => supportMessageFromRow(env, row)))
 }
 
 export async function countOpenSupportMessages(env: TrolleyScoutEnv): Promise<number> {
@@ -168,17 +185,60 @@ export async function setSupportMessageStatus(
   return { ok: true }
 }
 
-function supportMessageFromRow(row: SupportMessageRow): SupportMessage {
+async function supportMessageFromRow(env: TrolleyScoutEnv, row: SupportMessageRow): Promise<SupportMessage> {
   return {
     id: row.id,
     accountId: row.account_id ?? undefined,
     name: row.name,
-    email: row.email,
+    email: await revealEmail(env, row.email),
     topic: row.topic,
     message: row.message,
     status: row.status === 'resolved' ? 'resolved' : 'open',
     adminNote: row.admin_note ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+export async function countPendingSupportEmailProtection(env: TrolleyScoutEnv): Promise<number> {
+  if (!hasMemberStore(env)) return 0
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM support_messages
+      WHERE email_lookup IS NULL OR email NOT LIKE 'enc:v1:%'`,
+  ).first<{ total: number }>()
+  return Number(row?.total ?? 0)
+}
+
+export async function protectLegacySupportEmails(
+  env: TrolleyScoutEnv,
+  limit = 500,
+): Promise<{ protected: number; remaining: number }> {
+  if (!hasMemberStore(env) || !hasEmailProtection(env)) {
+    return { protected: 0, remaining: 0 }
+  }
+
+  const rows = await env.DB.prepare(
+    `SELECT id, email FROM support_messages
+      WHERE email_lookup IS NULL OR email NOT LIKE 'enc:v1:%'
+      LIMIT ?`,
+  ).bind(limit).all<{ email: string; id: string }>()
+
+  let protectedCount = 0
+  for (const row of rows.results) {
+    const email = await revealEmail(env, row.email)
+    const result = await env.DB.prepare(
+      'UPDATE support_messages SET email = ?, email_lookup = ?, updated_at = ? WHERE id = ?',
+    ).bind(
+      isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
+      await emailLookup(env, email),
+      new Date().toISOString(),
+      row.id,
+    ).run()
+    protectedCount += Number(result.meta.changes ?? 0)
+  }
+
+  return {
+    protected: protectedCount,
+    remaining: await countPendingSupportEmailProtection(env),
   }
 }

@@ -4,7 +4,6 @@
 // public APIs — no auth, no side effects. JSON-RPC 2.0; POST a request, get a
 // JSON response.
 
-import { GRANTS_EFFECTIVE_FROM, socialGrants } from '../src/data/moneyHelp'
 import type { TrolleyScoutEnv } from './_shared/env'
 
 const PROTOCOL_VERSION = '2025-06-18'
@@ -70,13 +69,6 @@ const TOOLS = [
       },
     },
   },
-  {
-    name: 'money_help',
-    title: 'South African money help',
-    description:
-      'Get current South African social grant amounts (SASSA) and money-saving help that Trolley Scout tracks — free to claim.',
-    inputSchema: { type: 'object', properties: {} },
-  },
 ]
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ request }) => {
@@ -129,7 +121,7 @@ async function handleMethod(message: JsonRpcRequest, origin: string): Promise<un
       return {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          'Read-only tools for South African grocery deals, nearby supermarkets, flash deals, and money help.',
+          'Read-only tools for South African grocery deals, nearby supermarkets, and flash deals.',
         protocolVersion: PROTOCOL_VERSION,
         serverInfo: SERVER_INFO,
       }
@@ -155,12 +147,6 @@ async function callTool(params: Record<string, unknown>, origin: string): Promis
       return toolResult(await nearbyStores(args, origin))
     case 'flash_deals':
       return toolResult(await flashDeals(args, origin))
-    case 'money_help':
-      return toolResult({
-        effectiveFrom: GRANTS_EFFECTIVE_FROM,
-        grants: socialGrants,
-        note: 'All grants are free to apply for at SASSA. See https://trolleyscout.co.za/money-help',
-      })
     default:
       throw new RpcError(-32602, `Unknown tool: ${name}`)
   }

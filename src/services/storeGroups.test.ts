@@ -40,6 +40,16 @@ describe('groupDiscoveredStores', () => {
     )
   })
 
+  it('keeps the nearest branch distance for the store card', () => {
+    const [group] = groupDiscoveredStores([
+      store({ placeId: 'far', distanceM: 4000 }),
+      store({ placeId: 'near', distanceM: 650 }),
+      store({ placeId: 'unknown' }),
+    ])
+
+    expect(group.nearestDistanceM).toBe(650)
+  })
+
   it('groups unknown branches when their verified website host matches', () => {
     const groups = groupDiscoveredStores([
       store({ name: 'Family Foods Central', placeId: 'a', website: 'https://www.familyfoods.test/central' }),

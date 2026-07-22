@@ -59,6 +59,7 @@ describe('structured retailer source decoders', () => {
       'woolworths::all-savings',
       'clicks::promotion-products',
       'food-lovers::specials',
+      'fair-price::sale-items',
       'game::bundle-deals',
       'game::savings',
       'builders::deals',

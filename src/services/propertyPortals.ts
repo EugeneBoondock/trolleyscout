@@ -17,10 +17,10 @@
 import type {
   PropertyListing,
   PropertyListingType,
-  PropertyPortalId,
+  KnownPropertyPortalId,
 } from '../types'
 
-export const PROPERTY_PORTAL_LABELS: Record<PropertyPortalId, string> = {
+export const PROPERTY_PORTAL_LABELS: Record<KnownPropertyPortalId, string> = {
   property24: 'Property24',
   privateproperty: 'Private Property',
   gumtree: 'Gumtree',
@@ -356,6 +356,7 @@ export interface PrivatePropertyLocation {
   id: number
   name: string
   descriptor?: string
+  path?: string
 }
 
 export function parsePrivatePropertyLocations(payload: unknown): PrivatePropertyLocation[] {
@@ -423,7 +424,7 @@ export interface PortalPlace {
 export function parseMyroofPlaces(html: string): PortalPlace[] {
   const out: PortalPlace[] = []
   const seen = new Set<number>()
-  for (const m of html.matchAll(/property-for-sale-in-([A-Za-z0-9%'\-]+?)-(\d+)\//g)) {
+  for (const m of html.matchAll(/property-for-sale-in-([A-Za-z0-9%'-]+?)-(\d+)\//g)) {
     const rawSlug = m[1]
     const id = Number(m[2])
     if (!Number.isFinite(id) || seen.has(id)) continue
@@ -447,14 +448,21 @@ export function parsePrivatePropertyShapes(xml: string): PrivatePropertyLocation
   const out: PrivatePropertyLocation[] = []
   const seen = new Set<number>()
   for (const m of xml.matchAll(
-    /<loc>https?:\/\/www\.privateproperty\.co\.za\/for-sale\/([a-z0-9-]+)\/([a-z0-9-]+)\/(\d+)<\/loc>/g,
+    /<loc>https?:\/\/www\.privateproperty\.co\.za\/(?:for-sale|to-rent)\/([a-z0-9/-]+)\/(\d+)<\/loc>/g,
   )) {
-    const province = m[1]
-    const citySlug = m[2]
-    const id = Number(m[3])
+    const path = m[1].replace(/^\/+|\/+$/g, '')
+    const segments = path.split('/').filter(Boolean)
+    const id = Number(m[2])
     if (!Number.isFinite(id) || seen.has(id)) continue
+    const placeSlug = segments.at(-1)
+    if (!placeSlug || segments.length < 2) continue
     seen.add(id)
-    out.push({ id, name: citySlug.replace(/-/g, ' '), descriptor: province.replace(/-/g, ' ') })
+    out.push({
+      descriptor: segments[0].replace(/-/g, ' '),
+      id,
+      name: placeSlug.replace(/-/g, ' '),
+      path,
+    })
   }
   return out
 }
@@ -481,6 +489,10 @@ export function buildPrivatePropertyUrl(
   page = 1,
 ): string {
   const prefix = LISTING_PREFIX[listingType]
+  if (location.path) {
+    const path = `/${prefix}/${location.path}/${location.id}`
+    return `${PRIVATEPROPERTY_ORIGIN}${path}${page > 1 ? `?page=${page}` : ''}`
+  }
   const province = slug(location.descriptor ?? '')
   const name = slug(location.name)
   const path = `/${prefix}/${province}/${name}/${location.id}`
@@ -627,6 +639,30 @@ export function filterAndSortListings(
     default:
       return filtered
   }
+}
+
+export function filterListingsByLocation(
+  listings: PropertyListing[],
+  locationTerms: string[],
+): PropertyListing[] {
+  const terms = [...new Set(locationTerms.map(normalizeLocationToken).filter((term) => term.length > 2))]
+  if (terms.length === 0) return listings
+
+  return listings.map((listing, originalIndex) => {
+    const searchable = normalizeLocationToken([
+      listing.location,
+      listing.title,
+      listing.listingUrl,
+    ].filter(Boolean).join(' '))
+    return {
+      listing,
+      originalIndex,
+      locationRank: terms.findIndex((term) => searchable.includes(term)),
+    }
+  })
+    .filter((item) => item.locationRank >= 0)
+    .sort((a, b) => a.locationRank - b.locationRank || a.originalIndex - b.originalIndex)
+    .map((item) => item.listing)
 }
 
 /** Interleaves portals so the first screen shows both sources, not one wall. */

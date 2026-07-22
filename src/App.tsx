@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
+  ArrowLeft,
   ArrowRight,
   Bell,
   BellRinging,
@@ -39,6 +40,7 @@ import {
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
+import { ScoutGuide, ScoutMascot } from './components/ScoutMascot'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
 import { StoreMap } from './components/StoreMap'
@@ -67,18 +69,21 @@ import {
   getInitialSavedDealState,
   getInitialSavedSourceState,
   getInitialSubscriptionState,
+  getInitialCountryState,
   loadMemberSession,
   changeAccountPassword,
   loadAdminOverview,
   setMemberPropertiesAccess,
   setMemberPlan,
   setSupportStatus,
+  protectLegacyEmails,
   loadDiscovery,
   loadBasket,
   loadSavedDeals,
   validateOfferDraft,
   loadSavedSources,
   loadSubscription,
+  loadCountryContext,
   saveSourceForMember,
   saveDealForMember,
   startMemberSession,
@@ -116,6 +121,8 @@ import type {
   SourceKind,
   DiscoveredDeal,
   AdminOverview,
+  CountryContext,
+  CountryOption,
   StoreLeaflet,
   VerifiedOffer,
 } from './types'
@@ -126,6 +133,7 @@ import type {
   SavedSourceResource,
   SavedDealResource,
   SubscriptionResource,
+  CountryResource,
 } from './services/apiClient'
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
@@ -144,7 +152,6 @@ import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/sto
 import { AboutView, type AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
 import { LegalView } from './views/LegalView'
-import { MoneyHelpView } from './views/MoneyHelpView'
 import { SupportView } from './views/SupportView'
 import { ToolkitView } from './views/ToolkitView'
 import { NearMeView } from './views/NearMeView'
@@ -155,12 +162,13 @@ import {
   removeVoucherClaim,
 } from './services/vouchers/voucherApi'
 import type { Voucher } from './services/vouchers/types'
+import { meaningfulWasPrice } from './services/priceDisplay'
+import { topSavingsDeals } from './services/topSavings'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveView =
   | 'home'
   | 'near'
-  | 'help'
   | 'tools'
   | 'sources'
   | 'discovery'
@@ -176,7 +184,6 @@ type ActiveView =
 type MemberView =
   | 'dashboard'
   | 'near'
-  | 'help'
   | 'tools'
   | 'sources'
   | 'discovery'
@@ -199,7 +206,6 @@ type MemberView =
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Home', value: 'home' },
   { label: 'Deals', value: 'discovery' },
-  { label: 'Money help', value: 'help' },
   { label: 'Vouchers', value: 'vouchers' },
   { label: 'Help', value: 'about' },
 ]
@@ -212,19 +218,12 @@ const MEMBER_ONLY_PUBLIC_VIEWS: ReadonlySet<ActiveView> = new Set<ActiveView>([
   'sources',
 ])
 
-const dataDeskOptions: Array<{ label: string; value: ActiveView }> = [
-  { label: 'Verified offers', value: 'offers' },
-  { label: 'Scanner', value: 'scanner' },
-  { label: 'Data rules', value: 'rules' },
-]
-
 // Real, shareable URLs for each public view so every page is crawlable and
 // listed in the sitemap. The SPA reads the path on load and keeps it in sync.
 const VIEW_PATHS: Record<ActiveView, string> = {
   home: '/',
   discovery: '/deals',
   near: '/near-me',
-  help: '/money-help',
   tools: '/tools',
   sources: '/stores',
   vouchers: '/vouchers',
@@ -239,12 +238,11 @@ const VIEW_PATHS: Record<ActiveView, string> = {
 }
 
 const VIEW_TITLES: Record<ActiveView, string> = {
-  home: 'Trolley Scout: grocery deals & money help for South Africa',
+  home: 'Trolley Scout: grocery deals, price comparison and properties',
   discovery: 'Find a deal — this week’s grocery specials | Trolley Scout',
   near: 'Near me — supermarkets and specials around you | Trolley Scout',
-  help: 'Money help — SASSA grants, exemptions, free electricity | Trolley Scout',
-  tools: 'Tools — unit price checker and store comparison | Trolley Scout',
-  sources: 'Stores — official South African retailer sources | Trolley Scout',
+  tools: 'Tools — product and store comparison | Trolley Scout',
+  sources: 'Stores — official retailer sources | Trolley Scout',
   vouchers: 'Vouchers — verified retailer vouchers | Trolley Scout',
   about: 'About & help | Trolley Scout',
   offers: 'Verified offers | Trolley Scout',
@@ -258,13 +256,15 @@ const VIEW_TITLES: Record<ActiveView, string> = {
 
 function viewFromPath(pathname: string): ActiveView {
   const clean = pathname.replace(/\/+$/, '') || '/'
+  if (clean === '/offers' || clean === '/scanner' || clean === '/rules') {
+    return 'about'
+  }
   const match = (Object.keys(VIEW_PATHS) as ActiveView[]).find((view) => VIEW_PATHS[view] === clean)
   return match ?? 'home'
 }
 
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
-  { icon: <HandCoins size={20} />, label: 'Money help', value: 'help' },
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
@@ -273,14 +273,10 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Buildings size={20} />, label: 'Properties', value: 'properties' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
   { icon: <ShoppingCart size={20} />, label: 'Basket', value: 'basket' },
-  { icon: <BookmarkSimple size={20} />, label: 'Saved sources', value: 'saved' },
-  { icon: <ReceiptX size={20} />, label: 'Offers', value: 'offers' },
-  { icon: <ShieldCheck size={20} />, label: 'Scanner', value: 'scanner' },
   { icon: <CreditCard size={20} />, label: 'Subscription', value: 'subscription' },
   { icon: <UserCircle size={20} />, label: 'Profile', value: 'profile' },
   { icon: <Info size={20} />, label: 'About & help', value: 'about' },
   { icon: <Lifebuoy size={20} />, label: 'Support', value: 'support' },
-  { icon: <ClipboardText size={20} />, label: 'Rules', value: 'rules' },
 ]
 
 // Only rendered for accounts with the admin role.
@@ -321,6 +317,7 @@ function App() {
   const forceLiveDiscoveryRef = useRef(false)
   const hasLoadedDiscoveryRef = useRef(false)
   const hasLoadedFullDiscoveryRef = useRef(false)
+  const discoveryCountryRef = useRef('')
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -343,6 +340,9 @@ function App() {
   const [basketState, setBasketState] = useState<ResourceState<BasketResource>>(getInitialBasketState)
   const [subscriptionState, setSubscriptionState] = useState<ResourceState<SubscriptionResource>>(
     getInitialSubscriptionState,
+  )
+  const [countryState, setCountryState] = useState<ResourceState<CountryResource>>(
+    getInitialCountryState,
   )
   const [memberDraft, setMemberDraft] = useState<MemberSessionDraft>({
     displayName: '',
@@ -394,7 +394,6 @@ function App() {
         if (query) setQuery(query)
         setActiveView('discovery')
       },
-      goToMoneyHelp: () => setActiveView('help'),
       goToNearMe: () => setActiveView('near'),
     }),
     [],
@@ -428,7 +427,7 @@ function App() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [query, refreshKey, sourceKind])
+  }, [memberState.data.session.account?.countryCode, query, refreshKey, sourceKind])
 
   useEffect(() => {
     if (!memberState.data.session.isAuthenticated || query.trim().length < 3) {
@@ -509,6 +508,12 @@ function App() {
 
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    loadCountryContext(controller.signal).then(setCountryState).catch(() => undefined)
+    return () => controller.abort()
+  }, [memberState.data.session.account?.countryCode])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -615,17 +620,23 @@ function App() {
     activeView === 'discovery' ||
     (memberSession.isAuthenticated && (memberView === 'discovery' || memberView === 'dashboard'))
   const savedSourceUrls = new Set(savedSourceState.data.savedSources.map((source) => source.sourceUrl))
-  const savedSourceCount = savedSourceState.data.savedSources.length
   const savedDealUrls = new Set(savedDealState.data.savedDeals.map((deal) => deal.productUrl))
   const savedDealCount = savedDealState.data.savedDeals.length
   const basketSavedDealIds = new Set(basketState.data.basket.items.map((item) => item.savedDealId))
   const basketItemCount = basketState.data.basket.summary.itemCount
+  const activeCountryCode = memberSession.account?.countryCode ?? countryState.data.country.code
 
   useEffect(() => {
     const controller = new AbortController()
 
     if (!discoveryVisible) {
       return () => controller.abort()
+    }
+
+    if (discoveryCountryRef.current !== activeCountryCode) {
+      discoveryCountryRef.current = activeCountryCode
+      hasLoadedDiscoveryRef.current = false
+      hasLoadedFullDiscoveryRef.current = false
     }
 
     const forceLive = forceLiveDiscoveryRef.current
@@ -665,7 +676,7 @@ function App() {
       .finally(() => setIsDiscovering(false))
 
     return () => controller.abort()
-  }, [discoveryKey, discoveryVisible, activeView, memberView])
+  }, [activeCountryCode, discoveryKey, discoveryVisible, activeView, memberView])
 
   function refreshSources() {
     setIsRefreshing(true)
@@ -833,6 +844,53 @@ function App() {
             title: deal.title,
           }).catch(() => undefined)
         }
+      }
+    } finally {
+      setSavingDealUrl(undefined)
+    }
+  }
+
+  async function addDiscoveredDealToBasket(deal: DiscoveredDeal) {
+    if (!memberSession.isAuthenticated) {
+      setMemberMode(true)
+      setMemberNotice('Log in before adding a deal to your basket.')
+      return
+    }
+
+    setSavingDealUrl(deal.productUrl)
+    setMemberNotice(undefined)
+
+    try {
+      const savedResult = await saveDealForMember(deal)
+      if (savedResult.status !== 'ready' || !('savedDeal' in savedResult.data)) {
+        setMemberNotice(savedResult.message)
+        return
+      }
+
+      setSavedDealState({
+        data: { savedDeals: savedResult.data.savedDeals },
+        message: savedResult.message,
+        meta: savedResult.meta,
+        status: savedResult.status,
+      })
+
+      const basketResult = await addBasketItemForMember({
+        savedDealId: savedResult.data.savedDeal.id,
+      })
+      setBasketState({
+        data: { basket: basketResult.data.basket },
+        message: basketResult.message,
+        meta: basketResult.meta,
+        status: basketResult.status,
+      })
+      setMemberNotice(basketResult.message)
+
+      if (basketResult.status === 'ready') {
+        void recordDealLearningActivity({
+          eventType: 'basket_added',
+          retailerId: deal.retailerId,
+          title: deal.title,
+        }).catch(() => undefined)
       }
     } finally {
       setSavingDealUrl(undefined)
@@ -1171,6 +1229,7 @@ function App() {
         basketSavedDealIds={basketSavedDealIds}
         basketState={basketState}
         checkoutPlanId={checkoutPlanId}
+        country={countryState.data.country}
         deletingBasketItemId={deletingBasketItemId}
         deletingOfferId={deletingOfferId}
         deletingDealId={deletingDealId}
@@ -1184,6 +1243,7 @@ function App() {
         memberState={memberState}
         offerState={offerState}
         onAddToBasket={addSavedDealToBasket}
+        onAddDealToBasket={addDiscoveredDealToBasket}
         onCancelScheduledChange={cancelScheduledChange}
         onCheckout={requestCheckout}
         onCloseSidebar={() => setIsMemberSidebarOpen(false)}
@@ -1214,7 +1274,6 @@ function App() {
         savedDealCount={savedDealCount}
         savedDealState={savedDealState}
         savedDealUrls={savedDealUrls}
-        savedSourceCount={savedSourceCount}
         savedSourceState={savedSourceState}
         savedSourceUrls={savedSourceUrls}
         savingSourceUrl={savingSourceUrl}
@@ -1280,20 +1339,6 @@ function App() {
         </div>
       </header>
 
-      <nav className="data-desk-nav" aria-label="Data desk views">
-        <span>Data desk</span>
-        {dataDeskOptions.map((view) => (
-          <button
-            className={clsx('data-desk-link', activeView === view.value && 'is-active')}
-            key={view.value}
-            onClick={() => setActiveView(view.value)}
-            type="button"
-          >
-            {view.label}
-          </button>
-        ))}
-      </nav>
-
       <main id="top">
         {MEMBER_ONLY_PUBLIC_VIEWS.has(activeView) ? (
           <PublicSignInGate
@@ -1307,6 +1352,7 @@ function App() {
         <>
         {activeView === 'home' && (
           <HomeView
+            country={countryState.data.country}
             isCheckingStaples={isDiscovering}
             onOpen={(destination: HomeDestination) => setActiveView(destination)}
             stapleDeals={pickStapleDeals(discoveryState.data.discovery.deals)}
@@ -1314,8 +1360,6 @@ function App() {
         )}
 
         {activeView === 'near' && <NearMeView onViewStoreDeals={viewStoreDeals} />}
-
-        {activeView === 'help' && <MoneyHelpView onOpenSources={() => setActiveView('sources')} />}
 
         {activeView === 'tools' && <ToolkitView />}
 
@@ -1412,7 +1456,11 @@ function App() {
               </div>
             </section>
 
-            <SourcePanel retailers={filteredRetailers} isLoading={retailerState.status === 'loading'} />
+            <SourcePanel
+              country={retailerState.data.country}
+              retailers={filteredRetailers}
+              isLoading={retailerState.status === 'loading'}
+            />
           </>
         )}
 
@@ -1420,7 +1468,6 @@ function App() {
           <DiscoveryPanel
             initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
-            onReviewDeal={reviewDiscoveredDeal}
             onRunDiscovery={runDiscovery}
             onSignIn={() => {
               setMemberReturnView(undefined)
@@ -1456,6 +1503,7 @@ function App() {
         </>
         )}
       </main>
+      <ScoutGuide view={activeView} />
       <footer className="site-foot">
         <nav className="foot-links" aria-label="Legal and support">
           {([
@@ -1637,6 +1685,7 @@ function MemberShell({
   basketSavedDealIds,
   basketState,
   checkoutPlanId,
+  country,
   deletingBasketItemId,
   deletingOfferId,
   deletingDealId,
@@ -1651,6 +1700,7 @@ function MemberShell({
   memberState,
   offerState,
   onAddToBasket,
+  onAddDealToBasket,
   onClaimVoucher,
   onCancelScheduledChange,
   onCheckout,
@@ -1682,7 +1732,6 @@ function MemberShell({
   savedDealCount,
   savedDealState,
   savedDealUrls,
-  savedSourceCount,
   savedSourceState,
   savedSourceUrls,
   savingSourceUrl,
@@ -1704,6 +1753,7 @@ function MemberShell({
   basketSavedDealIds: Set<string>
   basketState: ResourceState<BasketResource>
   checkoutPlanId?: MemberPlanId
+  country: CountryContext
   deletingBasketItemId?: string
   deletingOfferId?: string
   deletingDealId?: string
@@ -1718,6 +1768,7 @@ function MemberShell({
   memberState: ResourceState<MemberResource>
   offerState: ResourceState<OfferResource>
   onAddToBasket: (savedDealId: string) => void
+  onAddDealToBasket: (deal: DiscoveredDeal) => void
   onClaimVoucher: (voucherId: string) => void | Promise<void>
   onCancelScheduledChange: () => void
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
@@ -1749,7 +1800,6 @@ function MemberShell({
   savedDealCount: number
   savedDealState: ResourceState<SavedDealResource>
   savedDealUrls: Set<string>
-  savedSourceCount: number
   savedSourceState: ResourceState<SavedSourceResource>
   savedSourceUrls: Set<string>
   savingSourceUrl?: string
@@ -1854,14 +1904,12 @@ function MemberShell({
             onSetView={onSetView}
             retailerState={retailerState}
             savedDealCount={savedDealCount}
-            savedSourceCount={savedSourceCount}
-            verifiedOfferCount={offerState.data.summary.verifiedOfferCount}
+            topDeals={topSavingsDeals(discoveryState.data.discovery.deals)}
+            voucherCount={vouchers.length}
           />
         )}
 
         {activeView === 'near' && <NearMeView onViewStoreDeals={onViewStoreDeals} />}
-
-        {activeView === 'help' && <MoneyHelpView onOpenSources={() => onSetView('sources')} />}
 
         {activeView === 'tools' && <ToolkitView />}
 
@@ -1904,6 +1952,7 @@ function MemberShell({
               sourceKinds={sourceKinds}
             />
             <SourcePanel
+              country={retailerState.data.country}
               isLoading={retailerState.status === 'loading'}
               memberMode
               onSaveSource={onSaveSource}
@@ -1920,9 +1969,9 @@ function MemberShell({
             canWatchItems
             initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
-            onReviewDeal={onReviewDeal}
             onRunDiscovery={onRunDiscovery}
             onSaveDeal={onSaveDeal}
+            onAddDealToBasket={onAddDealToBasket}
             savedDealUrls={savedDealUrls}
             savingDealUrl={savingDealUrl}
             state={discoveryState}
@@ -1930,7 +1979,7 @@ function MemberShell({
         )}
 
         {activeView === 'properties' && (
-          <PropertiesView account={account} onUpgrade={() => onSetView('subscription')} />
+          <PropertiesView account={account} country={country} onUpgrade={() => onSetView('subscription')} />
         )}
 
         {activeView === 'savedDeals' && (
@@ -1995,6 +2044,7 @@ function MemberShell({
           <SubscriptionPanel
             account={account}
             checkoutPlanId={checkoutPlanId}
+            country={country}
             memberNotice={memberNotice}
             onCancelScheduledChange={onCancelScheduledChange}
             onCheckout={onCheckout}
@@ -2007,7 +2057,6 @@ function MemberShell({
             account={account}
             memberNotice={memberNotice}
             onSignOut={onSignOut}
-            savedSourceCount={savedSourceCount}
           />
         )}
 
@@ -2015,6 +2064,7 @@ function MemberShell({
 
         {activeView === 'rules' && <RulesPanel />}
       </main>
+      <ScoutGuide view={activeView} />
     </div>
   )
 }
@@ -2081,18 +2131,15 @@ function PlanUsage({
   basketItemCount,
   onSetView,
   savedDealCount,
-  savedSourceCount,
 }: {
   account: NonNullable<MemberSession['account']>
   basketItemCount: number
   onSetView: (view: MemberView) => void
   savedDealCount: number
-  savedSourceCount: number
 }) {
   const plan = getMemberPlan(account.planId)
   const rows: Array<{ label: string; used: number; limit: number }> = [
     { label: 'Saved deals', limit: plan.limits.savedDeals, used: savedDealCount },
-    { label: 'Saved sources', limit: plan.limits.savedSources, used: savedSourceCount },
     { label: 'Basket items', limit: plan.limits.basketItems, used: basketItemCount },
   ]
   const nearLimit = rows.some((row) => row.used / row.limit >= 0.8)
@@ -2142,7 +2189,7 @@ function PlanUsage({
       {nearLimit && plan.id !== 'household' && (
         <p className="plan-usage-nudge">
           Running low on space. {plan.id === 'free' ? 'Scout' : 'Household'} gives you far more
-          room and keeps the free money help running for everyone.
+          room for more saved deals and basket items.
         </p>
       )}
     </section>
@@ -2199,8 +2246,8 @@ function MemberDashboard({
   onSetView,
   retailerState,
   savedDealCount,
-  savedSourceCount,
-  verifiedOfferCount,
+  topDeals,
+  voucherCount,
 }: {
   account: NonNullable<MemberSession['account']>
   basketItemCount: number
@@ -2211,8 +2258,8 @@ function MemberDashboard({
   onSetView: (view: MemberView) => void
   retailerState: ResourceState<RetailerResource>
   savedDealCount: number
-  savedSourceCount: number
-  verifiedOfferCount: number
+  topDeals: DiscoveredDeal[]
+  voucherCount: number
 }) {
   const now = new Date()
   const fullPriceCents = basketTotalCents + basketSavingsCents
@@ -2247,8 +2294,35 @@ function MemberDashboard({
         basketItemCount={basketItemCount}
         onSetView={onSetView}
         savedDealCount={savedDealCount}
-        savedSourceCount={savedSourceCount}
       />
+
+      {topDeals.length > 0 && (
+        <section aria-label="Today’s top savings">
+          <h2 className="dash-section-label">Today’s top savings</h2>
+          <div className="dash-top-deals">
+            {topDeals.map((deal) => (
+              <button
+                className="dash-top-deal"
+                key={deal.id}
+                onClick={() => onSetView('discovery')}
+                type="button"
+              >
+                {deal.imageUrl && (
+                  <img alt="" className="dash-top-deal-image" loading="lazy" src={deal.imageUrl} />
+                )}
+                <span className="dash-top-deal-retailer">{deal.retailerName}</span>
+                <span className="dash-top-deal-title">{deal.title}</span>
+                <span className="dash-top-deal-price">
+                  <strong>{deal.priceText}</strong>
+                  {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
+                    <s>{meaningfulWasPrice(deal.previousPriceText, deal.priceText)}</s>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <h2 className="dash-section-label">Jump straight in</h2>
       <div className="dash-actions">
@@ -2274,23 +2348,19 @@ function MemberDashboard({
           value={`${retailerState.data.summary.sourceCount}`}
         />
         <DashChip
-          icon={<ReceiptX size={20} />}
-          label="verified offers"
-          onClick={() => onSetView('offers')}
-          value={`${verifiedOfferCount}`}
-        />
-        <DashChip
           icon={<Wallet size={20} />}
           label="saved deals"
           onClick={() => onSetView('savedDeals')}
           value={`${savedDealCount}`}
         />
-        <DashChip
-          icon={<BookmarkSimple size={20} />}
-          label="saved sources"
-          onClick={() => onSetView('sources')}
-          value={`${savedSourceCount}`}
-        />
+        {voucherCount > 0 && (
+          <DashChip
+            icon={<Ticket size={20} />}
+            label="vouchers ready"
+            onClick={() => onSetView('vouchers')}
+            value={`${voucherCount}`}
+          />
+        )}
       </div>
     </section>
   )
@@ -2587,7 +2657,7 @@ function BasketPanel({
                     <h3>{item.deal.title}</h3>
                     <div className="deal-price-line">
                       {item.deal.priceText && <strong>{item.deal.priceText}</strong>}
-                      {item.deal.previousPriceText && <span>{item.deal.previousPriceText}</span>}
+                      {meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText) && <span>{meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText)}</span>}
                       {item.deal.savingText && <span>{item.deal.savingText}</span>}
                     </div>
                     <p>{item.deal.sourceLabel}</p>
@@ -2734,6 +2804,7 @@ function formatPlanDate(value: string) {
 function SubscriptionPanel({
   account,
   checkoutPlanId,
+  country,
   memberNotice,
   onCancelScheduledChange,
   onCheckout,
@@ -2741,6 +2812,7 @@ function SubscriptionPanel({
 }: {
   account: NonNullable<MemberSession['account']>
   checkoutPlanId?: MemberPlanId
+  country: CountryContext
   memberNotice?: string
   onCancelScheduledChange: () => void
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
@@ -2763,8 +2835,10 @@ function SubscriptionPanel({
           <p className="eyebrow">Subscription</p>
           <h1>Plan and billing</h1>
           <p className="section-lede">
-            Free covers every household essential. Paid plans add space for power savers and keep
-            the money help free for everyone. Billed securely in rand via PayFast.
+            Free covers the core shopping tools. Paid plans add space for power savers. Prices are
+            shown in{' '}
+            {country.rateFromZar ? country.currencyCode : 'ZAR'}. PayFast settles the payment
+            securely in rand.
           </p>
         </div>
         <span className="plan-pill">{subscriptionState.data.billingReady ? 'Billing ready' : 'Billing setup needed'}</span>
@@ -2852,7 +2926,7 @@ function SubscriptionPanel({
               <p className="plan-price">
                 {plan.isPaid ? (
                   <>
-                    <strong>{formatRand(priceCents)}</strong>
+                    <strong>{formatMembershipPrice(priceCents, country)}</strong>
                     <span>/{billingCycle === 'monthly' ? 'month' : 'year'}</span>
                   </>
                 ) : (
@@ -2861,12 +2935,17 @@ function SubscriptionPanel({
               </p>
               {plan.isPaid && billingCycle === 'annual' && (
                 <p className="plan-price-equiv">
-                  ≈ {formatRand(Math.round(plan.prices.annual / 12))}/month
+                  ≈ {formatMembershipPrice(Math.round(plan.prices.annual / 12), country)}/month
                   {plan.prices.monthly * 12 > plan.prices.annual && (
                     <span className="plan-save-badge">
-                      Save {formatRand(plan.prices.monthly * 12 - plan.prices.annual)}/year
+                      Save {formatMembershipPrice(plan.prices.monthly * 12 - plan.prices.annual, country)}/year
                     </span>
                   )}
+                </p>
+              )}
+              {plan.isPaid && country.currencyCode !== 'ZAR' && country.rateFromZar && (
+                <p className="plan-settlement-note">
+                  Local amount is an estimate. PayFast charge: {formatRand(priceCents)}.
                 </p>
               )}
               <p>{plan.description}</p>
@@ -2907,12 +2986,10 @@ function MemberProfilePanel({
   account,
   memberNotice,
   onSignOut,
-  savedSourceCount,
 }: {
   account: NonNullable<MemberSession['account']>
   memberNotice?: string
   onSignOut: () => void
-  savedSourceCount: number
 }) {
   return (
     <section className="profile-panel" aria-label="Member profile">
@@ -2928,7 +3005,7 @@ function MemberProfilePanel({
       <div className="profile-grid">
         <ProfileRow label="Plan" value={account.planName} />
         <ProfileRow label="Plan status" value={planStatusText(account.planStatus)} />
-        <ProfileRow label="Saved sources" value={`${savedSourceCount}`} />
+        <ProfileRow label="Country" value={`${account.countryName} (${account.currencyCode})`} />
         <ProfileRow label="Member since" value={account.createdAt.slice(0, 10)} />
       </div>
       <AccountSettings account={account} />
@@ -3251,11 +3328,13 @@ function AdminConsole() {
   const [overview, setOverview] = useState<AdminOverview | undefined>()
   const [message, setMessage] = useState('Loading admin data.')
   const [pendingId, setPendingId] = useState<string | undefined>()
+  const [selectedCountryCode, setSelectedCountryCode] = useState('ZA')
 
   useEffect(() => {
     const controller = new AbortController()
 
-    loadAdminOverview(controller.signal)
+    setMessage('Loading admin data.')
+    loadAdminOverview(controller.signal, selectedCountryCode)
       .then((result) => {
         setOverview(result.data)
         setMessage(result.data ? '' : result.message)
@@ -3267,11 +3346,15 @@ function AdminConsole() {
       })
 
     return () => controller.abort()
-  }, [])
+  }, [selectedCountryCode])
 
   async function onToggleAccess(member: MemberAccount) {
     setPendingId(member.id)
-    const result = await setMemberPropertiesAccess(member.id, !member.propertiesAccess)
+    const result = await setMemberPropertiesAccess(
+      member.id,
+      !member.propertiesAccess,
+      selectedCountryCode,
+    )
     setPendingId(undefined)
     if (result.ok && result.account) {
       const updated = result.account
@@ -3290,7 +3373,7 @@ function AdminConsole() {
 
   async function onChangePlan(memberId: string, planId: string) {
     setPendingId(memberId)
-    const result = await setMemberPlan(memberId, planId)
+    const result = await setMemberPlan(memberId, planId, selectedCountryCode)
     setPendingId(undefined)
     if (result.ok && result.account) {
       const updated = result.account
@@ -3317,7 +3400,7 @@ function AdminConsole() {
 
   async function onSetSupportStatus(messageId: string, status: 'open' | 'resolved') {
     setPendingId(messageId)
-    const result = await setSupportStatus(messageId, status)
+    const result = await setSupportStatus(messageId, status, selectedCountryCode)
     setPendingId(undefined)
 
     if (result.ok && result.support) {
@@ -3340,14 +3423,42 @@ function AdminConsole() {
     }
   }
 
+  async function onProtectLegacyEmails() {
+    setPendingId('email-protection')
+    const result = await protectLegacyEmails(selectedCountryCode)
+    setPendingId(undefined)
+
+    if (result.ok && result.data) {
+      setOverview(result.data)
+    }
+    setMessage(result.message)
+  }
+
   return (
     <section className="admin-console" aria-label="Admin console">
       <div className="member-section-head">
         <div>
           <p className="eyebrow">Admin</p>
           <h1>Console</h1>
-          <p className="section-lede">Accounts, plans, support, and scout health.</p>
+          <p className="section-lede">
+            Accounts, plans, support, and scout health for {overview?.selectedCountry.name ?? 'South Africa'}.
+          </p>
         </div>
+        {overview && (
+          <label className="admin-country-picker">
+            <span>Country view</span>
+            <select
+              onChange={(event) => setSelectedCountryCode(event.target.value)}
+              value={selectedCountryCode}
+            >
+              {overview.countries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.flag} {country.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {message === 'Loading admin data.' ? (
@@ -3365,6 +3476,7 @@ function AdminConsole() {
               value={`${overview.summary.accountCount}`}
             />
             <Metric icon={<Tag size={22} />} label="Stored deals" value={`${overview.scout.dealCount}`} />
+            <Metric icon={<Storefront size={22} />} label="Stores" value={`${overview.scout.storeCount}`} />
             <Metric
               icon={<Lifebuoy size={22} />}
               label="Open support"
@@ -3389,6 +3501,30 @@ function AdminConsole() {
                   : 'Never'
               }
             />
+          </div>
+
+          <div className="admin-security-card">
+            <div>
+              <p className="eyebrow">Email protection</p>
+              <h2>{overview.emailProtection.configured ? 'Encryption is configured' : 'Encryption key needed'}</h2>
+              <p>
+                {overview.emailProtection.pendingAccounts + overview.emailProtection.pendingSupport} legacy email
+                rows still need protection.
+              </p>
+            </div>
+            <button
+              className="ghost-button"
+              disabled={
+                !overview.emailProtection.configured ||
+                pendingId === 'email-protection' ||
+                overview.emailProtection.pendingAccounts + overview.emailProtection.pendingSupport === 0
+              }
+              onClick={onProtectLegacyEmails}
+              type="button"
+            >
+              <ShieldCheck size={18} />
+              {pendingId === 'email-protection' ? 'Protecting' : 'Protect legacy emails'}
+            </button>
           </div>
 
           <div className="admin-plans">
@@ -3423,6 +3559,7 @@ function AdminConsole() {
                   <span role="cell">
                     <strong>{member.displayName}</strong>
                     <small>{member.email}</small>
+                    <small>{member.countryName}</small>
                   </span>
                   <span role="cell">
                     <select
@@ -3430,14 +3567,6 @@ function AdminConsole() {
                       onChange={(e) => onChangePlan(member.id, e.target.value)}
                       disabled={pendingId === member.id}
                       className="admin-plan-select"
-                      style={{
-                        background: 'var(--neutral-900)',
-                        border: '1px solid var(--neutral-800)',
-                        borderRadius: '4px',
-                        color: 'var(--text-primary)',
-                        padding: '4px 8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       <option value="free">Free</option>
                       <option value="scout">Scout</option>
@@ -3728,6 +3857,19 @@ function formatRand(cents: number) {
   }).format(cents / 100)
 }
 
+function formatMembershipPrice(cents: number, country: CountryContext) {
+  const rate = country.rateFromZar ?? 1
+  const currencyCode = country.rateFromZar ? country.currencyCode : 'ZAR'
+  const locale = country.rateFromZar ? country.locale : 'en-ZA'
+
+  return new Intl.NumberFormat(locale, {
+    currency: currencyCode,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: 'currency',
+  }).format((cents / 100) * rate)
+}
+
 function RuntimeBanner({
   retailerState,
   offerState,
@@ -3760,6 +3902,7 @@ export function DiscoveredStoreDirectory({
 }) {
   const groups = groupDiscoveredStores(discovered.stores)
   const [openGroup, setOpenGroup] = useState<DiscoveredStoreGroup | undefined>()
+  const [openBranch, setOpenBranch] = useState<NearbyStoreResult | undefined>()
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
   const [mapBranch, setMapBranch] = useState<NearbyStoreResult | undefined>()
 
@@ -3774,6 +3917,7 @@ export function DiscoveredStoreDirectory({
       }
 
       setOpenGroup(undefined)
+      setOpenBranch(undefined)
     }
 
     window.addEventListener('keydown', handleKey)
@@ -3805,7 +3949,10 @@ export function DiscoveredStoreDirectory({
               aria-label={`${cleanUiPunctuation(group.displayName)}, ${group.branchCount} ${group.branchCount === 1 ? 'location' : 'locations'}, ${group.promotionCount} live promotions`}
               className="discovered-store-card"
               key={group.id}
-              onClick={() => setOpenGroup(group)}
+              onClick={() => {
+                setOpenBranch(undefined)
+                setOpenGroup(group)
+              }}
               type="button"
             >
               {group.logoUrl ? (
@@ -3819,6 +3966,9 @@ export function DiscoveredStoreDirectory({
                 <span>
                   {group.promotionCount} live promotion{group.promotionCount === 1 ? '' : 's'}
                 </span>
+                {group.nearestDistanceM !== undefined && (
+                  <span>Nearest {formatStoreDistance(group.nearestDistanceM)}</span>
+                )}
               </span>
             </button>
           ))}
@@ -3833,6 +3983,7 @@ export function DiscoveredStoreDirectory({
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               setOpenGroup(undefined)
+              setOpenBranch(undefined)
             }
           }}
           role="presentation"
@@ -3845,8 +3996,12 @@ export function DiscoveredStoreDirectory({
           >
             <header className="store-directory-modal-head">
               <div>
-                <p className="eyebrow">Locations and local specials</p>
-                <h3 id="store-locations-title">{cleanUiPunctuation(openGroup.displayName)} locations</h3>
+                <p className="eyebrow">{openBranch ? 'Store deals and catalogues' : 'Store locations'}</p>
+                <h3 id="store-locations-title">
+                  {openBranch
+                    ? cleanUiPunctuation(openBranch.name)
+                    : `${cleanUiPunctuation(openGroup.displayName)} locations`}
+                </h3>
                 <p>
                   {openGroup.branchCount} {openGroup.branchCount === 1 ? 'branch' : 'branches'}.{' '}
                   Specials stay with the location that published them.
@@ -3856,23 +4011,43 @@ export function DiscoveredStoreDirectory({
                 aria-label="Close store locations"
                 autoFocus
                 className="icon-button"
-                onClick={() => setOpenGroup(undefined)}
+                onClick={() => {
+                  if (openBranch) {
+                    setOpenBranch(undefined)
+                  } else {
+                    setOpenGroup(undefined)
+                  }
+                }}
                 type="button"
               >
-                <X size={20} />
+                {openBranch ? <ArrowLeft size={20} /> : <X size={20} />}
               </button>
             </header>
 
             <div className="store-location-list">
-              {openGroup.branches.map((branch) => (
+              {openGroup.branches
+                .filter((branch) => !openBranch || branch.placeId === openBranch.placeId)
+                .map((branch) => (
                 <section className="store-location-section" key={branch.placeId}>
                   <div className="store-location-head">
-                    <div>
-                      <h4>{cleanUiPunctuation(branch.name)}</h4>
-                      {branch.address && <p>{cleanUiPunctuation(branch.address)}</p>}
-                      {branch.lastSeenAt && <small>Last seen {formatStoreSeenDate(branch.lastSeenAt)}</small>}
-                    </div>
-                    <div className="store-location-actions">
+                    <button
+                      aria-label={`Open ${cleanUiPunctuation(branch.name)} deals`}
+                      className="store-location-summary"
+                      disabled={openBranch?.placeId === branch.placeId}
+                      onClick={() => setOpenBranch(branch)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{cleanUiPunctuation(branch.name)}</strong>
+                        {branch.address && <small>{cleanUiPunctuation(branch.address)}</small>}
+                        <small>
+                          {(branch.promotions ?? []).filter((promotion) => promotion.kind === 'deal').length} deals ·{' '}
+                          {(branch.promotions ?? []).filter((promotion) => promotion.kind === 'catalogue').length} catalogues
+                        </small>
+                      </span>
+                      {!openBranch && <ArrowRight size={18} />}
+                    </button>
+                    {openBranch && <div className="store-location-actions">
                       <button
                         className="ghost-button"
                         onClick={() => setMapBranch(branch)}
@@ -3887,10 +4062,10 @@ export function DiscoveredStoreDirectory({
                           <LinkSimple size={14} />
                         </a>
                       )}
-                    </div>
+                    </div>}
                   </div>
 
-                  {(branch.promotions ?? []).length > 0 ? (
+                  {openBranch && ((branch.promotions ?? []).length > 0 ? (
                     <div className="store-location-promotions">
                       {branch.promotions.map((promotion) => (
                         <article className="store-location-promotion" key={promotion.id}>
@@ -3912,7 +4087,7 @@ export function DiscoveredStoreDirectory({
                             {(promotion.priceText || promotion.previousPriceText || promotion.savingText) && (
                               <p className="store-location-price">
                                 {promotion.priceText && <strong>{cleanUiPunctuation(promotion.priceText)}</strong>}
-                                {promotion.previousPriceText && <s>{cleanUiPunctuation(promotion.previousPriceText)}</s>}
+                                {meaningfulWasPrice(promotion.previousPriceText, promotion.priceText) && <s>{cleanUiPunctuation(meaningfulWasPrice(promotion.previousPriceText, promotion.priceText)!)}</s>}
                                 {promotion.savingText && <span>{cleanUiPunctuation(promotion.savingText)}</span>}
                               </p>
                             )}
@@ -3939,7 +4114,7 @@ export function DiscoveredStoreDirectory({
                     </div>
                   ) : (
                     <p className="directory-empty">No current location-specific promotions.</p>
-                  )}
+                  ))}
                 </section>
               ))}
             </div>
@@ -3983,18 +4158,8 @@ function cataloguePromotionToLeaflet(
   }
 }
 
-function formatStoreSeenDate(value: string): string {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return value.slice(0, 10)
-  }
-
-  return date.toLocaleDateString('en-ZA', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+function formatStoreDistance(metres: number): string {
+  return metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`
 }
 
 function cleanUiPunctuation(value: string | undefined): string {
@@ -4003,6 +4168,7 @@ function cleanUiPunctuation(value: string | undefined): string {
 
 function SourcePanel({
   retailers: sourceRetailers,
+  country,
   isLoading,
   memberMode = false,
   onSaveSource,
@@ -4010,6 +4176,7 @@ function SourcePanel({
   savingSourceUrl,
 }: {
   retailers: Retailer[]
+  country?: CountryOption
   isLoading: boolean
   memberMode?: boolean
   onSaveSource?: (retailerId: Retailer['id'], sourceUrl: string) => void
@@ -4031,7 +4198,9 @@ function SourcePanel({
     <section className="source-panel" aria-label="Official source watchlist">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Official sources</p>
+          <p className="eyebrow">
+            Official sources{country ? ` · ${country.flag} ${country.name}` : ''}
+          </p>
           <h2>{sourceRetailers.length} retailers</h2>
         </div>
         <CheckCircle size={28} weight="duotone" />
@@ -4126,7 +4295,7 @@ function DiscoveryPanel({
   canWatchItems = false,
   initialFilter,
   isDiscovering,
-  onReviewDeal,
+  onAddDealToBasket,
   onRunDiscovery,
   onSaveDeal,
   onSignIn,
@@ -4139,7 +4308,7 @@ function DiscoveryPanel({
   canWatchItems?: boolean
   initialFilter?: { retailerId?: string; query?: string }
   isDiscovering: boolean
-  onReviewDeal: (deal: DiscoveredDeal) => void
+  onAddDealToBasket?: (deal: DiscoveredDeal) => void
   onRunDiscovery: () => void
   onSaveDeal?: (deal: DiscoveredDeal) => void
   // When set, only the first N deals are shown (logged-out sample), the pager is
@@ -4181,7 +4350,7 @@ function DiscoveryPanel({
   const [savingsOnly, setSavingsOnly] = useState(false)
   const [category, setCategory] = useState<DealCategory | 'all'>('all')
   const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
-  const [activeTab, setActiveTab] = useState<'deals' | 'catalogues' | 'overview'>('deals')
+  const [activeTab, setActiveTab] = useState<'deals' | 'catalogues'>('deals')
   const deals = filterDiscoveryDeals(allDeals, {
     category,
     foodSubcategory,
@@ -4246,7 +4415,6 @@ function DiscoveryPanel({
         {([
           ['deals', `Deals (${deals.length})`],
           ['catalogues', `Catalogues (${catalogueRetailerCount})`],
-          ['overview', 'Overview'],
         ] as const).map(([id, label]) => (
           <button
             aria-selected={activeTab === id}
@@ -4273,28 +4441,33 @@ function DiscoveryPanel({
             value={dealQuery}
           />
         </label>
-        <label>
-          Retailer
-          <select onChange={(event) => setRetailerId(event.target.value)} value={retailerId}>
-            <option value="all">All retailers</option>
-            {retailers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
-        </label>
-        <label>
-          Source
-          <select onChange={(event) => setSourceLabel(event.target.value)} value={sourceLabel}>
-            <option value="all">All sources</option>
-            {sourceLabels.map((label) => <option key={label} value={label}>{label}</option>)}
-          </select>
-        </label>
-        <label className="deal-filter-check">
-          <input checked={imagesOnly} onChange={(event) => setImagesOnly(event.target.checked)} type="checkbox" />
-          Has image
-        </label>
-        <label className="deal-filter-check">
-          <input checked={savingsOnly} onChange={(event) => setSavingsOnly(event.target.checked)} type="checkbox" />
-          Shows savings
-        </label>
+        <details className="advanced-deal-filters">
+          <summary>Advanced filters</summary>
+          <div className="advanced-deal-filter-grid">
+            <label>
+              Retailer
+              <select onChange={(event) => setRetailerId(event.target.value)} value={retailerId}>
+                <option value="all">All retailers</option>
+                {retailers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+            <label>
+              Source
+              <select onChange={(event) => setSourceLabel(event.target.value)} value={sourceLabel}>
+                <option value="all">All sources</option>
+                {sourceLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+              </select>
+            </label>
+            <label className="deal-filter-check">
+              <input checked={imagesOnly} onChange={(event) => setImagesOnly(event.target.checked)} type="checkbox" />
+              Has image
+            </label>
+            <label className="deal-filter-check">
+              <input checked={savingsOnly} onChange={(event) => setSavingsOnly(event.target.checked)} type="checkbox" />
+              Shows savings
+            </label>
+          </div>
+        </details>
       </div>
 
       <div className="category-chips" role="group" aria-label="Category filter">
@@ -4368,7 +4541,11 @@ function DiscoveryPanel({
                   <h3>{deal.title}</h3>
                   <div className="deal-price-line">
                     {deal.priceText && <strong>{deal.priceText}</strong>}
-                    {deal.previousPriceText && <span>{deal.previousPriceText}</span>}
+                    {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
+                      <span className="deal-was-price">
+                        {meaningfulWasPrice(deal.previousPriceText, deal.priceText)}
+                      </span>
+                    )}
                     {deal.savingText && <span>{deal.savingText}</span>}
                   </div>
                 </div>
@@ -4392,9 +4569,17 @@ function DiscoveryPanel({
                         : 'Save deal'}
                   </button>
                 )}
-                <button className="ghost-button" onClick={() => onReviewDeal(deal)} type="button">
-                  Review in scanner
-                </button>
+                {onAddDealToBasket && (
+                  <button
+                    className="primary-button"
+                    disabled={savingDealUrl === deal.productUrl}
+                    onClick={() => onAddDealToBasket(deal)}
+                    type="button"
+                  >
+                    <ShoppingCart size={16} />
+                    {savingDealUrl === deal.productUrl ? 'Adding' : 'Add to basket'}
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -4438,7 +4623,7 @@ function DiscoveryPanel({
         </div>
       ) : (
         <div className="discovery-empty">
-          <Tag size={46} />
+          <ScoutMascot pose="search" size={116} />
           <p className="eyebrow">No deal rows yet</p>
           <h3>{allDeals.length > 0 ? 'No deals match those filters' : 'Run a source check'}</h3>
           <p>
@@ -4476,37 +4661,6 @@ function DiscoveryPanel({
 
       {activeTab === 'catalogues' && <CatalogueGroupsBoard leaflets={leaflets} />}
 
-      {activeTab === 'overview' && (
-      <>
-      <div className="discovery-summary">
-        <Metric icon={<LinkSimple size={22} />} label="Sources checked" value={`${discovery.summary.checkedSourceCount}`} />
-        <Metric icon={<Tag size={22} />} label="Found deals" value={`${discovery.summary.foundDealCount}`} />
-        <Metric icon={<Storefront size={22} />} label="Store leaflets" value={`${leaflets.length}`} />
-      </div>
-
-      {discovery.sources.length > 0 && (
-        <div className="discovery-source-grid" aria-label="Checked sources">
-          {discovery.sources.map((source) => (
-            <article className={clsx('discovery-source-card', `is-${source.status}`)} key={`${source.retailerId}-${source.sourceLabel}`}>
-              <div>
-                <p className="eyebrow">{source.retailerName}</p>
-                <h3>{source.sourceLabel}</h3>
-                <p>{source.statusText}</p>
-              </div>
-              <div className="source-meta">
-                <span>{source.httpStatus ? `HTTP ${source.httpStatus}` : 'No status'}</span>
-                <span>{source.itemCount} rows</span>
-              </div>
-              <a href={source.sourceUrl} rel="noreferrer" target="_blank">
-                Source
-                <LinkSimple size={14} />
-              </a>
-            </article>
-          ))}
-        </div>
-      )}
-      </>
-      )}
     </section>
   )
 }

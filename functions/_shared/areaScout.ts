@@ -49,7 +49,9 @@ export async function scoutAreaStores(
     return
   }
 
-  const searchResults = await searchWeb(buildAreaStoresQuery(area), env.JINA_API_KEY)
+  const countryName = existingStores[0]?.countryName ?? 'South Africa'
+  const countryCode = existingStores[0]?.countryCode ?? 'ZA'
+  const searchResults = await searchWeb(buildAreaStoresQuery(area, countryName), env.JINA_API_KEY)
 
   if (searchResults.length === 0) {
     await recordStoreScout(env, areaMarker, 0, nowMs, RETRY_SOON_MS)
@@ -59,15 +61,16 @@ export async function scoutAreaStores(
   const candidates = extractCandidateStoreNames(
     searchResults,
     existingStores.map((store) => store.name),
+    countryCode,
   )
 
   const found: NearbyStore[] = []
 
   for (const name of candidates.slice(0, MAX_GEOCODES_PER_RUN)) {
     const payload = await fetchJson(
-      buildGeoapifyGeocodeUrl(`${name} ${area}`, lat, lon, env.GEOAPIFY_API_KEY),
+      buildGeoapifyGeocodeUrl(`${name} ${area} ${countryName}`, lat, lon, env.GEOAPIFY_API_KEY),
     )
-    found.push(mapGeocodedStore(name, payload, { area, lat, lon }))
+    found.push(mapGeocodedStore(name, payload, { area, countryCode, countryName, lat, lon }))
   }
 
   if (found.length > 0) {

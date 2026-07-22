@@ -1,6 +1,7 @@
 export interface TrolleyScoutEnv {
   AI?: Ai
   DB?: D1Database
+  EMAIL_ENCRYPTION_KEY?: string
   APP_URL?: string
   GEOAPIFY_API_KEY?: string
   // Optional: a free r.jina.ai key makes the search-proxy fallback reliable;
