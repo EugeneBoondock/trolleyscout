@@ -269,7 +269,7 @@ class _AutoCompareResult extends StatelessWidget {
                           ),
                           Text(
                             match.status == 'unavailable'
-                                ? 'No verified live price returned'
+                                ? 'No public price search we can read — check in store'
                                 : match.title ?? 'Product found',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -280,7 +280,7 @@ class _AutoCompareResult extends StatelessWidget {
                           ),
                           if (match.status == 'found')
                             Text(
-                              'Product found, live price unavailable',
+                              'Product found — price hidden from us; open the product page',
                               style: TextStyle(
                                 color: TS.mutedOf(context),
                                 fontSize: 11,

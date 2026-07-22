@@ -7,6 +7,8 @@ import {
   parseClicksProductResults,
   parseGameProductResults,
   parseKlevuProductResults,
+  parsePnpProductResults,
+  parseTakealotProductResults,
   parseWoolworthsProductResults,
   normalizeProductSearchInput,
   searchRetailerProduct,
@@ -297,6 +299,122 @@ describe('on-demand retailer product results', () => {
     expect(comparison.pricedCount).toBe(1)
     expect(comparison.cheapestRetailerId).toBeUndefined()
     expect(comparison.savingsCents).toBe(0)
+  })
+
+  it('builds a POST search request for Pick n Pay and parses in-stock priced rows', () => {
+    const request = buildKnownProductSearchRequest('pick-n-pay', 'milk 2l')
+    expect(request?.init?.method).toBe('POST')
+    expect(request?.url).toContain('pnphybris/v2/pnp-spa/products/search')
+    expect(request?.url).toContain('storeCode=WC21')
+
+    const products = parsePnpProductResults({
+      products: [
+        {
+          name: 'PnP Full Cream Fresh Milk 2L',
+          price: { formattedValue: 'R32.99', value: 32.99 },
+          stock: { stockLevelStatus: 'inStock' },
+          url: '/pnp-full-cream-fresh-milk-2l/p/000000000000357781_EA',
+        },
+        {
+          name: 'PnP Low Fat Milk 2L',
+          price: { value: 31.99 },
+          stock: { stockLevelStatus: 'outOfStock' },
+          url: '/pnp-low-fat-milk-2l/p/1',
+        },
+        {
+          name: 'PnP Milk Tart',
+          price: { value: 49.99 },
+          stock: { stockLevelStatus: 'inStock' },
+          url: '/pnp-milk-tart/p/2',
+        },
+      ],
+    }, 'milk 2l')
+
+    expect(products).toEqual([{
+      priceCents: 3299,
+      productUrl: 'https://www.pnp.co.za/pnp-full-cream-fresh-milk-2l/p/000000000000357781_EA',
+      title: 'PnP Full Cream Fresh Milk 2L',
+    }])
+  })
+
+  it('parses Takealot buybox results and keeps only real product matches', () => {
+    const row = (title: string, price: number, inStock = true) => ({
+      product_views: {
+        buybox_summary: { prices: [price] },
+        core: { id: 72300062, slug: 'slug-here', title },
+        stock_availability_summary: { is_in_stock: inStock },
+      },
+    })
+
+    const products = parseTakealotProductResults({
+      sections: {
+        products: {
+          results: [
+            row('Clover Fresh Full Cream Milk 2L', 42),
+            row('2L Square Milk Canister: 10 Pack', 199),
+            row('Parmalat Fresh Milk 2 Litre', 39, false),
+          ],
+        },
+      },
+    }, 'fresh milk 2l')
+
+    // The canister lacks the "fresh" token and the out-of-stock row is
+    // dropped — only the genuine grocery survives.
+    expect(products).toEqual([
+      expect.objectContaining({
+        priceCents: 4200,
+        productUrl: 'https://www.takealot.com/slug-here/PLID72300062',
+        title: 'Clover Fresh Full Cream Milk 2L',
+      }),
+    ])
+  })
+
+  it('matches size tokens across unit spellings', () => {
+    const products = parsePnpProductResults({
+      products: [{
+        name: 'PnP Fresh Full Cream Milk 2 Litre',
+        price: { value: 32.99 },
+        stock: { stockLevelStatus: 'inStock' },
+        url: '/milk/p/1',
+      }],
+    }, 'milk 2l')
+
+    expect(products).toHaveLength(1)
+  })
+
+  it('keeps a catalogue price usable for its whole validity window', () => {
+    const matches = applyPromotionFallbackPrices(
+      [{
+        retailerId: 'checkers',
+        retailerName: 'Checkers',
+        status: 'unavailable',
+      }],
+      'milk 2l',
+      'ZAR',
+      [{
+        // Captured five days ago — outside the 72h capture gate — but the
+        // catalogue is valid until Sunday, so the price is still right.
+        capturedAt: '2026-07-17T08:00:00.000Z',
+        evidenceText: '{}',
+        expiresAt: '2026-07-27T21:59:59.000Z',
+        id: 'checkers-milk',
+        priceText: 'R31.99',
+        productUrl: 'https://specials.checkers.co.za/current/index.html#page=2',
+        retailerId: 'checkers',
+        retailerName: 'Checkers',
+        sourceLabel: 'Catalogue scan',
+        sourceUrl: 'https://specials.checkers.co.za/current/index.html',
+        title: 'Clover Fresh Milk 2L',
+        validTo: '2026-07-27',
+      }],
+      new Date('2026-07-22T12:00:00.000Z'),
+    )
+
+    expect(matches[0]).toMatchObject({
+      priceCents: 3199,
+      sourceKind: 'promotion',
+      status: 'priced',
+    })
   })
 
   it('uses a current promotion price when an official product page hides its price', () => {

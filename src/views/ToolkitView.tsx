@@ -177,7 +177,9 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
           >
             <span className="auto-compare-store-name">{match.retailerName}</span>
             {match.status === 'unavailable' ? (
-              <span className="auto-compare-missing">No verified live price returned</span>
+              <span className="auto-compare-missing">
+                This store has no public price search we can read — check in store
+              </span>
             ) : (
               <>
                 {match.productUrl ? (
@@ -193,7 +195,9 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
                   <span className="auto-compare-title">{match.title ?? 'Product found'}</span>
                 )}
                 {match.priceCents === undefined ? (
-                  <span className="auto-compare-status">Product found, live price unavailable</span>
+                  <span className="auto-compare-status">
+                    Product found — the site hides its price from us; open the product page
+                  </span>
                 ) : (
                   <span className="auto-compare-price">
                     {formatCountryMoney(match.priceCents, result.country)}

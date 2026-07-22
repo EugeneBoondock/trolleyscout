@@ -2,6 +2,7 @@ import { getStaticRetailersPayload } from '../../src/api/staticData'
 import type { Retailer } from '../../src/types'
 import { countryFromCode } from '../_shared/countryContext'
 import { getCountryRetailers } from '../_shared/countryRetailerScout'
+import { listActiveDealItems, type StoredDealItem } from '../_shared/dealItemStore'
 import { readDealSnapshots } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberSession } from '../_shared/memberStore'
@@ -72,18 +73,47 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       searcher: (query) => searchWeb(query, env.JINA_API_KEY),
     },
   )))
-  const snapshots = await readDealSnapshots(env)
+  // Stores without a searchable storefront (Checkers, Shoprite, Boxer…)
+  // still publish prices in their catalogues — the scanned deal items give
+  // the fallback a real, dated price where live search cannot.
+  const [snapshots, storedItems] = await Promise.all([
+    readDealSnapshots(env),
+    listActiveDealItems(env, { limit: 200, retailerIds: input.retailerIds })
+      .catch(() => [] as StoredDealItem[]),
+  ])
   const matches = applyPromotionFallbackPrices(
     searchedMatches,
     input.query,
     country.currencyCode,
-    [...snapshots.values()].flatMap((snapshot) => snapshot.deals),
+    [
+      ...[...snapshots.values()].flatMap((snapshot) => snapshot.deals),
+      ...storedItems.map(storedItemToFallbackDeal),
+    ],
   )
 
   return json(
     buildProductComparison(country, input.query, matches),
     { headers: privateHeaders },
   )
+}
+
+function storedItemToFallbackDeal(item: StoredDealItem) {
+  return {
+    capturedAt: item.capturedAt,
+    evidenceText: item.evidenceText,
+    expiresAt: item.expiresAt,
+    id: item.id,
+    priceText: `R${(item.priceCents / 100).toFixed(2)}`,
+    productId: item.productId,
+    productUrl: item.productUrl,
+    retailerId: item.retailerId,
+    retailerName: item.retailerId,
+    sourceLabel: item.sourceKind === 'catalogue' ? 'Catalogue scan' : 'Official retailer feed',
+    sourceUrl: item.sourceUrl,
+    title: item.title,
+    validFrom: item.validFrom,
+    validTo: item.validTo,
+  }
 }
 
 function selectedRetailers(directory: Retailer[], retailerIds: string[]): Retailer[] {

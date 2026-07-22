@@ -146,6 +146,8 @@ describe('automatic store comparison', () => {
     expect(screen.getByText(/Only one selected store returned a live price/)).toBeTruthy()
     const comparison = screen.getByRole('region', { name: 'Automatic price comparison' })
     expect(comparison.textContent).not.toContain('Checkers is cheapest')
-    expect(within(comparison).getByText('No verified live price returned')).toBeTruthy()
+    expect(
+      within(comparison).getByText(/no public price search we can read/i),
+    ).toBeTruthy()
   })
 })

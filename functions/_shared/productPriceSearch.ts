@@ -111,6 +111,41 @@ export function buildKnownProductSearchRequest(
     return { init: { headers: BROWSER_HEADERS }, url: url.toString() }
   }
 
+  if (retailerId === 'pick-n-pay') {
+    // PnP's OCC storefront search answers anonymously, but only as POST —
+    // GET routes "search" as a product code and 404s.
+    const url = new URL('https://www.pnp.co.za/pnphybris/v2/pnp-spa/products/search')
+    url.searchParams.set(
+      'fields',
+      'products(code,name,price(value,formattedValue),url,stock(stockLevelStatus))',
+    )
+    url.searchParams.set('query', query)
+    url.searchParams.set('pageSize', '12')
+    url.searchParams.set('storeCode', 'WC21')
+    url.searchParams.set('lang', 'en')
+    url.searchParams.set('curr', 'ZAR')
+    return {
+      init: {
+        headers: {
+          ...BROWSER_HEADERS,
+          'content-type': 'application/json',
+          referer: 'https://www.pnp.co.za/',
+        },
+        method: 'POST',
+      },
+      url: url.toString(),
+    }
+  }
+
+  if (retailerId === 'takealot') {
+    // Takealot's own search API — using their ranking also ends the
+    // "milk 2L returns a milk canister" class of mismatch.
+    const url = new URL('https://api.takealot.com/rest/v-1-13-0/searches/products')
+    url.searchParams.set('qsearch', query)
+    url.searchParams.set('rows', '12')
+    return { init: { headers: BROWSER_HEADERS }, url: url.toString() }
+  }
+
   if (retailerId === 'game') {
     const url = new URL(
       'https://api-beta-game.walmart.com/occ/v2/game/channel/web/zone/G205/products/search',
@@ -210,6 +245,65 @@ export function parseClicksProductResults(
   return products
 }
 
+export function parsePnpProductResults(
+  payload: unknown,
+  query: string,
+): RetailerProductCandidate[] {
+  const rows = arrayValue(payload, 'products')
+  const products: RetailerProductCandidate[] = []
+
+  for (const row of rows) {
+    const title = textValue(row, 'name')
+    const stock = recordValue(row, 'stock')
+    const priceCents = firstMoney(recordValue(row, 'price'), ['value', 'formattedValue'])
+    const productUrl = absoluteHttpsUrl(textValue(row, 'url'), 'https://www.pnp.co.za')
+
+    if (
+      title
+      && textValue(stock, 'stockLevelStatus') !== 'outOfStock'
+      && productUrl
+      && priceCents !== undefined
+      && matchesQuery(title, query)
+    ) {
+      products.push({ priceCents, productUrl, title })
+    }
+  }
+
+  return products
+}
+
+export function parseTakealotProductResults(
+  payload: unknown,
+  query: string,
+): RetailerProductCandidate[] {
+  const sections = recordValue(payload, 'sections')
+  const rows = arrayValue(recordValue(sections, 'products'), 'results')
+  const products: RetailerProductCandidate[] = []
+
+  for (const row of rows) {
+    const views = recordValue(row, 'product_views')
+    const core = recordValue(views, 'core')
+    const title = textValue(core, 'title')
+    const slug = textValue(core, 'slug')
+    const plid = textValue(core, 'id')
+    const buybox = recordValue(views, 'buybox_summary')
+    const prices = isRecord(buybox) && Array.isArray(buybox.prices) ? buybox.prices : []
+    const priceCents = moneyToCents(prices[0])
+    const stock = recordValue(views, 'stock_availability_summary')
+    const inStock = !isRecord(stock) || stock.is_in_stock !== false
+
+    if (title && slug && plid && inStock && priceCents !== undefined && matchesQuery(title, query)) {
+      products.push({
+        priceCents,
+        productUrl: `https://www.takealot.com/${slug}/PLID${plid}`,
+        title,
+      })
+    }
+  }
+
+  return products
+}
+
 export function parseGameProductResults(
   payload: unknown,
   query: string,
@@ -291,6 +385,15 @@ export async function searchRetailerProduct(
             sourceKind: 'retailer-api',
             status: 'priced',
           }
+        }
+        // The retailer's own search answered and had no real match — that is
+        // the authoritative "not stocked" signal. Falling through to a
+        // generic web search from here is where junk results (a "milk
+        // canister" for a milk query) used to come from.
+        return {
+          retailerId: retailer.id,
+          retailerName: retailer.name,
+          status: 'unavailable',
         }
       }
     } catch {
@@ -530,7 +633,15 @@ export function applyPromotionFallbackPrices(
       .filter((deal) => {
         if (deal.retailerId !== match.retailerId || !matchesQuery(deal.title, query)) return false
         if (deal.expiresAt && Date.parse(deal.expiresAt) < nowMs) return false
-        if (nowMs - Date.parse(deal.capturedAt) > MAX_PROMOTION_FALLBACK_AGE_MS) return false
+        // A deal whose validity window is still open is current no matter
+        // when it was captured — weekly catalogues are scanned once and
+        // stay right all week. The capture-age gate only applies when no
+        // validity window was published.
+        const validToMs = deal.validTo ? Date.parse(deal.validTo) : Number.NaN
+        const withinValidity = Number.isFinite(validToMs) && validToMs >= nowMs
+        if (!withinValidity && nowMs - Date.parse(deal.capturedAt) > MAX_PROMOTION_FALLBACK_AGE_MS) {
+          return false
+        }
         return promotionPriceToCents(deal.priceText, currencyCode) !== undefined
       })
       .map((deal) => ({
@@ -580,13 +691,28 @@ function parseKnownProductResults(
   if (retailerId === 'dis-chem') return parseKlevuProductResults(payload, query)
   if (retailerId === 'clicks') return parseClicksProductResults(payload, query)
   if (retailerId === 'game') return parseGameProductResults(payload, query)
+  if (retailerId === 'pick-n-pay') return parsePnpProductResults(payload, query)
+  if (retailerId === 'takealot') return parseTakealotProductResults(payload, query)
   return []
 }
 
 function matchesQuery(title: string, query: string): boolean {
-  const titleText = title.toLowerCase()
-  const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 1)
+  const titleText = normalizeUnits(title)
+  const tokens = normalizeUnits(query).split(/[^a-z0-9]+/).filter((token) => token.length > 1)
   return tokens.length > 0 && tokens.every((token) => titleText.includes(token))
+}
+
+// "2L", "2 l" and "2 Litre" are the same size to a shopper — fold unit
+// spellings together so a query written one way matches titles written
+// another.
+function normalizeUnits(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(litres?|liters?)\b/g, 'l')
+    .replace(/\b(kilograms?|kgs)\b/g, 'kg')
+    .replace(/\b(grams?)\b/g, 'g')
+    .replace(/\b(millilitres?|milliliters?|mls)\b/g, 'ml')
+    .replace(/(\d)\s+(l|kg|g|ml)\b/g, '$1$2')
 }
 
 function firstMoney(value: unknown, keys: string[]): number | undefined {

@@ -96,23 +96,13 @@ export async function runVoucherScout(
     const checkedAt = new Date().toISOString()
     try {
       const sourceUrl = validatedSourceUrl(source)
-      const response = await fetchImpl(sourceUrl, {
-        headers: {
-          accept: 'text/html,application/xhtml+xml',
-          'user-agent': 'TrolleyScout/1.0 (+https://trolleyscout.co.za)',
-        },
-        // Sources move behind redirects (Amazon's /coupons now 301s);
-        // follow them, but only within the retailer's official hosts.
-        redirect: 'follow',
-        signal: AbortSignal.timeout(12_000),
-      })
-      if (!response.ok) {
-        throw new Error(`Official source returned HTTP ${response.status}`)
-      }
-      if (response.url && !isOfficialRetailerHost(source.retailerId, response.url)) {
-        throw new Error('Voucher source redirected off the official retailer host')
-      }
-      const html = await readResponseTextWithLimit(response, maxBodyBytes)
+      const html = await fetchVoucherSourceHtml(
+        source,
+        sourceUrl,
+        fetchImpl,
+        maxBodyBytes,
+        env.JINA_API_KEY,
+      )
       const candidates = source.parser === 'amazon'
         ? extractAmazonVoucherCandidates(html, checkedAt, 1_000)
         : extractPublicVoucherCandidates({
@@ -175,6 +165,56 @@ export async function runVoucherScout(
 
   const expired = await repository.expire()
   return { expired, sources: results }
+}
+
+// Fetches a voucher source page, falling back to the jina reader (asked for
+// raw HTML) when the retailer bot-walls direct fetches — Yuppiechef 403s the
+// honest crawler UA while serving the same public page to browsers.
+async function fetchVoucherSourceHtml(
+  source: VoucherScoutSource,
+  sourceUrl: string,
+  fetchImpl: typeof fetch,
+  maxBodyBytes: number,
+  jinaApiKey?: string,
+): Promise<string> {
+  let directStatus: number | undefined
+  try {
+    const response = await fetchImpl(sourceUrl, {
+      headers: {
+        accept: 'text/html,application/xhtml+xml',
+        'user-agent': 'TrolleyScout/1.0 (+https://trolleyscout.co.za)',
+      },
+      // Sources move behind redirects (Amazon's /coupons now 301s);
+      // follow them, but only within the retailer's official hosts.
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (response.ok) {
+      if (response.url && !isOfficialRetailerHost(source.retailerId, response.url)) {
+        throw new Error('Voucher source redirected off the official retailer host')
+      }
+      return await readResponseTextWithLimit(response, maxBodyBytes)
+    }
+    directStatus = response.status
+  } catch (error) {
+    if (error instanceof Error && /official retailer host/.test(error.message)) {
+      throw error
+    }
+    // Fall through to the reader on network-level failures too.
+  }
+
+  const reader = await fetchImpl(`https://r.jina.ai/${sourceUrl}`, {
+    headers: {
+      accept: 'text/html,text/plain',
+      'x-return-format': 'html',
+      ...(jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!reader.ok) {
+    throw new Error(`Official source returned HTTP ${directStatus ?? reader.status}`)
+  }
+  return await readResponseTextWithLimit(reader, maxBodyBytes)
 }
 
 function databaseRepository(env: TrolleyScoutEnv): VoucherScoutRepository {
