@@ -61,7 +61,8 @@ class MemberAccount {
 
   bool get isAdmin => role == 'admin';
 
-  bool get hasScheduledPlanChange => pendingPlanId != null && pendingEffectiveAt != null;
+  bool get hasScheduledPlanChange =>
+      pendingPlanId != null && pendingEffectiveAt != null;
 
   factory MemberAccount.fromJson(Map<String, dynamic> json) => MemberAccount(
         id: _string(json['id']),
@@ -75,7 +76,8 @@ class MemberAccount {
         propertiesAccess: json['propertiesAccess'] == true,
         createdAt: _string(json['createdAt']),
         updatedAt: _string(json['updatedAt']),
-        billingCycle: json['billingCycle'] == 'monthly' || json['billingCycle'] == 'annual'
+        billingCycle: json['billingCycle'] == 'monthly' ||
+                json['billingCycle'] == 'annual'
             ? json['billingCycle'] as String
             : null,
         pendingPlanId: _optionalString(json['pendingPlanId']),
@@ -170,6 +172,133 @@ class RetailerCatalog {
       sourceKinds: _stringList(summary['sourceKinds']),
     );
   }
+}
+
+class CountryOption {
+  const CountryOption({
+    required this.code,
+    required this.currencyCode,
+    required this.flag,
+    required this.name,
+    this.capital,
+  });
+
+  final String code;
+  final String currencyCode;
+  final String flag;
+  final String name;
+  final String? capital;
+
+  factory CountryOption.fromJson(Map<String, dynamic> json) => CountryOption(
+        code: _string(json['code'], 'ZA'),
+        currencyCode: _string(json['currencyCode'], 'ZAR'),
+        flag: _string(json['flag']),
+        name: _string(json['name'], 'South Africa'),
+        capital: _optionalString(json['capital']),
+      );
+}
+
+class CountryPricing {
+  const CountryPricing({
+    required this.code,
+    required this.name,
+    required this.currencyCode,
+    required this.rateFromZar,
+  });
+
+  final String code;
+  final String name;
+  final String currencyCode;
+  final double rateFromZar;
+
+  bool get isRand => currencyCode == 'ZAR';
+
+  /// Local-currency estimate of a rand amount, e.g. "≈ USD 2.75".
+  String? estimateFromRandCents(int cents) {
+    if (isRand || rateFromZar <= 0) return null;
+    final amount = (cents / 100) * rateFromZar;
+    return '≈ $currencyCode ${amount.toStringAsFixed(2)}';
+  }
+
+  factory CountryPricing.fromJson(Map<String, dynamic> json) => CountryPricing(
+        code: _string(json['code'], 'ZA'),
+        name: _string(json['name'], 'South Africa'),
+        currencyCode: _string(json['currencyCode'], 'ZAR'),
+        rateFromZar: _double(json['rateFromZar'], 1),
+      );
+}
+
+class RetailerProductSearchMatch {
+  const RetailerProductSearchMatch({
+    required this.retailerId,
+    required this.retailerName,
+    required this.status,
+    this.isCheapest = false,
+    this.priceCents,
+    this.productUrl,
+    this.sourceKind,
+    this.title,
+  });
+
+  final String retailerId;
+  final String retailerName;
+  final String status;
+  final bool isCheapest;
+  final int? priceCents;
+  final String? productUrl;
+  final String? sourceKind;
+  final String? title;
+
+  factory RetailerProductSearchMatch.fromJson(Map<String, dynamic> json) =>
+      RetailerProductSearchMatch(
+        retailerId: _string(json['retailerId']),
+        retailerName: _string(json['retailerName']),
+        status: _string(json['status'], 'unavailable'),
+        isCheapest: json['isCheapest'] == true,
+        priceCents: _intOrNull(json['priceCents']),
+        productUrl: _optionalString(json['productUrl']),
+        sourceKind: _optionalString(json['sourceKind']),
+        title: _optionalString(json['title']),
+      );
+}
+
+class ProductComparisonResult {
+  const ProductComparisonResult({
+    required this.checkedAt,
+    required this.country,
+    required this.foundCount,
+    required this.matches,
+    required this.pricedCount,
+    required this.query,
+    required this.savingsCents,
+    required this.unavailableCount,
+    this.cheapestRetailerId,
+  });
+
+  final String checkedAt;
+  final CountryOption country;
+  final int foundCount;
+  final List<RetailerProductSearchMatch> matches;
+  final int pricedCount;
+  final String query;
+  final int savingsCents;
+  final int unavailableCount;
+  final String? cheapestRetailerId;
+
+  factory ProductComparisonResult.fromJson(Map<String, dynamic> json) =>
+      ProductComparisonResult(
+        checkedAt: _string(json['checkedAt']),
+        country: CountryOption.fromJson(_mapOrEmpty(json['country'])),
+        foundCount: _int(json['foundCount']),
+        matches: _mapList(json['matches'])
+            .map(RetailerProductSearchMatch.fromJson)
+            .toList(),
+        pricedCount: _int(json['pricedCount']),
+        query: _string(json['query']),
+        savingsCents: _int(json['savingsCents']),
+        unavailableCount: _int(json['unavailableCount']),
+        cheapestRetailerId: _optionalString(json['cheapestRetailerId']),
+      );
 }
 
 class Deal {
@@ -835,7 +964,9 @@ class Catalogue {
 
   bool get isDirectPdf {
     final uri = Uri.tryParse(url);
-    return uri != null && uri.path.toLowerCase().endsWith('.pdf');
+    return uri != null &&
+        (uri.scheme == 'https' || uri.scheme == 'http') &&
+        uri.path.toLowerCase().endsWith('.pdf');
   }
 
   String? get coverImageUrl =>
@@ -1174,13 +1305,15 @@ class ScrollDeal {
 
   /// Renders this deal-site item as a regular [Deal] so it can appear in the
   /// Find-a-deal list alongside grocery specials.
-  Deal toDeal() => Deal(
+  Deal toDeal({DateTime? capturedAt}) => Deal(
         id: id,
         title: title,
         retailerName: retailerName,
         retailerId: source,
         sourceLabel: sourceLabel,
         sourceUrl: productUrl,
+        capturedAt: (capturedAt ?? DateTime.now()).toUtc().toIso8601String(),
+        evidenceText: 'Found by Trolley Scout from the $sourceLabel feed.',
         priceText: priceText,
         previousPriceText: previousPriceText,
         savingText: savingText,
@@ -1195,7 +1328,7 @@ class ScrollDeal {
         title: deal.title,
         retailerName: deal.retailerName,
         sourceLabel: deal.sourceLabel,
-        source: 'discovery',
+        source: deal.retailerId.isNotEmpty ? deal.retailerId : 'discovery',
         productUrl: deal.productUrl ?? deal.sourceUrl,
         priceText: deal.priceText,
         previousPriceText: deal.previousPriceText,
@@ -1433,6 +1566,9 @@ int _int(Object? value, [int fallback = 0]) =>
     value is num ? value.toInt() : fallback;
 
 int? _intOrNull(Object? value) => value is num ? value.toInt() : null;
+
+double _double(Object? value, [double fallback = 0]) =>
+    value is num ? value.toDouble() : fallback;
 
 Map<String, dynamic> _mapOrEmpty(Object? value) =>
     value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};

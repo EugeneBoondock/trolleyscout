@@ -1,6 +1,6 @@
 import 'api_models.dart';
 
-const _missingCatalogueTime = -0x7FFFFFFFFFFFFFFF;
+const _missingCatalogueTime = -9007199254740991;
 
 int _dateTime(String? value) {
   if (value == null || value.isEmpty) return _missingCatalogueTime;

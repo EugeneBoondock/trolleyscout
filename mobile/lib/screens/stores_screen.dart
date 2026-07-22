@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/common.dart';
 import '../widgets/store_map_view.dart';
+import '../widgets/in_app_browser.dart';
 
 class StoresScreen extends StatefulWidget {
   const StoresScreen(
@@ -121,7 +122,7 @@ class _StoresScreenState extends State<StoresScreen> {
                     Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
             const SizedBox(height: 4),
             Text(
-              'Saved from successful Near Me searches across South Africa.',
+              'Saved from successful Near Me searches in the selected country.',
               style: TextStyle(color: TS.mutedOf(context)),
             ),
             const SizedBox(height: 10),
@@ -162,6 +163,14 @@ class _StoresScreenState extends State<StoresScreen> {
                                   '${group.dealCount} deal${group.dealCount == 1 ? '' : 's'} · ${group.catalogueCount} catalogue${group.catalogueCount == 1 ? '' : 's'}',
                                   style: TS.eyebrowOf(context),
                                 ),
+                                if (group.nearestDistanceM != null)
+                                  Text(
+                                    'Nearest ${_distance(group.nearestDistanceM!)}',
+                                    style: TextStyle(
+                                      color: TS.mutedOf(context),
+                                      fontSize: 12,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -220,7 +229,11 @@ class _StoresScreenState extends State<StoresScreen> {
                           leading: const Icon(Icons.link),
                           title: Text(source.label),
                           subtitle: Text(_kindLabel(source.kind)),
-                          onTap: () => openExternal(source.url),
+                          onTap: () => showInAppBrowser(
+                            context,
+                            source.url,
+                            title: retailer.name,
+                          ),
                           trailing: OutlinedButton(
                             onPressed: _savedUrls.contains(source.url)
                                 ? null
@@ -349,27 +362,76 @@ class _BranchCard extends StatelessWidget {
   final NearbyStore branch;
   final Api api;
 
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => _BranchDetailScreen(branch: branch, api: api),
+      )),
+      child: PaperCard(
+        margin: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(branch.name,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w900)),
+                  if (branch.address != null) ...[
+                    const SizedBox(height: 2),
+                    Text(branch.address!,
+                        style: TextStyle(color: TS.mutedOf(context))),
+                  ],
+                  if (branch.distanceM != null)
+                    Text(_distance(branch.distanceM!),
+                        style: TextStyle(
+                            color: TS.mutedOf(context), fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${branch.deals.length} current deal${branch.deals.length == 1 ? '' : 's'} · '
+                    '${branch.catalogues.length} catalogue${branch.catalogues.length == 1 ? '' : 's'}',
+                    style: TS.eyebrowOf(context),
+                  ),
+                  if (!branch.hasSomething)
+                    Text('No current deals found yet.',
+                        style: TextStyle(color: TS.mutedOf(context))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchDetailScreen extends StatelessWidget {
+  const _BranchDetailScreen({required this.branch, required this.api});
+
+  final NearbyStore branch;
+  final Api api;
+
   bool get _hasLocation => branch.lat != 0 && branch.lon != 0;
 
   @override
   Widget build(BuildContext context) {
-    return PaperCard(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      backgroundColor: TS.bgOf(context),
+      appBar: AppBar(title: Text(branch.name)),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          Text(branch.name,
-              style:
-                  const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-          if (branch.address != null) ...[
-            const SizedBox(height: 2),
+          if (branch.address != null)
             Text(branch.address!, style: TextStyle(color: TS.mutedOf(context))),
-          ],
           if (branch.distanceM != null)
             Text(_distance(branch.distanceM!),
-                style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
+                style: TextStyle(color: TS.mutedOf(context))),
           if (_hasLocation) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
@@ -386,37 +448,43 @@ class _BranchCard extends StatelessWidget {
               ),
             ),
           ],
-          if (branch.deals.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Branch deals', style: TS.eyebrowOf(context)),
-            const SizedBox(height: 6),
+          const SizedBox(height: 18),
+          Text('Current deals', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (branch.deals.isEmpty)
+            const EmptyCard(
+              message: 'No current deals have been found for this store yet.',
+              icon: Icons.local_offer_outlined,
+            )
+          else
             for (final deal in branch.deals) _BranchDealRow(deal: deal),
-          ],
-          if (branch.catalogues.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Branch catalogues', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 18),
+          Text('Catalogues', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (branch.catalogues.isEmpty)
+            const EmptyCard(
+              message:
+                  'No current catalogues have been found for this store yet.',
+              icon: Icons.menu_book_outlined,
+            )
+          else
             for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: _StoreLogo(
-                  imageUrl: catalogue.coverImageUrl,
-                  label: catalogue.name,
+              PaperCard(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: _StoreLogo(
+                    imageUrl: catalogue.coverImageUrl,
+                    label: catalogue.name,
+                  ),
+                  title: Text(catalogue.name),
+                  subtitle: catalogue.validTo == null
+                      ? null
+                      : Text('Valid until ${_shortDate(catalogue.validTo!)}'),
+                  trailing: const Icon(Icons.menu_book_outlined),
+                  onTap: () => showCatalogueReader(context, catalogue),
                 ),
-                title: Text(catalogue.name),
-                subtitle: catalogue.validTo == null
-                    ? null
-                    : Text('Valid until ${_shortDate(catalogue.validTo!)}'),
-                trailing: const Icon(Icons.menu_book_outlined),
-                onTap: () => showCatalogueReader(context, catalogue),
               ),
-          ],
-          if (!branch.hasSomething) ...[
-            const SizedBox(height: 10),
-            Text(
-              'No current branch deals or catalogues have been found yet.',
-              style: TextStyle(color: TS.mutedOf(context)),
-            ),
-          ],
         ],
       ),
     );
@@ -434,35 +502,44 @@ class _BranchDealRow extends StatelessWidget {
       color: TS.surfaceSoftOf(context),
       child: Icon(Icons.local_offer_outlined, color: TS.mutedOf(context)),
     );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: deal.imageUrl == null
-                  ? fallback
-                  : Image.network(
-                      deal.imageUrl!,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => fallback,
-                    ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(deal.title)),
-          if (deal.priceText != null)
-            Text(
-              deal.priceText!,
-              style: TextStyle(
-                color: TS.redOf(context),
-                fontWeight: FontWeight.w900,
+    return InkWell(
+      onTap: deal.productUrl == null
+          ? null
+          : () => showInAppBrowser(
+                context,
+                deal.productUrl,
+                title: deal.retailerName,
+              ),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: deal.imageUrl == null
+                    ? fallback
+                    : Image.network(
+                        deal.imageUrl!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => fallback,
+                      ),
               ),
             ),
-        ],
+            const SizedBox(width: 8),
+            Expanded(child: Text(deal.title)),
+            if (deal.priceText != null)
+              Text(
+                deal.priceText!,
+                style: TextStyle(
+                  color: TS.redOf(context),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

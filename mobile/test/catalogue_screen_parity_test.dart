@@ -19,6 +19,17 @@ void main() {
     await tester.pumpWidget(_wrap(DealsScreen(api: _CatalogueApi())));
     await tester.pumpAndSettle();
 
+    expect(find.text('Overview'), findsNothing);
+    expect(find.text('Advanced filters'), findsOneWidget);
+    expect(find.text('All retailers'), findsNothing);
+
+    await tester.tap(find.text('Advanced filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All retailers'), findsOneWidget);
+    expect(find.text('All sources'), findsOneWidget);
+    expect(find.text('Has image'), findsOneWidget);
+    expect(find.text('Shows savings'), findsOneWidget);
+
     // Catalogues now live on their own tab, deduped by retailer.
     await tester.tap(find.byType(Tab).at(1));
     await tester.pumpAndSettle();
@@ -45,6 +56,9 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    // The store card is a summary; its catalogues live on the store's page.
+    await tester.tap(find.text('VIEW'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Rosebank weekly'));
     await tester.pumpAndSettle();
 
@@ -71,8 +85,14 @@ void main() {
     expect(find.text('PnP Sandton'), findsOneWidget);
     expect(find.text('10 Main Road, Rosebank'), findsOneWidget);
     expect(find.text('20 High Street, Sandton'), findsOneWidget);
+    expect(find.text('Milk 2L'), findsNothing);
+    expect(find.text('R20.00'), findsNothing);
+
+    await tester.tap(find.text('Pick n Pay Rosebank'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Milk 2L'), findsOneWidget);
     expect(find.text('R20.00'), findsOneWidget);
-    expect(find.text('R23.00'), findsOneWidget);
   });
 
   testWidgets('branch modal reads its catalogue without leaving the app',
@@ -82,6 +102,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('View 2 locations'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Pick n Pay Rosebank'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Rosebank weekly'));
@@ -102,7 +125,8 @@ class _CatalogueApi extends Api {
   _CatalogueApi() : super(baseUrl: 'https://example.test');
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,

@@ -18,6 +18,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   late Future<SubscriptionData> _future = widget.api.subscription();
   String _billingCycle = 'monthly';
   String? _busyPlan;
+  CountryPricing? _country;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCountry();
+  }
+
+  Future<void> _loadCountry() async {
+    try {
+      final country = await widget.api.country();
+      if (mounted && !country.isRand) setState(() => _country = country);
+    } catch (_) {
+      // Rand-only display is always a safe fallback.
+    }
+  }
 
   void _reload() => setState(() {
         _future = widget.api.subscription();
@@ -58,7 +74,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               eyebrow: 'Membership',
               title: 'Choose your plan',
               description:
-                  'Core money help, tools, deals, and catalogues stay free. Paid plans add larger saved lists.',
+                  'Core price tools, deals, and catalogues stay free. Paid plans add larger saved lists.',
             ),
             SegmentedButton<String>(
               segments: const [
@@ -104,6 +120,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                             if (plan.isPaid && _billingCycle == 'annual')
                               Text(
                                 '≈ ${formatRand((plan.annualCents / 12).round())}/mo',
+                                style: TextStyle(
+                                    color: TS.mutedOf(context),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11),
+                              ),
+                            // Shoppers outside South Africa see their own
+                            // currency; PayFast still settles in rand.
+                            if (plan.isPaid &&
+                                _country?.estimateFromRandCents(
+                                        _billingCycle == 'monthly'
+                                            ? plan.monthlyCents
+                                            : plan.annualCents) !=
+                                    null)
+                              Text(
+                                '${_country!.estimateFromRandCents(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)!}'
+                                '/${_billingCycle == 'monthly' ? 'mo' : 'yr'}',
                                 style: TextStyle(
                                     color: TS.mutedOf(context),
                                     fontWeight: FontWeight.w700,

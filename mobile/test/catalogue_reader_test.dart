@@ -55,7 +55,8 @@ void main() {
     expect(find.byType(CatalogueReader), findsNothing);
   });
 
-  testWidgets('keeps direct PDFs inside the catalogue reader', (tester) async {
+  testWidgets('uses the catalogue page reader instead of a PDF view',
+      (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home: const CatalogueReader(
@@ -68,11 +69,30 @@ void main() {
     ));
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('catalogue-pdf-view')), findsOneWidget);
-    expect(find.textContaining('open another app'), findsNothing);
+    expect(find.byKey(const ValueKey('catalogue-pdf-view')), findsNothing);
+    expect(find.text('Page 1 of 1'), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
   });
 
-  testWidgets('offers the official source when a PDF cannot be embedded',
+  testWidgets('embeds a PDF-only catalogue instead of giving up',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: const CatalogueReader(
+        catalogue: Catalogue(
+          name: 'OK Foods specials',
+          url: 'https://www.okfoods.co.za/leaflets/CEN-Foods.pdf',
+          sourceUrl: 'https://www.okfoods.co.za/specials.html',
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('catalogue-pdf-view')), findsOneWidget);
+    expect(find.text('Catalogue preview unavailable.'), findsNothing);
+  });
+
+  testWidgets('offers the official source when no catalogue page is available',
       (tester) async {
     Uri? openedUri;
     await tester.pumpWidget(MaterialApp(
@@ -88,7 +108,7 @@ void main() {
     ));
     await tester.pump();
 
-    expect(find.text('This PDF could not be embedded.'), findsOneWidget);
+    expect(find.text('Catalogue preview unavailable.'), findsOneWidget);
     expect(find.text('Open official source'), findsOneWidget);
 
     await tester.tap(find.text('Open official source'));
@@ -145,14 +165,13 @@ void main() {
         ),
       ));
 
-      expect(find.text('Catalogue preview unavailable.'), findsOneWidget);
-      expect(find.text('Open official source'), findsOneWidget);
+      expect(find.text('Page 1 of 1'), findsOneWidget);
       expect(
-        find.bySemanticsLabel('Cover for Branch catalogue'),
+        find.bySemanticsLabel('Catalogue page 1 of 1'),
         findsOneWidget,
       );
 
-      await tester.tap(find.text('Open official source'));
+      await tester.tap(find.byTooltip('Open official source'));
       await tester.pump();
 
       expect(openedUri, Uri.parse('https://market.example.test/catalogue'));

@@ -123,7 +123,7 @@ class _ShopCompareToolState extends State<ShopCompareTool> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('SHELF TOOLS', style: TS.eyebrowOf(context)),
+                  Text('LIST COMPARISON', style: TS.eyebrowOf(context)),
                   const SizedBox(height: 4),
                   const Text('Which shop is cheapest?',
                       style:

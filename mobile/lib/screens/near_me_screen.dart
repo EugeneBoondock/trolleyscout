@@ -572,6 +572,9 @@ class _HistoryChip extends StatelessWidget {
   }
 }
 
+// One store, one compact card: name, distance, and a deal summary. The
+// deals themselves live on the store's own curated page, so the Near me
+// list stays scannable no matter how many specials a store has.
 class _StoreCard extends StatelessWidget {
   const _StoreCard({required this.store, this.onViewDeals});
   final NearbyStore store;
@@ -579,118 +582,160 @@ class _StoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: TS.card(context),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final dealCount = store.deals.length;
+    final catalogueCount = store.catalogues.length;
+    return Semantics(
+      button: true,
+      label: 'Open ${store.name} deals and catalogues',
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => _NearStoreDetailScreen(
+            store: store,
+            onViewDeals: onViewDeals,
+          ),
+        )),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: TS.card(context),
+          padding: const EdgeInsets.all(14),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ImageThumb(
-                imageUrl: store.logoUrl,
-                icon: Icons.storefront_outlined,
-                size: 44,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _ImageThumb(
+                    imageUrl: store.logoUrl,
+                    icon: Icons.storefront_outlined,
+                    size: 44,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(store.name,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w900)),
+                  ),
+                  if (store.isKnownChain)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      color: TS.greenOf(context),
+                      child: Text('KNOWN CHAIN',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.onTertiary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900)),
+                    ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(store.name,
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w900)),
-              ),
-              if (store.isKnownChain)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  color: TS.greenOf(context),
-                  child: Text('KNOWN CHAIN',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.onTertiary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900)),
+              if (store.address != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(store.address!,
+                      style:
+                          TextStyle(color: TS.faintOf(context), fontSize: 12)),
+                ),
+              if (store.distanceM != null)
+                Text(_distance(store.distanceM!),
+                    style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              if (!store.hasSomething)
+                Text(
+                  store.isKnownChain
+                      ? 'No current deals loaded for this chain yet.'
+                      : 'We’re checking this store’s specials. Come back shortly.',
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                )
+              else
+                Row(
+                  children: [
+                    Icon(Icons.local_offer_outlined,
+                        size: 15, color: TS.inkOf(context)),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        '$dealCount ${dealCount == 1 ? 'deal' : 'deals'} · '
+                        '$catalogueCount ${catalogueCount == 1 ? 'catalogue' : 'catalogues'}',
+                        style: const TextStyle(
+                            fontSize: 13.5, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text('VIEW',
+                        style: TextStyle(
+                            color: TS.redOf(context),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6)),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: TS.redOf(context)),
+                  ],
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  String _distance(num m) =>
+      m < 1000 ? '${m.round()} m' : '${(m / 1000).toStringAsFixed(1)} km';
+}
+
+// The curated per-store page: every deal and catalogue this store
+// published, in one place.
+class _NearStoreDetailScreen extends StatelessWidget {
+  const _NearStoreDetailScreen({required this.store, this.onViewDeals});
+  final NearbyStore store;
+  final VoidCallback? onViewDeals;
+
+  @override
+  Widget build(BuildContext context) {
+    final catalogues = sortCataloguesMostRecent(store.catalogues);
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('STORE DEALS', style: TS.eyebrowOf(context)),
+            Text(store.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
           if (store.address != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(store.address!,
-                  style: TextStyle(color: TS.faintOf(context), fontSize: 12)),
-            ),
+            Text(store.address!,
+                style: TextStyle(color: TS.faintOf(context), fontSize: 13)),
           if (store.distanceM != null)
-            Text(_distance(store.distanceM!),
-                style: TextStyle(
-                    color: TS.mutedOf(context),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          if (!store.hasSomething)
             Text(
-              store.isKnownChain
-                  ? 'No current deals loaded for this chain yet.'
-                  : 'We’re checking this store’s specials. Come back shortly.',
-              style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
-            ),
-          for (final deal in store.deals.take(4))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: Row(
-                children: [
-                  _ImageThumb(
-                    imageUrl: deal.imageUrl,
-                    icon: Icons.local_offer_outlined,
-                    size: 42,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: Text(deal.title,
-                          style: const TextStyle(fontSize: 13))),
-                  Text(deal.priceText ?? '',
-                      style: TextStyle(
-                          color: TS.redOf(context),
-                          fontWeight: FontWeight.w800)),
-                ],
-              ),
-            ),
-          for (final cat in sortCataloguesMostRecent(store.catalogues).take(3))
-            InkWell(
-              onTap: () => showCatalogueReader(context, cat),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    _ImageThumb(
-                      imageUrl: cat.imageUrl,
-                      icon: Icons.menu_book_outlined,
-                      size: 42,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        cat.validTo != null
-                            ? '${cat.name} · until ${_shortDate(cat.validTo!)}'
-                            : cat.name,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 13),
-                      ),
-                    ),
-                    Icon(Icons.menu_book_outlined,
-                        size: 12, color: TS.mutedOf(context)),
-                  ],
-                ),
-              ),
+              store.distanceM! < 1000
+                  ? '${store.distanceM!.round()} m away'
+                  : '${(store.distanceM! / 1000).toStringAsFixed(1)} km away',
+              style: TextStyle(
+                  color: TS.mutedOf(context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700),
             ),
           if (onViewDeals != null && store.hasSomething) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: onViewDeals,
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onViewDeals!();
+                },
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: TS.ink,
-                  side: const BorderSide(color: TS.ink, width: 2),
+                  foregroundColor: TS.inkOf(context),
+                  side: BorderSide(color: TS.inkOf(context), width: 2),
                   shape: const RoundedRectangleBorder(),
                 ),
                 icon: const Icon(Icons.local_offer, size: 16),
@@ -698,13 +743,79 @@ class _StoreCard extends StatelessWidget {
               ),
             ),
           ],
+          if (store.deals.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Current deals', style: TS.eyebrowOf(context)),
+            const SizedBox(height: 6),
+            for (final deal in store.deals)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    _ImageThumb(
+                      imageUrl: deal.imageUrl,
+                      icon: Icons.local_offer_outlined,
+                      size: 42,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(deal.title,
+                            style: const TextStyle(fontSize: 13.5))),
+                    Text(deal.priceText ?? '',
+                        style: TextStyle(
+                            color: TS.redOf(context),
+                            fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+          ],
+          if (catalogues.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Catalogues', style: TS.eyebrowOf(context)),
+            const SizedBox(height: 6),
+            for (final cat in catalogues)
+              InkWell(
+                onTap: () => showCatalogueReader(context, cat),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(
+                    children: [
+                      _ImageThumb(
+                        imageUrl: cat.imageUrl,
+                        icon: Icons.menu_book_outlined,
+                        size: 42,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          cat.validTo != null
+                              ? '${cat.name} · until ${_shortDate(cat.validTo!)}'
+                              : cat.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                      ),
+                      Icon(Icons.menu_book_outlined,
+                          size: 14, color: TS.mutedOf(context)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          if (!store.hasSomething)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(
+                store.isKnownChain
+                    ? 'No current deals loaded for this chain yet. Check back soon.'
+                    : 'We’re checking this store’s specials. Come back shortly.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 13.5),
+              ),
+            ),
         ],
       ),
     );
   }
-
-  String _distance(num m) =>
-      m < 1000 ? '${m.round()} m' : '${(m / 1000).toStringAsFixed(1)} km';
 }
 
 class _ImageThumb extends StatelessWidget {

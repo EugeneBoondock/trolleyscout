@@ -22,6 +22,40 @@ void main() {
     expect(safeWindowWebUri('/relative/deal'), isNull);
   });
 
+  testWidgets('saves a window item to the member saved-deals list',
+      (tester) async {
+    final api = _WindowApi(
+      initialDeals: const [_deal1],
+      windowSavedDeals: const [_deal1],
+    );
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save to saved deals'), findsNothing);
+    final windowCard = tester.widget<Container>(
+      find.byKey(const ValueKey('window-card-deal-1')),
+    );
+    expect(windowCard.clipBehavior, Clip.antiAlias);
+    expect(
+      (windowCard.decoration! as BoxDecoration).borderRadius,
+      isNotNull,
+    );
+
+    await tester.tap(find.byTooltip('Saved deals'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved from window shopping'), findsOneWidget);
+    final saveButton =
+        find.byKey(const ValueKey('window-save-to-deals-deal-1'));
+    expect(saveButton, findsOneWidget);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(api.savedDealTitles, ['Seen deal']);
+    expect(find.text('Saved to your deals.'), findsOneWidget);
+  });
+
   testWidgets('filters deals seen during an earlier app visit', (tester) async {
     final api = _WindowApi(
       initialDeals: const [_deal1, _deal2],
@@ -447,6 +481,7 @@ class _WindowApi extends Api {
     this.failDealSitesAfterFirst = false,
     this.failDiscoveryAfterFirst = false,
     this.holdForcedDealSites = false,
+    this.windowSavedDeals = const [],
     Set<String> initiallySeen = const {},
   })  : seenStore = _MemorySeenStore(initiallySeen),
         super(baseUrl: 'https://example.test');
@@ -456,9 +491,11 @@ class _WindowApi extends Api {
   final bool failDealSitesAfterFirst;
   final bool failDiscoveryAfterFirst;
   final bool holdForcedDealSites;
+  final List<ScrollDeal> windowSavedDeals;
   final _MemorySeenStore seenStore;
   final List<bool> dealSiteForceLiveCalls = [];
   final List<bool> discoveryForceLiveCalls = [];
+  final List<String> savedDealTitles = [];
   final Completer<List<ScrollDeal>> _forcedDealSitesCompleter =
       Completer<List<ScrollDeal>>();
 
@@ -483,7 +520,8 @@ class _WindowApi extends Api {
   }
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
+  Future<DiscoveryResult> discovery(
+      {bool forceLive = false, bool summary = false}) async {
     discoveryForceLiveCalls.add(forceLive);
     if (failDiscoveryAfterFirst && discoveryForceLiveCalls.length > 1) {
       throw StateError('discovery unavailable');
@@ -498,11 +536,30 @@ class _WindowApi extends Api {
   }
 
   @override
-  Future<List<ScrollDeal>> windowSaves() async => const [];
+  Future<List<ScrollDeal>> windowSaves() async => windowSavedDeals;
 
   @override
   Future<Map<String, SaveStat>> windowSaveCounts(List<String> ids) async =>
       const {};
+
+  @override
+  Future<List<SavedDeal>> saveDeal(Deal deal) async {
+    savedDealTitles.add(deal.title);
+    return [
+      SavedDeal(
+        id: 'saved-${deal.id}',
+        retailerId: deal.retailerId,
+        retailerName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        sourceUrl: deal.sourceUrl,
+        title: deal.title,
+        capturedAt: deal.capturedAt,
+        evidenceText: deal.evidenceText,
+        productUrl: deal.productUrl,
+        savedAt: '2026-07-21T12:00:00.000Z',
+      ),
+    ];
+  }
 }
 
 class _MemorySeenStore extends WindowSeenStore {

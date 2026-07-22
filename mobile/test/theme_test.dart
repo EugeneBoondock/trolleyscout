@@ -22,7 +22,10 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     // The theme toggle lives in the signed-in shell, so boot authenticated.
-    await tester.pumpWidget(TrolleyScoutApp(api: _MemberApi()));
+    await tester.pumpWidget(TrolleyScoutApp(
+      api: _MemberApi(),
+      launchIntroDuration: Duration.zero,
+    ));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(Theme.of(tester.element(find.byType(Scaffold))).brightness,

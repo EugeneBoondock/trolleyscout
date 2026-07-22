@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../theme.dart';
 import 'scout_avatar_view.dart';
+import 'in_app_browser.dart';
 
 enum AppDestination {
   home('Home', Icons.home_outlined, false),
-  money('Money help', Icons.volunteer_activism_outlined, false),
   near('Near me', Icons.near_me_outlined, false),
   deals('Find deals', Icons.local_offer_outlined, false),
   scroll('Window shopping', Icons.window_outlined, false),
@@ -50,13 +49,20 @@ class AppMenuDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final account = session.account;
+    const hiddenConsumerPages = {
+      AppDestination.savedSources,
+      AppDestination.offers,
+      AppDestination.scanner,
+      AppDestination.rules,
+    };
     final destinations = <AppDestination>[
       AppDestination.dashboard,
       ...AppDestination.values.where(
         (item) =>
             item != AppDestination.home &&
             item != AppDestination.dashboard &&
-            item != AppDestination.admin,
+            item != AppDestination.admin &&
+            !hiddenConsumerPages.contains(item),
       ),
     ];
     if (account?.isAdmin == true) {
@@ -84,7 +90,7 @@ class AppMenuDrawer extends StatelessWidget {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.asset('assets/brand-mark.png',
+                        child: Image.asset('assets/scout-logo.png',
                             width: 44, height: 44),
                       ),
                       const SizedBox(width: 10),
@@ -95,7 +101,7 @@ class AppMenuDrawer extends StatelessWidget {
                   const SizedBox(height: 12),
                   if (account == null)
                     Text(
-                      'Stretch every rand.',
+                      'Stretch your budget.',
                       style: TextStyle(color: TS.mutedOf(context)),
                     )
                   else
@@ -130,27 +136,28 @@ class AppMenuDrawer extends StatelessWidget {
                   child: Column(
                     children: [
                       for (final item in destinations)
-                      ListTile(
-                        selected: destination == item,
-                        selectedTileColor: TS.yellow,
-                        selectedColor: TS.ink,
-                        iconColor: TS.mutedOf(context),
-                        textColor: TS.inkOf(context),
-                        // A single clean accent bar marks the current page — no
-                        // top/bottom rules that read as bleeding into the header.
-                        shape: destination == item
-                            ? Border(
-                                left: BorderSide(
-                                    color: TS.redOf(context), width: 5),
-                              )
-                            : null,
-                        leading: Icon(item.icon),
-                        title: Text(item.label),
-                        trailing: item.requiresAuth && !session.isAuthenticated
-                            ? const Icon(Icons.lock_outline, size: 16)
-                            : null,
-                        onTap: () => onSelect(item),
-                      ),
+                        ListTile(
+                          selected: destination == item,
+                          selectedTileColor: TS.yellow,
+                          selectedColor: TS.ink,
+                          iconColor: TS.mutedOf(context),
+                          textColor: TS.inkOf(context),
+                          // A single clean accent bar marks the current page — no
+                          // top/bottom rules that read as bleeding into the header.
+                          shape: destination == item
+                              ? Border(
+                                  left: BorderSide(
+                                      color: TS.redOf(context), width: 5),
+                                )
+                              : null,
+                          leading: Icon(item.icon),
+                          title: Text(item.label),
+                          trailing:
+                              item.requiresAuth && !session.isAuthenticated
+                                  ? const Icon(Icons.lock_outline, size: 16)
+                                  : null,
+                          onTap: () => onSelect(item),
+                        ),
                     ],
                   ),
                 ),
@@ -172,9 +179,10 @@ class _BoondockFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => launchUrl(
-        Uri.parse('https://boondocklabs.co.za'),
-        mode: LaunchMode.externalApplication,
+      onTap: () => showInAppBrowser(
+        context,
+        'https://boondocklabs.co.za',
+        title: 'Boondock Labs',
       ),
       child: Container(
         width: double.infinity,

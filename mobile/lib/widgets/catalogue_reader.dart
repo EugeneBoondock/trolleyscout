@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../api_models.dart';
+import '../catalogue_files.dart';
 import '../theme.dart';
 import 'catalogue_pdf_view.dart';
 import 'catalogue_source_button.dart';
+import 'in_app_browser.dart';
 
 Future<void> showCatalogueReader(
   BuildContext context,
@@ -14,7 +16,14 @@ Future<void> showCatalogueReader(
       useSafeArea: false,
       builder: (_) => Dialog.fullscreen(
         backgroundColor: TS.bgOf(context),
-        child: CatalogueReader(catalogue: catalogue),
+        child: CatalogueReader(
+          catalogue: catalogue,
+          openExternal: (uri) => showInAppBrowser(
+            context,
+            uri.toString(),
+            title: catalogue.retailerName ?? catalogue.name,
+          ),
+        ),
       ),
     );
 
@@ -62,6 +71,16 @@ class _CatalogueReaderState extends State<CatalogueReader> {
     final catalogue = widget.catalogue;
     final sourceUrl = catalogue.sourceUrl ?? catalogue.url;
     final sourceUri = catalogueSourceUri(sourceUrl);
+    final readerPages = catalogue.pages.isNotEmpty
+        ? catalogue.pages
+        : catalogue.coverImageUrl == null
+            ? const <CataloguePage>[]
+            : <CataloguePage>[
+                CataloguePage(
+                  pageNumber: 1,
+                  imageUrl: catalogue.coverImageUrl!,
+                ),
+              ];
     return Scaffold(
       backgroundColor: TS.bgOf(context),
       appBar: AppBar(
@@ -99,11 +118,11 @@ class _CatalogueReaderState extends State<CatalogueReader> {
       ),
       body: SafeArea(
         top: false,
-        child: catalogue.pages.isNotEmpty
-            ? _imageReader(catalogue.pages, sourceUrl)
+        child: readerPages.isNotEmpty
+            ? _imageReader(readerPages, sourceUrl)
             : catalogue.isDirectPdf
                 ? CataloguePdfView(
-                    url: catalogue.url,
+                    url: catalogueFileUrl(catalogue.url) ?? catalogue.url,
                     label: catalogue.name,
                     fallbackImageUrl: catalogue.coverImageUrl,
                     sourceUrl: sourceUrl,
@@ -137,7 +156,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
                 boundaryMargin: const EdgeInsets.all(48),
                 child: SizedBox.expand(
                   child: _CatalogueNetworkImage(
-                    urls: pages[index].imageUrls,
+                    urls: withProxiedFallbacks(pages[index].imageUrls),
                     fit: BoxFit.contain,
                     fallbackIconSize: 52,
                     allFailed: _CataloguePageFallback(
@@ -208,7 +227,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
                       ),
                     ),
                     child: _CatalogueNetworkImage(
-                      urls: pages[index].imageUrls,
+                      urls: withProxiedFallbacks(pages[index].imageUrls),
                       fit: BoxFit.cover,
                       fallbackIconSize: 20,
                     ),
@@ -342,7 +361,7 @@ class _CatalogueCoverFallback extends StatelessWidget {
                 width: 260,
                 height: 340,
                 child: _CatalogueNetworkImage(
-                  urls: cover == null ? const [] : [cover],
+                  urls: cover == null ? const [] : withProxiedFallbacks([cover]),
                   fit: BoxFit.contain,
                   fallbackIconSize: 64,
                 ),

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api_models.dart';
 import '../theme.dart';
 import '../ux.dart';
+import 'in_app_browser.dart';
 
 /// A clearly-labelled sponsored slot. Ads pay to appear here, so honesty
 /// matters: the "SPONSORED" eyebrow is always shown, the card is visually
@@ -13,17 +13,15 @@ class SponsoredAdCard extends StatelessWidget {
 
   final PublicAd ad;
 
-  Future<void> _open() async {
-    final uri = Uri.tryParse(ad.targetUrl);
-    if (uri == null) return;
+  Future<void> _open(BuildContext context) async {
     uxTap();
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await showInAppBrowser(context, ad.targetUrl, title: ad.title);
   }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: _open,
+      onTap: () => _open(context),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: TS.card(context,

@@ -5,7 +5,7 @@ import 'package:trolley_scout/widgets/scout_mark.dart';
 import 'package:trolley_scout/widgets/skeleton.dart';
 
 void main() {
-  testWidgets('scouting motion changes the compass needle angle',
+  testWidgets('scouting motion changes the Scout badge angle',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -16,17 +16,17 @@ void main() {
     );
 
     final before = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
     await tester.pump(const Duration(milliseconds: 500));
     final after = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
 
     expect(after, isNot(equals(before)));
   });
 
-  testWidgets('loading motion continuously rotates the compass needle',
+  testWidgets('loading motion continuously rotates the Scout badge',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -37,17 +37,17 @@ void main() {
     );
 
     final before = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
     await tester.pump(const Duration(milliseconds: 250));
     final after = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
 
     expect(after, isNot(equals(before)));
   });
 
-  testWidgets('reduced motion keeps the compass needle still', (tester) async {
+  testWidgets('reduced motion keeps the Scout badge still', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: MediaQuery(
@@ -60,11 +60,11 @@ void main() {
     );
 
     final before = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
     await tester.pump(const Duration(seconds: 1));
     final after = tester
-        .widget<Transform>(find.byKey(const ValueKey('scout-mark-needle')))
+        .widget<Transform>(find.byKey(const ValueKey('scout-mark-motion')))
         .transform;
 
     expect(after, equals(before));

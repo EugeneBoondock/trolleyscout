@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../theme.dart';
+import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 
 class VouchersScreen extends StatefulWidget {
@@ -163,8 +163,7 @@ class _VouchersScreenState extends State<VouchersScreen> {
                 DropdownMenuItem(
                     value: retailerId, child: Text(_retailerName(retailerId))),
             ],
-            onChanged: (value) =>
-                setState(() => _retailerId = value ?? 'all'),
+            onChanged: (value) => setState(() => _retailerId = value ?? 'all'),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -300,9 +299,10 @@ class _VoucherCard extends StatelessWidget {
                   label: const Text('Save voucher'),
                 ),
               OutlinedButton.icon(
-                onPressed: () => launchUrl(
-                  Uri.parse(voucher.redemptionUrl),
-                  mode: LaunchMode.externalApplication,
+                onPressed: () => showInAppBrowser(
+                  context,
+                  voucher.redemptionUrl,
+                  title: voucher.title,
                 ),
                 icon: const Icon(Icons.open_in_new, size: 17),
                 label: const Text('Redeem at retailer'),
@@ -324,8 +324,8 @@ class _VoucherImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final fallback = ColoredBox(
       color: TS.surfaceOf(context),
-      child: Icon(Icons.confirmation_number_outlined,
-          color: TS.mutedOf(context)),
+      child:
+          Icon(Icons.confirmation_number_outlined, color: TS.mutedOf(context)),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(7),
@@ -344,8 +344,7 @@ class _VoucherImage extends StatelessWidget {
   }
 }
 
-String _clean(String value) =>
-    value.replaceAll(RegExp(r'\s*\u2014\s*'), ': ');
+String _clean(String value) => value.replaceAll(RegExp(r'\s*\u2014\s*'), ': ');
 
 String _retailerName(String value) => value
     .split('-')

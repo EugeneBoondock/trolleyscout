@@ -7,10 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
+import '../price_display.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/scout_mark.dart';
+import '../widgets/scout_mascot.dart';
+import '../widgets/in_app_browser.dart';
 import '../window_saved_store.dart';
 import '../window_seen_store.dart';
 
@@ -81,6 +84,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   Set<String> _saved = {};
   // Global save counts per deal id, so the reel shows "N saves".
   final Map<String, SaveStat> _saveStats = {};
+  final Set<String> _savedToDeals = {};
   bool _loading = true;
   bool _caughtUp = false;
   bool _musicMuted = false;
@@ -534,7 +538,27 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     // Opening a deal is a mild interest signal.
     _tasteStore.reinforce(
         title: deal.title, category: deal.category, weight: 0.5);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await showInAppBrowser(context, uri.toString(), title: deal.retailerName);
+  }
+
+  Future<bool> _saveToSavedDeals(ScrollDeal deal) async {
+    if (_savedToDeals.contains(deal.id)) return true;
+    HapticFeedback.mediumImpact();
+    try {
+      await widget.api.saveDeal(deal.toDeal(capturedAt: _now()));
+      if (!mounted) return true;
+      setState(() => _savedToDeals.add(deal.id));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Saved to your deals.')));
+      return true;
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+      return false;
+    }
   }
 
   Future<void> _share(ScrollDeal deal) async {
@@ -557,11 +581,19 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       context: context,
       backgroundColor: TS.bgOf(context),
       isScrollControlled: true,
-      shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(TS.panelRadius),
+        ),
+        side: BorderSide(color: TS.lineOf(context), width: 2),
+      ),
       builder: (context) => _SavedSheet(
         api: widget.api,
         onOpen: _open,
         onRemove: (deal) => _toggleSave(deal),
+        initialSavedToDeals: Set<String>.of(_savedToDeals),
+        onSaveToDeals: _saveToSavedDeals,
       ),
     );
   }
@@ -573,7 +605,13 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       context: context,
       backgroundColor: TS.bgOf(context),
       isScrollControlled: true,
-      shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(TS.panelRadius),
+        ),
+        side: BorderSide(color: TS.lineOf(context), width: 2),
+      ),
       builder: (context) => _CommentsSheet(api: widget.api, deal: deal),
     );
   }
@@ -805,7 +843,10 @@ class _NoMatches extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.search_off, size: 48, color: Colors.white38),
+            const ScoutMascot(
+              pose: ScoutMascotPose.search,
+              size: 132,
+            ),
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -919,9 +960,9 @@ class _RoundIcon extends StatelessWidget {
               top: -3,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: TS.red,
-                  shape: BoxShape.rectangle,
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(badge!,
                     style: const TextStyle(
@@ -968,8 +1009,14 @@ class _WindowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
+    return Container(
+      key: ValueKey('window-card-${deal.id}'),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(TS.panelRadius),
+      ),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1077,8 +1124,8 @@ class _WindowCard extends StatelessWidget {
                               fontSize: 30,
                               fontWeight: FontWeight.w900)),
                     const SizedBox(width: 10),
-                    if (deal.previousPriceText != null)
-                      Text(deal.previousPriceText!,
+                    if (meaningfulWasPrice(deal.previousPriceText, deal.priceText) != null)
+                      Text(meaningfulWasPrice(deal.previousPriceText, deal.priceText)!,
                           style: const TextStyle(
                               color: Colors.white70,
                               decoration: TextDecoration.lineThrough,
@@ -1112,7 +1159,9 @@ class _WindowCard extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: TS.yellow,
                       foregroundColor: TS.ink,
-                      shape: const RoundedRectangleBorder(),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: onOpen,
@@ -1148,11 +1197,15 @@ class _SavedSheet extends StatefulWidget {
     required this.api,
     required this.onOpen,
     required this.onRemove,
+    required this.initialSavedToDeals,
+    required this.onSaveToDeals,
   });
 
   final Api api;
   final void Function(ScrollDeal) onOpen;
   final void Function(ScrollDeal) onRemove;
+  final Set<String> initialSavedToDeals;
+  final Future<bool> Function(ScrollDeal) onSaveToDeals;
 
   @override
   State<_SavedSheet> createState() => _SavedSheetState();
@@ -1160,6 +1213,9 @@ class _SavedSheet extends StatefulWidget {
 
 class _SavedSheetState extends State<_SavedSheet> {
   List<ScrollDeal> _items = const [];
+  late final Set<String> _savedToDeals =
+      Set<String>.of(widget.initialSavedToDeals);
+  final Set<String> _savingToDeals = <String>{};
   bool _loading = true;
 
   @override
@@ -1183,6 +1239,19 @@ class _SavedSheetState extends State<_SavedSheet> {
     if (mounted) {
       setState(() => _items = _items.where((d) => d.id != deal.id).toList());
     }
+  }
+
+  Future<void> _saveToDeals(ScrollDeal deal) async {
+    if (_savedToDeals.contains(deal.id) || _savingToDeals.contains(deal.id)) {
+      return;
+    }
+    setState(() => _savingToDeals.add(deal.id));
+    final saved = await widget.onSaveToDeals(deal);
+    if (!mounted) return;
+    setState(() {
+      _savingToDeals.remove(deal.id);
+      if (saved) _savedToDeals.add(deal.id);
+    });
   }
 
   @override
@@ -1222,29 +1291,99 @@ class _SavedSheetState extends State<_SavedSheet> {
                   itemCount: _items.length,
                   itemBuilder: (context, index) {
                     final deal = _items[index];
-                    return ListTile(
-                      leading: deal.hasImage
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.network(
-                                  upgradeImageUrl(deal.imageUrl),
-                                  width: 46,
-                                  height: 46,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      const Icon(Icons.local_offer_outlined)),
-                            )
-                          : const Icon(Icons.local_offer_outlined),
-                      title: Text(deal.title,
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(
-                          '${deal.priceText ?? ''} · ${deal.retailerName}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close),
-                        tooltip: 'Remove',
-                        onPressed: () => _remove(deal),
+                    final saved = _savedToDeals.contains(deal.id);
+                    final saving = _savingToDeals.contains(deal.id);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
                       ),
-                      onTap: () => widget.onOpen(deal),
+                      child: Container(
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          color: TS.surfaceOf(context),
+                          borderRadius: BorderRadius.circular(TS.cardRadius),
+                          border: Border.all(color: TS.lineSoftOf(context)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: deal.hasImage
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Image.network(
+                                        upgradeImageUrl(deal.imageUrl),
+                                        width: 46,
+                                        height: 46,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(
+                                          Icons.local_offer_outlined,
+                                        ),
+                                      ),
+                                    )
+                                  : const Icon(Icons.local_offer_outlined),
+                              title: Text(
+                                deal.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '${deal.priceText ?? ''} · ${deal.retailerName}',
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: 'Remove',
+                                onPressed: () => _remove(deal),
+                              ),
+                              onTap: () => widget.onOpen(deal),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  key: ValueKey(
+                                    'window-save-to-deals-${deal.id}',
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: TS.yellow,
+                                    foregroundColor: TS.ink,
+                                    disabledBackgroundColor:
+                                        TS.yellow.withValues(alpha: 0.55),
+                                    disabledForegroundColor: TS.ink,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        TS.controlRadius,
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                  onPressed: saved || saving
+                                      ? null
+                                      : () => _saveToDeals(deal),
+                                  icon: Icon(
+                                    saved
+                                        ? Icons.bookmark_added
+                                        : Icons.bookmark_add_outlined,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    saving
+                                        ? 'Saving…'
+                                        : saved
+                                            ? 'Saved to saved deals'
+                                            : 'Save to saved deals',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -1502,7 +1641,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       style: FilledButton.styleFrom(
                         backgroundColor: TS.yellow,
                         foregroundColor: TS.ink,
-                        shape: const RoundedRectangleBorder(),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(TS.controlRadius),
+                        ),
                         padding: const EdgeInsets.symmetric(
                             vertical: 14, horizontal: 16),
                       ),
@@ -1682,7 +1823,10 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      color: color,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Text(text,
           style: TextStyle(
               color: textColor,

@@ -11,13 +11,16 @@ import '../deal_filters.dart';
 import '../discovery_cache.dart';
 import '../notification_prefs_store.dart';
 import '../notifications.dart';
+import '../price_display.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/login_gate_card.dart';
+import '../widgets/scout_mascot.dart';
 import '../widgets/skeleton.dart';
 import '../widgets/sponsored_ad_card.dart';
+import '../widgets/in_app_browser.dart';
 
 class DealsScreen extends StatefulWidget {
   const DealsScreen({
@@ -51,11 +54,13 @@ class _DealsScreenState extends State<DealsScreen> {
   Future<DiscoveryResult>? _future;
   int _page = 0;
   final Set<String> _savedDealIds = {};
+  final Set<String> _addingDealIds = {};
   String _query = '';
   String _retailerId = 'all';
   String _sourceLabel = 'all';
   bool _imagesOnly = false;
   bool _savingsOnly = false;
+  bool _advancedOpen = false;
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
@@ -413,7 +418,7 @@ class _DealsScreenState extends State<DealsScreen> {
     final catalogueGroups = _groupCatalogues(result.catalogues);
 
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -457,7 +462,6 @@ class _DealsScreenState extends State<DealsScreen> {
             tabs: [
               Tab(text: 'Deals (${deals.length})'),
               Tab(text: 'Catalogues (${catalogueGroups.length})'),
-              const Tab(text: 'Overview'),
             ],
           ),
           Expanded(
@@ -466,7 +470,6 @@ class _DealsScreenState extends State<DealsScreen> {
                 _dealsTab(deals, retailers, sources, slice, page, pageCount,
                     sampled: sampled),
                 _cataloguesTab(catalogueGroups),
-                _overviewTab(result, catalogueGroups.length),
               ],
             ),
           ),
@@ -506,76 +509,13 @@ class _DealsScreenState extends State<DealsScreen> {
             onChanged: _onSearchChanged,
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('retailer-$_retailerId'),
-                  initialValue:
-                      retailers.containsKey(_retailerId) ? _retailerId : 'all',
-                  decoration: const InputDecoration(labelText: 'Retailer'),
-                  items: [
-                    const DropdownMenuItem(
-                        value: 'all', child: Text('All retailers')),
-                    for (final entry in retailers.entries)
-                      DropdownMenuItem(
-                          value: entry.key, child: Text(entry.value)),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _retailerId = value ?? 'all';
-                    _page = 0;
-                  }),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('source-$_sourceLabel'),
-                  initialValue:
-                      sources.contains(_sourceLabel) ? _sourceLabel : 'all',
-                  decoration: const InputDecoration(labelText: 'Source'),
-                  items: [
-                    const DropdownMenuItem(
-                        value: 'all', child: Text('All sources')),
-                    for (final source in sources)
-                      DropdownMenuItem(value: source, child: Text(source)),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _sourceLabel = value ?? 'all';
-                    _page = 0;
-                  }),
-                ),
-              ),
-            ],
-          ),
+          _advancedFilters(retailers, sources),
           const SizedBox(height: 8),
           _categoryChips(),
           if (_category == DealCategory.food) ...[
             const SizedBox(height: 6),
             _foodSubcategoryChips(),
           ],
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            children: [
-              FilterChip(
-                label: const Text('Has image'),
-                selected: _imagesOnly,
-                onSelected: (selected) => setState(() {
-                  _imagesOnly = selected;
-                  _page = 0;
-                }),
-              ),
-              FilterChip(
-                label: const Text('Shows savings'),
-                selected: _savingsOnly,
-                onSelected: (selected) => setState(() {
-                  _savingsOnly = selected;
-                  _page = 0;
-                }),
-              ),
-            ],
-          ),
           const SizedBox(height: 10),
           _notifyToggle(),
           const SizedBox(height: 10),
@@ -594,43 +534,49 @@ class _DealsScreenState extends State<DealsScreen> {
             Container(
               decoration: TS.card(context),
               padding: const EdgeInsets.all(16),
-              child: _query.trim().length < 3
-                  ? const Text('No deals match those filters.')
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('No deal for "${_query.trim()}" yet.',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 6),
-                        Text(
-                          widget.isAuthenticated
-                              ? 'Watch it and Trolley Scout will alert you the moment '
-                                  'any scout or another shopper\'s search finds one.'
-                              : 'Log in and Trolley Scout can watch this item for you, '
-                                  'then alert you the moment a deal appears.',
-                          style: TextStyle(
-                              color: TS.mutedOf(context), fontSize: 13),
-                        ),
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                              backgroundColor: TS.yellow,
-                              foregroundColor: TS.ink),
-                          onPressed: widget.isAuthenticated
-                              ? (_creatingWatch ? null : _watchCurrentQuery)
-                              : widget.onWantsAuth,
-                          icon: Icon(widget.isAuthenticated
-                              ? Icons.notifications_active_outlined
-                              : Icons.person_outline),
-                          label: Text(widget.isAuthenticated
-                              ? (_creatingWatch
-                                  ? 'Saving watch'
-                                  : 'Watch this item')
-                              : 'Log in to watch it'),
-                        ),
-                      ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Center(
+                    child: ScoutMascot(
+                      pose: ScoutMascotPose.search,
+                      size: 104,
                     ),
+                  ),
+                  if (_query.trim().length < 3)
+                    const Text('No deals match those filters.')
+                  else ...[
+                    Text('No deal for “${_query.trim()}” yet.',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.isAuthenticated
+                          ? 'Watch it and Trolley Scout will alert you the moment '
+                              'any scout or another shopper’s search finds one.'
+                          : 'Log in and Trolley Scout can watch this item for you, '
+                              'then alert you the moment a deal appears.',
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: TS.yellow, foregroundColor: TS.ink),
+                      onPressed: widget.isAuthenticated
+                          ? (_creatingWatch ? null : _watchCurrentQuery)
+                          : widget.onWantsAuth,
+                      icon: Icon(widget.isAuthenticated
+                          ? Icons.notifications_active_outlined
+                          : Icons.person_outline),
+                      label: Text(widget.isAuthenticated
+                          ? (_creatingWatch
+                              ? 'Saving watch'
+                              : 'Watch this item')
+                          : 'Log in to watch it'),
+                    ),
+                  ],
+                ],
+              ),
             ),
           for (final deal in slice)
             _DealRow(
@@ -640,6 +586,9 @@ class _DealsScreenState extends State<DealsScreen> {
                   !_previousDealIds.contains(deal.id),
               isSaved: _savedDealIds.contains(deal.id),
               onSave: widget.isAuthenticated ? () => _save(deal) : null,
+              isAddingToBasket: _addingDealIds.contains(deal.id),
+              onAddToBasket:
+                  widget.isAuthenticated ? () => _addToBasket(deal) : null,
             ),
           if (sampled && widget.onWantsAuth != null)
             LoginGateCard(
@@ -683,6 +632,7 @@ class _DealsScreenState extends State<DealsScreen> {
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
         border: Border.all(color: TS.lineSoftOf(context), width: 2),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
       ),
       padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
       child: Row(
@@ -712,6 +662,113 @@ class _DealsScreenState extends State<DealsScreen> {
     );
   }
 
+  Widget _advancedFilters(Map<String, String> retailers, List<String> sources) {
+    final activeCount = [
+      _retailerId != 'all',
+      _sourceLabel != 'all',
+      _imagesOnly,
+      _savingsOnly,
+    ].where((active) => active).length;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        border: Border.all(color: TS.lineSoftOf(context), width: 2),
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            title: const Text('Advanced filters',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            subtitle: activeCount == 0
+                ? const Text('Retailer, source, images and savings')
+                : Text('$activeCount active'),
+            trailing:
+                Icon(_advancedOpen ? Icons.expand_less : Icons.expand_more),
+            onTap: () => setState(() => _advancedOpen = !_advancedOpen),
+          ),
+          if (_advancedOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          key: ValueKey('retailer-$_retailerId'),
+                          initialValue: retailers.containsKey(_retailerId)
+                              ? _retailerId
+                              : 'all',
+                          decoration:
+                              const InputDecoration(labelText: 'Retailer'),
+                          items: [
+                            const DropdownMenuItem(
+                                value: 'all', child: Text('All retailers')),
+                            for (final entry in retailers.entries)
+                              DropdownMenuItem(
+                                  value: entry.key, child: Text(entry.value)),
+                          ],
+                          onChanged: (value) => setState(() {
+                            _retailerId = value ?? 'all';
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          key: ValueKey('source-$_sourceLabel'),
+                          initialValue: sources.contains(_sourceLabel)
+                              ? _sourceLabel
+                              : 'all',
+                          decoration:
+                              const InputDecoration(labelText: 'Source'),
+                          items: [
+                            const DropdownMenuItem(
+                                value: 'all', child: Text('All sources')),
+                            for (final source in sources)
+                              DropdownMenuItem(
+                                  value: source, child: Text(source)),
+                          ],
+                          onChanged: (value) => setState(() {
+                            _sourceLabel = value ?? 'all';
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      FilterChip(
+                        label: const Text('Has image'),
+                        selected: _imagesOnly,
+                        onSelected: (selected) => setState(() {
+                          _imagesOnly = selected;
+                          _page = 0;
+                        }),
+                      ),
+                      FilterChip(
+                        label: const Text('Shows savings'),
+                        selected: _savingsOnly,
+                        onSelected: (selected) => setState(() {
+                          _savingsOnly = selected;
+                          _page = 0;
+                        }),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _sortControl() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -728,7 +785,7 @@ class _DealsScreenState extends State<DealsScreen> {
             child: DropdownButton<DealSort>(
               value: _sort,
               isDense: true,
-              borderRadius: BorderRadius.zero,
+              borderRadius: BorderRadius.circular(TS.controlRadius),
               style: TextStyle(
                 color: TS.inkOf(context),
                 fontWeight: FontWeight.w700,
@@ -865,41 +922,6 @@ class _DealsScreenState extends State<DealsScreen> {
     );
   }
 
-  Widget _overviewTab(DiscoveryResult result, int catalogueRetailers) {
-    final stats = <List<String>>[
-      ['Live deals found', '${result.foundDealCount}'],
-      ['Sources checked', '${result.checkedSourceCount}'],
-      ['Store leaflets', '${result.leafletCount}'],
-      ['Catalogue retailers', '$catalogueRetailers'],
-    ];
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        for (final stat in stats)
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: TS.card(context),
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(stat[0].toUpperCase(), style: TS.eyebrowOf(context)),
-                Text(stat[1],
-                    style: const TextStyle(
-                        fontSize: 24, fontWeight: FontWeight.w900)),
-              ],
-            ),
-          ),
-        Text(
-          'Deals come from official retailer feeds and store catalogues. '
-          'Big chains publish weekly catalogues, not per-item prices, so open '
-          'a catalogue to see every special.',
-          style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
-        ),
-      ],
-    );
-  }
-
   // One entry per retailer; multiple branch catalogues collapse into it.
   List<_CatalogueGroup> _groupCatalogues(List<Catalogue> catalogues) {
     final byRetailer = <String, _CatalogueGroup>{};
@@ -966,6 +988,26 @@ class _DealsScreenState extends State<DealsScreen> {
     }
   }
 
+  Future<void> _addToBasket(Deal deal) async {
+    uxSuccess();
+    setState(() => _addingDealIds.add(deal.id));
+    try {
+      await widget.api.saveDealToBasket(deal);
+      if (!mounted) return;
+      setState(() => _savedDealIds.add(deal.id));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Added to your basket.')));
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _addingDealIds.remove(deal.id));
+    }
+  }
+
   Widget _retry({String message = 'Could not load deals.'}) {
     return Center(
       child: Column(
@@ -991,11 +1033,15 @@ class _DealRow extends StatelessWidget {
     required this.isSaved,
     this.isNew = false,
     this.onSave,
+    this.onAddToBasket,
+    this.isAddingToBasket = false,
   });
   final Deal deal;
   final bool isSaved;
   final bool isNew;
   final VoidCallback? onSave;
+  final VoidCallback? onAddToBasket;
+  final bool isAddingToBasket;
 
   // WhatsApp is how deals travel between South African households.
   Future<void> _share() async {
@@ -1016,73 +1062,110 @@ class _DealRow extends StatelessWidget {
     return InkWell(
       onTap: deal.productUrl == null
           ? null
-          : () => launchUrl(Uri.parse(deal.productUrl!),
-              mode: LaunchMode.externalApplication),
+          : () => showInAppBrowser(
+                context,
+                deal.productUrl,
+                title: deal.retailerName,
+              ),
       child: Container(
+        key: Key('deal-card-${deal.id}'),
         margin: const EdgeInsets.only(bottom: 10),
         decoration: TS.card(context, width: 2),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _DealImage(imageUrl: deal.imageUrl),
                 if (deal.imageUrl != null) const SizedBox(width: 10),
-                Text(deal.retailerName.toUpperCase(),
-                    style: TS.eyebrowOf(context)),
-                if (isNew) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    color: TS.yellow,
-                    child: const Text('NEW',
-                        style: TextStyle(
-                            color: TS.ink,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            deal.retailerName.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TS.eyebrowOf(context),
+                          ),
+                        ),
+                        if (isNew) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: TS.yellow,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text('NEW',
+                                style: TextStyle(
+                                    color: TS.ink,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900)),
+                          ),
+                        ],
+                        if (deal.pageNumber != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                  color: TS.lineSoftOf(context), width: 1.5),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('Page ${deal.pageNumber}',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    color: TS.mutedOf(context),
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ],
-                if (deal.pageNumber != null) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                        border: Border.all(
-                            color: TS.lineSoftOf(context), width: 1.5)),
-                    child: Text('Page ${deal.pageNumber}',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: TS.mutedOf(context),
-                            fontWeight: FontWeight.w800)),
-                  ),
-                ],
+                ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(deal.title,
-                style:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+            const SizedBox(height: 6),
+            Text(
+              deal.title,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 14.5, fontWeight: FontWeight.w700, height: 1.25),
+            ),
+            const SizedBox(height: 5),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 2,
               children: [
                 if (deal.priceText != null)
-                  Text(deal.priceText!,
-                      style: TextStyle(
-                          color: TS.redOf(context),
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900)),
-                const SizedBox(width: 8),
-                if (deal.previousPriceText != null)
-                  Text(deal.previousPriceText!,
-                      style: TextStyle(
-                          color: TS.faintOf(context),
-                          decoration: TextDecoration.lineThrough,
-                          fontSize: 13)),
+                  Text(
+                    deal.priceText!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: TS.redOf(context),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900),
+                  ),
+                if (meaningfulWasPrice(deal.previousPriceText, deal.priceText) != null)
+                  Text(
+                    meaningfulWasPrice(deal.previousPriceText, deal.priceText)!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: TS.faintOf(context),
+                        decoration: TextDecoration.lineThrough,
+                        fontSize: 12),
+                  ),
               ],
             ),
             if (deal.savingText != null)
@@ -1093,24 +1176,51 @@ class _DealRow extends StatelessWidget {
               ),
             const SizedBox(height: 8),
             Row(
+              key: Key('deal-actions-${deal.id}'),
               children: [
                 if (deal.productUrl != null)
-                  const Text('Open official page',
-                      style: TextStyle(decoration: TextDecoration.underline)),
-                const Spacer(),
-                IconButton(
+                  _DealActionIcon(
+                    tooltip: 'Open source',
+                    onPressed: () => showInAppBrowser(
+                      context,
+                      deal.productUrl,
+                      title: deal.retailerName,
+                    ),
+                    icon: Icons.language,
+                  ),
+                const SizedBox(width: 4),
+                _DealActionIcon(
                   tooltip: 'Share on WhatsApp',
                   onPressed: _share,
-                  icon: const Icon(Icons.share_outlined, size: 19),
+                  icon: Icons.share_outlined,
                 ),
-                if (onSave != null)
-                  OutlinedButton.icon(
+                if (onSave != null) ...[
+                  const SizedBox(width: 4),
+                  _DealActionIcon(
+                    tooltip: isSaved ? 'Deal saved' : 'Save deal',
                     onPressed: isSaved ? null : onSave,
-                    icon: Icon(
-                        isSaved ? Icons.bookmark : Icons.bookmark_outline,
-                        size: 18),
-                    label: Text(isSaved ? 'Saved' : 'Save'),
+                    icon: isSaved ? Icons.bookmark : Icons.bookmark_outline,
                   ),
+                ],
+                if (onAddToBasket != null) ...[
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: isAddingToBasket ? null : onAddToBasket,
+                      icon: const Icon(Icons.add_shopping_cart, size: 18),
+                      label: Text(
+                        isAddingToBasket ? 'Adding' : 'Add to basket',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -1118,6 +1228,36 @@ class _DealRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DealActionIcon extends StatelessWidget {
+  const _DealActionIcon({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          foregroundColor: TS.inkOf(context),
+          disabledForegroundColor: TS.mutedOf(context),
+          backgroundColor: TS.surfaceSoftOf(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TS.controlRadius),
+            side: BorderSide(color: TS.lineSoftOf(context), width: 1.5),
+          ),
+        ),
+        icon: Icon(icon, size: 19),
+      );
 }
 
 class _DealImage extends StatelessWidget {
@@ -1128,15 +1268,15 @@ class _DealImage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (imageUrl == null) return const SizedBox.shrink();
     return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(10),
       child: Image.network(
         imageUrl!,
-        width: 62,
-        height: 62,
+        width: 56,
+        height: 56,
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Container(
-          width: 62,
-          height: 62,
+          width: 56,
+          height: 56,
           color: TS.surfaceOf(context),
           child: const Icon(Icons.image_not_supported_outlined),
         ),

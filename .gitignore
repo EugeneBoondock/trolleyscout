@@ -12,6 +12,7 @@ dist
 dist-ssr
 .wrangler
 *.local
+.dev.vars*
 
 # Editor directories and files
 .vscode/*
@@ -32,3 +33,4 @@ mobile/build/
 mobile/.dart_tool/
 mobile/.flutter-plugins*
 .gstack/
+.codex-tmp/

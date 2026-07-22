@@ -7,6 +7,26 @@ import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/session_cookie_store.dart';
 
 void main() {
+  test('saving a discovery deal to basket performs both operations', () async {
+    final api = _SaveBasketApi();
+    const deal = Deal(
+      id: 'deal-1',
+      retailerId: 'onedayonly',
+      retailerName: 'OneDayOnly',
+      sourceLabel: 'OneDayOnly',
+      sourceUrl: 'https://example.test/deal-1',
+      productUrl: 'https://example.test/deal-1',
+      title: 'Daily deal',
+      capturedAt: '2026-07-21T12:00:00.000Z',
+      evidenceText: 'Found by Trolley Scout.',
+    );
+
+    await api.saveDealToBasket(deal);
+
+    expect(api.savedTitles, ['Daily deal']);
+    expect(api.basketSavedDealIds, ['member-saved-1']);
+  });
+
   group('authenticated API', () {
     test('captures the member cookie and sends it on the next native request',
         () async {
@@ -167,6 +187,72 @@ void main() {
       expect(requestUri.queryParameters['refresh'], '1');
     });
 
+    test('posts selected stores to the live product-price endpoint', () async {
+      late http.Request captured;
+      final api = Api(
+        client: MockClient((request) async {
+          captured = request;
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'checkedAt': '2026-07-22T00:00:00.000Z',
+                'country': {
+                  'code': 'ZA',
+                  'currencyCode': 'ZAR',
+                  'flag': 'ZA',
+                  'name': 'South Africa',
+                },
+                'foundCount': 2,
+                'matches': [
+                  {
+                    'priceCents': 3299,
+                    'productUrl': 'https://www.pnp.co.za/milk-2l',
+                    'retailerId': 'pick-n-pay',
+                    'retailerName': 'Pick n Pay',
+                    'sourceKind': 'official-site',
+                    'status': 'priced',
+                    'title': 'PnP Full Cream Fresh Milk 2L',
+                  },
+                  {
+                    'priceCents': 3499,
+                    'productUrl': 'https://www.checkers.co.za/milk-2l',
+                    'retailerId': 'checkers',
+                    'retailerName': 'Checkers',
+                    'sourceKind': 'official-site',
+                    'status': 'priced',
+                    'title': 'Clover Fresh Full Cream Milk 2L',
+                  },
+                ],
+                'pricedCount': 2,
+                'query': 'milk 2L',
+                'savingsCents': 200,
+                'unavailableCount': 0,
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final result = await api.searchProductPrices(
+        query: 'milk 2L',
+        retailerIds: const ['pick-n-pay', 'checkers'],
+      );
+
+      expect(captured.method, 'POST');
+      expect(captured.url.path, '/api/price-compare');
+      expect(jsonDecode(captured.body), {
+        'query': 'milk 2L',
+        'retailerIds': ['pick-n-pay', 'checkers'],
+      });
+      expect(result.pricedCount, 2);
+      expect(result.matches.first.priceCents, 3299);
+      expect(result.country.currencyCode, 'ZAR');
+    });
+
     test('requests the redirect checkout that works in native WebViews',
         () async {
       late Map<String, dynamic> requestBody;
@@ -295,6 +381,38 @@ void main() {
           requests.map((request) => request.method), ['GET', 'POST', 'DELETE']);
     });
   });
+}
+
+class _SaveBasketApi extends Api {
+  _SaveBasketApi() : super(baseUrl: 'https://example.test');
+
+  final savedTitles = <String>[];
+  final basketSavedDealIds = <String>[];
+
+  @override
+  Future<List<SavedDeal>> saveDeal(Deal deal) async {
+    savedTitles.add(deal.title);
+    return [
+      SavedDeal(
+        id: 'member-saved-1',
+        retailerId: deal.retailerId,
+        retailerName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        sourceUrl: deal.sourceUrl,
+        productUrl: deal.productUrl,
+        title: deal.title,
+        capturedAt: deal.capturedAt,
+        evidenceText: deal.evidenceText,
+        savedAt: '2026-07-21T12:00:00.000Z',
+      ),
+    ];
+  }
+
+  @override
+  Future<Basket> addBasketItem(String savedDealId, {int quantity = 1}) async {
+    basketSavedDealIds.add(savedDealId);
+    return const Basket.empty();
+  }
 }
 
 const _accountJson = {

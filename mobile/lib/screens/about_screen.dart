@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
+import '../widgets/scout_mascot.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key, required this.onNavigate});
@@ -18,41 +19,40 @@ class AboutScreen extends StatelessWidget {
           eyebrow: 'About & help',
           title: 'How Trolley Scout helps',
           description:
-              'One place for money you can claim, tools to pay less, and real specials from official shop pages.',
+              'One place for current deals, store catalogues, product comparison, nearby stores, and property searches.',
         ),
+        const Center(
+          child: ScoutMascot(
+            label: 'Scout, your Trolley Scout guide',
+            pose: ScoutMascotPose.wave,
+            size: 180,
+          ),
+        ),
+        const SizedBox(height: 8),
         _Step(
           number: '1',
-          icon: Icons.volunteer_activism_outlined,
-          title: 'Claim what is yours',
-          text:
-              'See SASSA grants, school-fee exemptions, free basic electricity, and UIF with official application links.',
-          action: 'Open money help',
-          onTap: () => onNavigate(AppDestination.money),
-        ),
-        _Step(
-          number: '2',
           icon: Icons.local_offer_outlined,
           title: 'Find real specials',
           text:
-              'See live prices and current store catalogues. Every row links to the shop’s own page.',
+              'Search live prices and current store catalogues, then save a deal or add it straight to your basket.',
           action: 'Find deals',
           onTap: () => onNavigate(AppDestination.deals),
         ),
         _Step(
-          number: '3',
-          icon: Icons.calculate_outlined,
-          title: 'Pay less at the shelf',
+          number: '2',
+          icon: Icons.compare_arrows_outlined,
+          title: 'Compare across stores',
           text:
-              'Compare pack sizes by price per kilogram, litre, or unit before choosing.',
+              'Search the same product across the stores you choose, or compare a whole shopping list.',
           action: 'Open tools',
           onTap: () => onNavigate(AppDestination.tools),
         ),
         _Step(
-          number: '4',
+          number: '3',
           icon: Icons.storefront_outlined,
-          title: 'Go to the source',
+          title: 'Browse stores and catalogues',
           text:
-              'Use official specials, catalogue, store-finder, and free loyalty pages.',
+              'Open a store card for its local deals and catalogues. Source links stay inside Trolley Scout’s browser.',
           action: 'Browse stores',
           onTap: () => onNavigate(AppDestination.stores),
         ),
@@ -72,7 +72,7 @@ class AboutScreen extends StatelessWidget {
                           style: TextStyle(fontWeight: FontWeight.w900)),
                       TextSpan(
                         text:
-                            'Every price, catalogue, and grant amount comes from an official page and shows when it was checked.',
+                            'Every price and catalogue comes from a source page and shows when it was checked.',
                         style: TextStyle(
                             color:
                                 Theme.of(context).colorScheme.onSurfaceVariant),
@@ -147,18 +147,14 @@ class _Step extends StatelessWidget {
 const _faqs = [
   (
     'Why don’t I see every product from every shop?',
-    'Some shops publish only a printed catalogue online. Trolley Scout shows live prices where an official feed exists and current catalogues everywhere else.'
+    'Some shops publish catalogues instead of a searchable product feed. Trolley Scout shows searchable prices where a source returns them and catalogue pages for the rest.'
   ),
   (
     'Why did a price not match the shop?',
-    'Prices change often and specials expire. Open the source link to check the shop’s current page.'
+    'Prices change often and specials expire. Open the source link in Trolley Scout’s browser to check the shop’s current page.'
   ),
   (
     'Is it really free?',
-    'Yes. Money help, price tools, live deals, and store catalogues are free. Paid plans add larger saved lists.'
-  ),
-  (
-    'How is money help kept accurate?',
-    'Every amount links to an official source and includes the date it was checked. Always confirm before acting.'
+    'Yes. Deal search, store comparison, nearby stores, and catalogues are free. Paid plans add larger saved-deal and basket limits.'
   ),
 ];

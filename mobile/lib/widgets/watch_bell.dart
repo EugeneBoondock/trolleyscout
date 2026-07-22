@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../app_controller.dart';
 import '../theme.dart';
+import 'in_app_browser.dart';
 
 /// The alerts bell: a badge counts matched watches the member has not seen.
 /// Tapping opens the watch list, where alerts can be read and dismissed.
@@ -36,8 +36,7 @@ class WatchBell extends StatelessWidget {
   }
 }
 
-Future<void> showWatchesSheet(
-    BuildContext context, AppController controller) {
+Future<void> showWatchesSheet(BuildContext context, AppController controller) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -80,8 +79,8 @@ class _WatchesSheetState extends State<_WatchesSheet> {
             : candidate,
     ]);
     try {
-      widget.controller
-          .replaceWatches(await widget.controller.api.markDealWatchSeen(watch.id));
+      widget.controller.replaceWatches(
+          await widget.controller.api.markDealWatchSeen(watch.id));
     } catch (_) {
       // Optimistic state stands; the next refresh reconciles.
     }
@@ -94,8 +93,8 @@ class _WatchesSheetState extends State<_WatchesSheet> {
         if (candidate.id != watch.id) candidate,
     ]);
     try {
-      widget.controller
-          .replaceWatches(await widget.controller.api.deleteDealWatch(watch.id));
+      widget.controller.replaceWatches(
+          await widget.controller.api.deleteDealWatch(watch.id));
     } catch (_) {
       // Optimistic state stands; the next refresh reconciles.
     }
@@ -218,8 +217,11 @@ class _WatchCard extends StatelessWidget {
             InkWell(
               onTap: match.productUrl == null
                   ? null
-                  : () => launchUrl(Uri.parse(match.productUrl!),
-                      mode: LaunchMode.externalApplication),
+                  : () => showInAppBrowser(
+                        context,
+                        match.productUrl,
+                        title: match.retailerName ?? 'Deal source',
+                      ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(

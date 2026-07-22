@@ -35,12 +35,15 @@ class ScoutAvatarView extends StatelessWidget {
         final background = palette?.background ?? TS.yellow;
         final foreground = palette?.foreground ?? TS.ink;
         return Container(
+          key: const ValueKey('scout-avatar-card'),
           width: size,
           height: size,
           alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: background,
             border: Border.all(color: TS.lineOf(context), width: borderWidth),
+            borderRadius: BorderRadius.circular(TS.controlRadius),
             boxShadow: showShadow
                 ? [
                     BoxShadow(
@@ -89,7 +92,11 @@ Future<void> showScoutAvatarPicker(BuildContext context) {
     context: context,
     isScrollControlled: true,
     backgroundColor: TS.bgOf(context),
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(TS.panelRadius),
+      ),
+    ),
     builder: (context) => const _AvatarPickerSheet(),
   );
 }
@@ -102,8 +109,8 @@ class _AvatarPickerSheet extends StatefulWidget {
 }
 
 class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
-  late ScoutAvatar _draft = ScoutAvatarStore.instance.current ??
-      ScoutAvatarCatalog.suggestionFor('');
+  late ScoutAvatar _draft =
+      ScoutAvatarStore.instance.current ?? ScoutAvatarCatalog.suggestionFor('');
 
   void _setIcon(String key) {
     if (_draft.iconKey == key) return;
@@ -165,8 +172,8 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                       const SizedBox(height: 2),
                       Text(
                         palette.label,
-                        style: TextStyle(
-                            color: TS.mutedOf(context), fontSize: 13),
+                        style:
+                            TextStyle(color: TS.mutedOf(context), fontSize: 13),
                       ),
                     ],
                   ),
@@ -233,9 +240,8 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                     decoration: BoxDecoration(
                       color: option.background,
                       border: Border.all(
-                        color: selected
-                            ? TS.redOf(context)
-                            : TS.lineOf(context),
+                        color:
+                            selected ? TS.redOf(context) : TS.lineOf(context),
                         width: selected ? 4 : 2,
                       ),
                     ),
@@ -280,9 +286,8 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                   curve: Curves.easeOut,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: selected
-                        ? palette.background
-                        : TS.surfaceOf(context),
+                    color:
+                        selected ? palette.background : TS.surfaceOf(context),
                     border: Border.all(
                       color:
                           selected ? TS.redOf(context) : TS.lineSoftOf(context),
@@ -292,9 +297,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                   child: PhosphorIcon(
                     ScoutAvatarCatalog.iconFor(key),
                     size: 28,
-                    color: selected
-                        ? palette.foreground
-                        : TS.inkOf(context),
+                    color: selected ? palette.foreground : TS.inkOf(context),
                   ),
                 ),
               ),
@@ -312,8 +315,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
         ),
         decoration: BoxDecoration(
           color: TS.bgOf(context),
-          border:
-              Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
+          border: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
         ),
         child: Row(
           children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/app_controller.dart';
 import 'package:trolley_scout/screens/about_screen.dart';
@@ -17,6 +18,10 @@ import 'package:trolley_scout/screens/subscription_screen.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
+  // The dashboard reads the on-device discovery cache for its top-savings
+  // strip; without mocked preferences that read never completes in tests.
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('dashboard renders live member counts and basket total',
       (tester) async {
     final api = _FeatureApi();

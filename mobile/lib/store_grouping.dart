@@ -27,6 +27,14 @@ class StoreGroup {
 
   int get catalogueCount =>
       branches.fold(0, (total, branch) => total + branch.catalogues.length);
+
+  num? get nearestDistanceM {
+    final distances =
+        branches.map((branch) => branch.distanceM).whereType<num>().toList();
+    if (distances.isEmpty) return null;
+    distances.sort();
+    return distances.first;
+  }
 }
 
 List<StoreGroup> groupNearbyStores(Iterable<NearbyStore> stores) {

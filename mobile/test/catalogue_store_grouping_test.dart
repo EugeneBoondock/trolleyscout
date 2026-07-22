@@ -91,6 +91,21 @@ void main() {
       expect(groups.single.branches, hasLength(2));
       expect(groups.single.branches[0].deals.single.priceText, 'R20.00');
       expect(groups.single.branches[1].deals.single.priceText, 'R23.00');
+      expect(groups.single.nearestDistanceM, isNull);
+    });
+
+    test('reports the nearest known branch distance for the store card', () {
+      const group = StoreGroup(
+        id: 'retailer:test',
+        displayName: 'Test',
+        branches: [
+          NearbyStore(placeId: 'far', name: 'Far', distanceM: 4200),
+          NearbyStore(placeId: 'unknown', name: 'Unknown'),
+          NearbyStore(placeId: 'near', name: 'Near', distanceM: 850),
+        ],
+      );
+
+      expect(group.nearestDistanceM, 850);
     });
 
     test('groups unknown stores by a verified host', () {

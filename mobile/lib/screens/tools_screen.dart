@@ -1,283 +1,36 @@
 import 'package:flutter/material.dart';
+
 import '../api.dart';
 import '../theme.dart';
-import '../unit_price.dart';
 import '../widgets/auto_compare_tool.dart';
+import '../widgets/common.dart';
 import '../widgets/shop_compare_tool.dart';
 
-/// “Pay less at the shelf” is a unit-price checker. Shoppers punch in the price
-/// and size of two or more packs and instantly see which is genuinely cheaper
-/// per kg / L / unit, cutting through misleading pack sizes.
-class ToolsScreen extends StatefulWidget {
+class ToolsScreen extends StatelessWidget {
   const ToolsScreen({super.key, this.api});
 
-  /// When provided, the automatic store-price comparison is offered too.
   final Api? api;
 
   @override
-  State<ToolsScreen> createState() => _ToolsScreenState();
-}
-
-class _ToolsScreenState extends State<ToolsScreen> {
-  int _nextId = 0;
-  late final List<_PackEntry> _entries;
-
-  @override
-  void initState() {
-    super.initState();
-    _entries = [_newEntry(), _newEntry()];
-  }
-
-  _PackEntry _newEntry() =>
-      _PackEntry(id: 'pack-${_nextId++}', unit: PackUnit.g);
-
-  @override
-  void dispose() {
-    for (final entry in _entries) {
-      entry.dispose();
-    }
-    super.dispose();
-  }
-
-  void _addPack() => setState(() => _entries.add(_newEntry()));
-
-  void _removePack(_PackEntry entry) {
-    setState(() {
-      _entries.remove(entry);
-      entry.dispose();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final comparison = compareUnitPrices(
-      _entries
-          .map((e) => PackDraft(
-                id: e.id,
-                priceText: e.price.text,
-                quantityText: e.quantity.text,
-                unit: e.unit,
-              ))
-          .toList(),
-    );
-    final resultsById = {for (final r in comparison.results) r.id: r};
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('SHELF TOOLS', style: TS.eyebrowOf(context)),
-        const SizedBox(height: 4),
-        const Text('Which pack is really cheaper?',
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        Text(
-          'Big packs are not always the better deal. Enter each price and size, and Trolley Scout '
-          'works out the true cost per kg, litre or unit, so you can pick the cheapest with confidence.',
-          style: TextStyle(color: TS.mutedOf(context)),
+        const ScreenHeader(
+          eyebrow: 'Tools',
+          title: 'Compare before you buy',
+          description:
+              'Search the same product across selected stores, or compare a full shopping list side by side.',
         ),
-        const SizedBox(height: 16),
-        for (var i = 0; i < _entries.length; i++)
-          _PackCard(
-            index: i,
-            entry: _entries[i],
-            result: resultsById[_entries[i].id],
-            canRemove: _entries.length > 2,
-            onChanged: () => setState(() {}),
-            onRemove: () => _removePack(_entries[i]),
-          ),
-        const SizedBox(height: 4),
-        OutlinedButton.icon(
-          onPressed: _addPack,
-          icon: const Icon(Icons.add),
-          label: const Text('Add another pack'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: TS.inkOf(context),
-            side: BorderSide(color: TS.lineOf(context), width: 2),
-            shape: const RoundedRectangleBorder(),
-          ),
-        ),
-        const SizedBox(height: 16),
-        if (comparison.hasMixedUnits)
-          _note(
-              context,
-              'Mixing weights and volumes, compare like with like (all in g/kg, or all in ml/L).',
-              TS.redOf(context))
-        else if (comparison.bestId != null)
-          _note(
-              context,
-              'Cheapest per unit is highlighted below. The rest show how much more you would pay.',
-              TS.greenOf(context))
-        else
-          _note(
-              context,
-              'Fill in at least two packs to see which is cheaper per unit.',
-              TS.lineOf(context)),
-        const SizedBox(height: 32),
-        if (widget.api != null) AutoCompareTool(api: widget.api!),
+        if (api != null) AutoCompareTool(api: api!),
+        const SizedBox(height: 24),
         const ShopCompareTool(),
+        const SizedBox(height: 12),
+        Text(
+          'Prices are checked against available store results. Open a source result to confirm availability before travelling.',
+          style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+        ),
       ],
-    );
-  }
-
-  Widget _note(BuildContext context, String text, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-          color: TS.surfaceOf(context),
-          border: Border.all(color: color, width: 2)),
-      padding: const EdgeInsets.all(12),
-      child: Text(text,
-          style: TextStyle(color: TS.mutedOf(context), fontSize: 13)),
-    );
-  }
-}
-
-class _PackEntry {
-  _PackEntry({required this.id, required this.unit});
-
-  final String id;
-  final TextEditingController price = TextEditingController();
-  final TextEditingController quantity = TextEditingController();
-  PackUnit unit;
-
-  void dispose() {
-    price.dispose();
-    quantity.dispose();
-  }
-}
-
-class _PackCard extends StatelessWidget {
-  const _PackCard({
-    required this.index,
-    required this.entry,
-    required this.result,
-    required this.canRemove,
-    required this.onChanged,
-    required this.onRemove,
-  });
-
-  final int index;
-  final _PackEntry entry;
-  final PackResult? result;
-  final bool canRemove;
-  final VoidCallback onChanged;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final isBest = result?.isBest ?? false;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: TS.card(
-        context,
-        color: isBest
-            ? Color.lerp(TS.surfaceOf(context), TS.greenOf(context), 0.08)
-            : null,
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('PACK ${index + 1}', style: TS.eyebrowOf(context)),
-              if (isBest) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  color: TS.greenOf(context),
-                  child: Text('CHEAPEST',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.onTertiary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900)),
-                ),
-              ],
-              const Spacer(),
-              if (canRemove)
-                InkWell(
-                  onTap: onRemove,
-                  child:
-                      Icon(Icons.close, size: 18, color: TS.faintOf(context)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: entry.price,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => onChanged(),
-                  decoration: const InputDecoration(
-                    labelText: 'Price',
-                    prefixText: 'R ',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: entry.quantity,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => onChanged(),
-                  decoration: const InputDecoration(
-                    labelText: 'Size',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              DropdownButton<PackUnit>(
-                value: entry.unit,
-                underline: const SizedBox.shrink(),
-                onChanged: (unit) {
-                  if (unit != null) {
-                    entry.unit = unit;
-                    onChanged();
-                  }
-                },
-                items: [
-                  for (final unit in PackUnit.values)
-                    DropdownMenuItem(
-                        value: unit, child: Text(packUnitLabel(unit))),
-                ],
-              ),
-            ],
-          ),
-          if (result != null) ...[
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  formatUnitPrice(result!.unitPriceCents, result!.baseUnit),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: isBest ? TS.greenOf(context) : TS.inkOf(context),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (result!.percentMoreThanBest != null)
-                  Text('${result!.percentMoreThanBest}% more',
-                      style: TextStyle(
-                          color: TS.redOf(context),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

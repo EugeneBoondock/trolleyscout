@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/in_app_browser.dart';
 
 class SavedDealsScreen extends StatefulWidget {
   const SavedDealsScreen({super.key, required this.api});
@@ -97,8 +98,11 @@ class _SavedDealsScreenState extends State<SavedDealsScreen> {
                             label: const Text('Add to basket'),
                           ),
                           OutlinedButton.icon(
-                            onPressed: () =>
-                                openExternal(deal.productUrl ?? deal.sourceUrl),
+                            onPressed: () => showInAppBrowser(
+                              context,
+                              deal.productUrl ?? deal.sourceUrl,
+                              title: deal.retailerName,
+                            ),
                             icon: const Icon(Icons.open_in_new),
                             label: const Text('Open source'),
                           ),

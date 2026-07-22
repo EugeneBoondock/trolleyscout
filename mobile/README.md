@@ -4,8 +4,8 @@ Native Android and iOS app for Trolley Scout. It uses the same live Cloudflare A
 
 ## Features
 
-- Public: Home, Money help, Near me, Find deals, Tools, Stores, Verified offers, Scanner, About and help, and Rules.
-- Member: Log in, Sign up, Dashboard, Saved deals, Basket, Saved sources, Subscription, Profile, and sign out.
+- Public: Home, Near me, Find deals, Tools, Stores, Properties, and About and help.
+- Member: Log in, Sign up, Dashboard, Saved deals, Basket, Subscription, Profile, and sign out.
 - Admin: role-gated account, plan, source, deal, leaflet, and scout status.
 - Appearance: matching light and dark themes with a persistent theme choice.
 - Branding: one Trolley Scout mark across the app bar, Flutter web, Android, iOS, and the website.

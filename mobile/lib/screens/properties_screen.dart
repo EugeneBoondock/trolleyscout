@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../recent_searches_store.dart';
@@ -9,6 +8,7 @@ import '../saved_properties_store.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
+import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/skeleton.dart';
 
@@ -240,15 +240,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final uri = Uri.tryParse(listing.listingUrl);
     if (uri == null || !uri.hasScheme) return;
     uxTap();
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open that listing.')),
-        );
-      }
-    }
+    await showInAppBrowser(context, uri.toString(), title: listing.portalName);
   }
 
   @override
@@ -257,7 +249,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return _GateCard(
         icon: Icons.lock_open_outlined,
         title: 'Sign in for Properties Scout',
-        message: 'Log in to search homes to buy or rent across South Africa. '
+        message: 'Log in to search homes to buy or rent in your country. '
             'Properties Scout is included with the Household plan.',
         actionLabel: 'Log in',
         onAction: widget.onWantsAuth,
@@ -706,116 +698,118 @@ class _PropertyCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: PressableScale(
         child: InkWell(
-        onTap: () => onOpen(listing),
-        child: Container(
-          decoration: TS.card(context),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 10,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _PropertyGallery(
-                      images: listing.gallery,
-                      onTap: () => onOpen(listing),
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        color: isRent ? const Color(0xFFBFE3D0) : TS.yellow,
-                        child: Text(
-                          isRent ? 'TO RENT' : 'FOR SALE',
-                          style: const TextStyle(
-                              color: TS.ink,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.4),
+          onTap: () => onOpen(listing),
+          child: Container(
+            decoration: TS.card(context),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _PropertyGallery(
+                        images: listing.gallery,
+                        onTap: () => onOpen(listing),
+                      ),
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          color: isRent ? const Color(0xFFBFE3D0) : TS.yellow,
+                          child: Text(
+                            isRent ? 'TO RENT' : 'FOR SALE',
+                            style: const TextStyle(
+                                color: TS.ink,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.4),
+                          ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      left: 8,
-                      bottom: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        color: Colors.black.withValues(alpha: 0.78),
-                        child: Text(
-                          listing.portalName.toUpperCase(),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.4),
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          color: Colors.black.withValues(alpha: 0.78),
+                          child: Text(
+                            listing.portalName.toUpperCase(),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.4),
+                          ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Row(
-                        children: [
-                          _CircleAction(
-                            icon:
-                                saved ? Icons.favorite : Icons.favorite_border,
-                            tooltip:
-                                saved ? 'Remove from saved' : 'Save this home',
-                            background: saved
-                                ? TS.red
-                                : Colors.white.withValues(alpha: 0.92),
-                            foreground: saved ? Colors.white : TS.ink,
-                            onTap: onToggleSave,
-                          ),
-                          const SizedBox(width: 6),
-                          _CircleAction(
-                            icon: Icons.ios_share,
-                            tooltip: 'Share this home',
-                            background: Colors.white.withValues(alpha: 0.92),
-                            foreground: TS.ink,
-                            onTap: onShare,
-                          ),
-                        ],
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Row(
+                          children: [
+                            _CircleAction(
+                              icon: saved
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              tooltip: saved
+                                  ? 'Remove from saved'
+                                  : 'Save this home',
+                              background: saved
+                                  ? TS.red
+                                  : Colors.white.withValues(alpha: 0.92),
+                              foreground: saved ? Colors.white : TS.ink,
+                              onTap: onToggleSave,
+                            ),
+                            const SizedBox(width: 6),
+                            _CircleAction(
+                              icon: Icons.ios_share,
+                              tooltip: 'Share this home',
+                              background: Colors.white.withValues(alpha: 0.92),
+                              foreground: TS.ink,
+                              onTap: onShare,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      listing.priceText ?? 'Price on application',
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(listing.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                    if (listing.location != null) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        listing.priceText ?? 'Price on application',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w900),
+                      ),
                       const SizedBox(height: 2),
-                      Text(listing.location!,
+                      Text(listing.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: TS.mutedOf(context))),
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      if (listing.location != null) ...[
+                        const SizedBox(height: 2),
+                        Text(listing.location!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: TS.mutedOf(context))),
+                      ],
+                      _FeatureRow(listing: listing),
                     ],
-                    _FeatureRow(listing: listing),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -838,7 +832,10 @@ class _FeatureRow extends StatelessWidget {
         _feature(context, Icons.bed_outlined, '${listing.bedrooms}',
             listing.bedrooms == 1 ? 'bedroom' : 'bedrooms'),
       if (listing.bathrooms != null)
-        _feature(context, Icons.bathtub_outlined, _trimCount(listing.bathrooms!),
+        _feature(
+            context,
+            Icons.bathtub_outlined,
+            _trimCount(listing.bathrooms!),
             listing.bathrooms == 1 ? 'bathroom' : 'bathrooms'),
       if (listing.garages != null)
         _feature(context, Icons.garage_outlined, '${listing.garages}',
@@ -1085,7 +1082,7 @@ class _UpsellCard extends StatelessWidget {
                   style: TS.display.copyWith(fontSize: 22)),
               const SizedBox(height: 6),
               Text(
-                'Search homes to buy or rent across South Africa — Property24 and '
+                'Search homes to buy or rent in your country. Property24 and '
                 'Private Property in one place, with your own filters. Included '
                 'with the Household plan.',
                 textAlign: TextAlign.center,

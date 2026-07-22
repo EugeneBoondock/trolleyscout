@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -14,7 +16,6 @@ import 'screens/basket_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/deals_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/money_help_screen.dart';
 import 'screens/near_me_screen.dart';
 import 'screens/offers_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -34,6 +35,8 @@ import 'ux.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/common.dart';
 import 'widgets/scout_avatar_view.dart';
+import 'widgets/scout_launch_intro.dart';
+import 'widgets/scout_mascot.dart';
 import 'widgets/scout_mark.dart';
 import 'widgets/watch_bell.dart';
 
@@ -46,9 +49,14 @@ Future<void> main() async {
 }
 
 class TrolleyScoutApp extends StatefulWidget {
-  const TrolleyScoutApp({super.key, this.api});
+  const TrolleyScoutApp({
+    super.key,
+    this.api,
+    this.launchIntroDuration = const Duration(milliseconds: 2900),
+  });
 
   final Api? api;
+  final Duration launchIntroDuration;
 
   @override
   State<TrolleyScoutApp> createState() => _TrolleyScoutAppState();
@@ -81,16 +89,24 @@ class _TrolleyScoutAppState extends State<TrolleyScoutApp> {
         theme: TS.lightTheme(),
         darkTheme: TS.darkTheme(),
         themeMode: _controller.themeMode,
-        home: RootShell(controller: _controller),
+        home: RootShell(
+          controller: _controller,
+          launchIntroDuration: widget.launchIntroDuration,
+        ),
       ),
     );
   }
 }
 
 class RootShell extends StatefulWidget {
-  const RootShell({super.key, required this.controller});
+  const RootShell({
+    super.key,
+    required this.controller,
+    required this.launchIntroDuration,
+  });
 
   final AppController controller;
+  final Duration launchIntroDuration;
 
   @override
   State<RootShell> createState() => _RootShellState();
@@ -104,16 +120,24 @@ class _RootShellState extends State<RootShell> {
   String? _dealsQuery;
   bool? _bioEnabled;
   bool _unlocked = false;
+  late bool _introComplete;
+  bool _guideVisible = false;
+  Timer? _guideTimer;
+  final Set<AppDestination> _shownGuideTips = {};
   late bool _wasAuthenticated;
 
   @override
   void initState() {
     super.initState();
+    _introComplete = widget.launchIntroDuration == Duration.zero;
     _wasAuthenticated = widget.controller.session.isAuthenticated;
     widget.controller.addListener(_handleSessionChanged);
     BiometricPrefs.isEnabled().then((enabled) {
       if (mounted) setState(() => _bioEnabled = enabled);
     });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scheduleGuide(AppDestination.dashboard),
+    );
   }
 
   void _handleSessionChanged() {
@@ -127,10 +151,12 @@ class _RootShellState extends State<RootShell> {
       _primaryIndex = 0;
       if (!authenticated) _unlocked = false;
     });
+    if (authenticated) _scheduleGuide(AppDestination.dashboard);
   }
 
   @override
   void dispose() {
+    _guideTimer?.cancel();
     widget.controller.removeListener(_handleSessionChanged);
     super.dispose();
   }
@@ -146,7 +172,7 @@ class _RootShellState extends State<RootShell> {
 
   static const _primaryDestinations = [
     AppDestination.dashboard,
-    AppDestination.money,
+    AppDestination.stores,
     AppDestination.near,
     AppDestination.deals,
     AppDestination.scroll,
@@ -175,7 +201,68 @@ class _RootShellState extends State<RootShell> {
       _destination = destination;
       if (primaryIndex >= 0) _primaryIndex = primaryIndex;
     });
+    _scheduleGuide(destination);
   }
+
+  void _scheduleGuide(AppDestination destination) {
+    _guideTimer?.cancel();
+    if (widget.controller.restoring ||
+        !widget.controller.session.isAuthenticated) {
+      return;
+    }
+    final tip = _tipFor(destination);
+    if (tip == null || _shownGuideTips.contains(destination)) {
+      if (mounted && _guideVisible) setState(() => _guideVisible = false);
+      return;
+    }
+
+    _shownGuideTips.add(destination);
+    if (mounted && _guideVisible) setState(() => _guideVisible = false);
+    _guideTimer = Timer(const Duration(milliseconds: 650), () {
+      if (mounted && _destination == destination && _authIntent == null) {
+        setState(() => _guideVisible = true);
+      }
+    });
+  }
+
+  _ScoutTip? _tipFor(AppDestination destination) => switch (destination) {
+        AppDestination.dashboard => const _ScoutTip(
+            'Welcome back',
+            'Your saved deals, basket, nearby stores, and alerts are all within reach from here.',
+            ScoutMascotPose.wave,
+          ),
+        AppDestination.deals => const _ScoutTip(
+            'A quicker deal search',
+            'Open Advanced to narrow deals by retailer, source, images, and savings.',
+            ScoutMascotPose.search,
+          ),
+        AppDestination.near => const _ScoutTip(
+            'Keep it local',
+            'Share your location for nearby stores, then tighten the radius for closer results.',
+            ScoutMascotPose.point,
+          ),
+        AppDestination.properties => const _ScoutTip(
+            'Search your suburb first',
+            'Begin with your suburb and a tight radius. Widen it only when you want more options.',
+            ScoutMascotPose.search,
+          ),
+        AppDestination.scroll => const _ScoutTip(
+            'Browse, save, then decide',
+            'Swipe through the window, save anything interesting, or send it straight to Saved deals.',
+            ScoutMascotPose.point,
+          ),
+        AppDestination.stores => const _ScoutTip(
+            'Open a store card',
+            'Each store has a curated page for its current deals and catalogues.',
+            ScoutMascotPose.point,
+          ),
+        AppDestination.tools => const _ScoutTip(
+            'Compare like for like',
+            'Choose your stores first, then search one product across every selected retailer.',
+            ScoutMascotPose.search,
+          ),
+        _ => null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +270,14 @@ class _RootShellState extends State<RootShell> {
       animation: widget.controller,
       builder: (context, _) {
         final session = widget.controller.session;
+        if (!_introComplete) {
+          return ScoutLaunchIntro(
+            duration: widget.launchIntroDuration,
+            onComplete: () {
+              if (mounted) setState(() => _introComplete = true);
+            },
+          );
+        }
         // Full auth gate: while the stored session is being restored show a
         // splash, and until the shopper is signed in show onboarding + auth —
         // no app content is reachable before an account exists.
@@ -223,6 +318,7 @@ class _RootShellState extends State<RootShell> {
           );
         }
         final compact = MediaQuery.sizeOf(context).width < 430;
+        final guideTip = _tipFor(_destination);
         return Scaffold(
           appBar: AppBar(
             leading: Builder(
@@ -345,78 +441,123 @@ class _RootShellState extends State<RootShell> {
           // Tab and drawer switches cross-fade with a whisper of lift, so
           // navigation feels physical. Honours the system reduced-motion
           // setting via the zero-duration branch.
-          body: AnimatedSwitcher(
-            duration: MediaQuery.of(context).disableAnimations
-                ? Duration.zero
-                : const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.012),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: KeyedSubtree(
-              key: ValueKey(_authIntent ?? _destination.name),
-              child: _authIntent == null
-                  ? _screenFor(_destination)
-                  : AuthScreen(
-                      controller: widget.controller,
-                      initialIntent: _authIntent!,
-                      onBack: () => setState(() => _authIntent = null),
-                      onAuthenticated: () => setState(() {
-                        _authIntent = null;
-                        _destination = AppDestination.dashboard;
-                        _primaryIndex = 0;
-                      }),
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedSwitcher(
+                  duration: MediaQuery.of(context).disableAnimations
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.012),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
                     ),
-            ),
+                  ),
+                  child: KeyedSubtree(
+                    key: ValueKey(_authIntent ?? _destination.name),
+                    child: _authIntent == null
+                        ? _screenFor(_destination)
+                        : AuthScreen(
+                            controller: widget.controller,
+                            initialIntent: _authIntent!,
+                            onBack: () => setState(() => _authIntent = null),
+                            onAuthenticated: () => setState(() {
+                              _authIntent = null;
+                              _destination = AppDestination.dashboard;
+                              _primaryIndex = 0;
+                            }),
+                          ),
+                  ),
+                ),
+              ),
+              if (_guideVisible && guideTip != null)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: ScoutGuideCard(
+                      message: guideTip.message,
+                      onDismiss: () => setState(() => _guideVisible = false),
+                      pose: guideTip.pose,
+                      title: guideTip.title,
+                    ),
+                  ),
+                ),
+            ],
           ),
           bottomNavigationBar: _authIntent != null
               ? null
-              : DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border(
-                        top: BorderSide(color: TS.lineOf(context), width: 3)),
-                  ),
-                  child: NavigationBar(
-                    backgroundColor: TS.bgOf(context),
-                    indicatorColor: TS.yellow,
-                    selectedIndex: _primaryIndex,
-                    onDestinationSelected: (index) =>
-                        _selectDestination(_primaryDestinations[index]),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.dashboard_outlined),
-                        selectedIcon: Icon(Icons.dashboard),
-                        label: 'Dashboard',
+              : SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: TS.surfaceOf(context),
+                      border: Border.all(
+                        color: TS.lineSoftOf(context),
+                        width: 1,
                       ),
-                      NavigationDestination(
-                        icon: Icon(Icons.volunteer_activism_outlined),
-                        selectedIcon: Icon(Icons.volunteer_activism),
-                        label: 'Money',
+                      borderRadius: BorderRadius.circular(TS.panelRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0x66000000)
+                              : const Color(0x211C1710),
+                          offset: const Offset(0, 5),
+                          blurRadius: 16,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(TS.panelRadius - 1),
+                      child: NavigationBar(
+                        height: 64,
+                        backgroundColor: TS.surfaceOf(context),
+                        elevation: 0,
+                        indicatorColor: TS.yellow,
+                        labelBehavior:
+                            NavigationDestinationLabelBehavior.alwaysShow,
+                        selectedIndex: _primaryIndex,
+                        onDestinationSelected: (index) =>
+                            _selectDestination(_primaryDestinations[index]),
+                        destinations: const [
+                          NavigationDestination(
+                            icon: Icon(Icons.dashboard_outlined),
+                            selectedIcon: Icon(Icons.dashboard),
+                            label: 'Dashboard',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.storefront_outlined),
+                            selectedIcon: Icon(Icons.storefront),
+                            label: 'Stores',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.near_me_outlined),
+                            selectedIcon: Icon(Icons.near_me),
+                            label: 'Near me',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.local_offer_outlined),
+                            selectedIcon: Icon(Icons.local_offer),
+                            label: 'Deals',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.window_outlined),
+                            selectedIcon: Icon(Icons.window),
+                            label: 'Window',
+                          ),
+                        ],
                       ),
-                      NavigationDestination(
-                        icon: Icon(Icons.near_me_outlined),
-                        selectedIcon: Icon(Icons.near_me),
-                        label: 'Near me',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.local_offer_outlined),
-                        selectedIcon: Icon(Icons.local_offer),
-                        label: 'Deals',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.window_outlined),
-                        selectedIcon: Icon(Icons.window),
-                        label: 'Window',
-                      ),
-                    ],
+                    ),
                   ),
                 ),
         );
@@ -429,7 +570,6 @@ class _RootShellState extends State<RootShell> {
     return switch (destination) {
       AppDestination.home =>
         HomeScreen(onGoToDeals: () => _selectDestination(AppDestination.deals)),
-      AppDestination.money => const MoneyHelpScreen(),
       AppDestination.near => NearMeScreen(
           api: api,
           onViewStoreDeals: _viewStoreDeals,
@@ -483,4 +623,12 @@ class _RootShellState extends State<RootShell> {
       AppDestination.admin => AdminScreen(api: api),
     };
   }
+}
+
+class _ScoutTip {
+  const _ScoutTip(this.title, this.message, this.pose);
+
+  final String title;
+  final String message;
+  final ScoutMascotPose pose;
 }

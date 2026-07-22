@@ -10,13 +10,13 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('signed out boots onboarding, not the app shell', (tester) async {
-    await tester.pumpWidget(
-        TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
+    await tester
+        .pumpWidget(_testApp(_FakeApi(const MemberSession.signedOut())));
     await tester.pump(const Duration(milliseconds: 500));
 
     // Onboarding is shown; no app content or navigation is reachable yet.
     expect(find.text('TROLLEY SCOUT'), findsOneWidget);
-    expect(find.text('Stretch every rand'), findsOneWidget);
+    expect(find.text('Stretch your budget'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Next'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Log in'), findsOneWidget);
     expect(find.byTooltip('Open navigation menu'), findsNothing);
@@ -24,8 +24,8 @@ void main() {
 
   testWidgets('onboarding opens the account form and can switch to log in',
       (tester) async {
-    await tester.pumpWidget(
-        TrolleyScoutApp(api: _FakeApi(const MemberSession.signedOut())));
+    await tester
+        .pumpWidget(_testApp(_FakeApi(const MemberSession.signedOut())));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.textContaining('create an account'));
@@ -43,7 +43,7 @@ void main() {
 
   testWidgets('drawer contains every consumer destination once signed in',
       (tester) async {
-    await tester.pumpWidget(TrolleyScoutApp(api: _FakeApi(_memberSession)));
+    await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Open navigation menu'));
@@ -56,13 +56,9 @@ void main() {
       'Properties',
       'Saved deals',
       'Basket',
-      'Saved sources',
-      'Offers',
-      'Scanner',
       'Subscription',
       'Profile',
       'About & help',
-      'Rules',
     ]) {
       expect(
         find.ancestor(
@@ -74,11 +70,14 @@ void main() {
       );
     }
     expect(find.text('Admin console'), findsNothing);
+    for (final removed in ['Saved sources', 'Offers', 'Scanner', 'Rules']) {
+      expect(find.text(removed), findsNothing);
+    }
   });
 
   testWidgets('authenticated startup opens Dashboard as the selected home',
       (tester) async {
-    await tester.pumpWidget(TrolleyScoutApp(api: _FakeApi(_memberSession)));
+    await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(DashboardScreen), findsOneWidget);
@@ -88,7 +87,15 @@ void main() {
     final firstDestination = tester.widget<NavigationDestination>(
         find.byType(NavigationDestination).first);
     expect(navigation.selectedIndex, 0);
+    expect(navigation.height, 64);
     expect(firstDestination.label, 'Dashboard');
+    expect(
+      tester
+          .widgetList<NavigationDestination>(find.byType(NavigationDestination))
+          .map((destination) => destination.label),
+      ['Dashboard', 'Stores', 'Near me', 'Deals', 'Window'],
+    );
+    expect(find.text('Money'), findsNothing);
 
     await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pump(const Duration(milliseconds: 500));
@@ -110,7 +117,7 @@ void main() {
       const MemberSession.signedOut(),
       authenticatedSession: _memberSession,
     );
-    await tester.pumpWidget(TrolleyScoutApp(api: api));
+    await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
     await _logIn(tester);
@@ -124,12 +131,12 @@ void main() {
       _memberSession,
       authenticatedSession: _memberSession,
     );
-    await tester.pumpWidget(TrolleyScoutApp(api: api));
+    await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Sign out'));
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Stretch every rand'), findsOneWidget);
+    expect(find.text('Stretch your budget'), findsOneWidget);
 
     await _logIn(tester);
 
@@ -143,7 +150,7 @@ void main() {
       _memberSession,
       authenticatedSession: _memberSession,
     );
-    await tester.pumpWidget(TrolleyScoutApp(api: api));
+    await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Profile'));
@@ -153,7 +160,7 @@ void main() {
     final rootShell = tester.widget<RootShell>(find.byType(RootShell));
     await rootShell.controller.signOut();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Stretch every rand'), findsOneWidget);
+    expect(find.text('Stretch your budget'), findsOneWidget);
 
     await _logIn(tester);
 
@@ -163,7 +170,7 @@ void main() {
 
   testWidgets('admin session sees the role-gated console', (tester) async {
     final api = _FakeApi(_adminSession);
-    await tester.pumpWidget(TrolleyScoutApp(api: api));
+    await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(api.sessionCalls, 1);
@@ -177,6 +184,11 @@ void main() {
     expect(find.text('Admin console'), findsOneWidget);
   });
 }
+
+Widget _testApp(Api api) => TrolleyScoutApp(
+      api: api,
+      launchIntroDuration: Duration.zero,
+    );
 
 Future<void> _logIn(WidgetTester tester) async {
   await tester.tap(find.widgetWithText(TextButton, 'Log in'));
@@ -209,7 +221,8 @@ class _FakeApi extends Api {
   }
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,

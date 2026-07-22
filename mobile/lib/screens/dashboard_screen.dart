@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../api.dart';
+import '../discovery_cache.dart';
+import '../price_display.dart';
 import '../theme.dart';
+import '../top_savings.dart';
 import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
@@ -45,6 +48,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       widget.api.savedSources(),
       widget.api.basket(),
       widget.api.verifiedOfferCount(),
+      _voucherCount(),
+      _cachedTopDeals(),
     ]);
     return _DashboardData(
       discovery: results[0] as DiscoveryResult,
@@ -54,7 +59,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       savedSources: results[4] as List<SavedSource>,
       basket: results[5] as Basket,
       verifiedOfferCount: results[6] as int,
+      voucherCount: results[7] as int,
+      topDeals: results[8] as List<Deal>,
     );
+  }
+
+  Future<int> _voucherCount() async {
+    try {
+      return (await widget.api.vouchers()).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // The Find-deals cache is already on-device; showing the biggest live
+  // markdowns from it costs nothing and gives the dashboard a reason to be
+  // opened every day.
+  Future<List<Deal>> _cachedTopDeals() async {
+    final cached = await DiscoveryCache().load();
+    return topSavingsDeals(cached?.result.deals ?? const []);
   }
 
   void _refresh() => setState(() {
@@ -92,6 +115,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onOpenBasket: () => widget.onNavigate(AppDestination.basket),
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
               ),
+              if (data.topDeals.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                _TopSavingsStrip(
+                  deals: data.topDeals,
+                  onBrowse: () => widget.onNavigate(AppDestination.deals),
+                ),
+              ],
               const SizedBox(height: 20),
               const _SectionLabel(label: 'Jump straight in'),
               const SizedBox(height: 10),
@@ -123,17 +153,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onTap: () => widget.onNavigate(AppDestination.stores),
                   ),
                   _StatChip(
-                    icon: PhosphorIconsFill.sealCheck,
-                    value: '${data.verifiedOfferCount}',
-                    label: 'verified offers',
-                    onTap: () => widget.onNavigate(AppDestination.offers),
+                    icon: PhosphorIconsFill.bookmarkSimple,
+                    value: '${data.savedDeals.length}',
+                    label: 'saved deals',
+                    onTap: () => widget.onNavigate(AppDestination.savedDeals),
                   ),
                   _StatChip(
-                    icon: PhosphorIconsFill.bookmarkSimple,
-                    value: '${data.savedSources.length}',
-                    label: 'saved sources',
-                    onTap: () => widget.onNavigate(AppDestination.savedSources),
+                    icon: PhosphorIconsFill.basket,
+                    value: '${data.basket.summary.itemCount}',
+                    label: 'basket items',
+                    onTap: () => widget.onNavigate(AppDestination.basket),
                   ),
+                  if (data.voucherCount > 0)
+                    _StatChip(
+                      icon: PhosphorIconsFill.ticket,
+                      value: '${data.voucherCount}',
+                      label: 'vouchers ready',
+                      onTap: () => widget.onNavigate(AppDestination.vouchers),
+                    ),
                 ],
               ),
             ],
@@ -200,8 +237,8 @@ class _GreetingHero extends StatelessWidget {
                     _PlanPill(planName: planName),
                     Text(
                       _dateLine(now),
-                      style: TextStyle(
-                          color: TS.mutedOf(context), fontSize: 12.5),
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
                     ),
                   ],
                 ),
@@ -356,12 +393,11 @@ class _SavingsHero extends StatelessWidget {
                     child: Text(
                       '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
                       'in your basket · you pay ${formatRand(summary.totalCents)}',
-                      style: TextStyle(
-                          color: TS.mutedOf(context), fontSize: 12.5),
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
                     ),
                   ),
-                  Icon(Icons.arrow_forward,
-                      size: 16, color: TS.redOf(context)),
+                  Icon(Icons.arrow_forward, size: 16, color: TS.redOf(context)),
                 ],
               ),
             ],
@@ -389,8 +425,7 @@ class _SavingsHero extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: TS.yellow,
-                    border:
-                        Border.all(color: TS.lineOf(context), width: 2),
+                    border: Border.all(color: TS.lineOf(context), width: 2),
                   ),
                   child: const PhosphorIcon(PhosphorIconsFill.piggyBank,
                       size: 28, color: TS.ink),
@@ -439,8 +474,7 @@ class _SavingsRing extends StatelessWidget {
     final target = fraction.clamp(0.0, 1.0);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: target),
-      duration:
-          animate ? const Duration(milliseconds: 900) : Duration.zero,
+      duration: animate ? const Duration(milliseconds: 900) : Duration.zero,
       curve: Curves.easeOutCubic,
       builder: (context, value, _) => SizedBox(
         width: 84,
@@ -533,8 +567,7 @@ class _CountUpRand extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: cents.toDouble()),
-        duration:
-            animate ? const Duration(milliseconds: 900) : Duration.zero,
+        duration: animate ? const Duration(milliseconds: 900) : Duration.zero,
         curve: Curves.easeOutCubic,
         builder: (context, value, _) => FittedBox(
           fit: BoxFit.scaleDown,
@@ -586,7 +619,7 @@ class _QuickActions extends StatelessWidget {
       (PhosphorIconsFill.tag, 'Find deals', AppDestination.deals),
       (PhosphorIconsFill.mapPin, 'Near me', AppDestination.near),
       (PhosphorIconsFill.basket, 'Basket', AppDestination.basket),
-      (PhosphorIconsFill.barcode, 'Scan', AppDestination.scanner),
+      (PhosphorIconsFill.storefront, 'Stores', AppDestination.stores),
     ];
     return Row(
       children: [
@@ -647,6 +680,129 @@ class _QuickActionTile extends StatelessWidget {
 
 /// Saved deals as pictures. A shopper scanning their own dashboard recognises
 /// the tub of margarine they saved long before they parse "7 saved deals".
+/// The biggest live markdowns from the on-device deals cache — real product
+/// pictures with real rand savings, the strongest possible pull into the
+/// Find deals screen.
+class _TopSavingsStrip extends StatelessWidget {
+  const _TopSavingsStrip({required this.deals, required this.onBrowse});
+
+  final List<Deal> deals;
+  final VoidCallback onBrowse;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionLabel(
+          label: 'Today’s top savings',
+          trailing: TextButton(
+            onPressed: () {
+              uxTap();
+              onBrowse();
+            },
+            child: const Text('See all deals'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 210,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: deals.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final deal = deals[index];
+              final wasText =
+                  meaningfulWasPrice(deal.previousPriceText, deal.priceText);
+              return PressableScale(
+                child: GestureDetector(
+                  onTap: () {
+                    uxTap();
+                    onBrowse();
+                  },
+                  child: Container(
+                    key: Key('top-saving-card-${deal.id}'),
+                    width: 158,
+                    decoration: TS.card(context),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: 88,
+                          width: double.infinity,
+                          child: deal.imageUrl == null
+                              ? ColoredBox(
+                                  color: TS.surfaceSoftOf(context),
+                                  child: Icon(Icons.local_offer_outlined,
+                                      color: TS.mutedOf(context)),
+                                )
+                              : Image.network(
+                                  deal.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => ColoredBox(
+                                    color: TS.surfaceSoftOf(context),
+                                    child: Icon(Icons.local_offer_outlined,
+                                        color: TS.mutedOf(context)),
+                                  ),
+                                ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(deal.retailerName.toUpperCase(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TS.eyebrowOf(context)
+                                      .copyWith(fontSize: 10)),
+                              const SizedBox(height: 3),
+                              Text(deal.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2)),
+                              const SizedBox(height: 5),
+                              Wrap(
+                                spacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(deal.priceText ?? '',
+                                      style: TextStyle(
+                                          color: TS.redOf(context),
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900)),
+                                  if (wasText != null)
+                                    Text(wasText,
+                                        style: TextStyle(
+                                            color: TS.faintOf(context),
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                            fontSize: 11)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SavedDealsStrip extends StatelessWidget {
   const _SavedDealsStrip({
     required this.deals,
@@ -677,7 +833,9 @@ class _SavedDealsStrip extends StatelessWidget {
                     'Nothing saved yet. Tap the bookmark on any deal and it '
                     'waits for you here.',
                     style: TextStyle(
-                        color: TS.mutedOf(context), fontSize: 13.5, height: 1.3),
+                        color: TS.mutedOf(context),
+                        fontSize: 13.5,
+                        height: 1.3),
                   ),
                 ),
                 TextButton(
@@ -742,8 +900,10 @@ class _SavedDealCard extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           child: Container(
+            key: Key('saved-deal-card-${deal.id}'),
             width: 148,
             decoration: TS.card(context),
+            clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -851,8 +1011,7 @@ class _StatChipGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth > 520 ? 4 : 2;
-          final width =
-              (constraints.maxWidth - (columns - 1) * 10) / columns;
+          final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
           return Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -929,6 +1088,8 @@ class _DashboardData {
     required this.savedSources,
     required this.basket,
     required this.verifiedOfferCount,
+    required this.topDeals,
+    required this.voucherCount,
   });
 
   final DiscoveryResult discovery;
@@ -938,4 +1099,6 @@ class _DashboardData {
   final List<SavedSource> savedSources;
   final Basket basket;
   final int verifiedOfferCount;
+  final List<Deal> topDeals;
+  final int voucherCount;
 }

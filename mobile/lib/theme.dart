@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 class TS {
+  static const cardRadius = 16.0;
+  static const controlRadius = 12.0;
+  static const panelRadius = 22.0;
+
   static const bg = Color(0xFFF4EEDD);
   static const surface = Color(0xFFFDFAF1);
   static const surfaceSoft = Color(0xFFECE4CD);
@@ -89,7 +93,7 @@ class TS {
     final base = ThemeData(
         brightness: brightness, useMaterial3: true, colorScheme: scheme);
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(controlRadius),
       borderSide: BorderSide(color: outlineColor, width: 2),
     );
     return base.copyWith(
@@ -119,15 +123,61 @@ class TS {
         color: surfaceColor,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(cardRadius),
           side: BorderSide(color: outlineSoftColor, width: 1.5),
         ),
       ),
-      drawerTheme: DrawerThemeData(backgroundColor: background),
-      navigationBarTheme: NavigationBarThemeData(
+      drawerTheme: DrawerThemeData(
         backgroundColor: background,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(
+            right: Radius.circular(panelRadius),
+          ),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: surfaceColor,
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(panelRadius),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(controlRadius),
+          )),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(controlRadius),
+          )),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(controlRadius),
+          )),
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 64,
+        backgroundColor: surfaceColor,
+        elevation: 0,
         indicatorColor: yellow,
-        labelTextStyle: WidgetStatePropertyAll(TextStyle(color: inkColor)),
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(controlRadius),
+        ),
+        labelTextStyle: WidgetStatePropertyAll(TextStyle(
+          color: inkColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        )),
         iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
               color: states.contains(WidgetState.selected) ? ink : inkColor,
             )),
@@ -146,6 +196,22 @@ class TS {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: inkColor,
         contentTextStyle: TextStyle(color: background),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(controlRadius),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surfaceColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(panelRadius),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: surfaceColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(cardRadius),
+        ),
       ),
     );
   }
@@ -180,12 +246,14 @@ class TS {
       BoxDecoration(
         color: color ?? surfaceOf(context),
         border: Border.all(color: border ?? lineOf(context), width: width),
+        borderRadius: BorderRadius.circular(cardRadius),
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).brightness == Brightness.dark
                 ? const Color(0x8C000000)
                 : const Color(0x291C1710),
-            offset: const Offset(3, 3),
+            offset: const Offset(0, 5),
+            blurRadius: 16,
           ),
         ],
       );

@@ -26,20 +26,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static const _slides = <_Slide>[
     _Slide(
       icon: Icons.local_offer_outlined,
-      title: 'Stretch every rand',
-      body: "This week's real grocery specials from South Africa's big stores, "
+      title: 'Stretch your budget',
+      body: "This week's real grocery specials from stores in your country, "
           'checked against the official pages — never a forwarded screenshot.',
-    ),
-    _Slide(
-      icon: Icons.volunteer_activism_outlined,
-      title: "Claim what's yours",
-      body: 'Money help for SASSA grants, free basic electricity, and rates '
-          'rebates. The essentials stay free, forever.',
     ),
     _Slide(
       icon: Icons.window_outlined,
       title: 'Window shopping',
-      body: 'Drift through deals one swipe at a time, with easy in-store music. '
+      body:
+          'Drift through deals one swipe at a time, with easy in-store music. '
           'Save the ones you love and we learn your taste.',
     ),
     _Slide(
@@ -99,7 +94,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.asset('assets/brand-mark.png',
+                    child: Image.asset('assets/scout-logo.png',
                         width: 36, height: 36),
                   ),
                   const SizedBox(width: 8),
@@ -117,7 +112,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 controller: _pageController,
                 onPageChanged: (index) => setState(() => _page = index),
                 itemCount: _slides.length,
-                itemBuilder: (context, index) => _SlideView(slide: _slides[index]),
+                itemBuilder: (context, index) =>
+                    _SlideView(slide: _slides[index]),
               ),
             ),
             _OnboardingProgress(step: _page + 1, total: _slides.length),
@@ -193,16 +189,15 @@ class _SlideView extends StatelessWidget {
           Text(
             slide.title,
             textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
-                ?.merge(TS.display),
+            style:
+                Theme.of(context).textTheme.headlineMedium?.merge(TS.display),
           ),
           const SizedBox(height: 12),
           Text(
             slide.body,
             textAlign: TextAlign.center,
-            style: TextStyle(color: TS.mutedOf(context), fontSize: 15, height: 1.4),
+            style: TextStyle(
+                color: TS.mutedOf(context), fontSize: 15, height: 1.4),
           ),
         ],
       ),
@@ -253,8 +248,9 @@ class _OnboardingProgress extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             child: TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: fraction),
-              duration:
-                  reduceMotion ? Duration.zero : const Duration(milliseconds: 340),
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 340),
               curve: Curves.easeOutCubic,
               builder: (context, value, _) => LinearProgressIndicator(
                 value: value,

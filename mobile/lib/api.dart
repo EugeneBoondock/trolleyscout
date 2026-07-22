@@ -83,7 +83,8 @@ class Api {
     return MemberSession.fromJson(_map(data['session']));
   }
 
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
+  Future<DiscoveryResult> discovery(
+      {bool forceLive = false, bool summary = false}) async {
     final query = <String>[];
     if (forceLive) query.add('refresh=1');
     if (summary) query.add('summary=1');
@@ -130,6 +131,19 @@ class Api {
     return RetailerCatalog.fromJson(
         await _request('GET', '/api/retailers$suffix'));
   }
+
+  Future<ProductComparisonResult> searchProductPrices({
+    required String query,
+    required List<String> retailerIds,
+  }) async =>
+      ProductComparisonResult.fromJson(await _request(
+        'POST',
+        '/api/price-compare',
+        body: {
+          'query': query.trim(),
+          'retailerIds': retailerIds,
+        },
+      ));
 
   Future<NearbyResult> nearbyStores(double lat, double lon) async {
     final data = await _request(
@@ -244,6 +258,15 @@ class Api {
   Future<SubscriptionData> subscription() async {
     return SubscriptionData.fromJson(
         await _request('GET', '/api/subscription'));
+  }
+
+  /// The shopper's country with a ZAR conversion rate, so prices can be
+  /// shown in their own currency (PayFast still settles in rand).
+  Future<CountryPricing> country() async {
+    final data = await _request('GET', '/api/country');
+    final country = data['country'];
+    return CountryPricing.fromJson(
+        country is Map<String, dynamic> ? country : const {});
   }
 
   Future<SubscriptionCheckout> checkout(
@@ -465,6 +488,24 @@ class Api {
     final suffix = forceLive ? '?refresh=1' : '';
     final data = await _request('GET', '/api/deal-sites$suffix');
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
+  }
+
+  Future<Basket> saveDealToBasket(Deal deal) async {
+    final savedDeals = await saveDeal(deal);
+    SavedDeal? saved;
+    for (final candidate in savedDeals) {
+      if ((deal.productUrl != null &&
+              candidate.productUrl == deal.productUrl) ||
+          (deal.id.isNotEmpty && candidate.id == deal.id)) {
+        saved = candidate;
+        break;
+      }
+    }
+    if (saved == null) {
+      throw const ApiException(
+          'The deal was saved, but could not be matched for the basket.');
+    }
+    return addBasketItem(saved.id);
   }
 
   /// Runs the two protected upstream deal scouts. The server accepts these

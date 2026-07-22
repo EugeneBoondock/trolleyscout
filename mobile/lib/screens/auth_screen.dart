@@ -91,7 +91,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         alignment: Alignment.centerLeft,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(10),
-                          child: Image.asset('assets/brand-mark.png',
+                          child: Image.asset('assets/scout-logo.png',
                               width: 64, height: 64),
                         ),
                       ),
