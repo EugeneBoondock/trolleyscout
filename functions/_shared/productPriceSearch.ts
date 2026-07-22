@@ -52,6 +52,18 @@ export interface ProductSearchRequest {
   url: string
 }
 
+// Shoprite Group's storefronts expose an anonymous "browse this store's shelf"
+// API: no login, no cookie — a browser User-Agent is the only requirement
+// (a missing UA gets a Cloudflare 403). Prices are store-specific, so we pin a
+// stable Cape Town supermarket per chain for representative national pricing,
+// exactly as the Pick n Pay adapter pins storeCode WC21. Store ids are stable
+// and cacheable; if one ever rotates the adapter simply yields nothing and the
+// catalogue fallback covers it.
+const SHOPRITE_GROUP_STORES: Record<string, { host: string; storeId: string }> = {
+  checkers: { host: 'www.checkers.co.za', storeId: '69e5fc74fa670d43ca761f5a' },
+  shoprite: { host: 'www.shoprite.co.za', storeId: '6a2c0cf571db63b9c330f049' },
+}
+
 export function normalizeProductSearchInput(input: unknown): ProductSearchInput {
   const record = isRecord(input) ? input : {}
   const query = typeof record.query === 'string' ? record.query.trim().replace(/\s+/g, ' ') : ''
@@ -109,6 +121,26 @@ export function buildKnownProductSearchRequest(
     url.searchParams.set('q', query)
     url.searchParams.set('page', '0')
     return { init: { headers: BROWSER_HEADERS }, url: url.toString() }
+  }
+
+  const shopriteGroup = SHOPRITE_GROUP_STORES[retailerId]
+  if (shopriteGroup) {
+    return {
+      init: {
+        body: JSON.stringify({
+          payload: {
+            filter: {
+              paginationOptions: { page: 0, pageSize: 12 },
+              productListSource: { search: query },
+            },
+            userContext: { storeIds: [shopriteGroup.storeId] },
+          },
+        }),
+        headers: { ...BROWSER_HEADERS, 'content-type': 'application/json' },
+        method: 'POST',
+      },
+      url: `https://${shopriteGroup.host}/api/browse-by-store/get-products-filter`,
+    }
   }
 
   if (retailerId === 'pick-n-pay') {
@@ -243,6 +275,53 @@ export function parseClicksProductResults(
   }
 
   return products
+}
+
+// Shoprite and Checkers share the Shoprite-Group product shape: title in
+// `name`, rand price in `price` (or priceWithoutDecimal/priceFactor), and a
+// product page at /product/<id>.
+export function parseShopriteGroupProductResults(
+  retailerId: string,
+  payload: unknown,
+  query: string,
+): RetailerProductCandidate[] {
+  const store = SHOPRITE_GROUP_STORES[retailerId]
+  if (!store) {
+    return []
+  }
+  const rows = arrayValue(payload, 'products')
+  const products: RetailerProductCandidate[] = []
+
+  for (const row of rows) {
+    if (!isRecord(row)) {
+      continue
+    }
+    const title = textValue(row, 'name') || textValue(row, 'displayName')
+    const priceCents = shopriteGroupPriceCents(row)
+    const id = textValue(row, 'id')
+    if (!title || priceCents === undefined || !id || !matchesQuery(title, query)) {
+      continue
+    }
+    products.push({
+      priceCents,
+      productUrl: `https://${store.host}/product/${encodeURIComponent(id)}`,
+      title,
+    })
+  }
+
+  return products
+}
+
+function shopriteGroupPriceCents(row: Record<string, unknown>): number | undefined {
+  // A live promotion price wins; otherwise the shelf price, taken from the
+  // decimal `price` when present or reconstructed from the integer pair.
+  const direct = firstMoney(row, ['discountedPrice', 'price'])
+  if (direct !== undefined) {
+    return direct
+  }
+  const factor = typeof row.priceFactor === 'number' && row.priceFactor > 0 ? row.priceFactor : 100
+  const whole = row.priceWithoutDecimal
+  return typeof whole === 'number' && whole > 0 ? Math.round((whole / factor) * 100) : undefined
 }
 
 export function parsePnpProductResults(
@@ -693,6 +772,9 @@ function parseKnownProductResults(
   if (retailerId === 'game') return parseGameProductResults(payload, query)
   if (retailerId === 'pick-n-pay') return parsePnpProductResults(payload, query)
   if (retailerId === 'takealot') return parseTakealotProductResults(payload, query)
+  if (SHOPRITE_GROUP_STORES[retailerId]) {
+    return parseShopriteGroupProductResults(retailerId, payload, query)
+  }
   return []
 }
 

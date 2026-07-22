@@ -8,6 +8,7 @@ import {
   parseGameProductResults,
   parseKlevuProductResults,
   parsePnpProductResults,
+  parseShopriteGroupProductResults,
   parseTakealotProductResults,
   parseWoolworthsProductResults,
   normalizeProductSearchInput,
@@ -206,26 +207,28 @@ describe('on-demand retailer product results', () => {
   })
 
   it('reports an official product result without pretending a missing price means no product', async () => {
+    // A retailer with no known product API falls back to the official-site
+    // web search and reports a found-but-unpriced result honestly.
     const result = await searchRetailerProduct(
       {
-        id: 'checkers',
-        name: 'Checkers',
-        sources: [{ kind: 'specials', label: 'Offers', url: 'https://www.checkers.co.za/' }],
+        id: 'spar',
+        name: 'SPAR',
+        sources: [{ kind: 'specials', label: 'Specials', url: 'https://www.spar.co.za/' }],
       },
       'white bread',
       {
         fetcher: async () => Response.json({}),
         searcher: async () => [{
           title: 'Sasko White Bread 700g',
-          url: 'https://specials.checkers.co.za/deals/white-bread',
+          url: 'https://www.spar.co.za/deals/white-bread',
         }],
       },
     )
 
     expect(result).toEqual({
-      productUrl: 'https://specials.checkers.co.za/deals/white-bread',
-      retailerId: 'checkers',
-      retailerName: 'Checkers',
+      productUrl: 'https://www.spar.co.za/deals/white-bread',
+      retailerId: 'spar',
+      retailerName: 'SPAR',
       sourceKind: 'official-site',
       status: 'found',
       title: 'Sasko White Bread 700g',
@@ -335,6 +338,61 @@ describe('on-demand retailer product results', () => {
       productUrl: 'https://www.pnp.co.za/pnp-full-cream-fresh-milk-2l/p/000000000000357781_EA',
       title: 'PnP Full Cream Fresh Milk 2L',
     }])
+  })
+
+  it('builds an anonymous browse-by-store POST for Shoprite and Checkers', () => {
+    const shoprite = buildKnownProductSearchRequest('shoprite', 'milk 2l')
+    expect(shoprite?.init?.method).toBe('POST')
+    expect(shoprite?.url).toBe('https://www.shoprite.co.za/api/browse-by-store/get-products-filter')
+    const body = JSON.parse(String(shoprite?.init?.body)) as {
+      payload: { filter: { productListSource: { search: string } }; userContext: { storeIds: string[] } }
+    }
+    expect(body.payload.filter.productListSource.search).toBe('milk 2l')
+    expect(body.payload.userContext.storeIds).toHaveLength(1)
+    expect(new Headers(shoprite?.init?.headers)).toBeTruthy()
+
+    const checkers = buildKnownProductSearchRequest('checkers', 'milk')
+    expect(checkers?.url).toBe('https://www.checkers.co.za/api/browse-by-store/get-products-filter')
+  })
+
+  it('parses Shoprite-Group products via price and the integer price pair', () => {
+    const products = parseShopriteGroupProductResults('shoprite', {
+      products: [
+        {
+          id: '5d3af63bf434cf8420737def',
+          name: 'Crystal Valley Full Cream Milk 2L',
+          price: 36.99,
+          priceWithoutDecimal: 3699,
+          priceFactor: 100,
+          discountedPrice: 36.99,
+        },
+        {
+          // No decimal price field (the Checkers case) — reconstruct from the pair.
+          id: 'abc123',
+          name: 'Clover Fresh Full Cream Milk 2L',
+          priceWithoutDecimal: 3799,
+          priceFactor: 100,
+        },
+        {
+          id: 'notmilk',
+          name: 'Milk Tart Slice',
+          price: 24.99,
+        },
+      ],
+    }, 'milk 2l')
+
+    expect(products).toEqual([
+      {
+        priceCents: 3699,
+        productUrl: 'https://www.shoprite.co.za/product/5d3af63bf434cf8420737def',
+        title: 'Crystal Valley Full Cream Milk 2L',
+      },
+      {
+        priceCents: 3799,
+        productUrl: 'https://www.shoprite.co.za/product/abc123',
+        title: 'Clover Fresh Full Cream Milk 2L',
+      },
+    ])
   })
 
   it('parses Takealot buybox results and keeps only real product matches', () => {
