@@ -62,6 +62,7 @@ void main() {
     expect(find.text('Milk 2L'), findsOneWidget);
     expect(find.textContaining('Buy 2 for R35'), findsOneWidget);
     expect(find.textContaining('Until 2026-08-09'), findsOneWidget);
+    expect(find.text('Open official store website'), findsOneWidget);
     await tester.tap(find.text('Rosebank weekly'));
     await tester.pumpAndSettle();
 
@@ -123,6 +124,7 @@ void main() {
     expect(find.text('R20.00'), findsOneWidget);
     expect(find.text('Buy 2 for R35'), findsOneWidget);
     expect(find.text('Valid until 2026-08-09'), findsOneWidget);
+    expect(find.text('Open official website'), findsOneWidget);
   });
 
   testWidgets('branch modal reads its catalogue without leaving the app',
@@ -235,6 +237,7 @@ const _rosebank = NearbyStore(
   placeId: 'pnp-rosebank',
   name: 'Pick n Pay Rosebank',
   address: '10 Main Road, Rosebank',
+  website: 'https://www.pnp.co.za/store/rosebank',
   retailerId: 'pick-n-pay',
   logoUrl: 'https://cdn.example.test/pnp.png',
   promotionCount: 2,

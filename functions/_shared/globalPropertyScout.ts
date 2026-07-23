@@ -6,6 +6,7 @@ import type {
   PropertySearchResult,
 } from '../../src/types'
 import { filterAndSortListings, type PropertySort } from '../../src/services/propertyPortals'
+import { getSadcPropertySources } from '../../src/services/sadcSourceRegistry'
 import type { TrolleyScoutEnv } from './env'
 import { reverseGeocodePlace } from './reverseGeocode'
 import { searchWeb } from './searchWeb'
@@ -16,6 +17,7 @@ const MAX_BODY_BYTES = 2_000_000
 const MAX_RESULTS_TO_FETCH = 8
 const MAX_PROPERTY_STATE_BYTES = 750_000
 const MAX_PROPERTY_STATE_OBJECTS = 12_000
+const PROPERTY_CACHE_VERSION = 'v2'
 
 export interface GlobalPropertySearchParams {
   query: string
@@ -34,6 +36,13 @@ interface PropertyCacheRow {
   payload_json: string
 }
 
+interface GlobalPropertyResult {
+  label?: string
+  title: string
+  trusted?: boolean
+  url: string
+}
+
 export async function searchGlobalProperties(
   env: TrolleyScoutEnv,
   params: GlobalPropertySearchParams,
@@ -42,7 +51,7 @@ export async function searchGlobalProperties(
   const page = Math.max(1, Math.min(params.page ?? 1, 5))
   const location = await resolveLocation(env, params)
   const locationText = location || country.capital || country.name
-  const key = `global:${country.code}:${params.listingType}:${slug(locationText)}:${page}`
+  const key = `global:${PROPERTY_CACHE_VERSION}:${country.code}:${params.listingType}:${slug(locationText)}:${page}`
   const cached = await readCache(env, key)
 
   let listings: PropertyListing[] = []
@@ -71,9 +80,18 @@ export async function searchGlobalProperties(
         env.JINA_API_KEY,
       ),
     ])
-    const results = dedupeSearchResults(resultGroups.flat())
+    const registeredResults: GlobalPropertyResult[] = getSadcPropertySources(
+      country.code,
+      params.listingType,
+    ).map((source) => ({
+      label: source.label,
+      title: `${source.label} ${country.name} property listings`,
+      trusted: true,
+      url: source.url,
+    }))
+    const results = dedupeSearchResults([...registeredResults, ...resultGroups.flat()])
     const relevantResults = results.filter((result) =>
-      isLikelyPropertySearchResult(result, country, locationText),
+      result.trusted || isLikelyPropertySearchResult(result, country, locationText),
     )
     const fetched = await Promise.all(
       relevantResults.slice(0, MAX_RESULTS_TO_FETCH).map(async (result) => {
@@ -84,14 +102,27 @@ export async function searchGlobalProperties(
         return {
           listings: parsed.length > 0
             ? parsed
-            : fallbackSearchListing(result, params.listingType, country.currencyCode),
-          source: sourceFromUrl(result.url, parsed.length > 0),
+            : result.trusted
+              ? []
+              : fallbackSearchListing(
+                result,
+                params.listingType,
+                country.currencyCode,
+                result.label,
+              ),
+          source: parsed.length > 0 || !result.trusted
+            ? sourceFromUrl(result.url, parsed.length > 0, result.label)
+            : undefined,
         }
       }),
     )
 
     listings = dedupeListings(fetched.flatMap((entry) => entry.listings))
-    sources = mergeSources(fetched.map((entry) => entry.source))
+    sources = mergeSources(
+      fetched
+        .map((entry) => entry.source)
+        .filter((source): source is PropertyPortalSourceMeta => Boolean(source)),
+    )
     refreshedAt = new Date().toISOString()
     if (listings.length > 0 || sources.length > 0) {
       await writeCache(env, key, country.code, { listings, sources })
@@ -144,7 +175,7 @@ export function parseGenericPropertyListings(
   const sourceHost = normalizeSourceHost(source.hostname)
   const portalName = labelFromHost(sourceHost)
   const portal = `web:${slug(sourceHost)}`
-  const listings = objects
+  const structuredListings = objects
     .filter(isPropertyObject)
     .map((object) => objectToListing(object, {
       defaultCurrency,
@@ -155,7 +186,196 @@ export function parseGenericPropertyListings(
     }))
     .filter((listing): listing is PropertyListing => Boolean(listing))
 
-  return dedupeListings(listings).slice(0, 60)
+  const visibleListings = parseVisiblePropertyCards(
+    html,
+    source,
+    listingType,
+    defaultCurrency,
+  )
+
+  return dedupeListings([...structuredListings, ...visibleListings]).slice(0, 60)
+}
+
+function parseVisiblePropertyCards(
+  html: string,
+  source: URL,
+  listingType: PropertyListingType,
+  defaultCurrency: string,
+): PropertyListing[] {
+  const listings: PropertyListing[] = []
+  const sourceHost = normalizeSourceHost(source.hostname)
+  const portal = `web:${slug(sourceHost)}`
+  const portalName = labelFromHost(sourceHost)
+  const anchorPattern = /<a\b([^>]{0,4000})>([\s\S]{0,24000}?)<\/a>/gi
+  let match: RegExpExecArray | null
+  let inspected = 0
+
+  while (
+    (match = anchorPattern.exec(html)) !== null &&
+    inspected < 800 &&
+    listings.length < 60
+  ) {
+    inspected += 1
+    const href = htmlAttribute(match[1] ?? '', ['href'])
+    const body = match[2] ?? ''
+    const listingUrl = href ? safeHttpUrl(decodeHtml(href), source) : undefined
+    if (!listingUrl || !looksLikePropertyDetail(listingUrl, body)) continue
+
+    const text = cleanHtmlText(body)
+    const price = propertyPrice(text, defaultCurrency)
+    const title = propertyCardTitle(body)
+    if (!title || (!price && !propertyCardHasDetail(text))) continue
+
+    const imageUrl = propertyCardImage(body, source)
+    const location = propertyCardLocation(body)
+    listings.push({
+      bathrooms: firstMatchedNumber(text, /\b(\d+(?:[.,]\d+)?)\s*(?:bath|bathroom|salle de bain|banheiro)/i),
+      bedrooms: firstMatchedNumber(text, /\b(\d+(?:[.,]\d+)?)\s*(?:bed|bedroom|chambre|quarto)/i),
+      currencyCode: price?.currencyCode ?? defaultCurrency,
+      id: `${portal}:${hash(listingUrl.toString())}`,
+      imageUrl,
+      images: imageUrl ? [imageUrl] : undefined,
+      listingType,
+      listingUrl: listingUrl.toString(),
+      location,
+      portal,
+      portalName,
+      priceText: price ? formatMoney(price.value, price.currencyCode) : undefined,
+      priceValue: price?.value,
+      propertyType: propertyCardType(title),
+      title,
+    })
+  }
+
+  return listings
+}
+
+function looksLikePropertyDetail(url: URL, body: string): boolean {
+  const searchable = `${url.pathname} ${cleanHtmlText(body).slice(0, 500)}`
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+  return /(?:bedroom|house|apartment|flat|home|villa|property|listing|for-sale|to-rent|vivenda|apartamento|moradia|imovel|immobilier|maison|terrain)/.test(searchable)
+}
+
+function propertyCardHasDetail(text: string): boolean {
+  return /\b(?:bed|bedroom|bath|bathroom|house|apartment|flat|villa|vivenda|apartamento|maison|terrain)\b/i.test(text)
+}
+
+function propertyCardTitle(body: string): string | undefined {
+  const heading = /<h[1-6]\b[^>]*>([\s\S]{1,1000}?)<\/h[1-6]>/i.exec(body)?.[1]
+  const image = /<img\b([^>]*)>/i.exec(body)?.[1]
+  const candidate = heading
+    ? cleanHtmlText(heading)
+    : image
+      ? decodeHtml(htmlAttribute(image, ['alt', 'title']) ?? '').trim()
+      : ''
+  return candidate.length >= 4 ? candidate.slice(0, 180) : undefined
+}
+
+function propertyCardImage(body: string, source: URL): string | undefined {
+  const attributes = /<img\b([^>]*)>/i.exec(body)?.[1]
+  const value = attributes
+    ? htmlAttribute(attributes, ['src', 'data-src', 'data-lazy-src'])
+    : undefined
+  return value ? safeHttpUrl(decodeHtml(value), source)?.toString() : undefined
+}
+
+function propertyCardLocation(body: string): string | undefined {
+  const elementPattern = /<([a-z0-9]+)\b([^>]*\bclass=["'][^"']*(?:location|address|suburb)[^"']*["'][^>]*)>([\s\S]{0,800}?)<\/\1>/gi
+  const match = elementPattern.exec(body)
+  const value = match ? cleanHtmlText(match[3] ?? '') : ''
+  return value || undefined
+}
+
+function propertyCardType(title: string): string | undefined {
+  return /\b(apartment|flat|house|villa|townhouse|land|plot|terrain|vivenda|apartamento|maison)\b/i
+    .exec(title)?.[1]
+}
+
+function propertyPrice(
+  text: string,
+  defaultCurrency: string,
+): { currencyCode: string; value: number } | undefined {
+  const match = /(?:\b(AOA|AKZ|BWP|KMF|CDF|USD|SZL|LSL|MGA|MWK|MUR|MZN|NAD|SCR|TZS|ZMW|ZWG)\b|US\$|N\$|TSh|Kz|AKZ|BWP|CF|Ar|MK|Rs|MT|SR|[PEMK]|\$)\s*(\d{1,3}(?:[\s\u00a0\u202f'’.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)/i.exec(text)
+  if (!match) return undefined
+  const value = localizedPositiveNumber(match[2])
+  if (!value) return undefined
+  return {
+    currencyCode: propertyCurrencyCode(match[1] ?? match[0], defaultCurrency),
+    value,
+  }
+}
+
+function propertyCurrencyCode(value: string, fallback: string): string {
+  const normalized = value.toUpperCase().replace(/\s/g, '')
+  if (normalized.includes('US$') || normalized === '$' || normalized.includes('USD')) return 'USD'
+  if (normalized.includes('N$') || normalized.includes('NAD')) return 'NAD'
+  if (normalized.includes('TSH') || normalized.includes('TZS')) return 'TZS'
+  if (normalized.includes('KZ') || normalized.includes('AOA')) return 'AOA'
+  if (normalized.includes('BWP')) return 'BWP'
+  if (normalized.includes('KMF') || normalized.includes('CF')) return 'KMF'
+  if (normalized.includes('CDF')) return 'CDF'
+  if (normalized.includes('SZL')) return 'SZL'
+  if (normalized.includes('LSL')) return 'LSL'
+  if (normalized.includes('MGA') || normalized.includes('AR')) return 'MGA'
+  if (normalized.includes('MWK') || normalized.includes('MK')) return 'MWK'
+  if (normalized.includes('MUR') || normalized.includes('RS')) return 'MUR'
+  if (normalized.includes('MZN') || normalized.includes('MT')) return 'MZN'
+  if (normalized.includes('SCR') || normalized.includes('SR')) return 'SCR'
+  if (normalized.includes('ZMW')) return 'ZMW'
+  if (normalized.includes('ZWG')) return 'ZWG'
+  return fallback
+}
+
+function localizedPositiveNumber(value: string): number | undefined {
+  const compact = value.replace(/[\s\u00a0\u202f'’]/g, '').replace(/[.,]+$/, '')
+  let normalized = compact
+  if (/^\d{1,3}(?:[.,]\d{3})+$/.test(compact)) {
+    normalized = compact.replace(/[.,]/g, '')
+  } else if (compact.includes(',') && !compact.includes('.')) {
+    normalized = compact.replace(',', '.')
+  } else if (compact.includes(',') && compact.includes('.')) {
+    const decimal = compact.lastIndexOf(',') > compact.lastIndexOf('.') ? ',' : '.'
+    const group = decimal === ',' ? '.' : ','
+    normalized = compact.replaceAll(group, '').replace(decimal, '.')
+  }
+  const number = Number(normalized)
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+function firstMatchedNumber(text: string, pattern: RegExp): number | undefined {
+  const raw = pattern.exec(text)?.[1]
+  return raw ? localizedPositiveNumber(raw) : undefined
+}
+
+function htmlAttribute(attributes: string, names: string[]): string | undefined {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const match = new RegExp(
+      `\\b${escaped}\\s*=\\s*(?:["']([^"']*)["']|([^\\s>]+))`,
+      'i',
+    ).exec(attributes)
+    const value = match?.[1] ?? match?.[2]
+    if (value?.trim()) return value.trim()
+  }
+  return undefined
+}
+
+function cleanHtmlText(value: string): string {
+  return decodeHtml(value.replace(/<script\b[\s\S]*?<\/script>/gi, ' ').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, '’')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
 }
 
 async function resolveLocation(env: TrolleyScoutEnv, params: GlobalPropertySearchParams): Promise<string> {
@@ -340,6 +560,7 @@ function fallbackSearchListing(
   result: { title: string; url: string },
   listingType: PropertyListingType,
   currencyCode: string,
+  label?: string,
 ): PropertyListing[] {
   const url = safeHttpUrl(result.url)
   if (!url || !isLikelyPropertySearchResult(result)) return []
@@ -350,7 +571,7 @@ function fallbackSearchListing(
     listingType,
     listingUrl: url.toString(),
     portal,
-    portalName: labelFromHost(url.hostname),
+    portalName: label ?? labelFromHost(url.hostname),
     title: result.title,
   }]
 }
@@ -381,15 +602,24 @@ function isLikelyPropertySearchResult(
 }
 
 function dedupeSearchResults(
-  results: Array<{ title: string; url: string }>,
-): Array<{ title: string; url: string }> {
+  results: GlobalPropertyResult[],
+): GlobalPropertyResult[] {
   return [...new Map(results.map((result) => [result.url, result])).values()]
 }
 
-function sourceFromUrl(urlValue: string, ok: boolean): PropertyPortalSourceMeta {
+function sourceFromUrl(
+  urlValue: string,
+  ok: boolean,
+  label?: string,
+): PropertyPortalSourceMeta {
   const url = safeHttpUrl(urlValue)
   const host = normalizeSourceHost(url?.hostname ?? 'web')
-  return { count: ok ? 1 : 0, id: `web:${slug(host)}`, label: labelFromHost(host), ok }
+  return {
+    count: ok ? 1 : 0,
+    id: `web:${slug(host)}`,
+    label: label ?? labelFromHost(host),
+    ok,
+  }
 }
 
 function mergeSources(sources: PropertyPortalSourceMeta[]): PropertyPortalSourceMeta[] {

@@ -51,6 +51,30 @@ void main() {
     expect(api.discoveryCalls, 1);
     expect(api.forceLiveCalls, [false]);
   });
+
+  testWidgets('country switch never reuses another country’s deal cache',
+      (tester) async {
+    await DiscoveryCache().save(
+      const DiscoveryResult(
+        deals: [_cachedDeal],
+        foundDealCount: 1,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      ),
+      DateTime.now(),
+      'ZA',
+    );
+    final api = _DealsApi(countryCode: 'ZW');
+
+    await tester.pumpWidget(_wrap(DealsScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Stored server deal'), findsOneWidget);
+    expect(find.text('Cached rice deal'), findsNothing);
+    expect(api.discoveryCalls, 1);
+    expect(api.dealSiteCalls, 0);
+  });
 }
 
 Widget _wrap(Widget child) => MaterialApp(
@@ -59,13 +83,19 @@ Widget _wrap(Widget child) => MaterialApp(
     );
 
 class _DealsApi extends Api {
-  _DealsApi() : super(baseUrl: 'https://example.test');
+  _DealsApi({this.countryCode = 'ZA'}) : super(baseUrl: 'https://example.test');
 
+  final String countryCode;
   int discoveryCalls = 0;
+  int dealSiteCalls = 0;
   final List<bool> forceLiveCalls = [];
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async {
+  String get effectiveCountryCode => countryCode;
+
+  @override
+  Future<DiscoveryResult> discovery(
+      {bool forceLive = false, bool summary = false}) async {
     discoveryCalls += 1;
     forceLiveCalls.add(forceLive);
     return const DiscoveryResult(
@@ -78,7 +108,10 @@ class _DealsApi extends Api {
   }
 
   @override
-  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async => const [];
+  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async {
+    dealSiteCalls += 1;
+    return const [];
+  }
 
   @override
   Future<List<PublicAd>> publicAds(String placement) async => const [];

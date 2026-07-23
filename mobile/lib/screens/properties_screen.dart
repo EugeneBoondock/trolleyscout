@@ -12,8 +12,8 @@ import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/skeleton.dart';
 
-/// Properties Scout — a Household-tier tool that searches the SA property
-/// portals (Property24, Private Property) for homes to buy or rent. Everyone
+/// Properties Scout is a Household-tier tool that searches property platforms
+/// available in the member’s selected country. Everyone
 /// sees this page; logged-out shoppers are asked to sign in, and members without
 /// the Household plan (and no admin grant) see an upgrade card.
 class PropertiesScreen extends StatefulWidget {
@@ -59,12 +59,29 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
   bool _lastWasNearMe = false;
   String? _error;
   String? _resultLocation;
+  CountryPricing _country = const CountryPricing(
+    code: 'ZA',
+    name: 'South Africa',
+    currencyCode: 'ZAR',
+    rateFromZar: 1,
+    capital: 'Pretoria',
+  );
 
   @override
   void initState() {
     super.initState();
     _loadSaved();
     _loadRecent();
+    _loadCountry();
+  }
+
+  Future<void> _loadCountry() async {
+    try {
+      final country = await widget.api.country();
+      if (mounted) setState(() => _country = country);
+    } catch (_) {
+      // The search still works and its response supplies country metadata.
+    }
   }
 
   Future<void> _loadRecent() async {
@@ -170,6 +187,17 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       setState(() {
         _listings = result.listings;
         _resultLocation = result.locationText;
+        final resultCountry = result.country;
+        if (resultCountry != null) {
+          _country = CountryPricing(
+            code: resultCountry.code,
+            name: resultCountry.name,
+            currencyCode: resultCountry.currencyCode,
+            rateFromZar: _country.rateFromZar,
+            capital: resultCountry.capital,
+            flag: resultCountry.flag,
+          );
+        }
         _loading = false;
         _searched = true;
       });
@@ -300,6 +328,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     loading: _loading,
                     locating: _locating,
                     filtersExpanded: _filtersExpanded,
+                    country: _country,
                     onListingType: (value) =>
                         _applyFilterChange(() => _listingType = value),
                     onMinBeds: (value) =>
@@ -370,7 +399,12 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       // recall) plus a few popular metros to tap.
       return _StartSuggestions(
         recent: _recent,
-        popular: kPopularPropertyLocations,
+        popular: _country.code == 'ZA'
+            ? kPopularPropertyLocations
+            : _country.capital == null
+                ? const []
+                : [_country.capital!],
+        countryName: _country.name,
         onPick: _runSuggestion,
       );
     }
@@ -422,6 +456,7 @@ class _SearchBar extends StatelessWidget {
     required this.loading,
     required this.locating,
     required this.filtersExpanded,
+    required this.country,
     required this.onListingType,
     required this.onMinBeds,
     required this.onSort,
@@ -439,6 +474,7 @@ class _SearchBar extends StatelessWidget {
   final bool loading;
   final bool locating;
   final bool filtersExpanded;
+  final CountryPricing country;
   final ValueChanged<String> onListingType;
   final ValueChanged<int?> onMinBeds;
   final ValueChanged<String> onSort;
@@ -507,7 +543,9 @@ class _SearchBar extends StatelessWidget {
                       decoration: InputDecoration(
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 20),
-                        hintText: 'City, suburb or area',
+                        hintText: country.capital == null
+                            ? 'City, suburb or area'
+                            : 'City, suburb or area, e.g. ${country.capital}',
                         border: OutlineInputBorder(
                             borderSide:
                                 BorderSide(color: TS.lineSoftOf(context))),
@@ -595,13 +633,13 @@ class _SearchBar extends StatelessWidget {
                   Expanded(
                       child: _PriceField(
                           controller: minPriceController,
-                          hint: 'Min price (R)',
+                          hint: 'Min price (${country.currencyCode})',
                           onSubmitted: onSearch)),
                   const SizedBox(width: 8),
                   Expanded(
                       child: _PriceField(
                           controller: maxPriceController,
-                          hint: 'Max price (R)',
+                          hint: 'Max price (${country.currencyCode})',
                           onSubmitted: onSearch)),
                 ],
               ),
@@ -1106,8 +1144,8 @@ class _UpsellCard extends StatelessWidget {
                   style: TS.display.copyWith(fontSize: 22)),
               const SizedBox(height: 6),
               Text(
-                'Search homes to buy or rent in your country. Property24 and '
-                'Private Property in one place, with your own filters. Included '
+                'Search homes to buy or rent across property platforms in your '
+                'country, with your own filters. Included '
                 'with the Household plan.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context)),
@@ -1199,11 +1237,13 @@ class _StartSuggestions extends StatelessWidget {
   const _StartSuggestions({
     required this.recent,
     required this.popular,
+    required this.countryName,
     required this.onPick,
   });
 
   final List<String> recent;
   final List<String> popular;
+  final String countryName;
   final ValueChanged<String> onPick;
 
   @override
@@ -1221,7 +1261,7 @@ class _StartSuggestions extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Search any city, suburb or area to see homes for sale or to rent.',
+                  'Search any city, suburb or area in $countryName to see homes for sale or to rent.',
                   style: TextStyle(color: TS.mutedOf(context)),
                 ),
               ),

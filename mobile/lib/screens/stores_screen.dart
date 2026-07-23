@@ -84,6 +84,7 @@ class _StoresScreenState extends State<StoresScreen> {
         hasMore: next.hasMore,
         limit: next.limit,
         offset: next.offset,
+        country: next.country ?? current.discovered.country,
       );
       if (mounted) {
         setState(() {
@@ -126,6 +127,7 @@ class _StoresScreenState extends State<StoresScreen> {
         }
         final data = snapshot.data!;
         final catalog = data.catalog;
+        final country = catalog.country ?? data.discovered.country;
         final retailers = catalog.retailers.where((retailer) {
           final matchesQuery = _query.isEmpty ||
               retailer.name.toLowerCase().contains(_query) ||
@@ -156,7 +158,8 @@ class _StoresScreenState extends State<StoresScreen> {
                       eyebrow: 'Official sources',
                       title: 'Source directory',
                       description:
-                          'Showing ${allDiscoveredGroups.length} store groups from ${data.discovered.storeCount} locations, plus official specials pages and store finders.',
+                          'Showing ${allDiscoveredGroups.length} store groups from ${data.discovered.storeCount} locations'
+                          '${country == null ? '' : ' in ${country.name}'}, plus official specials pages and store finders.',
                       action: IconButton(
                           tooltip: 'Refresh stores',
                           onPressed: _reload,
@@ -331,7 +334,8 @@ class _DiscoveredGroupCard extends StatelessWidget {
     );
   }
 
-  Future<void> _showStoreGroup(BuildContext context) => showModalBottomSheet<void>(
+  Future<void> _showStoreGroup(BuildContext context) =>
+      showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -643,6 +647,21 @@ class _BranchDetailBody extends StatelessWidget {
               ),
               icon: const Icon(Icons.map_outlined, size: 18),
               label: const Text('View on map'),
+            ),
+          ),
+        ],
+        if (branch.website != null) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => showInAppBrowser(
+                context,
+                branch.website,
+                title: branch.name,
+              ),
+              icon: const Icon(Icons.language, size: 18),
+              label: const Text('Open official website'),
             ),
           ),
         ],

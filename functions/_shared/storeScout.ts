@@ -629,6 +629,7 @@ async function scoutStoreWebsite(
     : pathPlan.slice(0, MAX_PATHS_PER_STORE)
   let nextPath = start
   let sawTransientFailure = false
+  let linkedDetailBudget = 2
 
   for (const path of paths) {
     const pageUrl = `${origin}${path}`
@@ -663,6 +664,49 @@ async function scoutStoreWebsite(
 
     if (leaflets.length > 0 || deals.length > 0) {
       return outcome('success', [...deals, ...leaflets])
+    }
+
+    if (linkedDetailBudget > 0) {
+      const detailUrls = extractPromotionDetailUrls(
+        page.text,
+        finalUrl,
+        origin,
+        linkedDetailBudget,
+      )
+      linkedDetailBudget -= detailUrls.length
+
+      for (const detailUrl of detailUrls) {
+        const detail = await fetchStorePage(detailUrl, env.JINA_API_KEY)
+        if (detail.status === 'transient_failure') {
+          sawTransientFailure = true
+          continue
+        }
+        if (detail.status !== 'success' || !detail.text) continue
+
+        const resolvedDetailUrl = detail.finalUrl ?? detailUrl
+        if (
+          !sameOrigin(resolvedDetailUrl, origin) ||
+          !verifyOfficialStorePage(store, detail.text, resolvedDetailUrl)
+        ) {
+          continue
+        }
+        const detailLeaflets = officialLeaflets(
+          store,
+          detail.text,
+          resolvedDetailUrl,
+          origin,
+          nowMs,
+        )
+        const detailDeals = extractPublicStoreDeals(
+          store,
+          detail.text,
+          resolvedDetailUrl,
+          nowMs,
+        )
+        if (detailLeaflets.length > 0 || detailDeals.length > 0) {
+          return outcome('success', [...detailDeals, ...detailLeaflets])
+        }
+      }
     }
 
     // The site's own extraction found nothing, but it may run a hosted deal
@@ -1630,6 +1674,37 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
   return records
 }
 
+export function extractPromotionDetailUrls(
+  html: string,
+  pageUrl: string,
+  officialOrigin: string,
+  limit = 2,
+): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const anchorPattern = /<a\b([^>]{0,4000})>([\s\S]{0,1200}?)<\/a>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = anchorPattern.exec(html)) !== null && urls.length < limit) {
+    const href = attributeValue(match[1] ?? '', ['href'])
+    const url = absoluteUrl(href, pageUrl)
+    if (
+      !url ||
+      url === pageUrl ||
+      seen.has(url) ||
+      !sameOrigin(url, officialOrigin) ||
+      /\.pdf(?:$|[?#])/i.test(url) ||
+      !looksLikePromotionSignal(`${href ?? ''} ${cleanText(match[2] ?? '')}`)
+    ) {
+      continue
+    }
+    seen.add(url)
+    urls.push(url)
+  }
+
+  return urls
+}
+
 function decodeJsonAttribute(value: string): string {
   return value
     .replace(/&quot;|&#34;/gi, '"')
@@ -2045,6 +2120,12 @@ function verifyOfficialStorePage(
   const nameTokens = meaningfulTokens(store.name)
   const nameMatch = nameTokens.length > 0 &&
     nameTokens.filter((token) => pageText.includes(token)).length >= Math.ceil(nameTokens.length * 0.6)
+  if (
+    store.websiteSource === 'country-retailer' &&
+    hasStoreCountryEvidence(store, sourceUrl, pageText)
+  ) {
+    return true
+  }
   const addressMatch = (store.address ?? '')
     .split(',')
     .map(normalizeWords)

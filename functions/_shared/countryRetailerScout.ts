@@ -3,6 +3,7 @@ import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { Retailer, RetailerGroup, SourceKind } from '../../src/types'
 import type { CountryOption } from '../../src/types'
 import { looksLikePromotionSignal } from '../../src/services/scoutSources'
+import { getSadcRetailSources } from '../../src/services/sadcSourceRegistry'
 import type { TrolleyScoutEnv } from './env'
 import { searchWeb } from './searchWeb'
 
@@ -40,9 +41,10 @@ export async function getCountryRetailers(
   country: CountryOption,
 ): Promise<Retailer[]> {
   const cached = await readCache(env, country.code)
+  const registered = buildRegisteredCountryRetailers(country)
   if (cached && Date.now() - Date.parse(cached.checked_at) < CACHE_TTL_MS) {
     const parsed = parseRetailerCache(cached.retailers_json)
-    if (parsed.length > 0) return parsed
+    if (parsed.length > 0) return mergeRetailers(registered, parsed)
   }
 
   const [resultGroups, stores] = await Promise.all([
@@ -59,14 +61,14 @@ export async function getCountryRetailers(
     readStoreWebsites(env, country.code),
   ])
 
-  const discovered = buildCountryRetailers(country, [
+  const discovered = mergeRetailers(registered, buildCountryRetailers(country, [
     ...stores.map((store) => ({
       title: store.store_name,
       trusted: true,
       url: store.website,
     })),
     ...dedupeSearchResults(resultGroups.flat()),
-  ])
+  ]))
 
   if (discovered.length > 0) {
     await writeCache(env, country.code, discovered)
@@ -78,7 +80,14 @@ export async function getCountryRetailers(
 
 export function buildCountryRetailers(
   country: CountryOption,
-  results: Array<{ title: string; trusted?: boolean; url: string }>,
+  results: Array<{
+    sourceKind?: SourceKind
+    sourceLabel?: string
+    title: string
+    trusted?: boolean
+    url: string
+    verifiedBrand?: boolean
+  }>,
 ): Retailer[] {
   const byBrand = new Map<string, Retailer>()
 
@@ -98,14 +107,15 @@ export function buildCountryRetailers(
 
     const host = url.hostname.replace(/^www\./, '')
     const name = retailerName(result.title, host)
-    if (!name || !looksOfficial(name, host)) continue
+    if (!name || (!result.verifiedBrand && !looksOfficial(name, host))) continue
 
-    const sourceKind: SourceKind = looksLikePromotionSignal(url.pathname)
-      ? 'specials'
-      : 'store-finder'
+    const sourceKind: SourceKind = result.sourceKind ?? (
+      looksLikePromotionSignal(url.pathname) ? 'specials' : 'store-finder'
+    )
     const source = {
       kind: sourceKind,
-      label: sourceKind === 'specials' ? 'Offers and catalogues' : 'Official website',
+      label: result.sourceLabel ??
+        (sourceKind === 'specials' ? 'Offers and catalogues' : 'Official website'),
       url: url.toString(),
     } as const
     const brandKey = slug(name)
@@ -134,6 +144,33 @@ export function buildCountryRetailers(
   }
 
   return [...byBrand.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function mergeRetailers(...groups: Retailer[][]): Retailer[] {
+  const merged = new Map<string, Retailer>()
+
+  for (const retailer of groups.flat()) {
+    const key = slug(retailer.name)
+    const current = merged.get(key)
+    if (!current) {
+      merged.set(key, {
+        ...retailer,
+        sources: [...retailer.sources],
+      })
+      continue
+    }
+
+    for (const source of retailer.sources) {
+      if (!current.sources.some((candidate) => candidate.url === source.url)) {
+        current.sources.push(source)
+      }
+    }
+    if (retailer.verifiedOn > current.verifiedOn) {
+      current.verifiedOn = retailer.verifiedOn
+    }
+  }
+
+  return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
 
 function dedupeSearchResults(
@@ -233,8 +270,22 @@ export function applyCountryRetailerWebsites(
   return stores.map((store) => {
     if (store.website) return store
     const website = resolveCountryRetailerWebsite(store.name, country, retailers)
-    return website ? { ...store, website } : store
+    return website ? { ...store, website, websiteSource: 'country-retailer' } : store
   })
+}
+
+export function buildRegisteredCountryRetailers(country: CountryOption): Retailer[] {
+  return buildCountryRetailers(
+    country,
+    getSadcRetailSources(country.code).map((source) => ({
+      sourceKind: source.kind,
+      sourceLabel: source.label,
+      title: source.retailerName,
+      trusted: true,
+      url: source.url,
+      verifiedBrand: true,
+    })),
+  )
 }
 
 export function countryRetailerSummary(retailers: Retailer[]) {

@@ -80,12 +80,17 @@ class Api {
   final Duration slowRequestTimeout;
   static const _adminCountryPreferenceKey = 'ts_admin_country_override_v1';
   String? _adminCountryCode;
+  String? _memberCountryCode;
   bool _adminCountryLoaded = false;
+
+  String get effectiveCountryCode =>
+      _adminCountryCode ?? _memberCountryCode ?? 'ZA';
 
   Future<MemberSession> session() async {
     try {
       final data = await _request('GET', '/api/member-session');
       final session = MemberSession.fromJson(_map(data['session']));
+      _memberCountryCode = session.account?.countryCode;
       await _cacheSession(session);
       return session;
     } on ApiException catch (error) {
@@ -93,6 +98,7 @@ class Api {
           (error.statusCode != null && error.statusCode! >= 500);
       final cached = canUseSnapshot ? await _readCachedSession() : null;
       if (cached != null) {
+        _memberCountryCode = cached.account?.countryCode;
         return MemberSession(
           isAuthenticated: true,
           account: cached.account,
@@ -107,6 +113,7 @@ class Api {
     final data =
         await _request('POST', '/api/member-session', body: draft.toJson());
     final session = MemberSession.fromJson(_map(data['session']));
+    _memberCountryCode = session.account?.countryCode;
     await _cacheSession(session);
     return session;
   }
@@ -129,6 +136,7 @@ class Api {
     }
     await _cookieStore.clear();
     _adminCountryCode = null;
+    _memberCountryCode = null;
     _adminCountryLoaded = true;
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -236,9 +244,7 @@ class Api {
       'GET',
       '/api/nearby-stores?lat=${Uri.encodeComponent('$lat')}&lon=${Uri.encodeComponent('$lon')}',
     );
-    return NearbyResult(
-      stores: _maps(data['stores']).map(NearbyStore.fromJson).toList(),
-    );
+    return NearbyResult.fromJson(data);
   }
 
   Future<List<SavedSource>> savedSources() async {
@@ -427,6 +433,7 @@ class Api {
       body: {'action': 'profile', 'displayName': displayName},
     );
     final account = MemberAccount.fromJson(_map(data['account']));
+    _memberCountryCode = account.countryCode;
     await _cacheSession(
       MemberSession(isAuthenticated: true, account: account),
     );

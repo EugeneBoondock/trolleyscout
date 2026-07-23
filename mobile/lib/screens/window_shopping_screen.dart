@@ -214,8 +214,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 
   /// The deals currently in the window: everything, or the search matches.
   List<ScrollDeal> get _visible {
-    if (identical(_visibleCacheDeals, _deals) &&
-        _visibleCacheQuery == _query) {
+    if (identical(_visibleCacheDeals, _deals) && _visibleCacheQuery == _query) {
       return _visibleCache!;
     }
     List<ScrollDeal> result;
@@ -388,7 +387,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   // server read; a stale or missing cache falls through to a live fetch,
   // which then refreshes the cache for next time.
   Future<DiscoveryResult> _loadStoredDiscovery() async {
-    final cached = await _discoveryCache.load();
+    final countryCode = widget.api.effectiveCountryCode;
+    final cached = await _discoveryCache.load(countryCode);
     if (cached != null) {
       final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
       if (!age.isNegative && age < _discoveryCacheReuse) {
@@ -396,7 +396,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       }
     }
     final result = await widget.api.discovery(forceLive: false);
-    unawaited(_discoveryCache.save(result, DateTime.now()));
+    unawaited(_discoveryCache.save(result, DateTime.now(), countryCode));
     return result;
   }
 
@@ -422,10 +422,12 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       var dealSitesFailed = false;
       var discoveryFailed = false;
       final results = await Future.wait<List<ScrollDeal>>([
-        widget.api.dealSites(forceLive: false).catchError((_) {
-          dealSitesFailed = true;
-          return <ScrollDeal>[];
-        }),
+        widget.api.effectiveCountryCode == 'ZA'
+            ? widget.api.dealSites(forceLive: false).catchError((_) {
+                dealSitesFailed = true;
+                return <ScrollDeal>[];
+              })
+            : Future.value(<ScrollDeal>[]),
         _discoveryDeals().catchError((_) {
           discoveryFailed = true;
           return <ScrollDeal>[];
@@ -1187,8 +1189,12 @@ class _WindowCard extends StatelessWidget {
                               fontSize: 30,
                               fontWeight: FontWeight.w900)),
                     const SizedBox(width: 10),
-                    if (meaningfulWasPrice(deal.previousPriceText, deal.priceText) != null)
-                      Text(meaningfulWasPrice(deal.previousPriceText, deal.priceText)!,
+                    if (meaningfulWasPrice(
+                            deal.previousPriceText, deal.priceText) !=
+                        null)
+                      Text(
+                          meaningfulWasPrice(
+                              deal.previousPriceText, deal.priceText)!,
                           style: const TextStyle(
                               color: Colors.white70,
                               decoration: TextDecoration.lineThrough,

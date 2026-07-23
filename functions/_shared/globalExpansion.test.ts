@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { countryFromCode } from './countryContext'
 import {
   applyCountryRetailerWebsites,
+  buildRegisteredCountryRetailers,
   buildCountryRetailers,
   resolveCountryRetailerWebsite,
 } from './countryRetailerScout'
 import { emailLookup, protectEmail, revealEmail } from './emailProtection'
 import { parseGenericPropertyListings } from './globalPropertyScout'
+import { SADC_MARKET_SOURCES } from '../../src/services/sadcSourceRegistry'
 import type { TrolleyScoutEnv } from './env'
 
 const encryptedEnv: TrolleyScoutEnv = {
@@ -21,6 +23,32 @@ describe('global country support', () => {
       currencyCode: 'ZWG',
       name: 'Zimbabwe',
     })
+  })
+
+  it('registers every non-South-African SADC market audited in the browser', () => {
+    expect(Object.keys(SADC_MARKET_SOURCES).sort()).toEqual([
+      'AO', 'BW', 'CD', 'KM', 'LS', 'MG', 'MU', 'MW', 'MZ', 'NA', 'SC', 'SZ',
+      'TZ', 'ZM', 'ZW',
+    ])
+    expect(
+      Object.values(SADC_MARKET_SOURCES).every(
+        (market) => market.propertySources.length > 0,
+      ),
+    ).toBe(true)
+    expect(SADC_MARKET_SOURCES.KM?.retailStatus).toBe('social-only')
+  })
+
+  it('builds verified retailer entries from the audited source registry', () => {
+    expect(
+      buildRegisteredCountryRetailers(countryFromCode('AO')).map(
+        (retailer) => retailer.name,
+      ),
+    ).toEqual(['AngoMart', 'Maxi'])
+    expect(
+      buildRegisteredCountryRetailers(countryFromCode('ZW')).map(
+        (retailer) => retailer.name,
+      ),
+    ).toEqual(['SPAR Zimbabwe', 'TM Pick n Pay'])
   })
 
   it('builds a country retailer directory from likely official results', () => {
@@ -176,6 +204,7 @@ describe('global country support', () => {
       expect.objectContaining({
         name: 'Spar Montague',
         website: 'https://online-spar.co.zw/',
+        websiteSource: 'country-retailer',
       }),
       expect.not.objectContaining({ website: expect.anything() }),
     ])
@@ -267,6 +296,40 @@ describe('international property parsing', () => {
         priceValue: 1450000,
         propertyType: 'House',
         title: 'Family home in Gaborone',
+      }),
+    ])
+  })
+
+  it('reads visible property cards when a portal renders listing HTML', () => {
+    const html = `
+      <a href="/4-bedroom-house-for-sale-in-gaborone-117416899">
+        <img src="/images/gaborone-home.jpg" alt="4 Bedroom House Gaborone">
+        <h3>4 Bedroom House in Gaborone</h3>
+        <div class="property-location">Gaborone North</div>
+        <div class="price">P 1 100 000</div>
+        <span>4 Bedrooms</span>
+        <span>3 Bathrooms</span>
+      </a>
+    `
+
+    expect(
+      parseGenericPropertyListings(
+        html,
+        'https://www.property24.co.bw/houses-for-sale',
+        'sale',
+        'BWP',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        bathrooms: 3,
+        bedrooms: 4,
+        currencyCode: 'BWP',
+        imageUrl: 'https://www.property24.co.bw/images/gaborone-home.jpg',
+        listingUrl:
+          'https://www.property24.co.bw/4-bedroom-house-for-sale-in-gaborone-117416899',
+        location: 'Gaborone North',
+        priceValue: 1100000,
+        title: '4 Bedroom House in Gaborone',
       }),
     ])
   })

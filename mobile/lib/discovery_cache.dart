@@ -17,12 +17,12 @@ class CachedDiscovery {
 /// Last successful Find-deals payload, kept on-device so reopening the screen
 /// is instant and does not repeat a server read inside the three-hour window.
 class DiscoveryCache {
-  static const _key = 'discovery_cache_v1';
+  static const _keyPrefix = 'discovery_cache_v2';
 
-  Future<CachedDiscovery?> load() async {
+  Future<CachedDiscovery?> load([String countryCode = 'ZA']) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      final raw = preferences.getString(_key);
+      final raw = preferences.getString(_keyFor(countryCode));
       if (raw == null || raw.isEmpty) return null;
 
       final decoded = jsonDecode(raw);
@@ -41,12 +41,16 @@ class DiscoveryCache {
     }
   }
 
-  Future<void> save(DiscoveryResult result, DateTime fetchedAt) async {
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+  ]) async {
     if (result.deals.isEmpty) return;
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(
-        _key,
+        _keyFor(countryCode),
         jsonEncode({
           'fetchedAt': fetchedAt.toUtc().toIso8601String(),
           'result': result.toJson(),
@@ -55,5 +59,12 @@ class DiscoveryCache {
     } catch (_) {
       // Cache is best-effort.
     }
+  }
+
+  static String _keyFor(String countryCode) {
+    final normalized = countryCode.trim().toUpperCase();
+    final safeCode =
+        RegExp(r'^[A-Z]{2}$').hasMatch(normalized) ? normalized : 'ZA';
+    return '${_keyPrefix}_$safeCode';
   }
 }

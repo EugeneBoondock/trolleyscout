@@ -111,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // markdowns from it costs nothing and gives the dashboard a reason to be
   // opened every day.
   Future<List<Deal>> _cachedTopDeals() async {
-    final cached = await DiscoveryCache().load();
+    final cached = await DiscoveryCache().load(widget.api.effectiveCountryCode);
     return topSavingsDeals(cached?.result.deals ?? const []);
   }
 

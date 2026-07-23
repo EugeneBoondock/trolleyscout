@@ -75,6 +75,8 @@ void main() {
       await api.session();
 
       expect(session.account?.displayName, 'Sam Shopper');
+      expect(session.account?.countryCode, 'ZW');
+      expect(api.effectiveCountryCode, 'ZW');
       expect(await cookieStore.read(), 'ts_member_session=secret-token');
       expect(requests.last.headers['cookie'], 'ts_member_session=secret-token');
     });
@@ -270,6 +272,45 @@ void main() {
       await api.dealSites(forceLive: true);
 
       expect(requestUri.queryParameters['refresh'], '1');
+    });
+
+    test('keeps nearby country and branch website metadata', () async {
+      final api = Api(
+        client: MockClient((request) async => http.Response(
+              jsonEncode({
+                'data': {
+                  'country': {
+                    'code': 'ZW',
+                    'currencyCode': 'ZWG',
+                    'flag': '🇿🇼',
+                    'name': 'Zimbabwe',
+                  },
+                  'stores': [
+                    {
+                      'placeId': 'ok-harare',
+                      'name': 'OK Zimbabwe Harare',
+                      'countryCode': 'ZW',
+                      'countryName': 'Zimbabwe',
+                      'website': 'https://www.okzimbabwe.co.zw/',
+                      'lat': -17.8252,
+                      'lon': 31.0335,
+                    },
+                  ],
+                },
+              }),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            )),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final result = await api.nearbyStores(-17.8252, 31.0335);
+
+      expect(result.country?.code, 'ZW');
+      expect(result.stores.single.website, 'https://www.okzimbabwe.co.zw/');
+      expect(result.stores.single.countryName, 'Zimbabwe');
     });
 
     test('posts selected stores to the live product-price endpoint', () async {
@@ -603,6 +644,9 @@ const _accountJson = {
   'planName': 'Free',
   'planStatus': 'active',
   'role': 'member',
+  'countryCode': 'ZW',
+  'countryName': 'Zimbabwe',
+  'currencyCode': 'ZWG',
   'createdAt': '2026-07-01T10:00:00.000Z',
   'updatedAt': '2026-07-01T10:00:00.000Z',
 };

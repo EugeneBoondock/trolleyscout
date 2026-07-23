@@ -25,6 +25,9 @@ export interface NearbyStore {
   lat: number
   lon: number
   website?: string
+  // Records that the website was matched from a country retailer directory,
+  // allowing a chain-level offers page to be verified without a branch address.
+  websiteSource?: 'country-retailer'
   distanceM?: number
   countryCode?: string
   countryName?: string

@@ -105,6 +105,60 @@ void main() {
     expect(store.deals.single.validTo, '2026-08-09');
   });
 
+  test('keeps country and official website metadata across mobile results', () {
+    final nearby = NearbyResult.fromJson({
+      'country': {
+        'code': 'ZW',
+        'currencyCode': 'ZWG',
+        'flag': '🇿🇼',
+        'name': 'Zimbabwe',
+        'capital': 'Harare',
+      },
+      'stores': [
+        {
+          'placeId': 'ok-harare',
+          'name': 'OK Zimbabwe Harare',
+          'countryCode': 'ZW',
+          'countryName': 'Zimbabwe',
+          'website': 'https://www.okzimbabwe.co.zw/',
+          'lat': -17.8252,
+          'lon': 31.0335,
+        },
+      ],
+    });
+    final property = PropertySearchResult.fromJson({
+      'country': {
+        'code': 'ZW',
+        'currencyCode': 'ZWG',
+        'flag': '🇿🇼',
+        'name': 'Zimbabwe',
+        'capital': 'Harare',
+      },
+      'listingType': 'sale',
+      'page': 1,
+      'listings': [],
+      'sources': [],
+    });
+    final retailers = RetailerCatalog.fromJson({
+      'country': {
+        'code': 'ZW',
+        'currencyCode': 'ZWG',
+        'flag': '🇿🇼',
+        'name': 'Zimbabwe',
+      },
+      'retailers': [],
+      'summary': {'sourceKinds': []},
+    });
+
+    expect(nearby.country?.name, 'Zimbabwe');
+    expect(nearby.stores.single.countryCode, 'ZW');
+    expect(nearby.stores.single.countryName, 'Zimbabwe');
+    expect(nearby.stores.single.website, 'https://www.okzimbabwe.co.zw/');
+    expect(NearbyResult.fromJson(nearby.toJson()).country?.code, 'ZW');
+    expect(property.country?.capital, 'Harare');
+    expect(retailers.country?.currencyCode, 'ZWG');
+  });
+
   test('scroll deals preserve a distinct ordered product gallery', () {
     final deal = ScrollDeal.fromJson({
       'id': 'window-1',

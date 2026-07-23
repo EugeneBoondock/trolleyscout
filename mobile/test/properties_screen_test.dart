@@ -38,11 +38,12 @@ void main() {
     expect(hideRect.right, greaterThanOrEqualTo(417));
 
     await tester.enterText(
-        find.widgetWithText(TextField, 'City, suburb or area'), 'Cape Town');
+        find.widgetWithText(TextField, 'City, suburb or area, e.g. Pretoria'),
+        'Cape Town');
     await tester.enterText(
-        find.widgetWithText(TextField, 'Min price (R)'), '1000');
+        find.widgetWithText(TextField, 'Min price (ZAR)'), '1000');
     await tester.enterText(
-        find.widgetWithText(TextField, 'Max price (R)'), '5000');
+        find.widgetWithText(TextField, 'Max price (ZAR)'), '5000');
     await tester.tap(find.text('Rent'));
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Search'));
@@ -61,8 +62,8 @@ void main() {
     expect(find.text('Search near me'), findsNothing);
     expect(find.text('Min beds'), findsNothing);
     expect(find.text('Sort'), findsNothing);
-    expect(find.text('Min price (R)'), findsNothing);
-    expect(find.text('Max price (R)'), findsNothing);
+    expect(find.text('Min price (ZAR)'), findsNothing);
+    expect(find.text('Max price (ZAR)'), findsNothing);
     expect(find.text('Example rental'), findsOneWidget);
     expect(tester.getSize(find.byType(ListView)).height,
         greaterThan(expandedHeight + 200));
@@ -155,6 +156,33 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byTooltip('Show search filters'), findsOneWidget);
   });
+
+  testWidgets('international country changes property hints and starter city',
+      (tester) async {
+    await tester.pumpWidget(_wrap(PropertiesScreen(
+      api: _PropertiesApi(
+        pricing: const CountryPricing(
+          code: 'ZW',
+          name: 'Zimbabwe',
+          currencyCode: 'ZWG',
+          rateFromZar: 1,
+          capital: 'Harare',
+          flag: '🇿🇼',
+        ),
+      ),
+      account: _memberAccount,
+      isAuthenticated: true,
+      onWantsAuth: () {},
+      onUpgrade: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Harare'), findsOneWidget);
+    expect(find.text('Min price (ZWG)'), findsOneWidget);
+    expect(find.text('Max price (ZWG)'), findsOneWidget);
+    expect(find.textContaining('in Zimbabwe'), findsOneWidget);
+    expect(find.text('Cape Town'), findsNothing);
+  });
 }
 
 Widget _wrap(
@@ -187,7 +215,20 @@ double _contrast(Color first, Color second) {
 }
 
 class _PropertiesApi extends Api {
-  _PropertiesApi() : super(baseUrl: 'https://example.test');
+  _PropertiesApi({
+    this.pricing = const CountryPricing(
+      code: 'ZA',
+      name: 'South Africa',
+      currencyCode: 'ZAR',
+      rateFromZar: 1,
+      capital: 'Pretoria',
+    ),
+  }) : super(baseUrl: 'https://example.test');
+
+  final CountryPricing pricing;
+
+  @override
+  Future<CountryPricing> country() async => pricing;
 
   @override
   Future<PropertySearchResult> searchProperties({
@@ -219,6 +260,13 @@ class _PropertiesApi extends Api {
         listingType: listingType,
         page: page,
         locationText: query,
+        country: CountryOption(
+          code: pricing.code,
+          currencyCode: pricing.currencyCode,
+          flag: pricing.flag ?? '',
+          name: pricing.name,
+          capital: pricing.capital,
+        ),
       );
 }
 

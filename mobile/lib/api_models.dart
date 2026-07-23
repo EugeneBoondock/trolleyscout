@@ -35,6 +35,9 @@ class MemberAccount {
     required this.propertiesAccess,
     required this.createdAt,
     required this.updatedAt,
+    this.countryCode = 'ZA',
+    this.countryName = 'South Africa',
+    this.currencyCode = 'ZAR',
     this.billingCycle,
     this.pendingPlanId,
     this.pendingEffectiveAt,
@@ -51,6 +54,9 @@ class MemberAccount {
   final bool propertiesAccess;
   final String createdAt;
   final String updatedAt;
+  final String countryCode;
+  final String countryName;
+  final String currencyCode;
   // The cycle this member is actually billed on. Null for free members and for
   // plans an admin granted directly, where there is no subscription behind it.
   final String? billingCycle;
@@ -76,6 +82,9 @@ class MemberAccount {
         propertiesAccess: json['propertiesAccess'] == true,
         createdAt: _string(json['createdAt']),
         updatedAt: _string(json['updatedAt']),
+        countryCode: _string(json['countryCode'], 'ZA'),
+        countryName: _string(json['countryName'], 'South Africa'),
+        currencyCode: _string(json['currencyCode'], 'ZAR'),
         billingCycle: json['billingCycle'] == 'monthly' ||
                 json['billingCycle'] == 'annual'
             ? json['billingCycle'] as String
@@ -96,6 +105,9 @@ class MemberAccount {
         'propertiesAccess': propertiesAccess,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
+        'countryCode': countryCode,
+        'countryName': countryName,
+        'currencyCode': currencyCode,
         if (billingCycle != null) 'billingCycle': billingCycle,
         if (pendingPlanId != null) 'pendingPlanId': pendingPlanId,
         if (pendingEffectiveAt != null)
@@ -193,11 +205,13 @@ class RetailerCatalog {
     required this.retailers,
     required this.sourceKinds,
     this.totalRetailerCount,
+    this.country,
   });
 
   final List<Retailer> retailers;
   final List<String> sourceKinds;
   final int? totalRetailerCount;
+  final CountryOption? country;
 
   int get retailerCount => totalRetailerCount ?? retailers.length;
 
@@ -207,6 +221,7 @@ class RetailerCatalog {
       retailers: _mapList(json['retailers']).map(Retailer.fromJson).toList(),
       sourceKinds: _stringList(summary['sourceKinds']),
       totalRetailerCount: _intOrNull(summary['retailerCount']),
+      country: _countryOptionOrNull(json['country']),
     );
   }
 }
@@ -241,12 +256,16 @@ class CountryPricing {
     required this.name,
     required this.currencyCode,
     required this.rateFromZar,
+    this.capital,
+    this.flag,
   });
 
   final String code;
   final String name;
   final String currencyCode;
   final double rateFromZar;
+  final String? capital;
+  final String? flag;
 
   bool get isRand => currencyCode == 'ZAR';
 
@@ -262,6 +281,8 @@ class CountryPricing {
         name: _string(json['name'], 'South Africa'),
         currencyCode: _string(json['currencyCode'], 'ZAR'),
         rateFromZar: _double(json['rateFromZar'], 1),
+        capital: _optionalString(json['capital']),
+        flag: _optionalString(json['flag']),
       );
 }
 
@@ -992,15 +1013,18 @@ class AdminOverview {
 }
 
 class NearbyResult {
-  const NearbyResult({required this.stores});
+  const NearbyResult({required this.stores, this.country});
   final List<NearbyStore> stores;
+  final CountryOption? country;
 
   Map<String, dynamic> toJson() => {
         'stores': stores.map((store) => store.toJson()).toList(),
+        if (country != null) 'country': _countryToJson(country!),
       };
 
   factory NearbyResult.fromJson(Map<String, dynamic> json) => NearbyResult(
         stores: _mapList(json['stores']).map(NearbyStore.fromJson).toList(),
+        country: _countryOptionOrNull(json['country']),
       );
 }
 
@@ -1015,6 +1039,8 @@ class NearbyStore {
     this.lat = 0,
     this.lon = 0,
     this.logoUrl,
+    this.countryCode,
+    this.countryName,
     this.firstSeenAt,
     this.lastSeenAt,
     this.promotionCount = 0,
@@ -1032,6 +1058,8 @@ class NearbyStore {
   final num lat;
   final num lon;
   final String? logoUrl;
+  final String? countryCode;
+  final String? countryName;
   final String? firstSeenAt;
   final String? lastSeenAt;
   final int promotionCount;
@@ -1061,6 +1089,8 @@ class NearbyStore {
       lat: json['lat'] is num ? json['lat'] as num : 0,
       lon: json['lon'] is num ? json['lon'] as num : 0,
       logoUrl: _optionalString(json['logoUrl']),
+      countryCode: _optionalString(json['countryCode']),
+      countryName: _optionalString(json['countryName']),
       firstSeenAt: _optionalString(json['firstSeenAt']),
       lastSeenAt: _optionalString(json['lastSeenAt']),
       promotionCount: _int(json['promotionCount']),
@@ -1080,6 +1110,8 @@ class NearbyStore {
         'lat': lat,
         'lon': lon,
         'logoUrl': logoUrl,
+        'countryCode': countryCode,
+        'countryName': countryName,
         'firstSeenAt': firstSeenAt,
         'lastSeenAt': lastSeenAt,
         'promotionCount': promotionCount,
@@ -1213,6 +1245,7 @@ class DiscoveredStoresResult {
     this.hasMore = false,
     this.limit = 0,
     this.offset = 0,
+    this.country,
   });
 
   final List<NearbyStore> stores;
@@ -1223,6 +1256,7 @@ class DiscoveredStoresResult {
   final bool hasMore;
   final int limit;
   final int offset;
+  final CountryOption? country;
 
   factory DiscoveredStoresResult.fromJson(Map<String, dynamic> json) {
     final summary = _mapOrEmpty(json['summary']);
@@ -1236,6 +1270,7 @@ class DiscoveredStoresResult {
       hasMore: pagination['hasMore'] == true,
       limit: _int(pagination['limit']),
       offset: _int(pagination['offset']),
+      country: _countryOptionOrNull(json['country']),
     );
   }
 }
@@ -1666,6 +1701,7 @@ class PropertySearchResult {
     required this.listingType,
     required this.page,
     this.locationText,
+    this.country,
   });
 
   final List<PropertyListing> listings;
@@ -1673,6 +1709,7 @@ class PropertySearchResult {
   final String listingType;
   final int page;
   final String? locationText;
+  final CountryOption? country;
 
   factory PropertySearchResult.fromJson(Map<String, dynamic> json) =>
       PropertySearchResult(
@@ -1684,6 +1721,7 @@ class PropertySearchResult {
         listingType: _string(json['listingType'], 'sale'),
         page: _int(json['page'], 1),
         locationText: _optionalString(json['locationText']),
+        country: _countryOptionOrNull(json['country']),
       );
 }
 
@@ -1775,6 +1813,19 @@ Map<String, dynamic> _mapOrEmpty(Object? value) =>
 
 Map<String, dynamic>? _mapOrNull(Object? value) =>
     value is Map ? Map<String, dynamic>.from(value) : null;
+
+CountryOption? _countryOptionOrNull(Object? value) {
+  final map = _mapOrNull(value);
+  return map == null ? null : CountryOption.fromJson(map);
+}
+
+Map<String, dynamic> _countryToJson(CountryOption country) => {
+      'code': country.code,
+      'currencyCode': country.currencyCode,
+      'flag': country.flag,
+      'name': country.name,
+      if (country.capital != null) 'capital': country.capital,
+    };
 
 List<Map<String, dynamic>> _mapList(Object? value) => value is List
     ? value

@@ -40,7 +40,7 @@ describe('global property source discovery', () => {
       `INSERT INTO property_cache (cache_key, payload_json, item_count, fetched_at, country_code)
        VALUES (?, ?, 0, ?, 'ZW')`,
     ).bind(
-      'global:ZW:sale:harare:1',
+      'global:v2:ZW:sale:harare:1',
       JSON.stringify({ listings: [], sources: [] }),
       new Date().toISOString(),
     ).run()
@@ -96,7 +96,7 @@ describe('global property source discovery', () => {
       countryFromCode('ZW'),
     )
     const cached = await db.prepare(
-      `SELECT item_count FROM property_cache WHERE cache_key = 'global:ZW:rent:harare:1'`,
+      `SELECT item_count FROM property_cache WHERE cache_key = 'global:v2:ZW:rent:harare:1'`,
     ).first<{ item_count: number }>()
 
     expect(result.listings).toEqual([])

@@ -9,6 +9,7 @@ import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/common.dart';
 import '../widgets/login_gate_card.dart';
+import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/sponsored_ad_card.dart';
 
@@ -63,6 +64,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
   List<NearbyHistoryEntry> _history = const [];
   List<SavedAddress> _savedAddresses = const [];
   List<PublicAd> _ads = const [];
+  CountryOption? _country;
   String? _viewingId;
   // The location behind the currently shown results, so it can be saved.
   double? _currentLat;
@@ -116,6 +118,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
         _capturedAt = latest.capturedAt;
         _viewingId = latest.id;
         _currentLabel = latest.locationLabel;
+        _country = latest.result.country;
         _message =
             '${_stores.length} stores from your last search near ${latest.locationLabel}.';
       }
@@ -128,6 +131,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
       _capturedAt = entry.capturedAt;
       _viewingId = entry.id;
       _currentLabel = entry.locationLabel;
+      _country = entry.result.country;
       _currentFormatted = null;
       // History entries don't carry their search-centre coordinate, so the
       // "Save address" button must hide (matching restored history) rather than
@@ -290,7 +294,8 @@ class _NearMeScreenState extends State<NearMeScreen> {
     String? label,
     String? formatted,
   }) async {
-    _lastSearch = () => _loadNearbyFor(lat, lon, label: label, formatted: formatted);
+    _lastSearch =
+        () => _loadNearbyFor(lat, lon, label: label, formatted: formatted);
     setState(() {
       _busy = true;
       _searchFailed = false;
@@ -310,6 +315,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
         _busy = false;
         _history = entries;
         _stores = result.stores;
+        _country = result.country;
         _capturedAt = result.stores.isEmpty ? _capturedAt : capturedAt;
         _viewingId = entries.isEmpty ? _viewingId : entries.first.id;
         _currentLat = lat;
@@ -335,6 +341,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
           _capturedAt = fallback.capturedAt;
           _viewingId = fallback.id;
           _currentLabel = fallback.locationLabel;
+          _country = fallback.result.country;
           _currentFormatted = null;
           _currentLat = null;
           _currentLon = null;
@@ -629,8 +636,9 @@ class _NearMeScreenState extends State<NearMeScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed:
-                        _busy || _lastSearch == null ? null : () => _lastSearch!(),
+                    onPressed: _busy || _lastSearch == null
+                        ? null
+                        : () => _lastSearch!(),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -640,28 +648,42 @@ class _NearMeScreenState extends State<NearMeScreen> {
         else if (_stores.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    _busy
-                        ? 'Showing your saved results while the scout checks again.'
-                        : _capturedAt != null
-                            ? 'Last checked ${_historyTime(_capturedAt!)}'
-                            : '',
+                if (_country != null)
+                  Text(
+                    '${_country!.flag} Results in ${_country!.name}',
                     style: TextStyle(
                       color: TS.mutedOf(context),
                       fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _busy
+                            ? 'Showing your saved results while the scout checks again.'
+                            : _capturedAt != null
+                                ? 'Last checked ${_historyTime(_capturedAt!)}'
+                                : '',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (_currentLat != null && _currentLon != null && !_busy)
+                      TextButton.icon(
+                        onPressed: _saveCurrentAddress,
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                        label: const Text('Save address'),
+                      ),
+                  ],
                 ),
-                if (_currentLat != null && _currentLon != null && !_busy)
-                  TextButton.icon(
-                    onPressed: _saveCurrentAddress,
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                    label: const Text('Save address'),
-                  ),
               ],
             ),
           ),
@@ -954,6 +976,21 @@ class _NearStoreDetailScreen extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.local_offer, size: 16),
                 label: Text('See ${store.name}’s deals in Find deals'),
+              ),
+            ),
+          ],
+          if (store.website != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => showInAppBrowser(
+                  context,
+                  store.website,
+                  title: store.name,
+                ),
+                icon: const Icon(Icons.language, size: 16),
+                label: const Text('Open official store website'),
               ),
             ),
           ],

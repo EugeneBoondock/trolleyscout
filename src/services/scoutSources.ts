@@ -148,7 +148,7 @@ export function looksLikePromotionSignal(value: string): boolean {
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-  return /special|promot|promoco|deal|catalog|leaflet|weekly|citizen|offre|oferta|folheto|punguzo|rabais|solde|desconto|month[\s_-]*end/.test(normalized)
+  return /special|promot|promoco|deal|offers?|catalog|leaflet|weekly|citizen|offre|oferta|folheto|punguzo|rabais|solde|desconto|month[\s_-]*end/.test(normalized)
 }
 
 function attributeValue(attributes: string, name: string): string | undefined {

@@ -124,6 +124,10 @@ class _DealsScreenState extends State<DealsScreen> {
   // Flash deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway, folded
   // into the Find-a-deal list next to grocery specials.
   Future<void> _loadSiteDeals() async {
+    if (widget.api.effectiveCountryCode != 'ZA') {
+      if (mounted) setState(() => _siteDeals = const []);
+      return;
+    }
     try {
       final items = await widget.api.dealSites();
       if (mounted) {
@@ -264,7 +268,8 @@ class _DealsScreenState extends State<DealsScreen> {
   }
 
   Future<DiscoveryResult> _loadStoredDiscovery() async {
-    final cached = await _cacheStore.load();
+    final countryCode = widget.api.effectiveCountryCode;
+    final cached = await _cacheStore.load(countryCode);
     if (cached != null && mounted) {
       setState(() => _cached = cached);
     }
@@ -277,7 +282,7 @@ class _DealsScreenState extends State<DealsScreen> {
     }
 
     final result = await widget.api.discovery();
-    unawaited(_cacheStore.save(result, DateTime.now()));
+    unawaited(_cacheStore.save(result, DateTime.now(), countryCode));
     return result;
   }
 

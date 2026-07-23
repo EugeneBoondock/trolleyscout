@@ -4,9 +4,36 @@ import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from './env'
-import { extractPublicStoreDeals, scoutNearbyStores } from './storeScout'
+import {
+  extractPromotionDetailUrls,
+  extractPublicStoreDeals,
+  scoutNearbyStores,
+} from './storeScout'
 
 describe('extractPublicStoreDeals', () => {
+  it('finds bounded same-site promotion detail pages', () => {
+    const html = `
+      <a href="/monday-magic/">View specials</a>
+      <a href="/privacy.pdf">Privacy policy</a>
+      <a href="https://catalogue-copy.test/deals">Weekly deals</a>
+      <a href="/monday-magic/">View specials again</a>
+      <a href="/weekend-offers/">Weekend offers</a>
+      <a href="/month-end/">Month end deals</a>
+    `
+
+    expect(
+      extractPromotionDetailUrls(
+        html,
+        'https://choppies.co.bw/specials-promotions/',
+        'https://choppies.co.bw',
+        2,
+      ),
+    ).toEqual([
+      'https://choppies.co.bw/monday-magic/',
+      'https://choppies.co.bw/weekend-offers/',
+    ])
+  })
+
   it('reads source-backed JSON-LD Product and Offer records with images', () => {
     const html = `
       <script type="application/ld+json">
@@ -364,16 +391,16 @@ describe('scheduled discovered-store scouting', () => {
     const retailers = [{
       accentColor: '#00843d',
       group: 'Supermarket',
-      id: 'country:zw:spar-co-zw',
-      name: 'SPAR Zimbabwe',
+      id: 'country:zw:fresh-basket-co-zw',
+      name: 'Fresh Basket Zimbabwe',
       program: 'Zimbabwe store',
-      shortName: 'SPAR Zimbabwe',
+      shortName: 'Fresh Basket Zimbabwe',
       sourceNote: 'Official Zimbabwe website.',
       sources: [
         {
           kind: 'store-finder',
           label: 'Official website',
-          url: 'https://online-spar.co.zw/',
+          url: 'https://fresh-basket.co.zw/',
         },
       ],
       verifiedOn: '2026-07-23',
@@ -386,8 +413,8 @@ describe('scheduled discovered-store scouting', () => {
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
-      return url.hostname === 'online-spar.co.zw'
-        ? htmlResponse(jsonLdDeal('Zimbabwe branch rice 2kg', 'SPAR Zimbabwe'))
+      return url.hostname === 'fresh-basket.co.zw'
+        ? htmlResponse(jsonLdDeal('Zimbabwe branch rice 2kg', 'Fresh Basket Zimbabwe'))
         : htmlResponse('')
     }))
 
@@ -396,7 +423,7 @@ describe('scheduled discovered-store scouting', () => {
       [discoveredStore({
         countryCode: 'ZW',
         countryName: 'Zimbabwe',
-        name: 'Spar Montague',
+        name: 'Fresh Basket Harare',
       })],
       Date.parse('2026-07-23T10:00:00.000Z'),
       1,
@@ -405,7 +432,7 @@ describe('scheduled discovered-store scouting', () => {
     const row = await db.prepare(
       `SELECT website FROM store_scout_log WHERE place_id = 'market-place'`,
     ).first<{ website: string }>()
-    expect(row?.website).toBe('https://online-spar.co.zw/')
+    expect(row?.website).toBe('https://fresh-basket.co.zw/')
   })
 
   it('checks a discovered branch page before generic specials paths', async () => {
@@ -833,6 +860,47 @@ describe('scheduled discovered-store scouting', () => {
       `SELECT title FROM store_promotions WHERE place_id = 'market-place'`,
     ).all<{ title: string }>()
     expect(rows.results).toEqual([])
+  })
+
+  it('accepts a country-directory retailer page without requiring a branch address', async () => {
+    const html = `
+      <h1>Choppies Botswana weekly specials</h1>
+      <script type="application/ld+json">${JSON.stringify({
+        '@type': 'Product',
+        name: 'Maize Meal 5kg',
+        offers: {
+          '@type': 'Offer',
+          price: 59.99,
+          priceCurrency: 'BWP',
+          priceValidUntil: '2026-07-31',
+        },
+      })}</script>`
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      return url.hostname === 'choppies.co.bw' &&
+        url.pathname === '/specials-promotions/'
+        ? htmlResponse(html)
+        : htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        address: 'Gaborone, Botswana',
+        countryCode: 'BW',
+        countryName: 'Botswana',
+        name: 'Choppies Gaborone',
+        website: 'https://choppies.co.bw/specials-promotions/',
+        websiteSource: 'country-retailer',
+      })],
+      Date.parse('2026-07-23T12:00:00.000Z'),
+      1,
+    )
+
+    const rows = await db.prepare(
+      `SELECT title FROM store_promotions WHERE place_id = 'market-place'`,
+    ).all<{ title: string }>()
+    expect(rows.results).toEqual([{ title: 'Maize Meal 5kg' }])
   })
 
   it('rejects a known retailer website when its host is not the known official host', async () => {

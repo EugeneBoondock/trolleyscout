@@ -53,6 +53,7 @@ void main() {
     await api.country();
 
     expect(captured.headers['x-trolley-scout-test-country'], 'ZW');
+    expect(api.effectiveCountryCode, 'ZW');
   });
 
   testWidgets('admin console exposes an app test location control',
