@@ -34,7 +34,12 @@ class NearbyHistoryStore {
   static const _key = 'nearby_history_v1';
   static const _maxEntries = 8;
 
-  Future<List<NearbyHistoryEntry>> loadEntries() async {
+  Future<List<NearbyHistoryEntry>> loadEntries({String? countryCode}) async {
+    final entries = await _loadAllEntries();
+    return _forCountry(entries, countryCode);
+  }
+
+  Future<List<NearbyHistoryEntry>> _loadAllEntries() async {
     final preferences = await SharedPreferences.getInstance();
     final raw = preferences.getString(_key);
     if (raw == null || raw.isEmpty) return const [];
@@ -57,8 +62,8 @@ class NearbyHistoryStore {
   }
 
   /// Newest search, for callers that only restore the last result.
-  Future<NearbyHistory?> load() async {
-    final entries = await loadEntries();
+  Future<NearbyHistory?> load({String? countryCode}) async {
+    final entries = await loadEntries(countryCode: countryCode);
     if (entries.isEmpty) return null;
     return NearbyHistory(
         result: entries.first.result, capturedAt: entries.first.capturedAt);
@@ -70,8 +75,11 @@ class NearbyHistoryStore {
     double? lat,
     double? lon,
     String? label,
+    String? countryCode,
   }) async {
-    if (result.stores.isEmpty) return loadEntries();
+    if (result.stores.isEmpty) {
+      return loadEntries(countryCode: countryCode);
+    }
 
     final entry = NearbyHistoryEntry(
       capturedAt: capturedAt,
@@ -83,8 +91,10 @@ class NearbyHistoryStore {
       result: result,
     );
 
-    final existing = await loadEntries();
+    final entryCountryCode = _resultCountryCode(result);
+    final existing = await _loadAllEntries();
     final deduped = existing.where((candidate) {
+      if (_resultCountryCode(candidate.result) != entryCountryCode) return true;
       if (lat == null || lon == null) return true;
       // Collapse repeat searches from essentially the same spot.
       final s = candidate.result.stores.isNotEmpty
@@ -96,13 +106,16 @@ class NearbyHistoryStore {
 
     final next = [entry, ...deduped].take(_maxEntries).toList();
     await _persist(next);
-    return next;
+    return _forCountry(next, countryCode ?? entryCountryCode);
   }
 
-  Future<List<NearbyHistoryEntry>> removeEntry(String id) async {
-    final next = (await loadEntries()).where((e) => e.id != id).toList();
+  Future<List<NearbyHistoryEntry>> removeEntry(
+    String id, {
+    String? countryCode,
+  }) async {
+    final next = (await _loadAllEntries()).where((e) => e.id != id).toList();
     await _persist(next);
-    return next;
+    return _forCountry(next, countryCode);
   }
 
   Future<void> _persist(List<NearbyHistoryEntry> entries) async {
@@ -134,11 +147,30 @@ class NearbyHistoryStore {
   }
 }
 
+List<NearbyHistoryEntry> _forCountry(
+  List<NearbyHistoryEntry> entries,
+  String? countryCode,
+) {
+  final normalized = countryCode?.trim().toUpperCase();
+  if (normalized == null || normalized.isEmpty) return entries;
+  return entries
+      .where((entry) => _resultCountryCode(entry.result) == normalized)
+      .toList();
+}
+
+String _resultCountryCode(NearbyResult result) {
+  final resultCode = result.country?.code.trim().toUpperCase();
+  if (resultCode != null && resultCode.isNotEmpty) return resultCode;
+  if (result.stores.isNotEmpty) {
+    final storeCode = result.stores.first.countryCode?.trim().toUpperCase();
+    if (storeCode != null && storeCode.isNotEmpty) return storeCode;
+  }
+  return 'ZA';
+}
+
 /// A human label for where a search happened, from the nearest store's suburb.
 String deriveLocationLabel(List<NearbyStore> stores, double? lat, double? lon) {
-  final withDistance = [...stores]
-      .where((s) => s.distanceM != null)
-      .toList()
+  final withDistance = [...stores].where((s) => s.distanceM != null).toList()
     ..sort((a, b) => (a.distanceM ?? double.infinity)
         .compareTo(b.distanceM ?? double.infinity));
   final nearest = withDistance.isNotEmpty
@@ -154,8 +186,11 @@ String deriveLocationLabel(List<NearbyStore> stores, double? lat, double? lon) {
 }
 
 String? _suburbFromAddress(String address) {
-  final parts =
-      address.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+  final parts = address
+      .split(',')
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
   if (parts.length < 2) return null;
   final candidates = parts
       .skip(1)

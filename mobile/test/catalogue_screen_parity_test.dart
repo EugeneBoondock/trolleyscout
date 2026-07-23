@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/nearby_history_store.dart';
@@ -91,6 +96,162 @@ void main() {
     await tester.tap(find.text('Open location settings'));
     await tester.pump();
     expect(openedSettings, isTrue);
+  });
+
+  testWidgets(
+      'admin country testing uses the selected capital instead of device GPS',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ts_admin_country_override_v1': 'ZW',
+    });
+    final requests = <Uri>[];
+    final api = Api(
+      client: MockClient((request) async {
+        requests.add(request.url);
+        final data = switch (request.url.path) {
+          '/api/country' => {
+              'country': {
+                'capital': 'Harare',
+                'code': 'ZW',
+                'currencyCode': 'ZWG',
+                'flag': 'ZW',
+                'name': 'Zimbabwe',
+                'rateFromZar': 1,
+              },
+            },
+          '/api/geocode' => {
+              'match': {
+                'formatted': 'Harare, Zimbabwe',
+                'lat': -17.8252,
+                'lon': 31.0335,
+              },
+            },
+          '/api/nearby-stores' => {
+              'country': {
+                'capital': 'Harare',
+                'code': 'ZW',
+                'currencyCode': 'ZWG',
+                'flag': 'ZW',
+                'name': 'Zimbabwe',
+              },
+              'stores': [
+                {
+                  'countryCode': 'ZW',
+                  'countryName': 'Zimbabwe',
+                  'lat': -17.8252,
+                  'lon': 31.0335,
+                  'name': 'OK Zimbabwe Harare',
+                  'placeId': 'ok-harare',
+                },
+              ],
+            },
+          _ => {'ads': <dynamic>[]},
+        };
+        return http.Response(
+          jsonEncode({'data': data}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      useBrowserCookies: true,
+      baseUrl: 'https://example.test',
+    );
+    await api.country();
+    var deviceLocationReads = 0;
+
+    await tester.pumpWidget(_wrap(NearMeScreen(
+      api: api,
+      historyStore: NearbyHistoryStore(),
+      isLocationServiceEnabled: () async => true,
+      checkLocationPermission: () async => LocationPermission.always,
+      readCurrentPosition: () async {
+        deviceLocationReads += 1;
+        throw StateError('Device GPS must not be read in admin test mode.');
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Use my location'));
+    await tester.pumpAndSettle();
+
+    final nearbyRequest =
+        requests.lastWhere((request) => request.path == '/api/nearby-stores');
+    expect(deviceLocationReads, 0);
+    expect(nearbyRequest.queryParameters['lat'], '-17.8252');
+    expect(nearbyRequest.queryParameters['lon'], '31.0335');
+    expect(find.text('OK Zimbabwe Harare'), findsOneWidget);
+  });
+
+  testWidgets('Near Me hides history and saved addresses from other countries',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ts_admin_country_override_v1': 'ZW',
+      'saved_addresses_v1': jsonEncode([
+        {
+          'countryCode': 'ZA',
+          'createdAt': '2026-07-20T10:00:00.000Z',
+          'id': 'sandton',
+          'label': 'Sandton home',
+          'lat': -26.1076,
+          'lon': 28.0567,
+        },
+        {
+          'countryCode': 'ZW',
+          'createdAt': '2026-07-20T11:00:00.000Z',
+          'id': 'harare',
+          'label': 'Harare home',
+          'lat': -17.8252,
+          'lon': 31.0335,
+        },
+      ]),
+    });
+    final history = NearbyHistoryStore();
+    await history.save(
+      const NearbyResult(
+        country: CountryOption(
+          code: 'ZA',
+          currencyCode: 'ZAR',
+          flag: 'ZA',
+          name: 'South Africa',
+        ),
+        stores: [_rosebank],
+      ),
+      DateTime.parse('2026-07-20T09:00:00.000Z'),
+    );
+    final api = Api(
+      client: MockClient((request) async {
+        final data = request.url.path == '/api/country'
+            ? {
+                'country': {
+                  'capital': 'Harare',
+                  'code': 'ZW',
+                  'currencyCode': 'ZWG',
+                  'flag': 'ZW',
+                  'name': 'Zimbabwe',
+                  'rateFromZar': 1,
+                },
+              }
+            : {'ads': <dynamic>[]};
+        return http.Response(
+          jsonEncode({'data': data}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      useBrowserCookies: true,
+      baseUrl: 'https://example.test',
+    );
+    await api.country();
+
+    await tester.pumpWidget(_wrap(NearMeScreen(
+      api: api,
+      historyStore: history,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pick n Pay Rosebank'), findsNothing);
+    expect(find.text('Sandton home'), findsNothing);
+    expect(find.text('Harare home'), findsOneWidget);
   });
 
   testWidgets('Stores renders one chain card and keeps branches separate',

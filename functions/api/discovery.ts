@@ -24,6 +24,10 @@ import {
   type LeafletTarget,
 } from '../../src/services/leafletDiscovery'
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
+import {
+  buildVtexDealsRequest,
+  parseCommonCommerceDeals,
+} from '../../src/services/commonCommerceDeals'
 import type {
   CataloguePage,
   DiscoveredDeal,
@@ -52,7 +56,11 @@ import {
   flippingBookPagerUrl,
   parseFlippingBookPager,
 } from '../_shared/catalogueScout'
-import { readAllStorePromotions, type StorePromotion } from '../_shared/locationStore'
+import {
+  readAllDiscoveredStores,
+  readAllStorePromotions,
+  type StorePromotion,
+} from '../_shared/locationStore'
 import { rankDealsForMember, type DealInterestWeight } from '../_shared/dealLearning'
 import {
   getDealLearningState,
@@ -61,6 +69,10 @@ import {
 import { getMemberSession } from '../_shared/memberStore'
 import { detectRequestCountry } from '../_shared/countryContext'
 import { json, methodNotAllowed } from '../_shared/respond'
+import {
+  extractPublicStoreDeals,
+  scoutNearbyStores,
+} from '../_shared/storeScout'
 
 // Public, cookieless data — allow any origin so the mobile app can read it.
 const privateHeaders = {
@@ -88,6 +100,12 @@ const PNP_VIEWER_MAX_BYTES = 256 * 1024
 const PNP_VIEWER_TIMEOUT_MS = 8_000
 const PNP_VIEWER_CONCURRENCY = 3
 const DISCOVERY_EDGE_CACHE_SECONDS = 300
+const INTERNATIONAL_REFRESH_STORE_LIMIT = 3
+const STOREFRONT_SOURCE_MAX_BYTES = 4 * 1024 * 1024
+
+function summarySnapshotKey(countryCode: string) {
+  return `__summary__:${countryCode.trim().toUpperCase()}`
+}
 
 // The Cache API is absent in unit tests and some local runtimes — treat it
 // as an optional accelerator, never a requirement.
@@ -115,6 +133,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const session = await getMemberSession(env, request)
   const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
   const isSouthAfrica = countryCode === 'ZA'
+  const summaryKey = summarySnapshotKey(countryCode)
   if (forceLive && session.account?.role !== 'admin') {
     return json(
       { message: 'Admin access is required.' },
@@ -143,8 +162,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     try {
       const summaryRow = env.DB
         ? await env.DB.prepare(
-            "SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = '__summary__'",
-          ).first<{ checked_at: string; deals_json: string }>()
+            'SELECT checked_at, deals_json FROM deal_snapshots WHERE source_key = ?',
+          )
+            .bind(summaryKey)
+            .first<{ checked_at: string; deals_json: string }>()
         : undefined
 
       if (summaryRow) {
@@ -181,14 +202,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     }
   }
 
-  const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
+  const [snapshots, leafletSnapshot, initialStorePromotions, normalizedItems] = await Promise.all([
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
     isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
     readAllStorePromotions(env, nowIso, 3000, countryCode),
     isSouthAfrica ? readNormalizedDealItems(env, nowIso) : Promise.resolve([]),
   ])
+  let storePromotions = initialStorePromotions
   const interests = await getRequestInterests(env, session.account?.id)
-  const storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
+  let storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
   const normalizedChecks = buildNormalizedDiscoveryChecks(normalizedItems)
 
   // Normal requests read stored rows only, including a cold or empty cache.
@@ -217,13 +239,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     if (env.DB) {
       await env.DB.prepare(
         `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
-         VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+         VALUES (?, 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(source_key) DO UPDATE SET
            checked_at = excluded.checked_at,
            deals_json = excluded.deals_json,
            updated_at = excluded.updated_at`,
       )
         .bind(
+          summaryKey,
           newestCheckedAt || nowIso,
           JSON.stringify({
             foundDealCount: allDeals.length,
@@ -243,6 +266,49 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       )
       waitUntil(edgeCache.put(edgeCacheKey, publicResponse.clone()).catch(() => undefined))
       return publicResponse
+    }
+
+    return response
+  }
+
+  if (!isSouthAfrica) {
+    await runDealRefreshWithAlerts(
+      env,
+      () => refreshInternationalStoreSources(env, countryCode, Date.now()),
+    )
+    storePromotions = await readAllStorePromotions(env, nowIso, 3000, countryCode)
+    storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
+    const response = respond(
+      [],
+      [],
+      new Date().toISOString(),
+      false,
+      interests,
+      storeDiscovery,
+      summaryOnly,
+    )
+    const allDeals = dedupeDiscoveryDeals(storeDiscovery.deals)
+
+    if (env.DB) {
+      await env.DB.prepare(
+        `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
+         VALUES (?, 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(source_key) DO UPDATE SET
+           checked_at = excluded.checked_at,
+           deals_json = excluded.deals_json,
+           updated_at = excluded.updated_at`,
+      )
+        .bind(
+          summaryKey,
+          nowIso,
+          JSON.stringify({
+            foundDealCount: allDeals.length,
+            leafletCount: 0,
+            topDeals: summaryPreviewDeals(allDeals),
+          }),
+        )
+        .run()
+        .catch(() => undefined)
     }
 
     return response
@@ -277,13 +343,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   if (env.DB) {
     await env.DB.prepare(
       `INSERT INTO deal_snapshots (source_key, retailer_id, source_label, checked_at, deals_json, updated_at)
-       VALUES ('__summary__', 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
+       VALUES (?, 'system', 'Discovery Summary', ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(source_key) DO UPDATE SET
          checked_at = excluded.checked_at,
          deals_json = excluded.deals_json,
          updated_at = excluded.updated_at`,
     )
       .bind(
+        summaryKey,
         nowIso,
         JSON.stringify({
           foundDealCount: allDeals.length,
@@ -296,6 +363,33 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   }
 
   return response
+}
+
+async function refreshInternationalStoreSources(
+  env: TrolleyScoutEnv,
+  countryCode: string,
+  nowMs: number,
+) {
+  const nowIso = new Date(nowMs).toISOString()
+  const { stores } = await readAllDiscoveredStores(
+    env,
+    nowIso,
+    INTERNATIONAL_REFRESH_STORE_LIMIT,
+    countryCode,
+    0,
+    undefined,
+    false,
+  )
+  if (stores.length === 0) {
+    return
+  }
+
+  await scoutNearbyStores(
+    env,
+    stores.map((store) => ({ ...store, nextScoutAt: nowIso })),
+    nowMs,
+    stores.length,
+  )
 }
 
 // Internal scheduled-worker entry point. It bypasses request authorization
@@ -1621,13 +1715,39 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
     return checkJsonSource(target, buildPnpPromotionsApiUrl(), extractPnpPromotionDeals, 'POST')
   }
 
+  if (target.parserId === 'vtex-catalogue') {
+    const request = buildVtexDealsRequest(target.source.url)
+    if (!request) {
+      return unavailableSourceCheck(target)
+    }
+    return checkJsonSource(
+      target,
+      request.url,
+      (currentTarget, payload, capturedAt) => platformDealsToDiscovery(
+        currentTarget,
+        parseCommonCommerceDeals('vtex', payload, currentTarget.source.url),
+        capturedAt,
+      ),
+    )
+  }
+
+  if (target.parserId === 'json-storefront') {
+    const apiUrl = `${target.source.url.replace(/\/$/, '')}.json`
+    return checkJsonSource(
+      target,
+      apiUrl,
+      (currentTarget, payload, capturedAt) =>
+        jsonStorefrontDeals(currentTarget, payload, capturedAt),
+    )
+  }
+
   const checkedAt = new Date().toISOString()
 
   try {
     const response = await fetchWithRetry(target.source.url, {
       headers: {
         accept: 'text/html,application/xhtml+xml',
-        'user-agent': 'TrolleyScoutSourceCheck/1.0',
+        'user-agent': BROWSER_USER_AGENT,
       },
     })
 
@@ -1641,8 +1761,10 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
       }
     }
 
-    const html = await response.text()
-    const deals = extractDealsFromHtml(target, html, checkedAt)
+    const html = await readBoundedText(response, STOREFRONT_SOURCE_MAX_BYTES)
+    const deals = target.parserId === 'generic-storefront'
+      ? publicStorefrontDeals(target, html, checkedAt)
+      : extractDealsFromHtml(target, html, checkedAt)
 
     return {
       deals,
@@ -1659,6 +1781,126 @@ async function checkSource(target: ResolvedDiscoveryTarget): Promise<{
       }),
     }
   }
+}
+
+function unavailableSourceCheck(target: ResolvedDiscoveryTarget): SourceCheck {
+  const checkedAt = new Date().toISOString()
+  return {
+    deals: [],
+    source: buildSourceResult(target, checkedAt, 0, { unavailable: true }),
+  }
+}
+
+interface OnlinePlatformDeal {
+  imageUrl?: string
+  previousPriceCents?: number
+  priceCents: number
+  productUrl?: string
+  title: string
+}
+
+export function platformDealsToDiscovery(
+  target: ResolvedDiscoveryTarget,
+  deals: OnlinePlatformDeal[],
+  capturedAt: string,
+): DiscoveredDeal[] {
+  return deals.map((deal, index) => {
+    const priceText = randPriceFromCents(deal.priceCents)
+    const previousPriceText = deal.previousPriceCents !== undefined
+      ? randPriceFromCents(deal.previousPriceCents)
+      : undefined
+    const savingText = deal.previousPriceCents !== undefined &&
+      deal.previousPriceCents > deal.priceCents
+      ? `Save ${randPriceFromCents(deal.previousPriceCents - deal.priceCents)}`
+      : undefined
+
+    return {
+      capturedAt,
+      evidenceText: [deal.title, priceText, previousPriceText, savingText]
+        .filter(Boolean)
+        .join('. '),
+      id: `${target.retailer.id}-${stableDiscoverySlug(deal.title)}-${index + 1}`,
+      imageUrl: deal.imageUrl,
+      previousPriceText,
+      priceText,
+      productUrl: deal.productUrl ?? target.source.url,
+      retailerId: target.retailer.id,
+      retailerName: target.retailer.name,
+      savingText,
+      sourceLabel: target.source.label,
+      sourceUrl: target.source.url,
+      title: deal.title,
+    }
+  })
+}
+
+function publicStorefrontDeals(
+  target: ResolvedDiscoveryTarget,
+  html: string,
+  capturedAt: string,
+): DiscoveredDeal[] {
+  const promotions = extractPublicStoreDeals(
+    {
+      countryCode: 'ZA',
+      lat: -30.5595,
+      lon: 22.9375,
+      name: target.retailer.name,
+      placeId: `online-${target.retailer.id}`,
+      retailerId: target.retailer.id,
+      website: target.source.url,
+    },
+    html,
+    target.source.url,
+    Date.parse(capturedAt),
+  )
+
+  return promotions.map((promotion) => ({
+    capturedAt,
+    evidenceText: [
+      promotion.title,
+      promotion.priceText,
+      promotion.previousPriceText,
+      promotion.savingText,
+    ].filter(Boolean).join('. '),
+    id: promotion.id,
+    imageUrl: promotion.imageUrl,
+    previousPriceText: promotion.previousPriceText,
+    priceText: promotion.priceText,
+    productUrl: promotion.productUrl ?? target.source.url,
+    retailerId: target.retailer.id,
+    retailerName: target.retailer.name,
+    savingText: promotion.savingText,
+    sourceLabel: target.source.label,
+    sourceUrl: target.source.url,
+    title: promotion.title,
+    validFrom: promotion.validFrom,
+    validTo: promotion.validTo,
+  }))
+}
+
+function jsonStorefrontDeals(
+  target: ResolvedDiscoveryTarget,
+  payload: unknown,
+  capturedAt: string,
+): DiscoveredDeal[] {
+  const serialized = JSON.stringify(payload).replace(/<\/script/gi, '<\\/script')
+  return publicStorefrontDeals(
+    target,
+    `<script type="application/json">${serialized}</script>`,
+    capturedAt,
+  )
+}
+
+function randPriceFromCents(value: number): string {
+  return `R${(value / 100).toFixed(2)}`
+}
+
+function stableDiscoverySlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64)
 }
 
 async function checkJsonSource(

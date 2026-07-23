@@ -117,4 +117,37 @@ describe('mapGeoapifyStores', () => {
 
     expect(stores.map((store) => store.name)).toEqual(['Frontline Hyper'])
   })
+
+  test('keeps stores inside the selected country when coordinates cross a border', () => {
+    const payload = {
+      features: [
+        {
+          properties: {
+            country_code: 'za',
+            name: 'South African Supermarket',
+            place_id: 'za-store',
+            lat: -22.20,
+            lon: 29.98,
+          },
+        },
+        {
+          properties: {
+            country_code: 'zw',
+            name: 'Zimbabwe Supermarket',
+            place_id: 'zw-store',
+            lat: -22.18,
+            lon: 30.00,
+          },
+        },
+      ],
+    }
+
+    expect(mapGeoapifyStores(payload, 40, 'ZW', 'Zimbabwe')).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZW',
+        name: 'Zimbabwe Supermarket',
+        placeId: 'zw-store',
+      }),
+    ])
+  })
 })

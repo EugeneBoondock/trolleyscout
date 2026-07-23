@@ -9,12 +9,14 @@ import {
   buildCommonCommerceDealsRequest,
   buildMagentoDealsRequest,
   buildShopifyDealsRequest,
+  buildVtexDealsRequest,
   buildWooCommerceDealsRequest,
   commonCommercePayloadItemCount,
   detectCommonCommercePlatform,
   parseCommonCommerceDeals,
   parseMagentoDeals,
   parseShopifyDeals,
+  parseVtexDeals,
   parseWooCommerceDeals,
 } from './commonCommerceDeals'
 
@@ -40,6 +42,12 @@ describe('detectCommonCommercePlatform', () => {
     const html = '<script type="text/x-magento-init">{"*":{"Magento_Ui/js/core/app":{}}}</script>'
 
     expect(detectCommonCommercePlatform(html)?.platform).toBe('magento')
+  })
+
+  it('detects VTEX from its storefront asset signature', () => {
+    const html = '<script src="/_v/public/assets/v1/published/vtex.store@2.0.0/public/react/app.js"></script>'
+
+    expect(detectCommonCommercePlatform(html)?.platform).toBe('vtex')
   })
 
   it('does not classify a plain store page', () => {
@@ -84,6 +92,18 @@ describe('public request descriptors', () => {
     expect(body.variables.currentPage).toBe(MAX_COMMON_COMMERCE_PAGES)
     expect(body.query).toContain('filter: { price: { from: "0.01" } }')
     expect(body.query).toContain('price_range')
+  })
+
+  it('builds a bounded VTEX catalogue request ordered by the best discount', () => {
+    const request = buildVtexDealsRequest(`${STORE_ORIGIN}/sale`, 24, 2)
+    const url = new URL(request?.url ?? '')
+
+    expect(url.origin + url.pathname).toBe(
+      `${STORE_ORIGIN}/api/catalog_system/pub/products/search`,
+    )
+    expect(url.searchParams.get('_from')).toBe('24')
+    expect(url.searchParams.get('_to')).toBe('47')
+    expect(url.searchParams.get('O')).toBe('OrderByBestDiscountDESC')
   })
 
   it('builds later bounded pages for each supported store platform', () => {
@@ -271,6 +291,61 @@ describe('parseMagentoDeals', () => {
   })
 })
 
+describe('parseVtexDeals', () => {
+  it('keeps available VTEX offers with a real list-price discount', () => {
+    const payload = [
+      {
+        items: [{
+          images: [{ imageUrl: '/arquivos/sneaker.jpg' }],
+          sellers: [{
+            commertialOffer: {
+              AvailableQuantity: 8,
+              ListPrice: 1_299,
+              Price: 779,
+            },
+          }],
+        }],
+        link: '/mens-home-replica/p',
+        productName: 'MSFC Mens Home Replica',
+      },
+      {
+        items: [{
+          sellers: [{
+            commertialOffer: {
+              AvailableQuantity: 4,
+              ListPrice: 399,
+              Price: 399,
+            },
+          }],
+        }],
+        link: '/full-price/p',
+        productName: 'Full price item',
+      },
+      {
+        items: [{
+          sellers: [{
+            commertialOffer: {
+              AvailableQuantity: 0,
+              ListPrice: 799,
+              Price: 499,
+            },
+          }],
+        }],
+        link: '/sold-out/p',
+        productName: 'Sold out item',
+      },
+    ]
+
+    expect(parseVtexDeals(payload, STORE_ORIGIN)).toEqual([{
+      imageUrl: `${STORE_ORIGIN}/arquivos/sneaker.jpg`,
+      previousPriceCents: 129_900,
+      priceCents: 77_900,
+      productUrl: `${STORE_ORIGIN}/mens-home-replica/p`,
+      title: 'MSFC Mens Home Replica',
+    }])
+  })
+})
+
 describe('parser bounds and dispatch', () => {
   it('caps parser output even when a public feed returns more products', () => {
     const products = Array.from({ length: MAX_COMMON_COMMERCE_DEALS + 20 }, (_, index) => ({
@@ -302,6 +377,7 @@ describe('parser bounds and dispatch', () => {
     expect(commonCommercePayloadItemCount('magento', {
       data: { products: { items: payload } },
     })).toBe(1)
+    expect(commonCommercePayloadItemCount('vtex', payload)).toBe(1)
     expect(DEFAULT_COMMON_COMMERCE_PAGE_SIZE).toBeGreaterThan(0)
   })
 })

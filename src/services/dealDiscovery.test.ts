@@ -11,6 +11,18 @@ import {
 } from './dealDiscovery'
 
 describe('dealDiscovery', () => {
+  it('registers supported South African brand-store deal sources', () => {
+    const targets = getDiscoveryTargets()
+
+    expect(targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ parserId: 'generic-storefront', retailerId: 'nike' }),
+      expect.objectContaining({ parserId: 'generic-storefront', retailerId: 'puma' }),
+      expect.objectContaining({ parserId: 'generic-storefront', retailerId: 'superbalist' }),
+      expect.objectContaining({ parserId: 'vtex-catalogue', retailerId: 'bash' }),
+      expect.objectContaining({ parserId: 'json-storefront', retailerId: 'shelflife' }),
+    ]))
+  })
+
   it('builds the Pick n Pay promotions OCC URL', () => {
     const apiUrl = new URL(buildPnpPromotionsApiUrl())
 

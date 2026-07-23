@@ -84,6 +84,7 @@ interface GeoapifyFeature {
     lon?: unknown
     website?: unknown
     distance?: unknown
+    country_code?: unknown
     datasource?: { raw?: Record<string, unknown> }
   }
 }
@@ -108,8 +109,14 @@ export function mapGeoapifyStores(payload: unknown, limit = 40, countryCode = 'Z
     const name = typeof props.name === 'string' ? props.name.trim() : ''
     const lat = Number(props.lat)
     const lon = Number(props.lon)
+    const sourceCountryCode = firstString(props.country_code)?.toUpperCase()
 
-    if (!name || !isValidCoordinate(lat, lon) || NON_STORE_NAMES.test(name)) {
+    if (
+      !name ||
+      !isValidCoordinate(lat, lon) ||
+      NON_STORE_NAMES.test(name) ||
+      (sourceCountryCode != null && sourceCountryCode !== countryCode.toUpperCase())
+    ) {
       continue
     }
 

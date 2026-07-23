@@ -15,6 +15,7 @@ class SavedAddress {
     required this.lon,
     this.formattedAddress,
     required this.createdAt,
+    this.countryCode = 'ZA',
   });
 
   final String id;
@@ -23,6 +24,7 @@ class SavedAddress {
   final double lon;
   final String? formattedAddress;
   final DateTime createdAt;
+  final String countryCode;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -31,6 +33,7 @@ class SavedAddress {
         'lon': lon,
         'formattedAddress': formattedAddress,
         'createdAt': createdAt.toUtc().toIso8601String(),
+        'countryCode': countryCode,
       };
 
   static SavedAddress? fromJson(Map<String, dynamic> json) {
@@ -41,14 +44,14 @@ class SavedAddress {
       return null;
     }
     return SavedAddress(
-      id: json['id']?.toString() ??
-          DateTime.now().toUtc().toIso8601String(),
+      id: json['id']?.toString() ?? DateTime.now().toUtc().toIso8601String(),
       label: label,
       lat: lat,
       lon: lon,
       formattedAddress: json['formattedAddress']?.toString(),
-      createdAt:
-          DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      countryCode: (json['countryCode']?.toString() ?? 'ZA').toUpperCase(),
     );
   }
 }
@@ -82,9 +85,11 @@ class SavedAddressesStore {
   Future<List<SavedAddress>> add(SavedAddress address) async {
     final existing = await load();
     final deduped = existing.where((candidate) {
-      final sameSpot = (candidate.lat - address.lat).abs() < 0.01 &&
+      final sameCountry = candidate.countryCode == address.countryCode;
+      final sameSpot = sameCountry &&
+          (candidate.lat - address.lat).abs() < 0.01 &&
           (candidate.lon - address.lon).abs() < 0.01;
-      final sameLabel =
+      final sameLabel = sameCountry &&
           candidate.label.toLowerCase() == address.label.toLowerCase();
       return !sameSpot && !sameLabel;
     }).toList();

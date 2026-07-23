@@ -1302,8 +1302,16 @@ export function extractPublicStoreDeals(
   const promotionalPath = isPromotionPath(sourceUrl)
 
   for (const product of records) {
+    const copy = recordValue(product.copy)
+    const prices = recordValue(product.prices)
+    const pdpUrl = recordValue(product.pdpUrl)
+    const colorwayImages = recordValue(product.colorwayImages)
     const title = stringValue(
-      product.name ?? product.title ?? product.productName ?? product.displayName,
+      product.name ??
+        product.title ??
+        product.productName ??
+        product.displayName ??
+        copy?.title,
     )
     const offer = firstOffer(product.offers ?? product.offer)
     const price = firstNumber(
@@ -1313,8 +1321,13 @@ export function extractPublicStoreDeals(
       product.sale_price,
       product.currentPrice,
       product.current_price,
+      product.sellingPrice,
+      product.selling_price,
+      product.promoPrice,
+      product.promo_price,
       product.discountedPrice,
       product.discounted_price,
+      prices?.currentPrice,
       offer?.price,
       offer?.lowPrice,
       product.price,
@@ -1326,6 +1339,8 @@ export function extractPublicStoreDeals(
       product.old_price,
       product.listPrice,
       product.list_price,
+      product.retailPrice,
+      product.retail_price,
       product.regularPrice,
       product.regular_price,
       product.wasPrice,
@@ -1335,6 +1350,7 @@ export function extractPublicStoreDeals(
       product.originalPrice,
       product.original_price,
       product.mrp,
+      prices?.initialPrice,
       offer?.highPrice,
     )
 
@@ -1354,6 +1370,8 @@ export function extractPublicStoreDeals(
           product.canonicalUrl ??
           product.canonical_url ??
           product.permalink ??
+          product.link ??
+          pdpUrl?.url ??
           offer?.url,
       ),
       sourceUrl,
@@ -1418,6 +1436,7 @@ export function extractPublicStoreDeals(
             product.thumbnail ??
             product.primaryImage ??
             product.primary_image ??
+            colorwayImages?.portraitURL ??
             offer?.image,
         ),
         sourceUrl,
@@ -1452,7 +1471,7 @@ export function extractPublicStoreDeals(
 
 function visibleProductRecords(html: string): Record<string, unknown>[] {
   const starts = Array.from(html.matchAll(
-    /<(article|li|div)\b([^>]*(?:itemtype\s*=\s*["'][^"']*schema\.org\/Product[^"']*["']|data-product-(?:id|name|sku)\s*=|class\s*=\s*["'][^"']*\b(?:product|deal|promo)-card\b[^"']*["'])[^>]*)>/gi,
+    /<(article|li|div|a)\b([^>]*(?:itemtype\s*=\s*["'][^"']*schema\.org\/Product[^"']*["']|data-product-(?:id|name|sku)\s*=|data-testid\s*=\s*["'][^"']*product-tile[^"']*["']|id\s*=\s*["']product-card-[^"']*["']|class\s*=\s*["'][^"']*\b(?:(?:product|deal|promo)-card|product-tile)\b[^"']*["'])[^>]*)>/gi,
   )).slice(0, 120)
   const records: Record<string, unknown>[] = []
 
@@ -1464,10 +1483,13 @@ function visibleProductRecords(html: string): Record<string, unknown>[] {
     const attributes = match[2] ?? ''
     const name = visibleItemPropValue(segment, 'name', ['content', 'data-product-name']) ??
       visibleClassText(segment, /(?:product[-_ ]?(?:name|title)|item[-_ ]?title)/i) ??
-      attributeValue(attributes, ['data-product-name', 'data-name'])
+      attributeValue(attributes, ['data-product-name', 'data-name']) ??
+      visibleHeadingText(segment) ??
+      visibleProductLabel(segment)
     const priceText = visibleItemPropValue(segment, 'price', ['content', 'value']) ??
-      visibleClassText(segment, /(?:sale|special|current|deal)[-_ ]?price/i) ??
-      attributeValue(attributes, ['data-sale-price', 'data-special-price', 'data-price'])
+      visibleClassText(segment, /(?:sale|special|current|deal)[-_ ]?price|font-jakarta-800/i) ??
+      attributeValue(attributes, ['data-sale-price', 'data-special-price', 'data-price']) ??
+      accessiblePrice(segment, 'current')
     const price = numberValue(priceText)
 
     if (!name || price === undefined) {
@@ -1476,13 +1498,13 @@ function visibleProductRecords(html: string): Record<string, unknown>[] {
 
     const previousPriceText = visibleClassText(
       segment,
-      /(?:was|old|regular|previous|list|original)[-_ ]?price/i,
+      /(?:was|old|regular|previous|list|original)[-_ ]?price|line-through/i,
     ) ?? attributeValue(attributes, [
       'data-old-price',
       'data-regular-price',
       'data-previous-price',
       'data-was-price',
-    ])
+    ]) ?? accessiblePrice(segment, 'original')
     const promotionText = visibleClassText(
       segment,
       /(?:promo|promotion|deal|discount|saving|special)[-_ ]?(?:badge|label|text)?/i,
@@ -1554,12 +1576,19 @@ function attributeValue(value: string, names: string[]): string | undefined {
 }
 
 function visibleClassText(segment: string, classPattern: RegExp): string | undefined {
-  const pattern = /<([a-z0-9]+)\b([^>]*\bclass\s*=\s*["'][^"']+["'][^>]*)>([\s\S]{0,800}?)<\/\1>/gi
+  const pattern = /<([a-z0-9]+)\b([^>]*\bclass\s*=\s*["'][^"']+["'][^>]*)>/gi
   let match: RegExpExecArray | null
   while ((match = pattern.exec(segment)) !== null) {
     const className = attributeValue(match[2], ['class'])
     if (className && classPattern.test(className)) {
-      const text = cleanText(match[3])
+      const closingAt = segment.toLowerCase().indexOf(
+        `</${match[1].toLowerCase()}>`,
+        pattern.lastIndex,
+      )
+      const text = cleanText(segment.slice(
+        pattern.lastIndex,
+        closingAt >= 0 ? Math.min(closingAt, pattern.lastIndex + 800) : pattern.lastIndex + 800,
+      ))
       if (text) {
         return text
       }
@@ -1581,6 +1610,11 @@ function visibleProductUrl(segment: string): string | undefined {
 
 function embeddedRecords(html: string): Record<string, unknown>[] {
   const roots: unknown[] = []
+  const nextData = /<script\b[^>]*\bid\s*=\s*["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i
+    .exec(html)?.[1]
+  if (nextData && nextData.length <= MAX_EMBEDDED_TOTAL_BYTES) {
+    pushParsedJson(roots, nextData)
+  }
   const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi
   let match: RegExpExecArray | null
   let scriptCount = 0
@@ -1602,7 +1636,7 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
       pushParsedJson(roots, body)
     }
 
-    for (const marker of ['window.__INITIAL_STATE__', 'window.__NUXT__']) {
+    for (const marker of ['window.__INITIAL_STATE__', 'window.__NUXT__', 'window.__STATE__']) {
       let markerAt = body.indexOf(marker)
       while (markerAt >= 0) {
         const equalsAt = body.indexOf('=', markerAt + marker.length)
@@ -1645,7 +1679,24 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
   let visited = 0
 
   const walk = (value: unknown): void => {
-    if (visited >= MAX_EMBEDDED_NODES || !value || typeof value !== 'object') {
+    if (visited >= MAX_EMBEDDED_NODES || !value) {
+      return
+    }
+    if (typeof value === 'string') {
+      const candidate = value.trim()
+      if (
+        candidate.length <= MAX_EMBEDDED_SCRIPT_BYTES &&
+        (candidate.startsWith('{') || candidate.startsWith('['))
+      ) {
+        try {
+          walk(JSON.parse(candidate))
+        } catch {
+          // Public page state can contain display copy that resembles JSON.
+        }
+      }
+      return
+    }
+    if (typeof value !== 'object') {
       return
     }
     if (seen.has(value as object)) {
@@ -1672,6 +1723,29 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
     walk(root)
   }
   return records
+}
+
+function visibleHeadingText(segment: string): string | undefined {
+  const match = /<h[2-4]\b[^>]*>([\s\S]{0,800}?)<\/h[2-4]>/i.exec(segment)
+  const text = match ? cleanText(match[1]) : ''
+  return text || undefined
+}
+
+function visibleProductLabel(segment: string): string | undefined {
+  const link = /<a\b([^>]*)>/i.exec(segment)
+  const label = link ? attributeValue(link[1], ['aria-label']) : undefined
+  return label?.replace(/^view\s+/i, '').trim() || undefined
+}
+
+function accessiblePrice(
+  segment: string,
+  kind: 'current' | 'original',
+): string | undefined {
+  const pattern = new RegExp(
+    `<[^>]+aria-label=["'][^"']*${kind}\\s+price\\s+([^"']+)["'][^>]*>`,
+    'i',
+  )
+  return pattern.exec(segment)?.[1]?.trim()
 }
 
 export function extractPromotionDetailUrls(
@@ -1785,6 +1859,8 @@ function hasExplicitPromotionProof(
     product.saving_amount,
     product.discountPercent,
     product.discount_percent,
+    product.discountPercentage,
+    product.discount_percentage,
     offer?.discountAmount,
   )
   if (discount !== undefined && discount > 0) {
@@ -1862,7 +1938,13 @@ function imageValue(value: unknown): string | undefined {
 
   if (value && typeof value === 'object') {
     const image = value as Record<string, unknown>
-    return stringValue(image.url ?? image.contentUrl)
+    return stringValue(
+      image.url ??
+        image.src ??
+        image.imageUrl ??
+        image.contentUrl ??
+        image.cdn_path,
+    )
   }
 
   return stringValue(value)
@@ -1971,6 +2053,12 @@ function officialLeaflets(
         : leaflet
       return leafletToPromotion(store, safeLeaflet)
     })
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
 }
 
 function cataloguePromotion(store: NearbyStore, url: string, title?: string): StorePromotion {

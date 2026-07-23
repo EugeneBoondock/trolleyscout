@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/session_cookie_store.dart';
 
@@ -272,6 +273,42 @@ void main() {
       await api.dealSites(forceLive: true);
 
       expect(requestUri.queryParameters['refresh'], '1');
+    });
+
+    test('an admin country refresh does not run South African deal sites',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'ts_admin_country_override_v1': 'ZW',
+      });
+      final paths = <String>[];
+      final api = Api(
+        client: MockClient((request) async {
+          paths.add(request.url.path);
+          return http.Response(
+            jsonEncode({
+              'data': request.url.path == '/api/discovery'
+                  ? {
+                      'deals': [],
+                      'sources': [],
+                      'summary': {
+                        'checkedSourceCount': 0,
+                        'foundDealCount': 0,
+                        'unavailableSourceCount': 0,
+                      },
+                    }
+                  : {'deals': []},
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      await api.refreshDealSources();
+
+      expect(paths, ['/api/discovery']);
     });
 
     test('keeps nearby country and branch website metadata', () async {

@@ -312,6 +312,145 @@ describe('extractPublicStoreDeals', () => {
     expect(dealAt(29.99).id).toBe(dealAt(24.99).id)
   })
 
+  it('reads discounted headless products with nested copy, prices, links, and images', () => {
+    const html = `
+      <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"products":[{
+          "copy":{"title":"Nike Air Max Dn8"},
+          "prices":{"currentPrice":2199.95,"initialPrice":3299.95},
+          "discountPercentage":33,
+          "pdpUrl":{"url":"/t/air-max-dn8-shoes"},
+          "colorwayImages":{"portraitURL":"/images/air-max.jpg"}
+        }]}}}
+      </script>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Nike', placeId: 'nike-online' },
+        html,
+        'https://www.nike.com/za/w/sale-3yaep',
+        0,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://www.nike.com/images/air-max.jpg',
+        previousPriceText: 'R3299.95',
+        priceText: 'R2199.95',
+        productUrl: 'https://www.nike.com/t/air-max-dn8-shoes',
+        title: 'Nike Air Max Dn8',
+      }),
+    ])
+  })
+
+  it('finds Next product state after many unrelated scripts', () => {
+    const noise = Array.from(
+      { length: 35 },
+      (_, index) => `<script>window.noise${index} = "${'x'.repeat(100)}";</script>`,
+    ).join('')
+    const html = `${noise}
+      <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"products":[{
+          "copy":{"title":"Late Nike Sale Shoe"},
+          "prices":{"currentPrice":999.95,"initialPrice":1499.95},
+          "pdpUrl":{"url":"/za/t/late-sale-shoe"}
+        }]}}
+      </script>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Nike', placeId: 'nike-online' },
+        html,
+        'https://www.nike.com/za/w/sale-3yaep',
+        0,
+      )[0]?.title,
+    ).toBe('Late Nike Sale Shoe')
+  })
+
+  it('reads utility-class product cards with sale and line-through prices', () => {
+    const html = `
+      <div class="relative flex flex-col gap-1 text-sm" id="product-card-1643187">
+        <a href="/women/shoes/augustina-sneaker/1643187" aria-label="View Augustina sneaker by Steve Madden">
+          <img src="/images/augustina.jpg">
+          <p class="font-jakarta-800">R995</p>
+          <p class="text-neutral-500 line-through">R1299</p>
+          <p class="text-red-500">-23%</p>
+        </a>
+      </div>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Superbalist', placeId: 'superbalist-online' },
+        html,
+        'https://superbalist.com/browse?min_discount=1',
+        0,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        previousPriceText: 'R1299',
+        priceText: 'R995',
+        title: 'Augustina sneaker by Steve Madden',
+      }),
+    ])
+  })
+
+  it('reads JSON product rows nested inside VTEX state strings', () => {
+    const product = {
+      productName: 'Bash Court Sneaker',
+      sellingPrice: 799,
+      listPrice: 1199,
+      link: '/bash-court-sneaker/p',
+      primary_image: { cdn_path: '/arquivos/bash-court.jpg' },
+    }
+    const state = JSON.stringify({ products: JSON.stringify([product]) })
+    const html = `<script>window.__STATE__ = ${state};</script>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Bash', placeId: 'bash-online' },
+        html,
+        'https://bash.com/feature/value',
+        0,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://bash.com/arquivos/bash-court.jpg',
+        previousPriceText: 'R1199',
+        priceText: 'R799',
+        productUrl: 'https://bash.com/bash-court-sneaker/p',
+        title: 'Bash Court Sneaker',
+      }),
+    ])
+  })
+
+  it('reads accessible sale prices from product tiles without schema markup', () => {
+    const html = `
+      <div class="sf-product-tile product-tile" data-product-id="123">
+        <a href="/pd/msfc-mens-home-replica/123">
+          <img src="/images/msfc.jpg">
+          <h3>MSFC Mens Home Replica</h3>
+          <s aria-label="original price R 1 299">R 1 299</s>
+          <h3 aria-label="current price R 779" data-testid="sf-current-price">R 779</h3>
+        </a>
+      </div>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'PUMA', placeId: 'puma-online' },
+        html,
+        'https://za.puma.com/outlet',
+        0,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://za.puma.com/images/msfc.jpg',
+        previousPriceText: 'R1299',
+        priceText: 'R779',
+        productUrl: 'https://za.puma.com/pd/msfc-mens-home-replica/123',
+        title: 'MSFC Mens Home Replica',
+      }),
+    ])
+  })
+
   it('reads discounted products from bounded framework JSON attributes', () => {
     const payload = {
       results: [

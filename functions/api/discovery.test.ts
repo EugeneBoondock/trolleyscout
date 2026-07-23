@@ -105,7 +105,14 @@ describe('summary preview', () => {
     })
     const env = {
       DB: {
-        prepare: vi.fn(() => ({ first })),
+        prepare: vi.fn(() => {
+          const statement = {
+            bind: vi.fn(),
+            first,
+          }
+          statement.bind.mockReturnValue(statement)
+          return statement
+        }),
       },
     }
 
@@ -122,6 +129,35 @@ describe('summary preview', () => {
     expect(first).toHaveBeenCalledOnce()
   })
 
+  it('reads the summary row for the admin selected country', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { countryCode: 'ZW', id: 'admin-1', role: 'admin' },
+    })
+    const bindings: unknown[][] = []
+    const first = vi.fn().mockResolvedValue(undefined)
+    const prepare = vi.fn(() => {
+      const statement = {
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn((...values: unknown[]) => {
+          bindings.push(values)
+          return statement
+        }),
+        first,
+        run: vi.fn().mockResolvedValue({ success: true }),
+      }
+      return statement
+    })
+
+    await onRequest({
+      env: { DB: { prepare } },
+      request: new Request('https://example.test/api/discovery?summary=1'),
+      waitUntil: vi.fn(),
+    } as never)
+
+    expect(bindings).toContainEqual(['__summary__:ZW'])
+  })
+
   it('rebuilds a summary row created before savings previews existed', async () => {
     const statements: Array<{
       query: string
@@ -132,7 +168,7 @@ describe('summary preview', () => {
         all: vi.fn().mockResolvedValue({ results: [] }),
         bind: vi.fn(),
         first: vi.fn().mockResolvedValue(
-          query.includes("source_key = '__summary__'")
+          query.includes('SELECT checked_at, deals_json')
             ? {
                 checked_at: '2026-07-22T10:00:00.000Z',
                 deals_json: JSON.stringify({
@@ -162,7 +198,7 @@ describe('summary preview', () => {
     expect(prepare.mock.calls.length).toBeGreaterThan(1)
     expect(statements.some(({ query }) => query.includes('SELECT source_key'))).toBe(true)
     expect(statements.some(({ query, run }) => (
-      query.includes("VALUES ('__summary__'") && run.mock.calls.length === 1
+      query.includes("VALUES (?, 'system'") && run.mock.calls.length === 1
     ))).toBe(true)
   })
 })
@@ -554,6 +590,32 @@ describe('normalized discovery cutover', () => {
     expect(response.status).toBe(200)
     expect(liveFetch).toHaveBeenCalled()
     expect(mocks.runDealRefreshWithAlerts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run South African national sources for a Zimbabwe refresh', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { countryCode: 'ZW', id: 'admin-1', role: 'admin' },
+    })
+    const liveFetch = vi.fn(async () => new Response('', { status: 503 }))
+    vi.stubGlobal('fetch', liveFetch)
+
+    const response = await onRequest({
+      data: {},
+      env: {
+        ASSETS: { fetch: async () => new Response('asset') },
+        DB: fakeDiscoveryDatabase(),
+      },
+      functionPath: '/api/discovery',
+      next: async () => new Response('next'),
+      passThroughOnException: () => undefined,
+      params: {},
+      request: new Request('https://trolleyscout.co.za/api/discovery?refresh=1'),
+      waitUntil: vi.fn(),
+    })
+
+    expect(response.status).toBe(200)
+    expect(liveFetch).not.toHaveBeenCalled()
   })
 })
 

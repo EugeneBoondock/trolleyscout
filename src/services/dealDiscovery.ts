@@ -64,6 +64,31 @@ export const discoveryTargets: DiscoverySourceTarget[] = [
     retailerId: 'amazon-za',
     sourceLabel: 'Vouchers',
   },
+  {
+    parserId: 'generic-storefront',
+    retailerId: 'nike',
+    sourceLabel: 'Sale',
+  },
+  {
+    parserId: 'generic-storefront',
+    retailerId: 'puma',
+    sourceLabel: 'Outlet',
+  },
+  {
+    parserId: 'generic-storefront',
+    retailerId: 'superbalist',
+    sourceLabel: 'Sale',
+  },
+  {
+    parserId: 'vtex-catalogue',
+    retailerId: 'bash',
+    sourceLabel: 'Value',
+  },
+  {
+    parserId: 'json-storefront',
+    retailerId: 'shelflife',
+    sourceLabel: 'Sale',
+  },
 ]
 
 export function getDiscoveryTargets(): ResolvedDiscoveryTarget[] {

@@ -54,6 +54,8 @@ class _NearMeScreenState extends State<NearMeScreen> {
       widget.historyStore ?? NearbyHistoryStore();
   late final SavedAddressesStore _addressStore =
       widget.addressStore ?? SavedAddressesStore();
+  late final String _activeCountryCode =
+      widget.api.effectiveCountryCode.trim().toUpperCase();
   final _addressController = TextEditingController();
   bool _busy = false;
   bool _restoringHistory = true;
@@ -103,11 +105,14 @@ class _NearMeScreenState extends State<NearMeScreen> {
 
   Future<void> _restoreAddresses() async {
     final saved = await _addressStore.load();
-    if (mounted) setState(() => _savedAddresses = saved);
+    if (mounted) {
+      setState(() => _savedAddresses = _addressesForActiveCountry(saved));
+    }
   }
 
   Future<void> _restoreHistory() async {
-    final entries = await _historyStore.loadEntries();
+    final entries =
+        await _historyStore.loadEntries(countryCode: _activeCountryCode);
     if (!mounted) return;
     setState(() {
       _restoringHistory = false;
@@ -143,7 +148,10 @@ class _NearMeScreenState extends State<NearMeScreen> {
   }
 
   Future<void> _removeHistory(NearbyHistoryEntry entry) async {
-    final next = await _historyStore.removeEntry(entry.id);
+    final next = await _historyStore.removeEntry(
+      entry.id,
+      countryCode: _activeCountryCode,
+    );
     if (!mounted) return;
     setState(() => _history = next);
     ScaffoldMessenger.of(context)
@@ -162,11 +170,16 @@ class _NearMeScreenState extends State<NearMeScreen> {
       entry.result,
       entry.capturedAt,
       label: entry.locationLabel,
+      countryCode: _activeCountryCode,
     );
     if (mounted) setState(() => _history = next);
   }
 
   Future<void> _findNearby() async {
+    if (widget.api.isAdminCountryOverrideActive) {
+      await _findAdminTestLocation();
+      return;
+    }
     _lastSearch = _findNearby;
     setState(() {
       _busy = true;
@@ -227,6 +240,53 @@ class _NearMeScreenState extends State<NearMeScreen> {
         _busy = false;
         _searchFailed = true;
         _message = 'Could not read your location. Try again.';
+      });
+    }
+  }
+
+  Future<void> _findAdminTestLocation() async {
+    _lastSearch = _findAdminTestLocation;
+    setState(() {
+      _busy = true;
+      _locationSettingsTarget = null;
+      _searchFailed = false;
+      _message = 'Finding the selected country test locationâ€¦';
+    });
+
+    try {
+      final country = await widget.api.country();
+      final capital = country.capital?.trim();
+      if (capital == null || capital.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _searchFailed = true;
+          _message =
+              'This country has no default test city. Search for a town or address instead.';
+        });
+        return;
+      }
+      final point =
+          await widget.api.geocodeAddress('$capital, ${country.name}');
+      await _loadNearbyFor(
+        point.lat,
+        point.lon,
+        label: '$capital, ${country.name}',
+        formatted: point.formatted,
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _searchFailed = true;
+        _message = error.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _searchFailed = true;
+        _message = 'Could not open the selected country test location.';
       });
     }
   }
@@ -307,8 +367,14 @@ class _NearMeScreenState extends State<NearMeScreen> {
       final capturedAt = DateTime.now();
       var entries = _history;
       if (result.stores.isNotEmpty) {
-        entries = await _historyStore.save(result, capturedAt,
-            lat: lat, lon: lon, label: label);
+        entries = await _historyStore.save(
+          result,
+          capturedAt,
+          lat: lat,
+          lon: lon,
+          label: label,
+          countryCode: _activeCountryCode,
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -364,10 +430,11 @@ class _NearMeScreenState extends State<NearMeScreen> {
       lon: _currentLon!,
       formattedAddress: _currentFormatted,
       createdAt: DateTime.now(),
+      countryCode: _activeCountryCode,
     ));
     if (!mounted) return;
     uxSuccess();
-    setState(() => _savedAddresses = next);
+    setState(() => _savedAddresses = _addressesForActiveCountry(next));
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text('Saved “$label”.')));
@@ -376,7 +443,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
   Future<void> _removeSavedAddress(SavedAddress address) async {
     final next = await _addressStore.remove(address.id);
     if (!mounted) return;
-    setState(() => _savedAddresses = next);
+    setState(() => _savedAddresses = _addressesForActiveCountry(next));
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
@@ -390,7 +457,15 @@ class _NearMeScreenState extends State<NearMeScreen> {
 
   Future<void> _restoreSavedAddress(SavedAddress address) async {
     final next = await _addressStore.add(address);
-    if (mounted) setState(() => _savedAddresses = next);
+    if (mounted) {
+      setState(() => _savedAddresses = _addressesForActiveCountry(next));
+    }
+  }
+
+  List<SavedAddress> _addressesForActiveCountry(List<SavedAddress> addresses) {
+    return addresses
+        .where((address) => address.countryCode == _activeCountryCode)
+        .toList();
   }
 
   static String _shortLabelFor(String query, String? formatted) {
@@ -462,6 +537,17 @@ class _NearMeScreenState extends State<NearMeScreen> {
           'catalogues for each, reused from other shoppers nearby so it loads fast.',
           style: TextStyle(color: TS.mutedOf(context)),
         ),
+        if (widget.api.isAdminCountryOverrideActive) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Admin test country: $_activeCountryCode. Location searches use its capital instead of this phone’s GPS.',
+            style: TextStyle(
+              color: TS.mutedOf(context),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         SizedBox(
           width: double.infinity,

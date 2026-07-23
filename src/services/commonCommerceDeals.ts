@@ -10,7 +10,7 @@ export const MAX_COMMON_COMMERCE_DEALS = 40
 export const MAX_COMMON_COMMERCE_PAGES = 3
 export const DEFAULT_COMMON_COMMERCE_PAGE_SIZE = 50
 
-export type CommonCommercePlatform = 'shopify' | 'woocommerce' | 'magento'
+export type CommonCommercePlatform = 'shopify' | 'woocommerce' | 'magento' | 'vtex'
 
 export interface CommonCommerceDetection {
   platform: CommonCommercePlatform
@@ -34,6 +34,8 @@ const WOOCOMMERCE_SIGNATURE =
   /\/wp-content\/plugins\/woocommerce\/|\/wp-json\/wc\/store\/|\bwoocommerce-(?:page|product|shop)\b|\bwc-block-components\b/i
 const MAGENTO_SIGNATURE =
   /\bdata-mage-init\b|text\/x-magento-init|\bMagento_(?:Catalog|Checkout|Customer|Theme|Ui)\b|\/static\/[^"'\s>]*\/Magento_[A-Za-z]+\//i
+const VTEX_SIGNATURE =
+  /\bvtex(?:assets|commercestable|\.store| store framework)\b|\/_v\/public\/assets\/v1\/published\/vtex\./i
 
 export function detectCommonCommercePlatform(
   html: string,
@@ -46,6 +48,9 @@ export function detectCommonCommercePlatform(
   }
   if (MAGENTO_SIGNATURE.test(html)) {
     return { platform: 'magento', scope: COMMON_COMMERCE_DEAL_SCOPE }
+  }
+  if (VTEX_SIGNATURE.test(html)) {
+    return { platform: 'vtex', scope: COMMON_COMMERCE_DEAL_SCOPE }
   }
   return undefined
 }
@@ -63,6 +68,8 @@ export function buildCommonCommerceDealsRequest(
       return buildWooCommerceDealsRequest(verifiedStoreOrigin, pageSize, page)
     case 'magento':
       return buildMagentoDealsRequest(verifiedStoreOrigin, pageSize, page)
+    case 'vtex':
+      return buildVtexDealsRequest(verifiedStoreOrigin, pageSize, page)
   }
 }
 
@@ -153,6 +160,27 @@ export function buildMagentoDealsRequest(
   }
 }
 
+export function buildVtexDealsRequest(
+  verifiedStoreOrigin: string,
+  pageSize = DEFAULT_COMMON_COMMERCE_PAGE_SIZE,
+  page = 1,
+): CommonCommerceRequestDescriptor | undefined {
+  const origin = storeOrigin(verifiedStoreOrigin)
+  if (!origin) {
+    return undefined
+  }
+
+  const size = boundedPageSize(pageSize)
+  const currentPage = boundedPage(page)
+  const from = (currentPage - 1) * size
+  const url = new URL('/api/catalog_system/pub/products/search', origin)
+  url.searchParams.set('_from', String(from))
+  url.searchParams.set('_to', String(from + size - 1))
+  url.searchParams.set('O', 'OrderByBestDiscountDESC')
+
+  return getDescriptor('vtex', url.toString())
+}
+
 export function commonCommercePayloadItemCount(
   platform: CommonCommercePlatform,
   payload: unknown,
@@ -161,6 +189,9 @@ export function commonCommercePayloadItemCount(
     return isRecord(payload) && Array.isArray(payload.products) ? payload.products.length : 0
   }
   if (platform === 'woocommerce') {
+    return Array.isArray(payload) ? payload.length : 0
+  }
+  if (platform === 'vtex') {
     return Array.isArray(payload) ? payload.length : 0
   }
   const data = isRecord(payload) && isRecord(payload.data) ? payload.data : undefined
@@ -181,6 +212,8 @@ export function parseCommonCommerceDeals(
       return parseWooCommerceDeals(payload, verifiedStoreOrigin, limit)
     case 'magento':
       return parseMagentoDeals(payload, verifiedStoreOrigin, limit)
+    case 'vtex':
+      return parseVtexDeals(payload, verifiedStoreOrigin, limit)
   }
 }
 
@@ -313,9 +346,84 @@ export function parseMagentoDeals(
   return deals
 }
 
+export function parseVtexDeals(
+  payload: unknown,
+  verifiedStoreOrigin: string,
+  limit = MAX_COMMON_COMMERCE_DEALS,
+): PlatformDeal[] {
+  const origin = storeOrigin(verifiedStoreOrigin)
+  if (!origin || !Array.isArray(payload)) {
+    return []
+  }
+
+  const deals: PlatformDeal[] = []
+  const maximum = boundedOutputLimit(limit)
+
+  for (const row of payload) {
+    if (deals.length >= maximum || !isRecord(row)) {
+      continue
+    }
+
+    const title = textValue(row.productName) || textValue(row.productTitle)
+    const items = Array.isArray(row.items) ? row.items.filter(isRecord) : []
+    const offer = bestVtexOffer(items)
+    if (!title || !offer) {
+      continue
+    }
+
+    const firstImage = items
+      .flatMap((item) => Array.isArray(item.images) ? item.images : [])
+      .find(isRecord)
+    const image = firstImage
+      ? textValue(firstImage.imageUrl) || textValue(firstImage.imageTag)
+      : ''
+    const productPath = textValue(row.link) ||
+      (textValue(row.linkText) ? `/${encodeURIComponent(textValue(row.linkText))}/p` : '')
+
+    deals.push(dealFromDiscount(
+      title,
+      offer,
+      sameOriginUrl(productPath, origin),
+      publicUrl(image, origin),
+    ))
+  }
+
+  return deals
+}
+
 interface DiscountPrices {
   current: number
   previous: number
+}
+
+function bestVtexOffer(items: Record<string, unknown>[]): DiscountPrices | undefined {
+  let best: DiscountPrices | undefined
+
+  for (const item of items) {
+    const sellers = Array.isArray(item.sellers) ? item.sellers : []
+    for (const seller of sellers) {
+      if (!isRecord(seller) || !isRecord(seller.commertialOffer)) {
+        continue
+      }
+      const commercial = seller.commertialOffer
+      const availability = Number(commercial.AvailableQuantity)
+      const current = decimalMoneyToCents(commercial.Price)
+      const previous = decimalMoneyToCents(commercial.ListPrice)
+      if (
+        availability <= 0 ||
+        current === undefined ||
+        previous === undefined ||
+        previous <= current
+      ) {
+        continue
+      }
+      if (!best || current < best.current) {
+        best = { current, previous }
+      }
+    }
+  }
+
+  return best
 }
 
 function getDescriptor(

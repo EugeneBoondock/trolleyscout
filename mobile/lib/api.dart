@@ -85,6 +85,8 @@ class Api {
 
   String get effectiveCountryCode =>
       _adminCountryCode ?? _memberCountryCode ?? 'ZA';
+  bool get isAdminCountryOverrideActive =>
+      _adminCountryCode != null && _adminCountryCode!.isNotEmpty;
 
   Future<MemberSession> session() async {
     try {
@@ -677,6 +679,11 @@ class Api {
   /// Runs the two protected upstream deal scouts. The server accepts these
   /// requests only for an authenticated admin account.
   Future<void> refreshDealSources() async {
+    await _loadAdminCountryOverride();
+    if (effectiveCountryCode != 'ZA') {
+      await discovery(forceLive: true);
+      return;
+    }
     await Future.wait<dynamic>([
       discovery(forceLive: true),
       dealSites(forceLive: true),

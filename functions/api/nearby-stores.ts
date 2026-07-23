@@ -37,6 +37,7 @@ const privateHeaders = {
 const DEFAULT_RADIUS_M = 4000
 const MAX_RADIUS_M = 15000
 const MAX_DEALS_PER_STORE = 8
+const NEARBY_CACHE_VERSION = 'v2'
 
 interface StoreResult extends NearbyStore {
   deals: DiscoveredDeal[]
@@ -79,7 +80,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
 
   const nowMs = Date.now()
   const nowIso = new Date(nowMs).toISOString()
-  const tileKey = `${country.code}:${locationTileKey(lat, lon)}`
+  const tileKey = `${NEARBY_CACHE_VERSION}:${country.code}:${locationTileKey(lat, lon)}`
 
   const cached = await readCachedStores(env, tileKey, nowIso)
   let stores = cached
