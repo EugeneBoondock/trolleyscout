@@ -283,7 +283,11 @@ async function scoutStructuredFeedsForStores(
 
   const retailersNearby = new Set<string>()
   for (const store of stores) {
-    if (store.retailerId && sourcesByRetailer.has(store.retailerId)) {
+    if (
+      countryFromCode(store.countryCode).code === 'ZA' &&
+      store.retailerId &&
+      sourcesByRetailer.has(store.retailerId)
+    ) {
       retailersNearby.add(store.retailerId)
     }
   }
