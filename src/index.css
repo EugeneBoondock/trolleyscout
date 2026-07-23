@@ -3847,20 +3847,34 @@ main {
   gap: 0.75rem;
 }
 
-/* Today's top savings — three big honest markdowns, straight on the dash. */
-.dash-top-deals {
+/* Dashboard deal previews share one card across savings and saved items. */
+.dash-section-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dash-section-heading .dash-section-label {
+  margin: 0;
+}
+
+.dash-deal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: 0.75rem;
   margin-top: 1rem;
 }
 
-.dash-top-deal {
+.dash-deal-card {
   display: grid;
   gap: 0.35rem;
   justify-items: start;
-  padding: 0.9rem 1rem;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 1rem 0.9rem;
   border: 2px solid var(--line);
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow-soft);
   color: var(--ink);
@@ -3872,27 +3886,48 @@ main {
     box-shadow 0.14s ease;
 }
 
-.dash-top-deal:hover {
+.dash-deal-card:hover {
   transform: translate(-0.1rem, -0.1rem);
   box-shadow: var(--shadow-hard);
 }
 
-.dash-top-deal-image {
-  width: 100%;
-  height: 6.5rem;
-  object-fit: contain;
-  background: #fff;
+.dash-deal-card:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 3px;
 }
 
-.dash-top-deal-retailer {
+.dash-deal-image-frame {
+  display: grid;
+  width: calc(100% + 2rem);
+  height: 7rem;
+  margin: 0 -1rem 0.4rem;
+  place-items: center;
+  overflow: hidden;
+  border-bottom: 1.5px solid var(--line-soft);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.dash-deal-image-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--surface);
+}
+
+.dash-deal-retailer {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--red);
   font-size: 0.7rem;
   font-weight: 900;
   letter-spacing: 0.08em;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.dash-top-deal-title {
+.dash-deal-title {
   display: -webkit-box;
   overflow: hidden;
   font-size: 0.88rem;
@@ -3901,24 +3936,56 @@ main {
   -webkit-line-clamp: 2;
 }
 
-.dash-top-deal-price {
+.dash-deal-price {
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
+  min-width: 0;
 }
 
-.dash-top-deal-price strong {
+.dash-deal-price strong {
+  overflow: hidden;
   font-family: var(--display);
   font-size: 1.25rem;
   font-weight: 400;
   color: var(--red);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dash-top-deal-price s {
+.dash-deal-price s {
   color: var(--faint);
   font-size: 0.8rem;
   text-decoration-color: var(--red-bright);
   text-decoration-thickness: 2px;
+}
+
+.dash-deals-empty {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  min-height: 4.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1.5px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dash-deals-empty:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.dash-deals-empty:not(:disabled):hover {
+  border-color: var(--line);
+  color: var(--ink);
 }
 
 .dash-action {
@@ -4013,11 +4080,13 @@ main {
   }
 
   .dash-action,
+  .dash-deal-card,
   .dash-savings-foot svg:last-child {
     transition: none;
   }
 
-  .dash-action:hover {
+  .dash-action:hover,
+  .dash-deal-card:hover {
     transform: none;
   }
 }

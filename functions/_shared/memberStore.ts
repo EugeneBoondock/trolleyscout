@@ -126,6 +126,7 @@ interface SavedDealRow {
   deal_id: string
   evidence_text: string
   id: string
+  image_url: string | null
   previous_price_text: string | null
   price_text: string | null
   product_url: string
@@ -144,6 +145,7 @@ interface BasketItemRow {
   captured_at: string
   deal_id: string
   evidence_text: string
+  image_url: string | null
   previous_price_text: string | null
   price_text: string | null
   product_url: string
@@ -870,7 +872,7 @@ export async function listSavedDeals(env: TrolleyScoutEnv, accountId?: string) {
 
   const result = await env.DB.prepare(
     `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
-      captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
       FROM member_saved_deals
       WHERE account_id = ?
       ORDER BY created_at DESC`,
@@ -936,8 +938,8 @@ export async function saveMemberDeal(
   await env.DB.prepare(
     `INSERT INTO member_saved_deals (
       id, account_id, deal_id, retailer_id, source_label, source_url, product_url,
-      title, captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      title, captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id, product_url) DO UPDATE SET
       deal_id = excluded.deal_id,
       source_label = excluded.source_label,
@@ -947,7 +949,8 @@ export async function saveMemberDeal(
       price_text = excluded.price_text,
       previous_price_text = excluded.previous_price_text,
       saving_text = excluded.saving_text,
-      evidence_text = excluded.evidence_text`,
+      evidence_text = excluded.evidence_text,
+      image_url = excluded.image_url`,
   )
     .bind(
       id,
@@ -963,13 +966,14 @@ export async function saveMemberDeal(
       deal.previousPriceText ?? null,
       deal.savingText ?? null,
       deal.evidenceText.trim(),
+      deal.imageUrl ?? null,
       timestamp,
     )
     .run()
 
   const savedDeal = await env.DB.prepare(
     `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
-      captured_at, price_text, previous_price_text, saving_text, evidence_text, created_at
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
       FROM member_saved_deals
       WHERE account_id = ? AND product_url = ?`,
   )
@@ -1019,6 +1023,7 @@ export async function getMemberBasket(env: TrolleyScoutEnv, accountId?: string):
       member_saved_deals.previous_price_text AS previous_price_text,
       member_saved_deals.saving_text AS saving_text,
       member_saved_deals.evidence_text AS evidence_text,
+      member_saved_deals.image_url AS image_url,
       member_saved_deals.created_at AS saved_deal_created_at
       FROM member_basket_items
       INNER JOIN member_saved_deals ON member_saved_deals.id = member_basket_items.saved_deal_id
@@ -1597,6 +1602,7 @@ function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
     capturedAt: row.captured_at,
     evidenceText: row.evidence_text,
     id: row.id,
+    imageUrl: row.image_url ?? undefined,
     previousPriceText: row.previous_price_text ?? undefined,
     priceText: row.price_text ?? undefined,
     productUrl: row.product_url,
@@ -1617,6 +1623,7 @@ function basketItemRowToItem(row: BasketItemRow): BasketItem {
     deal_id: row.deal_id,
     evidence_text: row.evidence_text,
     id: row.saved_deal_id,
+    image_url: row.image_url,
     previous_price_text: row.previous_price_text,
     price_text: row.price_text,
     product_url: row.product_url,

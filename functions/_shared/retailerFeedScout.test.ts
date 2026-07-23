@@ -69,15 +69,29 @@ describe('structured retailer source decoders', () => {
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
   })
 
-  it('builds bounded official requests for Builders, Makro, and Dis-Chem', () => {
+  it('builds bounded official requests for Fair Price, Builders, Makro, and Dis-Chem', () => {
     const sources = getStructuredRetailerSources()
+    const fairPrice = sources.find((source) => source.key === 'fair-price::sale-items')
     const builders = sources.find((source) => source.key === 'builders::deals')
     const makro = sources.find((source) => source.key === 'makro::catalogues-store')
     const dischem = sources.find((source) => source.key === 'dis-chem::klevu-promotions')
 
+    expect(fairPrice).toBeDefined()
     expect(builders).toBeDefined()
     expect(makro).toBeDefined()
     expect(dischem).toBeDefined()
+
+    const fairPriceRequest = fairPrice!.buildRequest({ kind: 'page', page: 1 })
+    expect(fairPriceRequest).toMatchObject({
+      url: 'https://www.fairprice.co.za/promotions?product_list_limit=100',
+      init: {
+        headers: expect.objectContaining({
+          accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+          'user-agent': expect.stringContaining('TrolleyScout/'),
+        }),
+        method: 'GET',
+      },
+    })
 
     const buildersRequest = builders!.buildRequest({ kind: 'page', page: 2 })
     expect(buildersRequest).toMatchObject({

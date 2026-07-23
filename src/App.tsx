@@ -117,6 +117,7 @@ import type {
   OfferDraft,
   OfferValidationResult,
   Retailer,
+  SavedDeal,
   SourceKind,
   DiscoveredDeal,
   AdminOverview,
@@ -1994,6 +1995,8 @@ function MemberShell({
             onSetView={onSetView}
             retailerState={retailerState}
             savedDealCount={savedDealCount}
+            savedDeals={savedDealState.data.savedDeals}
+            savedDealsLoading={savedDealState.status === 'loading'}
             topDeals={topSavingsDeals(discoveryState.data.discovery.deals)}
             voucherCount={vouchers.length}
           />
@@ -2356,6 +2359,8 @@ function MemberDashboard({
   onSetView,
   retailerState,
   savedDealCount,
+  savedDeals,
+  savedDealsLoading,
   topDeals,
   voucherCount,
 }: {
@@ -2368,6 +2373,8 @@ function MemberDashboard({
   onSetView: (view: MemberView) => void
   retailerState: ResourceState<RetailerResource>
   savedDealCount: number
+  savedDeals: SavedDeal[]
+  savedDealsLoading: boolean
   topDeals: DiscoveredDeal[]
   voucherCount: number
 }) {
@@ -2406,33 +2413,66 @@ function MemberDashboard({
         savedDealCount={savedDealCount}
       />
 
-      {topDeals.length > 0 && (
-        <section aria-label="Today’s top savings">
-          <h2 className="dash-section-label">Today’s top savings</h2>
-          <div className="dash-top-deals">
+      <section aria-label="Today’s savings">
+        <div className="dash-section-heading">
+          <h2 className="dash-section-label">Today’s savings</h2>
+          <button className="ghost-button" onClick={() => onSetView('discovery')} type="button">
+            Browse deals
+          </button>
+        </div>
+        {topDeals.length > 0 ? (
+          <div className="dash-deal-grid">
             {topDeals.map((deal) => (
-              <button
-                className="dash-top-deal"
+              <DashboardDealCard
+                deal={deal}
                 key={deal.id}
                 onClick={() => onSetView('discovery')}
-                type="button"
-              >
-                {deal.imageUrl && (
-                  <img alt="" className="dash-top-deal-image" loading="lazy" src={deal.imageUrl} />
-                )}
-                <span className="dash-top-deal-retailer">{deal.retailerName}</span>
-                <span className="dash-top-deal-title">{deal.title}</span>
-                <span className="dash-top-deal-price">
-                  <strong>{deal.priceText}</strong>
-                  {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
-                    <s>{meaningfulWasPrice(deal.previousPriceText, deal.priceText)}</s>
-                  )}
-                </span>
-              </button>
+              />
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <button
+            className="dash-deals-empty"
+            onClick={() => onSetView('discovery')}
+            type="button"
+          >
+            <Tag aria-hidden="true" size={24} />
+            Fresh savings will appear here after the next deal check.
+          </button>
+        )}
+      </section>
+
+      <section aria-label="Your saved deals">
+        <div className="dash-section-heading">
+          <h2 className="dash-section-label">Your saved deals</h2>
+          <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
+            View all
+          </button>
+        </div>
+        {savedDeals.length > 0 ? (
+          <div className="dash-deal-grid">
+            {savedDeals.slice(0, 3).map((deal) => (
+              <DashboardDealCard
+                deal={deal}
+                key={deal.id}
+                onClick={() => onSetView('savedDeals')}
+              />
+            ))}
+          </div>
+        ) : (
+          <button
+            className="dash-deals-empty"
+            disabled={savedDealsLoading}
+            onClick={() => onSetView('discovery')}
+            type="button"
+          >
+            <Wallet aria-hidden="true" size={24} />
+            {savedDealsLoading
+              ? 'Loading your saved deals…'
+              : 'Save a deal and it will appear here with its product image.'}
+          </button>
+        )}
+      </section>
 
       <h2 className="dash-section-label">Jump straight in</h2>
       <div className="dash-actions">
@@ -2473,6 +2513,38 @@ function MemberDashboard({
         )}
       </div>
     </section>
+  )
+}
+
+function DashboardDealCard({
+  deal,
+  onClick,
+}: {
+  deal: DiscoveredDeal
+  onClick: () => void
+}) {
+  const wasPrice = meaningfulWasPrice(deal.previousPriceText, deal.priceText)
+
+  return (
+    <button
+      className="dash-deal-card"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="dash-deal-image-frame">
+        {deal.imageUrl ? (
+          <img alt="" decoding="async" loading="lazy" src={deal.imageUrl} />
+        ) : (
+          <Tag aria-hidden="true" size={32} />
+        )}
+      </span>
+      <span className="dash-deal-retailer">{deal.retailerName}</span>
+      <span className="dash-deal-title">{deal.title}</span>
+      <span className="dash-deal-price">
+        <strong>{deal.priceText ?? 'Price on the shelf'}</strong>
+        {wasPrice && <s>{wasPrice}</s>}
+      </span>
+    </button>
   )
 }
 

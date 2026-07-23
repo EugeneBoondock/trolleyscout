@@ -46,6 +46,42 @@ void main() {
     expect(find.text('Example maize meal'), findsOneWidget);
   });
 
+  testWidgets(
+      'dashboard restores today savings from the server and matches saved cards',
+      (tester) async {
+    final api = _FeatureApi();
+    await tester.pumpWidget(_wrap(DashboardScreen(
+      api: api,
+      session: _memberSession,
+      onNavigate: (_) {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Today’s savings'), findsOneWidget);
+    final savingCard = find.byKey(const Key('top-saving-card-deal-1'));
+    final savedCard = find.byKey(const Key('saved-deal-card-saved-1'));
+    expect(savingCard, findsOneWidget);
+    final savingCardSize = tester.getSize(savingCard);
+
+    await tester.scrollUntilVisible(
+      savedCard,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(savedCard, findsOneWidget);
+    expect(savingCardSize, tester.getSize(savedCard));
+
+    final savedImage = tester.widget<Image>(
+      find.descendant(of: savedCard, matching: find.byType(Image)),
+    );
+    expect(savedImage.image, isA<NetworkImage>());
+    expect(
+      (savedImage.image as NetworkImage).url,
+      'https://images.example.test/maize-meal.png',
+    );
+  });
+
   testWidgets('stores can save an official source', (tester) async {
     final api = _FeatureApi();
     await tester
@@ -397,6 +433,7 @@ const _deal = Deal(
   title: 'Example maize meal',
   capturedAt: '2026-07-15T10:00:00.000Z',
   evidenceText: 'Example maize meal R123.45',
+  imageUrl: 'https://images.example.test/maize-meal.png',
   priceText: 'R123.45',
   previousPriceText: 'R133.45',
   savingText: 'Save R10',
@@ -412,6 +449,7 @@ const _savedDeal = SavedDeal(
   title: 'Example maize meal',
   capturedAt: '2026-07-15T10:00:00.000Z',
   evidenceText: 'Example maize meal R123.45',
+  imageUrl: 'https://images.example.test/maize-meal.png',
   priceText: 'R123.45',
   savedAt: '2026-07-15T10:00:00.000Z',
 );

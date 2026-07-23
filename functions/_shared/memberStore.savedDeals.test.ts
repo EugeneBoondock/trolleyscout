@@ -10,7 +10,9 @@ import { saveMemberDeal } from './memberStore'
 const migrationUrls = [
   new NodeUrl('../../migrations/0002_membership.sql', import.meta.url),
   new NodeUrl('../../migrations/0003_saved_deals.sql', import.meta.url),
+  new NodeUrl('../../migrations/0005_deal_snapshots.sql', import.meta.url),
   new NodeUrl('../../migrations/0019_deal_site_cache.sql', import.meta.url),
+  new NodeUrl('../../migrations/0028_saved_deal_images.sql', import.meta.url),
 ]
 
 describe('saved discovery deals', () => {
@@ -49,6 +51,7 @@ describe('saved discovery deals', () => {
   it('saves a deal-site item only when it matches the cached discovery row', async () => {
     const cached = {
       id: 'onedayonly-42',
+      imageUrl: 'https://cdn.onedayonly.co.za/trusted-daily-deal.jpg',
       source: 'onedayonly',
       retailerName: 'OneDayOnly',
       sourceLabel: 'OneDayOnly',
@@ -65,6 +68,7 @@ describe('saved discovery deals', () => {
       capturedAt: '2026-07-21T12:00:00.000Z',
       evidenceText: 'Found by Trolley Scout from the cached OneDayOnly feed.',
       id: cached.id,
+      imageUrl: cached.imageUrl,
       priceText: cached.priceText,
       productUrl: cached.productUrl,
       retailerId: cached.source,
@@ -80,6 +84,7 @@ describe('saved discovery deals', () => {
       productUrl: cached.productUrl,
       retailerId: 'onedayonly',
       sourceLabel: 'OneDayOnly',
+      imageUrl: cached.imageUrl,
     })
   })
 

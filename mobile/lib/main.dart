@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_link_coordinator.dart';
 import 'app_controller.dart';
+import 'app_update_prompt.dart';
 import 'biometric_gate.dart';
 import 'deal_alert_background.dart';
 import 'deal_alert_scheduler.dart';
@@ -61,10 +62,12 @@ class TrolleyScoutApp extends StatefulWidget {
   const TrolleyScoutApp({
     super.key,
     this.api,
+    this.appUpdateService,
     this.launchIntroDuration = const Duration(milliseconds: 1100),
   });
 
   final Api? api;
+  final AppUpdateService? appUpdateService;
   final Duration launchIntroDuration;
 
   @override
@@ -73,11 +76,13 @@ class TrolleyScoutApp extends StatefulWidget {
 
 class _TrolleyScoutAppState extends State<TrolleyScoutApp> {
   late final AppController _controller;
+  late final AppUpdateService _appUpdateService;
 
   @override
   void initState() {
     super.initState();
     _controller = AppController(widget.api ?? Api());
+    _appUpdateService = widget.appUpdateService ?? GooglePlayAppUpdateService();
     _controller.restore();
     UxSettings.instance.load();
   }
@@ -98,9 +103,13 @@ class _TrolleyScoutAppState extends State<TrolleyScoutApp> {
         theme: TS.lightTheme(),
         darkTheme: TS.darkTheme(),
         themeMode: _controller.themeMode,
-        home: RootShell(
-          controller: _controller,
-          launchIntroDuration: widget.launchIntroDuration,
+        home: AppUpdatePromptHost(
+          checkDelay: widget.launchIntroDuration,
+          service: _appUpdateService,
+          child: RootShell(
+            controller: _controller,
+            launchIntroDuration: widget.launchIntroDuration,
+          ),
         ),
       ),
     );

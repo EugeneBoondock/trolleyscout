@@ -103,6 +103,77 @@ it('shows manual refresh to admins and requests a forced refresh when clicked', 
   })
 })
 
+it('shows matching image cards for today savings and saved deals', async () => {
+  const deal = {
+    capturedAt: '2026-07-23T10:00:00.000Z',
+    evidenceText: 'Coffee R79.99, was R109.99.',
+    id: 'coffee-deal',
+    imageUrl: 'https://images.example.test/coffee.png',
+    previousPriceText: 'R109.99',
+    priceText: 'R79.99',
+    productUrl: 'https://example.test/coffee',
+    retailerId: 'checkers',
+    retailerName: 'Checkers',
+    sourceLabel: 'Official specials',
+    sourceUrl: 'https://example.test/specials',
+    title: 'Ground coffee 250g',
+  }
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({
+        session: {
+          isAuthenticated: true,
+          account: {
+            createdAt: '2026-07-01T10:00:00.000Z',
+            displayName: 'Dashboard User',
+            email: 'dashboard@example.com',
+            id: 'dashboard-1',
+            initials: 'DU',
+            planId: 'household',
+            planName: 'Household',
+            planStatus: 'active',
+            propertiesAccess: true,
+            role: 'member',
+            updatedAt: '2026-07-01T10:00:00.000Z',
+          },
+        },
+      })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        deals: [deal],
+        summary: {
+          ...emptyDiscovery.summary,
+          foundDealCount: 1,
+        },
+      })
+    }
+    if (path === '/api/saved-deals') {
+      return envelope({
+        savedDeals: [{
+          ...deal,
+          id: 'saved-coffee',
+          savedAt: '2026-07-23T11:00:00.000Z',
+        }],
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+
+  const savings = await screen.findByRole('region', { name: 'Today’s savings' })
+  const saved = await screen.findByRole('region', { name: 'Your saved deals' })
+  const savingsCard = savings.querySelector<HTMLButtonElement>('.dash-deal-card')
+  const savedCard = saved.querySelector<HTMLButtonElement>('.dash-deal-card')
+  expect(savingsCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
+  expect(savedCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
+  expect(savingsCard).toBeTruthy()
+  expect(savedCard).toBeTruthy()
+})
+
 function envelope(data: unknown) {
   return Response.json({
     data,

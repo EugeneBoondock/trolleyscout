@@ -6,8 +6,8 @@ import {
   parseDischemKlevuFeed,
 } from '../../src/services/retailerFeeds/dischem'
 import {
-  buildFairPriceGraphqlQuery,
-  parseFairPriceFeed,
+  FAIR_PRICE_PROMOTIONS_URL,
+  parseFairPricePromotionPage,
 } from '../../src/services/retailerFeeds/fairPrice'
 import { parseFoodLoversFeed } from '../../src/services/retailerFeeds/foodLovers'
 import {
@@ -201,33 +201,29 @@ const structuredSources: readonly RetailerFeedSource[] = [
     sourceUrl: 'https://foodloversmarket.co.za/specials/',
   },
   {
-    buildRequest(cursor) {
-      // Fair Price's Magento storefront serves its GraphQL products query to
-      // any client; markdown rows carry both the regular and final price.
-      const page = Math.max(1, requireCursor(cursor, 'page'))
+    buildRequest() {
       return {
         init: {
-          body: buildFairPriceGraphqlQuery(page),
           headers: {
             ...BROWSER_HEADERS,
-            'content-type': 'application/json',
+            accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+            'user-agent': 'TrolleyScout/1.0 (+https://trolleyscout.co.za/about)',
           },
-          method: 'POST',
+          method: 'GET',
         },
-        url: 'https://www.fairprice.co.za/graphql',
+        url: FAIR_PRICE_PROMOTIONS_URL,
       }
     },
-    decode: (body) => JSON.parse(body) as unknown,
+    decode: (body) => body,
     initialCursor: { kind: 'page', page: 1 },
     key: 'fair-price::sale-items',
-    parse({ capturedAt, cursor, payload, sourceUrl }) {
-      const page = Math.max(1, requireCursor(cursor, 'page'))
-      return parseFairPriceFeed(payload, { capturedAt, page, sourceUrl })
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseFairPricePromotionPage(payload, { capturedAt, sourceUrl })
     },
     retailerId: retailerSlug('fair-price'),
     retailerName: 'Fair Price',
-    sourceLabel: 'Sale items',
-    sourceUrl: 'https://www.fairprice.co.za/',
+    sourceLabel: 'Current promotions',
+    sourceUrl: FAIR_PRICE_PROMOTIONS_URL,
   },
   gameSource('game::bundle-deals', 'Bundle deals', ':relevance:promotions:Bundle+Deals'),
   gameSource('game::savings', 'Savings', ':relevance:promotions:Savings'),

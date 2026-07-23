@@ -61,21 +61,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
       or(widget.api.basket(), const Basket.empty()),
       or(widget.api.voucherCount(), 0),
     ]);
-    // The on-device cache is not a network lane; its failure isn't "offline".
-    List<Deal> topDeals = const [];
+    final discovery = results[0] as DiscoveryResult;
+    // The server summary keeps this useful on a new device. The on-device
+    // cache adds any fresher deals the shopper has already opened locally.
+    final previewDeals = <String, Deal>{
+      for (final deal in discovery.deals)
+        '${deal.id}:${deal.productUrl ?? ''}': deal,
+    };
     try {
-      topDeals = await _cachedTopDeals();
+      for (final deal in await _cachedTopDeals()) {
+        previewDeals.putIfAbsent(
+          '${deal.id}:${deal.productUrl ?? ''}',
+          () => deal,
+        );
+      }
     } catch (_) {
       // Cache misses are expected on first run.
     }
     return _DashboardData(
-      discovery: results[0] as DiscoveryResult,
+      discovery: discovery,
       retailers: results[1] as RetailerCatalog,
       discovered: results[2] as DiscoveredStoresResult,
       savedDeals: results[3] as List<SavedDeal>,
       basket: results[4] as Basket,
       voucherCount: results[5] as int,
-      topDeals: topDeals,
+      topDeals: topSavingsDeals(previewDeals.values.toList()),
       failedLaneCount: failedLanes,
     );
   }
@@ -144,13 +154,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onOpenBasket: () => widget.onNavigate(AppDestination.basket),
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
               ),
-              if (data.topDeals.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                _TopSavingsStrip(
-                  deals: data.topDeals,
-                  onBrowse: () => widget.onNavigate(AppDestination.deals),
-                ),
-              ],
+              const SizedBox(height: 22),
+              _TopSavingsStrip(
+                deals: data.topDeals,
+                onBrowse: () => widget.onNavigate(AppDestination.deals),
+              ),
               const SizedBox(height: 20),
               const _SectionLabel(label: 'Jump straight in'),
               const SizedBox(height: 10),
@@ -720,11 +728,50 @@ class _TopSavingsStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (deals.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionLabel(label: 'Today’s savings'),
+          const SizedBox(height: 10),
+          PaperCard(
+            child: Row(
+              children: [
+                PhosphorIcon(
+                  PhosphorIconsFill.tag,
+                  size: 26,
+                  color: TS.redOf(context),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Fresh savings will appear here after the next deal check.',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 13.5,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    uxTap();
+                    onBrowse();
+                  },
+                  child: const Text('Browse'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionLabel(
-          label: 'Today’s top savings',
+          label: 'Today’s savings',
           trailing: TextButton(
             onPressed: () {
               uxTap();
@@ -735,7 +782,7 @@ class _TopSavingsStrip extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         SizedBox(
-          height: 210,
+          height: 212,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
@@ -744,90 +791,13 @@ class _TopSavingsStrip extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final deal = deals[index];
-              final wasText =
-                  meaningfulWasPrice(deal.previousPriceText, deal.priceText);
-              return PressableScale(
-                child: GestureDetector(
-                  onTap: () {
-                    uxTap();
-                    onBrowse();
-                  },
-                  child: Container(
-                    key: Key('top-saving-card-${deal.id}'),
-                    width: 158,
-                    // Fill behind, stroke in front: the full-bleed product
-                    // photo would otherwise cover the border's inner half at
-                    // the top corners and fade it.
-                    decoration: TS.cardFill(context),
-                    foregroundDecoration: TS.cardStroke(context),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          height: 88,
-                          width: double.infinity,
-                          child: deal.imageUrl == null
-                              ? ColoredBox(
-                                  color: TS.surfaceSoftOf(context),
-                                  child: Icon(Icons.local_offer_outlined,
-                                      color: TS.mutedOf(context)),
-                                )
-                              : Image.network(
-                                  deal.imageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => ColoredBox(
-                                    color: TS.surfaceSoftOf(context),
-                                    child: Icon(Icons.local_offer_outlined,
-                                        color: TS.mutedOf(context)),
-                                  ),
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(deal.retailerName.toUpperCase(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TS
-                                      .eyebrowOf(context)
-                                      .copyWith(fontSize: 10)),
-                              const SizedBox(height: 3),
-                              Text(deal.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.2)),
-                              const SizedBox(height: 5),
-                              Wrap(
-                                spacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(deal.priceText ?? '',
-                                      style: TextStyle(
-                                          color: TS.redOf(context),
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900)),
-                                  if (wasText != null)
-                                    Text(wasText,
-                                        style: TextStyle(
-                                            color: TS.faintOf(context),
-                                            decoration:
-                                                TextDecoration.lineThrough,
-                                            fontSize: 11)),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              return _DashboardDealCard(
+                cardKey: Key('top-saving-card-${deal.id}'),
+                deal: deal,
+                onTap: () {
+                  uxTap();
+                  onBrowse();
+                },
               );
             },
           ),
@@ -902,14 +872,15 @@ class _SavedDealsStrip extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         SizedBox(
-          height: 200,
+          height: 212,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
             padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: preview.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => _SavedDealCard(
+            itemBuilder: (context, index) => _DashboardDealCard(
+              cardKey: Key('saved-deal-card-${preview[index].id}'),
               deal: preview[index],
               onTap: () {
                 uxTap();
@@ -923,75 +894,112 @@ class _SavedDealsStrip extends StatelessWidget {
   }
 }
 
-class _SavedDealCard extends StatelessWidget {
-  const _SavedDealCard({required this.deal, required this.onTap});
+class _DashboardDealCard extends StatelessWidget {
+  const _DashboardDealCard({
+    required this.cardKey,
+    required this.deal,
+    required this.onTap,
+  });
 
-  final SavedDeal deal;
+  final Key cardKey;
+  final Deal deal;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => PressableScale(
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            key: Key('saved-deal-card-${deal.id}'),
-            width: 148,
-            decoration: TS.cardFill(context),
-            foregroundDecoration: TS.cardStroke(context),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _DealThumb(imageUrl: deal.imageUrl),
-                // Expanded, not a bare Padding: the strip has a fixed height,
-                // so the text block must take exactly what is left rather than
-                // its natural size, or a long product name overflows the card.
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          deal.retailerName.toUpperCase(),
-                          maxLines: 1,
+  Widget build(BuildContext context) {
+    final wasText = meaningfulWasPrice(deal.previousPriceText, deal.priceText);
+    return PressableScale(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          key: cardKey,
+          width: 156,
+          decoration: TS.cardFill(context),
+          foregroundDecoration: TS.cardStroke(context),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DealThumb(imageUrl: deal.imageUrl),
+              // Expanded, not a bare Padding: the strip has a fixed height,
+              // so the text block must take exactly what is left rather than
+              // its natural size, or a long product name overflows the card.
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        deal.retailerName.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TS.eyebrowOf(context).copyWith(fontSize: 9.5),
+                      ),
+                      const SizedBox(height: 3),
+                      Expanded(
+                        child: Text(
+                          deal.title,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TS.eyebrowOf(context).copyWith(fontSize: 9.5),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                              height: 1.2),
                         ),
-                        const SizedBox(height: 3),
-                        Expanded(
-                          child: Text(
-                            deal.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12.5,
-                                height: 1.2),
-                          ),
+                      ),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        height: 18,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  deal.priceText ?? 'Price on the shelf',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                    color: deal.priceText == null
+                                        ? TS.mutedOf(context)
+                                        : TS.inkOf(context),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (wasText != null) ...[
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    wasText,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: TS.faintOf(context),
+                                      decoration: TextDecoration.lineThrough,
+                                      fontSize: 10.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          deal.priceText ?? 'Price on the shelf',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                            color: deal.priceText == null
-                                ? TS.mutedOf(context)
-                                : TS.inkOf(context),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _DealThumb extends StatelessWidget {
@@ -1011,7 +1019,7 @@ class _DealThumb extends StatelessWidget {
       child: PhosphorIcon(PhosphorIconsFill.shoppingCart,
           size: 26, color: TS.mutedOf(context)),
     );
-    if (imageUrl == null) return placeholder;
+    if (imageUrl == null || imageUrl!.trim().isEmpty) return placeholder;
     return Container(
       height: _height,
       width: double.infinity,

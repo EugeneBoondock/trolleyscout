@@ -28,6 +28,7 @@ import {
   refreshLeafletCache,
   resolvePnpHflipDocuments,
   storePromotionsToDiscovery,
+  summaryPreviewDeals,
 } from './discovery'
 
 beforeEach(() => {
@@ -42,6 +43,128 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('summary preview', () => {
+  it('keeps a small image-first list ranked by real rand saving', () => {
+    const deal = (
+      id: string,
+      priceText: string,
+      previousPriceText: string,
+      imageUrl?: string,
+    ): DiscoveredDeal => ({
+      capturedAt: '2026-07-23T10:00:00.000Z',
+      evidenceText: id,
+      id,
+      imageUrl,
+      previousPriceText,
+      priceText,
+      productUrl: `https://example.test/${id}`,
+      retailerId: 'checkers',
+      retailerName: 'Checkers',
+      sourceLabel: 'Official specials',
+      sourceUrl: 'https://example.test/specials',
+      title: id,
+    })
+
+    expect(summaryPreviewDeals([
+      deal('save-10-with-image', 'R90', 'R100', 'https://example.test/10.jpg'),
+      deal('save-40-no-image', 'R60', 'R100'),
+      deal('save-30-with-image', 'R70', 'R100', 'https://example.test/30.jpg'),
+      deal('no-real-saving', 'R100', 'R100', 'https://example.test/none.jpg'),
+    ], 3).map((item) => item.id)).toEqual([
+      'save-30-with-image',
+      'save-10-with-image',
+      'save-40-no-image',
+    ])
+  })
+
+  it('returns the bounded savings cards stored with the summary row', async () => {
+    const previewDeal: DiscoveredDeal = {
+      capturedAt: '2026-07-23T10:00:00.000Z',
+      evidenceText: 'Coffee R79.99, was R109.99.',
+      id: 'coffee-preview',
+      imageUrl: 'https://example.test/coffee.jpg',
+      previousPriceText: 'R109.99',
+      priceText: 'R79.99',
+      productUrl: 'https://example.test/coffee',
+      retailerId: 'checkers',
+      retailerName: 'Checkers',
+      savingText: 'Save R30',
+      sourceLabel: 'Official specials',
+      sourceUrl: 'https://example.test/specials',
+      title: 'Ground coffee 250g',
+    }
+    const first = vi.fn().mockResolvedValue({
+      checked_at: '2026-07-23T10:00:00.000Z',
+      deals_json: JSON.stringify({
+        foundDealCount: 20,
+        leafletCount: 3,
+        topDeals: [previewDeal],
+      }),
+    })
+    const env = {
+      DB: {
+        prepare: vi.fn(() => ({ first })),
+      },
+    }
+
+    const response = await onRequest({
+      env,
+      request: new Request('https://example.test/api/discovery?summary=1'),
+      waitUntil: vi.fn(),
+    } as never)
+    const body = await (response as Response).json() as {
+      data: { deals: DiscoveredDeal[] }
+    }
+
+    expect(body.data.deals).toEqual([previewDeal])
+    expect(first).toHaveBeenCalledOnce()
+  })
+
+  it('rebuilds a summary row created before savings previews existed', async () => {
+    const statements: Array<{
+      query: string
+      run: ReturnType<typeof vi.fn>
+    }> = []
+    const prepare = vi.fn((query: string) => {
+      const statement = {
+        all: vi.fn().mockResolvedValue({ results: [] }),
+        bind: vi.fn(),
+        first: vi.fn().mockResolvedValue(
+          query.includes("source_key = '__summary__'")
+            ? {
+                checked_at: '2026-07-22T10:00:00.000Z',
+                deals_json: JSON.stringify({
+                  foundDealCount: 20,
+                  leafletCount: 3,
+                }),
+              }
+            : null,
+        ),
+        run: vi.fn().mockResolvedValue({ success: true }),
+      }
+      statement.bind.mockReturnValue(statement)
+      statements.push({ query, run: statement.run })
+      return statement
+    })
+
+    const response = await onRequest({
+      env: { DB: { prepare } },
+      request: new Request('https://example.test/api/discovery?summary=1'),
+      waitUntil: vi.fn(),
+    } as never)
+    const body = await (response as Response).json() as {
+      data: { deals: DiscoveredDeal[] }
+    }
+
+    expect(body.data.deals).toEqual([])
+    expect(prepare.mock.calls.length).toBeGreaterThan(1)
+    expect(statements.some(({ query }) => query.includes('SELECT source_key'))).toBe(true)
+    expect(statements.some(({ query, run }) => (
+      query.includes("VALUES ('__summary__'") && run.mock.calls.length === 1
+    ))).toBe(true)
+  })
 })
 
 describe('buildSnapshotChecks', () => {

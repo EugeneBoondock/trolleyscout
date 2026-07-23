@@ -1,7 +1,7 @@
 name: trolley_scout
 description: Find grocery deals, compare store prices, and search properties.
 publish_to: 'none'
-version: 1.9.1+22
+version: 1.9.2+23
 
 environment:
   sdk: ^3.5.0
@@ -22,6 +22,7 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   audioplayers: ^6.1.0
   local_auth: ^2.3.0
+  in_app_update: ^4.2.5
   workmanager: ^0.9.0+3
   phosphor_flutter: ^2.1.0
 

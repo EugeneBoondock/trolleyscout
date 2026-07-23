@@ -148,24 +148,33 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
         : undefined
 
       if (summaryRow) {
-        const parsed = JSON.parse(summaryRow.deals_json) as { foundDealCount?: number; leafletCount?: number }
-        return json(
-          {
-            deals: [],
-            leaflets: [],
-            summary: {
-              foundDealCount: parsed.foundDealCount ?? 0,
-              leafletCount: parsed.leafletCount ?? 0,
-              refreshedAt: summaryRow.checked_at,
+        const parsed = JSON.parse(summaryRow.deals_json) as {
+          foundDealCount?: number
+          leafletCount?: number
+          topDeals?: DiscoveredDeal[]
+        }
+        // Summary rows created before the dashboard preview was added have no
+        // topDeals field. Let those requests rebuild the row from source
+        // snapshots once instead of returning an empty savings strip.
+        if (Array.isArray(parsed.topDeals)) {
+          return json(
+            {
+              deals: summaryPreviewDeals(parsed.topDeals),
+              leaflets: [],
+              summary: {
+                foundDealCount: parsed.foundDealCount ?? 0,
+                leafletCount: parsed.leafletCount ?? 0,
+                refreshedAt: summaryRow.checked_at,
+              },
             },
-          },
-          {
-            headers: {
-              'access-control-allow-origin': '*',
-              'cache-control': 'public, max-age=10800',
+            {
+              headers: {
+                'access-control-allow-origin': '*',
+                'cache-control': 'public, max-age=10800',
+              },
             },
-          },
-        )
+          )
+        }
       }
     } catch {
       // Fallback to normal execution on DB errors
@@ -216,7 +225,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       )
         .bind(
           newestCheckedAt || nowIso,
-          JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+          JSON.stringify({
+            foundDealCount: allDeals.length,
+            leafletCount: leaflets.length,
+            topDeals: summaryPreviewDeals(allDeals),
+          }),
         )
         .run()
         .catch(() => undefined)
@@ -272,7 +285,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     )
       .bind(
         nowIso,
-        JSON.stringify({ foundDealCount: allDeals.length, leafletCount: leaflets.length }),
+        JSON.stringify({
+          foundDealCount: allDeals.length,
+          leafletCount: leaflets.length,
+          topDeals: summaryPreviewDeals(allDeals),
+        }),
       )
       .run()
       .catch(() => undefined)
@@ -1060,10 +1077,9 @@ function buildDiscoveryRun(
     ...settled.flatMap((result) => result.deals),
     ...storeDiscovery.deals,
   ])
-  const deals = summaryOnly ? [] : rankDealsForMember(
-    allDeals,
-    interests,
-  )
+  const deals = summaryOnly
+    ? summaryPreviewDeals(allDeals)
+    : rankDealsForMember(allDeals, interests)
   const sources = [...settled.map((result) => result.source), ...storeDiscovery.sources]
   const mergedLeaflets = dedupeLeaflets([...leaflets, ...storeDiscovery.leaflets])
 
@@ -1081,6 +1097,43 @@ function buildDiscoveryRun(
       unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
     },
   }
+}
+
+export function summaryPreviewDeals(
+  deals: DiscoveredDeal[],
+  limit = 12,
+): DiscoveredDeal[] {
+  const boundedLimit = Math.max(0, Math.min(24, Math.floor(limit)))
+  if (boundedLimit === 0) return []
+
+  return deals
+    .map((deal) => ({
+      deal,
+      hasImage: Boolean(deal.imageUrl?.trim()),
+      savingCents: dealSavingCents(deal),
+    }))
+    .filter((entry) => entry.savingCents > 0)
+    .sort((left, right) => {
+      if (left.hasImage !== right.hasImage) return left.hasImage ? -1 : 1
+      const savingOrder = right.savingCents - left.savingCents
+      return savingOrder || left.deal.title.localeCompare(right.deal.title)
+    })
+    .slice(0, boundedLimit)
+    .map((entry) => entry.deal)
+}
+
+function dealSavingCents(deal: DiscoveredDeal) {
+  const current = randCents(deal.priceText)
+  const previous = randCents(deal.previousPriceText)
+  if (current === undefined || previous === undefined) return 0
+  return Math.max(0, previous - current)
+}
+
+function randCents(value: string | undefined) {
+  const match = value?.replaceAll(' ', '').match(/(\d+(?:[.,]\d{1,2})?)/)
+  if (!match) return undefined
+  const amount = Number(match[1].replace(',', '.'))
+  return Number.isFinite(amount) ? Math.round(amount * 100) : undefined
 }
 
 export function storePromotionsToDiscovery(
