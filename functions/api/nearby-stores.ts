@@ -68,7 +68,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const radius = clampRadius(Number(url.searchParams.get('radius')))
   const session = await getMemberSession(env, request)
   const detected = detectRequestCountry(request)
-  const country = countryFromCode(session.account?.countryCode ?? detected.code)
+  const requestedCountryCode = url.searchParams.get('country')?.trim() || undefined
+  const country = countryFromCode(
+    requestedCountryCode ?? session.account?.countryCode ?? detected.code,
+  )
   const isSouthAfrica = country.code === 'ZA'
 
   if (!isValidCoordinate(lat, lon)) {

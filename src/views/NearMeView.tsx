@@ -83,7 +83,12 @@ export function NearMeView({
       (position) => {
         setState({ message: 'Checking stores near you…', status: 'loading', stores: [] })
 
-        loadNearbyStores(position.coords.latitude, position.coords.longitude)
+        loadNearbyStores(
+          position.coords.latitude,
+          position.coords.longitude,
+          undefined,
+          countryCode,
+        )
           .then((result) => {
             setState(result)
             if (result.stores.length > 0) {

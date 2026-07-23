@@ -242,9 +242,11 @@ class Api {
       ));
 
   Future<NearbyResult> nearbyStores(double lat, double lon) async {
+    await _loadAdminCountryOverride();
+    final countryCode = Uri.encodeComponent(effectiveCountryCode);
     final data = await _request(
       'GET',
-      '/api/nearby-stores?lat=${Uri.encodeComponent('$lat')}&lon=${Uri.encodeComponent('$lon')}',
+      '/api/nearby-stores?lat=${Uri.encodeComponent('$lat')}&lon=${Uri.encodeComponent('$lon')}&country=$countryCode',
     );
     return NearbyResult.fromJson(data);
   }

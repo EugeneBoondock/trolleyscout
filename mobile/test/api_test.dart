@@ -312,32 +312,39 @@ void main() {
     });
 
     test('keeps nearby country and branch website metadata', () async {
+      SharedPreferences.setMockInitialValues({
+        'ts_admin_country_override_v1': 'ZW',
+      });
+      late http.Request captured;
       final api = Api(
-        client: MockClient((request) async => http.Response(
-              jsonEncode({
-                'data': {
-                  'country': {
-                    'code': 'ZW',
-                    'currencyCode': 'ZWG',
-                    'flag': '🇿🇼',
-                    'name': 'Zimbabwe',
-                  },
-                  'stores': [
-                    {
-                      'placeId': 'ok-harare',
-                      'name': 'OK Zimbabwe Harare',
-                      'countryCode': 'ZW',
-                      'countryName': 'Zimbabwe',
-                      'website': 'https://www.okzimbabwe.co.zw/',
-                      'lat': -17.8252,
-                      'lon': 31.0335,
-                    },
-                  ],
+        client: MockClient((request) async {
+          captured = request;
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'country': {
+                  'code': 'ZW',
+                  'currencyCode': 'ZWG',
+                  'flag': '🇿🇼',
+                  'name': 'Zimbabwe',
                 },
-              }),
-              200,
-              headers: {'content-type': 'application/json; charset=utf-8'},
-            )),
+                'stores': [
+                  {
+                    'placeId': 'ok-harare',
+                    'name': 'OK Zimbabwe Harare',
+                    'countryCode': 'ZW',
+                    'countryName': 'Zimbabwe',
+                    'website': 'https://www.okzimbabwe.co.zw/',
+                    'lat': -17.8252,
+                    'lon': 31.0335,
+                  },
+                ],
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
         cookieStore: MemorySessionCookieStore(),
         useBrowserCookies: false,
         baseUrl: 'https://example.test',
@@ -348,6 +355,7 @@ void main() {
       expect(result.country?.code, 'ZW');
       expect(result.stores.single.website, 'https://www.okzimbabwe.co.zw/');
       expect(result.stores.single.countryName, 'Zimbabwe');
+      expect(captured.url.queryParameters['country'], 'ZW');
     });
 
     test('posts selected stores to the live product-price endpoint', () async {

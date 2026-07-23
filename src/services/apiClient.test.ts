@@ -15,6 +15,7 @@ import {
   loadBasket,
   loadSavedDeals,
   loadMemberSession,
+  loadNearbyStores,
   loadOffers,
   loadRetailers,
   loadSavedSources,
@@ -76,6 +77,36 @@ describe('apiClient', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/admin', expect.any(Object))
     expect(result.data?.selectedCountry.code).toBe('ZW')
+  })
+
+  it('sends the selected country with nearby coordinates', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            country: {
+              code: 'ZW',
+              currencyCode: 'ZWG',
+              flag: '🇿🇼',
+              name: 'Zimbabwe',
+            },
+            stores: [],
+          },
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await loadNearbyStores(-20.1561, 28.5887, undefined, 'zw')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/nearby-stores?lat=-20.1561&lon=28.5887&country=ZW',
+      expect.any(Object),
+    )
   })
 
   it('loads retailers from the API when available', async () => {

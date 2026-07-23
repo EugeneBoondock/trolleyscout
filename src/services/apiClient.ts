@@ -1010,10 +1010,18 @@ export async function loadNearbyStores(
   lat: number,
   lon: number,
   signal?: AbortSignal,
+  countryCode?: string,
 ): Promise<NearbyStoresState> {
   try {
+    const parameters = new URLSearchParams({
+      lat: `${lat}`,
+      lon: `${lon}`,
+    })
+    if (countryCode?.trim()) {
+      parameters.set('country', countryCode.trim().toUpperCase())
+    }
     const response = await fetch(
-      `/api/nearby-stores?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      `/api/nearby-stores?${parameters}`,
       { headers: { accept: 'application/json' }, signal },
     )
 
