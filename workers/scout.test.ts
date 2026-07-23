@@ -93,6 +93,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites,
         refreshDiscovery,
+        runVoucherScout: async () => ({ expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -409,6 +410,7 @@ describe('runScheduledScout', () => {
         refreshDiscovery: async () => {
           throw new Error('legacy discovery unavailable')
         },
+        runVoucherScout: async () => ({ expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -569,6 +571,7 @@ describe('runScheduledScout', () => {
         retailerName: 'SPAR',
         url: 'https://legacy.test/specials',
       }]),
+      runVoucherScout: async () => ({ expired: 0, sources: [] }),
       runCatalogueScout: runCatalogue,
       runStructuredRetailerFeedScout: async () => ({
         acceptedDealCount: 0,
@@ -669,6 +672,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites: async () => 0,
         refreshDiscovery: async () => discoveryRun(),
+        runVoucherScout: async () => ({ expired: 0, sources: [] }),
         runCatalogueScout,
         runStructuredRetailerFeedScout: async () => ({
           acceptedDealCount: 0,
@@ -856,6 +860,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites: async () => 0,
         refreshDiscovery: async () => discoveryRun(),
+        runVoucherScout: async () => ({ expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,

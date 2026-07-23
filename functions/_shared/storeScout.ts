@@ -1,4 +1,8 @@
-import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
+import {
+  extractRetailerLeafletsFromHtml,
+  isTrustedCatalogueUrl,
+  looksLikePromotionSignal,
+} from '../../src/services/scoutSources'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import {
   SHOPRITE_GROUP_CHAINS,
@@ -72,9 +76,15 @@ const SPECIALS_PATHS = [
   '/specials.html',
   '/promotions',
   '/promotions.php',
+  '/promocoes',
+  '/ofertas',
+  '/offres',
   '/deals',
   '/catalogue',
   '/catalogues',
+  '/catalogo',
+  '/folheto',
+  '/punguzo',
   '/weekly-specials',
   '/',
 ]
@@ -85,7 +95,8 @@ const MAX_STORES_PER_RUN = 3
 const MAX_PATHS_PER_STORE = 4
 const MAX_BODY_BYTES = 1_500_000
 const MAX_EMBEDDED_SCRIPT_BYTES = 500_000
-const MAX_EMBEDDED_TOTAL_BYTES = 1_000_000
+const MAX_EMBEDDED_ATTRIBUTE_BYTES = 1_250_000
+const MAX_EMBEDDED_TOTAL_BYTES = 1_400_000
 const MAX_EMBEDDED_SCRIPTS = 30
 const MAX_EMBEDDED_NODES = 12_000
 const MAX_PROMOTIONS_PER_PAGE = 60
@@ -1241,21 +1252,32 @@ export function extractPublicStoreDeals(
     const offer = firstOffer(product.offers ?? product.offer)
     const price = firstNumber(
       product.specialPrice,
+      product.special_price,
       product.salePrice,
+      product.sale_price,
       product.currentPrice,
+      product.current_price,
       product.discountedPrice,
+      product.discounted_price,
       offer?.price,
       offer?.lowPrice,
       product.price,
     )
     const previousPrice = firstNumber(
       product.previousPrice,
+      product.previous_price,
       product.oldPrice,
+      product.old_price,
       product.listPrice,
+      product.list_price,
       product.regularPrice,
+      product.regular_price,
       product.wasPrice,
+      product.was_price,
       product.compareAtPrice,
+      product.compare_at_price,
       product.originalPrice,
+      product.original_price,
       product.mrp,
       offer?.highPrice,
     )
@@ -1269,7 +1291,15 @@ export function extractPublicStoreDeals(
     }
 
     const productUrl = absoluteUrl(
-      stringValue(product.url ?? product.productUrl ?? product.canonicalUrl ?? offer?.url),
+      stringValue(
+        product.url ??
+          product.productUrl ??
+          product.product_url ??
+          product.canonicalUrl ??
+          product.canonical_url ??
+          product.permalink ??
+          offer?.url,
+      ),
       sourceUrl,
     )
     const key = `${title.toLowerCase()}::${productUrl ?? sourceUrl}`
@@ -1280,25 +1310,45 @@ export function extractPublicStoreDeals(
 
     seen.add(key)
     const validFrom = dateValue(
-      product.validFrom ?? product.startDate ?? product.promotionStart ?? offer?.validFrom,
+      product.validFrom ??
+        product.valid_from ??
+        product.startDate ??
+        product.start_date ??
+        product.promotionStart ??
+        product.promotion_start ??
+        offer?.validFrom,
     )
     const validTo = dateValue(
       product.validTo ??
+        product.valid_to ??
         product.endDate ??
+        product.end_date ??
         product.promotionEnd ??
+        product.promotion_end ??
         offer?.priceValidUntil ??
         offer?.validTo,
     )
     const currency = stringValue(
-      product.priceCurrency ?? product.currency ?? offer?.priceCurrency,
-    )
+      product.priceCurrency ??
+        product.price_currency ??
+        product.currencyCode ??
+        product.currency_code ??
+        product.currency ??
+        offer?.priceCurrency,
+    ) ?? countryFromCode(store.countryCode).currencyCode
     const savingAmount = firstNumber(
       product.discountAmount,
+      product.discount_amount,
       product.savingAmount,
+      product.saving_amount,
       previousPrice !== undefined && previousPrice > price ? previousPrice - price : undefined,
     )
     const explicitSaving = stringValue(
-      product.savingText ?? product.discountText ?? offer?.savingText,
+      product.savingText ??
+        product.saving_text ??
+        product.discountText ??
+        product.discount_text ??
+        offer?.savingText,
     )
     promotions.push({
       id: `${store.placeId}-product-${hashString(key)}`,
@@ -1306,8 +1356,12 @@ export function extractPublicStoreDeals(
         imageValue(
           product.image ??
             product.imageUrl ??
+            product.image_url ??
             product.thumbnailUrl ??
+            product.thumbnail_url ??
             product.thumbnail ??
+            product.primaryImage ??
+            product.primary_image ??
             offer?.image,
         ),
         sourceUrl,
@@ -1508,6 +1562,28 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
     }
   }
 
+  const attributePattern =
+    /\s[:@]?[a-z][\w:-]*(?:data|state|result|products?|catalog|items?|listing|promotions?|collections?)[\w:-]*\s*=\s*(["'])([\s\S]*?)\1/gi
+  let attributeMatch: RegExpExecArray | null
+  let attributeCount = 0
+
+  while (
+    (attributeMatch = attributePattern.exec(html)) !== null &&
+    attributeCount < 8 &&
+    totalBytes < MAX_EMBEDDED_TOTAL_BYTES
+  ) {
+    const body = decodeJsonAttribute(attributeMatch[2]).trim()
+    if (
+      (body.startsWith('{') || body.startsWith('[')) &&
+      body.length <= MAX_EMBEDDED_ATTRIBUTE_BYTES &&
+      totalBytes + body.length <= MAX_EMBEDDED_TOTAL_BYTES
+    ) {
+      attributeCount += 1
+      totalBytes += body.length
+      pushParsedJson(roots, body)
+    }
+  }
+
   const records: Record<string, unknown>[] = []
   const seen = new WeakSet<object>()
   let visited = 0
@@ -1540,6 +1616,15 @@ function embeddedRecords(html: string): Record<string, unknown>[] {
     walk(root)
   }
   return records
+}
+
+function decodeJsonAttribute(value: string): string {
+  return value
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
 }
 
 function pushParsedJson(target: unknown[], value: string): void {
@@ -1608,8 +1693,11 @@ function hasExplicitPromotionProof(
   }
   const discount = firstNumber(
     product.discountAmount,
+    product.discount_amount,
     product.savingAmount,
+    product.saving_amount,
     product.discountPercent,
+    product.discount_percent,
     offer?.discountAmount,
   )
   if (discount !== undefined && discount > 0) {
@@ -1617,29 +1705,58 @@ function hasExplicitPromotionProof(
   }
   if (stringValue(
     product.promotionId ??
+      product.promotion_id ??
       product.promoId ??
+      product.promo_id ??
       product.promotionCode ??
+      product.promotion_code ??
       product.dealId ??
+      product.deal_id ??
       product.campaignId ??
+      product.campaign_id ??
       offer?.promotionId,
   )) {
     return true
   }
   if (stringValue(
     product.promotionText ??
+      product.promotion_text ??
       product.promoText ??
+      product.promo_text ??
       product.discountText ??
+      product.discount_text ??
       product.savingText ??
+      product.saving_text ??
       offer?.promotionText,
   )) {
     return true
   }
+  if (
+    product.isOnSale === true ||
+    product.is_on_sale === true ||
+    product.isOnSale === 1 ||
+    product.is_on_sale === 1 ||
+    (Array.isArray(product.promotions) && product.promotions.length > 0)
+  ) {
+    return true
+  }
   return Boolean(
-    dateValue(product.validFrom ?? product.startDate ?? product.promotionStart ?? offer?.validFrom) ||
+    dateValue(
+      product.validFrom ??
+        product.valid_from ??
+        product.startDate ??
+        product.start_date ??
+        product.promotionStart ??
+        product.promotion_start ??
+        offer?.validFrom,
+    ) ||
       dateValue(
         product.validTo ??
+          product.valid_to ??
           product.endDate ??
+          product.end_date ??
           product.promotionEnd ??
+          product.promotion_end ??
           offer?.priceValidUntil ??
           offer?.validTo,
       ),
@@ -1752,9 +1869,21 @@ function officialLeaflets(
   )
     .filter((leaflet) => {
       const documentUrl = leaflet.documentUrl ?? leaflet.url
-      return sameOrigin(documentUrl, officialOrigin) && !isAggregatorHost(safeHost(documentUrl) ?? '')
+      const isPromotionImage = leaflet.imageUrl === documentUrl
+      return (
+        sameOrigin(documentUrl, officialOrigin) ||
+        isTrustedCatalogueUrl(documentUrl) ||
+        isPromotionImage
+      ) && !isAggregatorHost(safeHost(documentUrl) ?? '')
     })
-    .map((leaflet) => leafletToPromotion(store, leaflet))
+    .map((leaflet) => {
+      const documentUrl = leaflet.documentUrl ?? leaflet.url
+      const safeLeaflet = leaflet.imageUrl === documentUrl &&
+        !sameOrigin(documentUrl, officialOrigin)
+        ? { ...leaflet, documentUrl: pageUrl }
+        : leaflet
+      return leafletToPromotion(store, safeLeaflet)
+    })
 }
 
 function cataloguePromotion(store: NearbyStore, url: string, title?: string): StorePromotion {
@@ -1940,8 +2069,7 @@ function decodeHtml(value: string): string {
 
 function isPromotionPath(url: string): boolean {
   try {
-    return /\/(?:specials?|promotions?|deals?|catalogues?|weekly-specials)(?:[/.?]|$)/i
-      .test(new URL(url).pathname)
+    return looksLikePromotionSignal(new URL(url).pathname)
   } catch {
     return false
   }
@@ -1949,8 +2077,7 @@ function isPromotionPath(url: string): boolean {
 
 function isPromotionalSource(url: string, title: string, html: string): boolean {
   return isPromotionPath(url) ||
-    /\b(?:specials?|promotions?|deals?|catalogues?|weekly offers?)\b/i
-      .test(`${title} ${stripHtml(html).slice(0, 5_000)}`)
+    looksLikePromotionSignal(`${title} ${stripHtml(html).slice(0, 5_000)}`)
 }
 
 function sameOrigin(url: string, origin: string): boolean {

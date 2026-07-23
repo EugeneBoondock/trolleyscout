@@ -54,6 +54,41 @@ describe('global country support', () => {
     expect(retailers.map((retailer) => retailer.name)).toEqual(['OK Zimbabwe'])
   })
 
+  it('derives the retailer brand from an official promotion-page host', () => {
+    const retailers = buildCountryRetailers(countryFromCode('BW'), [
+      {
+        title: 'Promotions',
+        url: 'https://choppies.co.bw/specials-promotions/',
+      },
+    ])
+
+    expect(retailers).toEqual([
+      expect.objectContaining({
+        name: 'Choppies',
+        sources: [
+          expect.objectContaining({
+            kind: 'specials',
+            url: 'https://choppies.co.bw/specials-promotions/',
+          }),
+        ],
+      }),
+    ])
+  })
+
+  it('recognizes multilingual official promotion paths', () => {
+    const retailers = buildCountryRetailers(countryFromCode('MZ'), [
+      {
+        title: 'Ofertas | Mercado Maputo',
+        url: 'https://mercadomaputo.co.mz/promocoes/',
+      },
+    ])
+
+    expect(retailers[0]?.sources[0]).toMatchObject({
+      kind: 'specials',
+      url: 'https://mercadomaputo.co.mz/promocoes/',
+    })
+  })
+
   it('merges official brand sites, removes title copy, and matches a nearby branch', () => {
     const retailers = buildCountryRetailers(countryFromCode('ZW'), [
       {
@@ -151,6 +186,48 @@ describe('international property parsing', () => {
         location: '10 Samora Machel Avenue, Harare',
         priceValue: 125000,
         title: 'Three bedroom home in Harare',
+      }),
+    ])
+  })
+
+  it('reads property listings from bounded Next.js page state', () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          listings: [
+            {
+              bathrooms: 2,
+              bedrooms: 3,
+              currency: 'BWP',
+              imageUrl: '/images/gaborone-home.jpg',
+              listingUrl: '/property/gaborone-family-home',
+              location: 'Gaborone West',
+              price: 1450000,
+              propertyType: 'House',
+              title: 'Family home in Gaborone',
+            },
+          ],
+        },
+      },
+    })}</script>`
+
+    expect(
+      parseGenericPropertyListings(
+        html,
+        'https://property.example.bw/search/gaborone',
+        'sale',
+        'BWP',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        bathrooms: 2,
+        bedrooms: 3,
+        currencyCode: 'BWP',
+        listingUrl: 'https://property.example.bw/property/gaborone-family-home',
+        location: 'Gaborone West',
+        priceValue: 1450000,
+        propertyType: 'House',
+        title: 'Family home in Gaborone',
       }),
     ])
   })

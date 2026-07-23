@@ -284,6 +284,59 @@ describe('extractPublicStoreDeals', () => {
 
     expect(dealAt(29.99).id).toBe(dealAt(24.99).id)
   })
+
+  it('reads discounted products from bounded framework JSON attributes', () => {
+    const payload = {
+      results: [
+        {
+          result: {
+            is_on_sale: 1,
+            price: 19.99,
+            primary_image: {
+              url: 'https://images.market.test/red-bull.jpg',
+            },
+            slug: 'red-bull-watermelon',
+            title: 'Red Bull Watermelon 250ml',
+            was_price: 21.99,
+          },
+        },
+        {
+          result: {
+            is_on_sale: 0,
+            price: 15.99,
+            title: 'Regular milk 1L',
+            was_price: 15.99,
+          },
+        },
+      ],
+    }
+    const html = `
+      <elasticsearch-listing
+        :default-search-result='${JSON.stringify(payload)}'>
+      </elasticsearch-listing>`
+
+    expect(
+      extractPublicStoreDeals(
+        {
+          countryCode: 'NA',
+          lat: -22.56,
+          lon: 17.08,
+          name: 'Woermann Fresh',
+          placeId: 'woermann-windhoek',
+        },
+        html,
+        'https://shop.market.test/promotions/',
+        Date.parse('2026-07-23T12:00:00.000Z'),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://images.market.test/red-bull.jpg',
+        previousPriceText: 'NAD 21.99',
+        priceText: 'NAD 19.99',
+        title: 'Red Bull Watermelon 250ml',
+      }),
+    ])
+  })
 })
 
 describe('scheduled discovered-store scouting', () => {
@@ -580,7 +633,7 @@ describe('scheduled discovered-store scouting', () => {
     const store = discoveredStore({ website: 'https://market.test/' })
     const pathsByRun: string[][] = []
 
-    for (let run = 0; run < 4; run += 1) {
+    for (let run = 0; run < 5; run += 1) {
       const paths: string[] = []
       pathsByRun.push(paths)
       vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -596,8 +649,9 @@ describe('scheduled discovered-store scouting', () => {
 
     expect(pathsByRun).toEqual([
       ['/specials', '/specials.html', '/promotions', '/promotions.php'],
-      ['/deals', '/catalogue', '/catalogues', '/weekly-specials'],
-      ['/'],
+      ['/promocoes', '/ofertas', '/offres', '/deals'],
+      ['/catalogue', '/catalogues', '/catalogo', '/folheto'],
+      ['/punguzo', '/weekly-specials', '/'],
       ['/specials', '/specials.html', '/promotions', '/promotions.php'],
     ])
   })
@@ -693,6 +747,61 @@ describe('scheduled discovered-store scouting', () => {
     expect(rows.results.map((row) => row.product_url)).toEqual([
       'https://market.test/files/weekly-specials.pdf',
     ])
+  })
+
+  it('allows a trusted hosted flipbook linked by a verified official store page', async () => {
+    const html = `
+      <script type="application/ld+json">${JSON.stringify({
+        '@type': 'LocalBusiness',
+        name: 'Market Place',
+      })}</script>
+      <h2>Market Place offres de la semaine</h2>
+      <a href="https://online.fliphtml5.com/market/july/">Catalogue officiel</a>
+      <a href="https://files.example/copied-catalogue/">Copied catalogue</a>`
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      return url.hostname === 'market.test' && url.pathname === '/specials'
+        ? htmlResponse(html)
+        : htmlResponse('')
+    }))
+
+    await scoutNearbyStores(env, [discoveredStore({ website: 'https://market.test/' })], 0, 1)
+
+    const rows = await db.prepare(
+      `SELECT product_url FROM store_promotions WHERE place_id = 'market-place'`,
+    ).all<{ product_url: string }>()
+    expect(rows.results.map((row) => row.product_url)).toEqual([
+      'https://online.fliphtml5.com/market/july/',
+    ])
+  })
+
+  it('keeps an external promotion image but sends taps to the verified store page', async () => {
+    const html = `
+      <script type="application/ld+json">${JSON.stringify({
+        '@type': 'LocalBusiness',
+        name: 'Market Place',
+      })}</script>
+      <h2>July promotions</h2>
+      <img
+        alt="July weekly promotions"
+        src="https://images.cdn.test/market/july-specials.jpg">`
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      return url.hostname === 'market.test' && url.pathname === '/specials'
+        ? htmlResponse(html)
+        : htmlResponse('')
+    }))
+
+    await scoutNearbyStores(env, [discoveredStore({ website: 'https://market.test/' })], 0, 1)
+
+    const row = await db.prepare(
+      `SELECT image_url, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{ image_url: string; product_url: string }>()
+    expect(row).toEqual({
+      image_url: 'https://images.cdn.test/market/july-specials.jpg',
+      product_url: 'https://market.test/specials',
+    })
   })
 
   it('rejects supplied website promotions when the page has no store identity evidence', async () => {

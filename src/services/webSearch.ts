@@ -12,6 +12,14 @@ export function buildDuckDuckGoUrl(query: string): string {
   return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
 }
 
+export function buildBingSearchUrl(query: string): string {
+  return `http://www.bing.com/search?q=${encodeURIComponent(query)}`
+}
+
+export function buildYahooSearchUrl(query: string): string {
+  return `http://search.yahoo.com/search?p=${encodeURIComponent(query)}`
+}
+
 export function buildStoreSpecialsQuery(
   storeName: string,
   area?: string,
@@ -60,7 +68,7 @@ export function extractSearchResultsFromMarkdown(markdown: string, limit = 12): 
 
   while ((match = pattern.exec(markdown)) !== null && results.length < limit) {
     const title = stripTags(match[1])
-    const url = decodeDuckDuckGoHref(match[2])
+    const url = decodeSearchHref(match[2])
 
     if (
       !url ||
@@ -248,6 +256,38 @@ function decodeDuckDuckGoHref(href: string): string {
   }
 
   return ''
+}
+
+function decodeSearchHref(href: string): string {
+  const duckDuckGoTarget = decodeDuckDuckGoHref(href)
+  if (!duckDuckGoTarget) return ''
+
+  try {
+    const url = new URL(duckDuckGoTarget)
+    const host = normalizeHost(url.hostname)
+    if (host === 'r.search.yahoo.com') {
+      const target = /\/RU=([^/]+)\/RK=/.exec(url.pathname)?.[1]
+      if (!target) return ''
+      const decoded = decodeURIComponent(target)
+      return /^https?:\/\//i.test(decoded) ? decoded : ''
+    }
+
+    if (!host.endsWith('bing.com') || url.pathname !== '/ck/a') {
+      return duckDuckGoTarget
+    }
+
+    const encoded = url.searchParams.get('u')
+    if (!encoded?.startsWith('a1')) return ''
+    const base64 = encoded
+      .slice(2)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil((encoded.length - 2) / 4) * 4, '=')
+    const decoded = atob(base64)
+    return /^https?:\/\//i.test(decoded) ? decoded : ''
+  } catch {
+    return ''
+  }
 }
 
 function storeNameTokens(storeName: string): string[] {

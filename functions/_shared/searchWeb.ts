@@ -6,8 +6,10 @@
 // query ever leaves — never any user data.
 
 import {
+  buildBingSearchUrl,
   buildDuckDuckGoUrl,
   buildJinaReaderUrl,
+  buildYahooSearchUrl,
   extractJinaSearchResults,
   extractSearchResults,
   extractSearchResultsFromMarkdown,
@@ -74,6 +76,32 @@ export async function searchWebWithStatus(
   }
 
   sawSuccessfulProvider ||= proxied.status === 'success'
+
+  const yahoo = await fetchBody(
+    buildJinaReaderUrl(buildYahooSearchUrl(query)),
+  )
+  const yahooResults = yahoo.body
+    ? extractSearchResultsFromMarkdown(yahoo.body)
+    : []
+
+  if (yahooResults.length > 0) {
+    return { results: yahooResults, status: 'success' }
+  }
+
+  sawSuccessfulProvider ||= yahoo.status === 'success'
+
+  const bing = await fetchBody(
+    buildJinaReaderUrl(buildBingSearchUrl(query)),
+  )
+  const bingResults = bing.body
+    ? extractSearchResultsFromMarkdown(bing.body)
+    : []
+
+  if (bingResults.length > 0) {
+    return { results: bingResults, status: 'success' }
+  }
+
+  sawSuccessfulProvider ||= bing.status === 'success'
   return {
     results: [],
     status: sawSuccessfulProvider ? 'empty' : 'transient_failure',

@@ -47,16 +47,19 @@ export function extractRetailerLeafletsFromHtml(
 ): StoreLeaflet[] {
   const leaflets: StoreLeaflet[] = []
   const seen = new Set<string>()
-  const linkPattern = /href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/gi
+  const linkPattern = /(?:href|src)=["']([^"']+)["']/gi
   let match: RegExpExecArray | null
 
   while ((match = linkPattern.exec(html)) !== null && leaflets.length < limit) {
     const rawPath = decodeHtml(match[1])
     const documentUrl = absoluteHttpUrl(rawPath, target.sourceUrl)
+    const isPdf = /\.pdf(?:$|\?)/i.test(rawPath)
+    const isHostedCatalogue = documentUrl ? isTrustedCatalogueUrl(documentUrl) : false
+    if (!isPdf && !isHostedCatalogue) continue
+
     const context = html.slice(Math.max(0, match.index - 1200), Math.min(html.length, match.index + 400))
     const searchable = `${rawPath} ${stripHtml(context)}`.toLowerCase()
-
-    const looksPromotional = /special|promotion|deal|catalog|leaflet|weekly|citizen/.test(searchable)
+    const looksPromotional = looksLikePromotionSignal(searchable)
 
     if (
       !documentUrl ||
@@ -82,7 +85,75 @@ export function extractRetailerLeafletsFromHtml(
     })
   }
 
+  const imagePattern = /<img\b([^>]*)>/gi
+  while ((match = imagePattern.exec(html)) !== null && leaflets.length < limit) {
+    const attributes = match[1] ?? ''
+    const rawPath = attributeValue(attributes, 'src') ?? attributeValue(attributes, 'data-src')
+    if (!rawPath || !/\.(?:avif|jpe?g|png|webp)(?:$|\?)/i.test(rawPath)) continue
+
+    const imageUrl = absoluteHttpUrl(decodeHtml(rawPath), target.sourceUrl)
+    if (
+      !imageUrl ||
+      seen.has(imageUrl) ||
+      leaflets.some((leaflet) => leaflet.imageUrl === imageUrl) ||
+      /(?:favicon|icon|logo|placeholder|spinner)/i.test(rawPath)
+    ) continue
+
+    const context = html.slice(
+      Math.max(0, match.index - 1200),
+      Math.min(html.length, match.index + 400),
+    )
+    const alt = attributeValue(attributes, 'alt') ?? ''
+    if (!looksLikePromotionSignal(`${rawPath} ${alt} ${stripHtml(context)}`)) continue
+
+    seen.add(imageUrl)
+    leaflets.push({
+      capturedAt,
+      documentUrl: imageUrl,
+      id: `${target.retailerId}-${hashString(imageUrl)}`,
+      imageUrl,
+      name:
+        nearestHeading(context) ||
+        cleanText(alt) ||
+        documentName(imageUrl),
+      retailerId: target.retailerId,
+      retailerName: target.retailerName,
+      url: target.sourceUrl,
+    })
+  }
+
   return leaflets
+}
+
+const CATALOGUE_HOSTS = [
+  'fliphtml5.com',
+  'flipsnack.com',
+  'issuu.com',
+  'publitas.com',
+]
+
+export function isTrustedCatalogueUrl(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, '')
+    return CATALOGUE_HOSTS.some((catalogueHost) => (
+      host === catalogueHost || host.endsWith(`.${catalogueHost}`)
+    ))
+  } catch {
+    return false
+  }
+}
+
+export function looksLikePromotionSignal(value: string): boolean {
+  const normalized = value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+  return /special|promot|promoco|deal|catalog|leaflet|weekly|citizen|offre|oferta|folheto|punguzo|rabais|solde|desconto|month[\s_-]*end/.test(normalized)
+}
+
+function attributeValue(attributes: string, name: string): string | undefined {
+  const match = new RegExp(`\\b${name}=["']([^"']+)["']`, 'i').exec(attributes)
+  return match?.[1]
 }
 
 // Sitebuilder pages (e.g. Frontline's 1-grid site) name their leaflet links in

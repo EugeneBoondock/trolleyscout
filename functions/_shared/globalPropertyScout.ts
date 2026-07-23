@@ -14,6 +14,8 @@ const SEARCH_TTL_MS = 3 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 9_000
 const MAX_BODY_BYTES = 2_000_000
 const MAX_RESULTS_TO_FETCH = 8
+const MAX_PROPERTY_STATE_BYTES = 750_000
+const MAX_PROPERTY_STATE_OBJECTS = 12_000
 
 export interface GlobalPropertySearchParams {
   query: string
@@ -59,8 +61,9 @@ export async function searchGlobalProperties(
   if (listings.length === 0 && sources.length === 0) {
     const action = params.listingType === 'rent' ? 'property to rent' : 'property for sale'
     const results = await searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY)
+    const relevantResults = results.filter(isLikelyPropertySearchResult)
     const fetched = await Promise.all(
-      results.slice(0, MAX_RESULTS_TO_FETCH).map(async (result) => {
+      relevantResults.slice(0, MAX_RESULTS_TO_FETCH).map(async (result) => {
         const html = await fetchPropertyPage(env, result.url)
         const parsed = html
           ? parseGenericPropertyListings(html, result.url, params.listingType, country.currencyCode)
@@ -109,15 +112,20 @@ export function parseGenericPropertyListings(
   const source = safeHttpUrl(sourceUrl)
   if (!source) return []
   const objects: Record<string, unknown>[] = []
-  const scriptPattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi
   let match: RegExpExecArray | null
 
   while ((match = scriptPattern.exec(html)) !== null) {
-    try {
-      collectObjects(JSON.parse(match[1]), objects)
-    } catch {
-      // A broken JSON-LD block does not discard valid blocks later on the page.
-    }
+    const attributes = match[1] ?? ''
+    const body = (match[2] ?? '').trim()
+    if (
+      !body ||
+      body.length > MAX_PROPERTY_STATE_BYTES ||
+      !isPropertyStateScript(attributes)
+    ) continue
+    const parsed = parseJsonScript(body)
+    if (parsed !== undefined) collectObjects(parsed, objects)
+    if (objects.length >= MAX_PROPERTY_STATE_OBJECTS) break
   }
 
   const sourceHost = normalizeSourceHost(source.hostname)
@@ -177,6 +185,7 @@ async function timedFetch(url: string, apiKey?: string): Promise<string | undefi
 }
 
 function collectObjects(value: unknown, output: Record<string, unknown>[]): void {
+  if (output.length >= MAX_PROPERTY_STATE_OBJECTS) return
   if (Array.isArray(value)) {
     for (const item of value) collectObjects(item, output)
     return
@@ -191,9 +200,18 @@ function isPropertyObject(object: Record<string, unknown>): boolean {
   const types = Array.isArray(object['@type']) ? object['@type'] : [object['@type']]
   const typed = types.some((type) => typeof type === 'string' && /realestate|house|apartment|residence|accommodation/i.test(type))
   const hasListingShape = Boolean(
-    stringValue(object.url) &&
-    (object.offers || object.price) &&
-    (object.address || object.numberOfBedrooms || object.numberOfRooms),
+    listingUrlValue(object) &&
+    (object.offers || object.price || object.priceValue || object.listingPrice) &&
+    (
+      object.address ||
+      object.location ||
+      object.suburb ||
+      object.city ||
+      object.bedrooms ||
+      object.beds ||
+      object.numberOfBedrooms ||
+      object.numberOfRooms
+    ),
   )
   return typed || hasListingShape
 }
@@ -209,23 +227,56 @@ function objectToListing(
   },
 ): PropertyListing | undefined {
   const offer = firstObject(object.offers)
-  const rawUrl = stringValue(object.url) ?? stringValue(object['@id'])
+  const rawUrl = listingUrlValue(object)
   const listingUrl = rawUrl ? safeHttpUrl(rawUrl, context.source) : undefined
-  const title = stringValue(object.name) ?? stringValue(object.headline)
+  const title =
+    stringValue(object.name) ??
+    stringValue(object.headline) ??
+    stringValue(object.title) ??
+    stringValue(object.displayName)
   if (!listingUrl || !title) return undefined
 
-  const priceValue = positiveNumber(offer?.price ?? offer?.lowPrice ?? object.price)
-  const currencyCode = stringValue(offer?.priceCurrency) ?? context.defaultCurrency
+  const priceValue = positiveNumber(
+    offer?.price ??
+    offer?.lowPrice ??
+    object.price ??
+    object.priceValue ??
+    object.listingPrice,
+  )
+  const currencyCode =
+    stringValue(offer?.priceCurrency) ??
+    stringValue(object.priceCurrency) ??
+    stringValue(object.currencyCode) ??
+    stringValue(object.currency) ??
+    context.defaultCurrency
   const address = firstObject(object.address)
-  const location = [
+  const structuredLocation = [
     stringValue(address?.streetAddress),
     stringValue(address?.addressLocality),
   ].filter(Boolean).join(', ') || undefined
-  const imageUrl = imageFrom(object.image, context.source)
+  const location =
+    structuredLocation ??
+    stringValue(object.location) ??
+    stringValue(object.suburb) ??
+    stringValue(object.city)
+  const imageUrl = imageFrom(
+    object.image ?? object.imageUrl ?? object.thumbnailUrl ?? object.coverImage,
+    context.source,
+  )
 
   return {
-    bathrooms: positiveNumber(object.numberOfBathroomsTotal ?? object.numberOfBathrooms),
-    bedrooms: positiveNumber(object.numberOfBedrooms ?? object.numberOfRooms),
+    bathrooms: positiveNumber(
+      object.numberOfBathroomsTotal ??
+      object.numberOfBathrooms ??
+      object.bathrooms ??
+      object.baths,
+    ),
+    bedrooms: positiveNumber(
+      object.numberOfBedrooms ??
+      object.numberOfRooms ??
+      object.bedrooms ??
+      object.beds,
+    ),
     currencyCode,
     id: `${context.portal}:${hash(listingUrl.toString())}`,
     imageUrl,
@@ -237,10 +288,39 @@ function objectToListing(
     portalName: context.portalName,
     priceText: priceValue ? formatMoney(priceValue, currencyCode) : undefined,
     priceValue,
-    propertyType: typeName(object['@type']),
+    propertyType:
+      typeName(object['@type']) ??
+      stringValue(object.propertyType) ??
+      stringValue(object.homeType),
     province: stringValue(address?.addressRegion),
     title,
   }
+}
+
+function isPropertyStateScript(attributes: string): boolean {
+  return (
+    /\btype=["']application\/(?:ld\+)?json["']/i.test(attributes) ||
+    /\bid=["']__(?:NEXT_DATA|NUXT_DATA)__["']/i.test(attributes)
+  )
+}
+
+function parseJsonScript(body: string): unknown {
+  try {
+    return JSON.parse(body)
+  } catch {
+    return undefined
+  }
+}
+
+function listingUrlValue(object: Record<string, unknown>): string | undefined {
+  return (
+    stringValue(object.url) ??
+    stringValue(object['@id']) ??
+    stringValue(object.listingUrl) ??
+    stringValue(object.detailUrl) ??
+    stringValue(object.propertyUrl) ??
+    stringValue(object.href)
+  )
 }
 
 function fallbackSearchListing(
@@ -249,7 +329,7 @@ function fallbackSearchListing(
   currencyCode: string,
 ): PropertyListing[] {
   const url = safeHttpUrl(result.url)
-  if (!url || !/property|house|home|apartment|flat|bedroom|real estate/i.test(result.title)) return []
+  if (!url || !isLikelyPropertySearchResult(result)) return []
   const portal = `web:${slug(url.hostname)}`
   return [{
     currencyCode,
@@ -260,6 +340,14 @@ function fallbackSearchListing(
     portalName: labelFromHost(url.hostname),
     title: result.title,
   }]
+}
+
+function isLikelyPropertySearchResult(result: { title: string; url: string }): boolean {
+  const searchable = `${result.title} ${result.url}`
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+  return /property|real[\s-]*estate|realty|house|home|apartment|flat|bedroom|immobilier|imobiliari|imoveis|maison|appartement|moradia|venda|alugar|arrendar|terrain|nyumba|kiwanja/.test(searchable)
 }
 
 function sourceFromUrl(urlValue: string, ok: boolean): PropertyPortalSourceMeta {

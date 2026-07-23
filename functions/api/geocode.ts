@@ -1,11 +1,13 @@
 // Turn a typed address or suburb into coordinates so Near me can search
 // anywhere, not just where the phone is. The Geoapify key is server-only, so
-// this endpoint is the app's only path to it. Nationwide South African search:
-// results are filtered to za and biased to the country centroid.
+// this endpoint is the app's only path to it. Results are filtered and biased
+// to the member's active country, including an admin's test-country override.
 
 import { isValidCoordinate } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { json, methodNotAllowed } from '../_shared/respond'
+import { countryFromCode, detectRequestCountry } from '../_shared/countryContext'
+import { getMemberSession } from '../_shared/memberStore'
 
 const publicHeaders = {
   'access-control-allow-origin': '*',
@@ -39,7 +41,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  const matches = await geocode(query, env.GEOAPIFY_API_KEY)
+  const session = await getMemberSession(env, request)
+  const detected = detectRequestCountry(request)
+  const country = countryFromCode(session.account?.countryCode ?? detected.code)
+  const matches = await geocode(query, country.code, env.GEOAPIFY_API_KEY)
 
   if (matches.length === 0) {
     return json(
@@ -51,19 +56,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   return json({ match: matches[0], matches }, { headers: publicHeaders })
 }
 
-async function geocode(text: string, apiKey: string): Promise<GeocodeMatch[]> {
-  const params = new URLSearchParams({
-    apiKey,
-    // Bias and filter to South Africa so a bare suburb name resolves nationally.
-    bias: 'countrycode:za',
-    filter: 'countrycode:za',
-    format: 'json',
-    limit: '5',
-    text,
-  })
+async function geocode(
+  text: string,
+  countryCode: string,
+  apiKey: string,
+): Promise<GeocodeMatch[]> {
+  const url = buildGeoapifyGeocodeUrl(text, countryCode, apiKey)
 
   try {
-    const response = await fetch(`https://api.geoapify.com/v1/geocode/search?${params.toString()}`, {
+    const response = await fetch(url, {
       headers: { accept: 'application/json' },
     })
 
@@ -81,6 +82,26 @@ async function geocode(text: string, apiKey: string): Promise<GeocodeMatch[]> {
   } catch {
     return []
   }
+}
+
+export function buildGeoapifyGeocodeUrl(
+  text: string,
+  countryCode: string,
+  apiKey: string,
+): string {
+  const normalizedCountry = /^[A-Z]{2}$/i.test(countryCode.trim())
+    ? countryCode.trim().toLowerCase()
+    : 'za'
+  const params = new URLSearchParams({
+    apiKey,
+    bias: `countrycode:${normalizedCountry}`,
+    filter: `countrycode:${normalizedCountry}`,
+    format: 'json',
+    limit: '5',
+    text,
+  })
+
+  return `https://api.geoapify.com/v1/geocode/search?${params.toString()}`
 }
 
 function toMatch(value: unknown): GeocodeMatch | undefined {

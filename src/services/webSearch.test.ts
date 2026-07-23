@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import {
+  buildBingSearchUrl,
   buildDuckDuckGoUrl,
   buildJinaReaderUrl,
   buildStoreSpecialsQuery,
+  buildYahooSearchUrl,
   extractSearchResults,
   extractSearchResultsFromMarkdown,
   extractValidDates,
@@ -46,12 +48,55 @@ describe('extractSearchResultsFromMarkdown', () => {
       'https://r.jina.ai/https://html.duckduckgo.com/html/?q=x',
     )
   })
+
+  test('decodes Bing result redirects returned by the reader proxy', () => {
+    const markdown = `
+1. ## [Sefalana | Official Website](https://www.bing.com/ck/a?u=a1aHR0cHM6Ly93d3cuc2VmYWxhbmEuY29tLw&ntb=1)
+2. ## [Property24 Botswana](https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9wcm9wZXJ0eTI0LmNvLmJ3Lw&ntb=1)
+`
+
+    expect(extractSearchResultsFromMarkdown(markdown)).toEqual([
+      {
+        title: 'Sefalana | Official Website',
+        url: 'https://www.sefalana.com/',
+      },
+      {
+        title: 'Property24 Botswana',
+        url: 'https://property24.co.bw/',
+      },
+    ])
+  })
+
+  test('decodes Yahoo result redirects returned by the reader proxy', () => {
+    const markdown = `
+[Promotions](https://r.search.yahoo.com/path/RU=https%3a%2f%2fchoppies.co.bw%2fspecials-promotions%2f/RK=2/RS=x)
+`
+
+    expect(extractSearchResultsFromMarkdown(markdown)).toEqual([
+      {
+        title: 'Promotions',
+        url: 'https://choppies.co.bw/specials-promotions/',
+      },
+    ])
+  })
 })
 
 describe('buildDuckDuckGoUrl / query', () => {
   test('builds a keyless HTML search URL', () => {
     expect(buildDuckDuckGoUrl('frontline specials')).toBe(
       'https://html.duckduckgo.com/html/?q=frontline%20specials',
+    )
+  })
+
+  test('builds a Bing fallback search URL', () => {
+    expect(buildBingSearchUrl('Botswana supermarket specials')).toBe(
+      'http://www.bing.com/search?q=Botswana%20supermarket%20specials',
+    )
+  })
+
+  test('builds a Yahoo fallback search URL', () => {
+    expect(buildYahooSearchUrl('Botswana supermarket specials')).toBe(
+      'http://search.yahoo.com/search?p=Botswana%20supermarket%20specials',
     )
   })
 

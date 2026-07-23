@@ -2,6 +2,7 @@ import { countSources, getSourceKinds } from '../../src/services/sourceEngine'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { Retailer, RetailerGroup, SourceKind } from '../../src/types'
 import type { CountryOption } from '../../src/types'
+import { looksLikePromotionSignal } from '../../src/services/scoutSources'
 import type { TrolleyScoutEnv } from './env'
 import { searchWeb } from './searchWeb'
 
@@ -77,7 +78,7 @@ export function buildCountryRetailers(
     const name = retailerName(result.title, host)
     if (!name || !looksOfficial(name, host)) continue
 
-    const sourceKind: SourceKind = /special|deal|promot|catalog|leaflet|offer/i.test(url.pathname)
+    const sourceKind: SourceKind = looksLikePromotionSignal(url.pathname)
       ? 'specials'
       : 'store-finder'
     const source = {
@@ -237,10 +238,32 @@ function safeHttpUrl(value: string): URL | undefined {
 
 function retailerName(title: string, host: string): string {
   const first = title.split(/\s+(?:[|\u2013\u2014-])\s+/)[0]?.trim()
-  const generic = /^(home|official site|supermarkets?|grocery stores?|specials?|catalogues?)$/i
-  if (first && first.length >= 2 && first.length <= 60 && !generic.test(first)) return first
-  const token = host.split('.').slice(-2, -1)[0] ?? host
+  const generic =
+    /^(about(?: us)?|contact(?: us)?|home|official site|promotions?|promocoes|ofertas?|offres?|shop|stores?|supermarkets?|grocery stores?|specials?|catalogues?)$/i
+  if (
+    first &&
+    first.length >= 2 &&
+    first.length <= 60 &&
+    !generic.test(first) &&
+    !looksLikePromotionSignal(first)
+  ) return first
+  const token = brandTokenFromHost(host)
   return token.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function brandTokenFromHost(host: string): string {
+  const parts = host.replace(/^www\./, '').split('.').filter(Boolean)
+  if (parts.length < 2) return parts[0] ?? host
+  const suffix = parts.at(-1) ?? ''
+  const secondLevel = parts.at(-2) ?? ''
+  if (
+    suffix.length === 2 &&
+    /^(?:ac|co|com|gov|net|org)$/.test(secondLevel) &&
+    parts.length >= 3
+  ) {
+    return parts.at(-3) ?? host
+  }
+  return secondLevel
 }
 
 const RETAILER_NAME_STOP_WORDS = new Set([
@@ -282,7 +305,7 @@ function sourceScore(source: Retailer['sources'][number]): number {
   let score = source.kind === 'specials' ? 100 : 0
   try {
     const url = new URL(source.url)
-    if (/special|deal|promot|catalog|leaflet|offer/i.test(url.pathname)) score += 80
+    if (looksLikePromotionSignal(url.pathname)) score += 80
     if (/(?:^|[.-])(?:online|shop)(?:[.-]|$)/i.test(url.hostname)) score += 40
   } catch {
     return -1

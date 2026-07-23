@@ -56,4 +56,47 @@ describe('searchWeb', () => {
     expect(jinaRequest?.headers.get('authorization')).toBe('Bearer jina-test-key')
     expect(jinaRequest?.headers.get('x-respond-with')).toBe('no-content')
   })
+
+  it('falls back to reader-proxied Bing results when other providers are empty', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('r.jina.ai/http://www.bing.com/search')) {
+        return new Response(
+          '[Sefalana | Official Website](https://www.bing.com/ck/a?u=a1aHR0cHM6Ly93d3cuc2VmYWxhbmEuY29tLw&ntb=1)',
+          { status: 200 },
+        )
+      }
+      return new Response('', { status: 200 })
+    }))
+
+    await expect(searchWeb('Botswana supermarket specials')).resolves.toEqual([
+      {
+        title: 'Sefalana | Official Website',
+        url: 'https://www.sefalana.com/',
+      },
+    ])
+  })
+
+  it('uses reader-proxied Yahoo results before the Bing fallback', async () => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      requests.push(url)
+      if (url.includes('r.jina.ai/http://search.yahoo.com/search')) {
+        return new Response(
+          '[Promotions](https://r.search.yahoo.com/path/RU=https%3a%2f%2fchoppies.co.bw%2fspecials-promotions%2f/RK=2/RS=x)',
+          { status: 200 },
+        )
+      }
+      return new Response('', { status: 200 })
+    }))
+
+    await expect(searchWeb('Botswana supermarket specials')).resolves.toEqual([
+      {
+        title: 'Promotions',
+        url: 'https://choppies.co.bw/specials-promotions/',
+      },
+    ])
+    expect(requests.some((url) => url.includes('www.bing.com'))).toBe(false)
+  })
 })

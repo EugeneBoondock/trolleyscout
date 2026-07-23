@@ -103,6 +103,36 @@ describe('global property source discovery', () => {
     expect(result.sources).toEqual([])
     expect(cached).toBeNull()
   })
+
+  it('keeps relevant French and Portuguese property portals and drops unrelated results', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'html.duckduckgo.com') {
+        return htmlResponse('')
+      }
+      if (url.hostname === 'r.jina.ai' && url.pathname.includes('search.yahoo.com')) {
+        return htmlResponse(`
+          [Appartement à louer à Kinshasa](https://immobilier.example.cd/appartement-kinshasa)
+          [Moradia para venda em Maputo](https://imoveis.example.mz/moradia-maputo)
+          [Latest football results](https://sports.example/results)
+        `)
+      }
+      return htmlResponse('')
+    }))
+
+    const result = await searchGlobalProperties(
+      env,
+      { listingType: 'rent', query: 'Kinshasa' },
+      countryFromCode('CD'),
+    )
+
+    expect(result.listings.map((listing) => listing.title)).toEqual([
+      'Appartement à louer à Kinshasa',
+      'Moradia para venda em Maputo',
+    ])
+    expect(result.sources).toHaveLength(2)
+    expect(result.sources.every((source) => source.label === 'Example')).toBe(true)
+  })
 })
 
 function htmlResponse(body: string) {
