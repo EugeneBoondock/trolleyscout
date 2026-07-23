@@ -17,7 +17,7 @@ const MAX_BODY_BYTES = 2_000_000
 const MAX_RESULTS_TO_FETCH = 8
 const MAX_PROPERTY_STATE_BYTES = 750_000
 const MAX_PROPERTY_STATE_OBJECTS = 12_000
-const PROPERTY_CACHE_VERSION = 'v2'
+const PROPERTY_CACHE_VERSION = 'v3'
 
 export interface GlobalPropertySearchParams {
   query: string
@@ -87,7 +87,11 @@ export async function searchGlobalProperties(
       label: source.label,
       title: `${source.label} ${country.name} property listings`,
       trusted: true,
-      url: source.url,
+      url: propertySourceUrlForLocation(
+        source.url,
+        locationText,
+        params.listingType,
+      ),
     }))
     const results = dedupeSearchResults([...registeredResults, ...resultGroups.flat()])
     const relevantResults = results.filter((result) =>
@@ -145,6 +149,26 @@ export async function searchGlobalProperties(
     refreshedAt,
     sources,
   }
+}
+
+export function propertySourceUrlForLocation(
+  sourceUrl: string,
+  locationText: string,
+  listingType: PropertyListingType,
+): string {
+  const source = safeHttpUrl(sourceUrl)
+  if (!source) return sourceUrl
+
+  const host = normalizeSourceHost(source.hostname)
+  const locationSlug = slug(locationText)
+  if (host === 'property.co.zw') {
+    return `${source.origin}/property-${listingType === 'rent' ? 'for-rent' : 'for-sale'}/${locationSlug}`
+  }
+  if (host === 'propertybook.co.zw') {
+    return `${source.origin}/${listingType === 'rent' ? 'to-rent' : 'for-sale'}/${locationSlug}`
+  }
+
+  return sourceUrl
 }
 
 export function parseGenericPropertyListings(

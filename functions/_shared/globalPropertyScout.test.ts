@@ -4,7 +4,43 @@ import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { countryFromCode } from './countryContext'
 import type { TrolleyScoutEnv } from './env'
-import { searchGlobalProperties } from './globalPropertyScout'
+import {
+  propertySourceUrlForLocation,
+  searchGlobalProperties,
+} from './globalPropertyScout'
+
+describe('property platform location URLs', () => {
+  it('targets the searched city on Zimbabwe property platforms', () => {
+    expect(propertySourceUrlForLocation(
+      'https://www.property.co.zw/houses-for-sale',
+      'Bulawayo',
+      'sale',
+    )).toBe('https://www.property.co.zw/property-for-sale/bulawayo')
+    expect(propertySourceUrlForLocation(
+      'https://www.property.co.zw/',
+      'Bulawayo',
+      'rent',
+    )).toBe('https://www.property.co.zw/property-for-rent/bulawayo')
+    expect(propertySourceUrlForLocation(
+      'https://www.propertybook.co.zw/',
+      'Bulawayo',
+      'sale',
+    )).toBe('https://www.propertybook.co.zw/for-sale/bulawayo')
+    expect(propertySourceUrlForLocation(
+      'https://www.propertybook.co.zw/',
+      'Bulawayo',
+      'rent',
+    )).toBe('https://www.propertybook.co.zw/to-rent/bulawayo')
+  })
+
+  it('leaves unknown platform URLs unchanged', () => {
+    expect(propertySourceUrlForLocation(
+      'https://example.com/listings',
+      'Bulawayo',
+      'sale',
+    )).toBe('https://example.com/listings')
+  })
+})
 
 describe('global property source discovery', () => {
   let miniflare: Miniflare
@@ -40,7 +76,7 @@ describe('global property source discovery', () => {
       `INSERT INTO property_cache (cache_key, payload_json, item_count, fetched_at, country_code)
        VALUES (?, ?, 0, ?, 'ZW')`,
     ).bind(
-      'global:v2:ZW:sale:harare:1',
+      'global:v3:ZW:sale:harare:1',
       JSON.stringify({ listings: [], sources: [] }),
       new Date().toISOString(),
     ).run()
@@ -96,7 +132,7 @@ describe('global property source discovery', () => {
       countryFromCode('ZW'),
     )
     const cached = await db.prepare(
-      `SELECT item_count FROM property_cache WHERE cache_key = 'global:v2:ZW:rent:harare:1'`,
+      `SELECT item_count FROM property_cache WHERE cache_key = 'global:v3:ZW:rent:harare:1'`,
     ).first<{ item_count: number }>()
 
     expect(result.listings).toEqual([])
