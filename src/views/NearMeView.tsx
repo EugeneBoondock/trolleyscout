@@ -382,6 +382,9 @@ function StoreDetailModal({
                     {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
                       <s>{meaningfulWasPrice(deal.previousPriceText, deal.priceText)}</s>
                     )}
+                    {deal.savingText && (
+                      <span className="store-deal-saving">{cleanUiText(deal.savingText)}</span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -395,6 +398,16 @@ function StoreDetailModal({
                     {promotion.priceText}
                     {meaningfulWasPrice(promotion.previousPriceText, promotion.priceText) && (
                       <s>{meaningfulWasPrice(promotion.previousPriceText, promotion.priceText)}</s>
+                    )}
+                    {promotion.savingText && (
+                      <span className="store-deal-saving">
+                        {cleanUiText(promotion.savingText)}
+                      </span>
+                    )}
+                    {(promotion.validFrom || promotion.validTo) && (
+                      <span className="store-deal-validity">
+                        {describeDealValidity(promotion.validFrom, promotion.validTo)}
+                      </span>
                     )}
                   </span>
                 </div>
@@ -484,6 +497,18 @@ function describeValid(validFrom?: string, validTo?: string): string {
 
   if (validFrom) {
     return ` · from ${validFrom.slice(0, 10)}`
+  }
+
+  return ''
+}
+
+function describeDealValidity(validFrom?: string, validTo?: string): string {
+  if (validTo) {
+    return `Until ${validTo.slice(0, 10)}`
+  }
+
+  if (validFrom) {
+    return `From ${validFrom.slice(0, 10)}`
   }
 
   return ''

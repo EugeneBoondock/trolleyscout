@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../app_controller.dart';
 import '../theme.dart';
+import 'common.dart';
 import 'in_app_browser.dart';
 
 /// The alerts bell: a badge counts matched watches the member has not seen.
@@ -40,6 +41,7 @@ Future<void> showWatchesSheet(BuildContext context, AppController controller) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    showDragHandle: true,
     backgroundColor: TS.bgOf(context),
     shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
     builder: (context) => _WatchesSheet(controller: controller),
@@ -56,14 +58,22 @@ class _WatchesSheet extends StatefulWidget {
 }
 
 class _WatchesSheetState extends State<_WatchesSheet> {
+  bool _refreshing = true;
+
   @override
   void initState() {
     super.initState();
-    widget.controller.refreshWatches();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    await widget.controller.refreshWatches();
+    if (mounted) setState(() => _refreshing = false);
   }
 
   Future<void> _dismiss(DealWatch watch) async {
     HapticFeedback.lightImpact();
+    final previous = widget.controller.watches;
     // Optimistic: the alert clears immediately, server catches up.
     widget.controller.replaceWatches([
       for (final candidate in widget.controller.watches)
@@ -82,12 +92,16 @@ class _WatchesSheetState extends State<_WatchesSheet> {
       widget.controller.replaceWatches(
           await widget.controller.api.markDealWatchSeen(watch.id));
     } catch (_) {
-      // Optimistic state stands; the next refresh reconciles.
+      widget.controller.replaceWatches(previous);
+      if (mounted) {
+        showNotice(context, 'Could not update this alert. Try again.');
+      }
     }
   }
 
   Future<void> _delete(DealWatch watch) async {
     HapticFeedback.lightImpact();
+    final previous = widget.controller.watches;
     widget.controller.replaceWatches([
       for (final candidate in widget.controller.watches)
         if (candidate.id != watch.id) candidate,
@@ -95,8 +109,36 @@ class _WatchesSheetState extends State<_WatchesSheet> {
     try {
       widget.controller.replaceWatches(
           await widget.controller.api.deleteDealWatch(watch.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text('“${watch.queryText}” removed.'),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => _restore(watch),
+            ),
+          ));
+      }
     } catch (_) {
-      // Optimistic state stands; the next refresh reconciles.
+      widget.controller.replaceWatches(previous);
+      if (mounted) {
+        showNotice(context, 'Could not remove this alert. Try again.');
+      }
+    }
+  }
+
+  Future<void> _restore(DealWatch watch) async {
+    try {
+      final result =
+          await widget.controller.api.createDealWatch(watch.queryText);
+      widget.controller.replaceWatches(result.watches);
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } catch (_) {
+      if (mounted) {
+        showNotice(context, 'Could not restore this watch. Try again.');
+      }
     }
   }
 
@@ -123,11 +165,22 @@ class _WatchesSheetState extends State<_WatchesSheet> {
                 const SizedBox(height: 6),
                 Text(
                   'Search an item on Find deals and watch it. The moment any scout or '
-                  'another shopper\'s search turns up a matching deal, it lands here.',
+                  'another shopper’s search turns up a matching deal, it lands here.',
                   style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
                 ),
                 const SizedBox(height: 14),
-                if (watches.isEmpty)
+                if (_refreshing)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                else if (watches.isEmpty)
                   Container(
                     decoration: BoxDecoration(
                       color: TS.surfaceOf(context),
@@ -136,7 +189,7 @@ class _WatchesSheetState extends State<_WatchesSheet> {
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      'Nothing watched yet. Search for an item under Find deals — '
+                      'Nothing watched yet. Search for an item under Find deals. '
                       'if there is no special yet, you can watch it from there.',
                       style: TextStyle(color: TS.mutedOf(context)),
                     ),
@@ -233,6 +286,7 @@ class _WatchCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           child: Image.network(
                             match.imageUrl!,
+                            semanticLabel: match.title,
                             width: 40,
                             height: 40,
                             fit: BoxFit.contain,

@@ -36,14 +36,16 @@ export function storesByLocationRequest(host: string, lat: number, lon: number) 
   }
 }
 
-// Picks the nearest branch of this chain from a get-stores-by-location
-// response. Stores arrive distance-sorted; we take the first whose brand or
-// name identifies it as the chain (not a LiquorShop).
+// Picks this chain from a distance-sorted get-stores-by-location response.
+// An exact normalized branch-name match wins; otherwise the nearest valid
+// branch remains first. LiquorShop rows are always excluded.
 export function selectNearestBranchId(
   payload: unknown,
   config: ShopriteGroupConfig,
+  targetName?: string,
 ): string | undefined {
   const stores = storeList(payload)
+  const candidates: Array<{ id: string; name: string }> = []
   for (const store of stores) {
     if (!isRecord(store)) {
       continue
@@ -51,17 +53,26 @@ export function selectNearestBranchId(
     const brand = textValue(store, 'brand')
     const name = textValue(store, 'name')
     const id = textValue(store, 'id')
-    if (!id) {
+    if (!id || /liquor/i.test(`${brand} ${name}`)) {
       continue
     }
     const identifiesChain =
       config.brandPattern.test(brand) ||
       (config.brandPattern.test(name) && !/liquor/i.test(name))
     if (identifiesChain) {
-      return id
+      candidates.push({ id, name })
     }
   }
-  return undefined
+
+  if (!targetName || candidates.length < 2) {
+    return candidates[0]?.id
+  }
+  const normalizedTarget = normalizedBranchName(targetName)
+  if (!normalizedTarget) {
+    return candidates[0]?.id
+  }
+  return candidates.find((candidate) => normalizedBranchName(candidate.name) === normalizedTarget)
+    ?.id ?? candidates[0]?.id
 }
 
 export function onPromotionRequest(host: string, storeId: string, pageSize = 60) {
@@ -143,22 +154,29 @@ function activeBonusBuyForStore(
     return undefined
   }
   for (const entry of value) {
-    if (!isRecord(entry) || entry.active === false) {
+    if (!isRecord(entry) || entry.active !== true) {
       continue
     }
+    const startDate = numberValue(entry.startDate)
     const endDate = numberValue(entry.endDate)
-    if (endDate !== undefined && endDate < nowMs) {
+    if (startDate === undefined || endDate === undefined) {
+      continue
+    }
+    if (startDate > nowMs) {
+      continue
+    }
+    if (endDate < nowMs) {
       continue
     }
     const scoped = scopedStoreIds(entry.browseStoreIds) ?? scopedStoreIds(entry.storeIds)
-    if (scoped && !scoped.includes(storeId)) {
+    if (!scoped?.includes(storeId)) {
       continue
     }
     return {
       endDate,
       name: textValue(entry, 'Name') || textValue(entry, 'name'),
       shortDescription: textValue(entry, 'shortDescription'),
-      startDate: numberValue(entry.startDate),
+      startDate,
     }
   }
   return undefined
@@ -168,6 +186,28 @@ function scopedStoreIds(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.length > 0
     ? value.filter((id): id is string => typeof id === 'string')
     : undefined
+}
+
+function branchNameTokens(value: string): string[] {
+  const ignored = new Set([
+    'checkers',
+    'shoprite',
+    'hyper',
+    'foods',
+    'store',
+    'supermarket',
+    'the',
+  ])
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2 && !ignored.has(token))
+}
+
+function normalizedBranchName(value: string): string {
+  return branchNameTokens(value).join(' ')
 }
 
 function productPriceCents(product: Record<string, unknown>): number | undefined {

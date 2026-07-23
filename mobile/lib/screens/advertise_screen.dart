@@ -10,9 +10,14 @@ import '../widgets/common.dart';
 /// submit an ad, watch it move through review, and, once approved, pay for it
 /// via PayFast. Approved-and-paid ads appear as Sponsored cards across the app.
 class AdvertiseScreen extends StatefulWidget {
-  const AdvertiseScreen({super.key, required this.api});
+  const AdvertiseScreen({
+    super.key,
+    required this.api,
+    this.openCheckout,
+  });
 
   final Api api;
+  final Future<bool> Function(BuildContext, SubscriptionCheckout)? openCheckout;
 
   @override
   State<AdvertiseScreen> createState() => _AdvertiseScreenState();
@@ -103,7 +108,7 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(
           content: Text(
-              'Ad submitted for review. We\'ll approve it, then you can pay to go live.'),
+              'Ad submitted for review. We’ll approve it, then you can pay to go live.'),
         ));
       await _load();
     } on ApiException catch (error) {
@@ -122,15 +127,17 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
     try {
       final checkout = await widget.api.adCheckout(ad.id);
       if (!mounted) return;
-      final paid = await openPayFastCheckout(context, checkout);
+      final opened = await (widget.openCheckout ?? openPayFastCheckout)(
+        context,
+        checkout,
+      );
       if (!mounted) return;
-      if (paid) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(
-            content: Text('Payment received. Your ad will be live shortly.'),
-          ));
-      }
+      showNotice(
+        context,
+        opened
+            ? 'Checkout opened. Your ad activates after PayFast confirms payment.'
+            : 'Checkout closed. No payment was made.',
+      );
       await _load();
     } on ApiException catch (error) {
       if (mounted) {
@@ -158,11 +165,22 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               'you choose. Ads show as clearly-labelled Sponsored cards.',
         ),
         if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(_error!,
-                style: TextStyle(
-                    color: TS.redOf(context), fontWeight: FontWeight.w700)),
+          PaperCard(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off_outlined, color: TS.redOf(context)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(_error!,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                TextButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
           ),
         _buildForm(),
         const SizedBox(height: 24),
@@ -172,11 +190,12 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
           Text('No ads yet. Submit your first one above.',
               style: TextStyle(color: TS.mutedOf(context)))
         else
-          for (final ad in _ads) _AdRow(
-            ad: ad,
-            paying: _payingId == ad.id,
-            onPay: ad.awaitingPayment ? () => _pay(ad) : null,
-          ),
+          for (final ad in _ads)
+            _AdRow(
+              ad: ad,
+              paying: _payingId == ad.id,
+              onPay: ad.awaitingPayment ? () => _pay(ad) : null,
+            ),
       ],
     );
   }
@@ -202,8 +221,8 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               controller: _body,
               maxLength: 240,
               maxLines: 2,
-              decoration:
-                  const InputDecoration(labelText: 'Ad text (one or two lines)'),
+              decoration: const InputDecoration(
+                  labelText: 'Ad text (one or two lines)'),
               validator: (value) => (value ?? '').trim().length < 3
                   ? 'Write a line of ad text.'
                   : null,
@@ -218,7 +237,9 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               validator: (value) {
                 final url = (value ?? '').trim();
                 final uri = Uri.tryParse(url);
-                return uri != null && uri.isAbsolute && uri.hasScheme
+                return uri != null &&
+                        uri.scheme == 'https' &&
+                        uri.host.isNotEmpty
                     ? null
                     : 'Enter a full link starting with https://';
               },
@@ -230,6 +251,16 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               decoration: const InputDecoration(
                 labelText: 'Image link (optional)',
               ),
+              validator: (value) {
+                final url = (value ?? '').trim();
+                if (url.isEmpty) return null;
+                final uri = Uri.tryParse(url);
+                return uri != null &&
+                        uri.scheme == 'https' &&
+                        uri.host.isNotEmpty
+                    ? null
+                    : 'Enter a full image link starting with https://';
+              },
             ),
             const SizedBox(height: 16),
             Text('WHERE IT SHOWS', style: TS.eyebrowOf(context)),
@@ -237,7 +268,8 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
             SegmentedButton<String>(
               segments: [
                 for (final placement in _rateCard.placements)
-                  ButtonSegment(value: placement.id, label: Text(placement.label)),
+                  ButtonSegment(
+                      value: placement.id, label: Text(placement.label)),
               ],
               selected: {_placement},
               onSelectionChanged: (value) => setState(() {

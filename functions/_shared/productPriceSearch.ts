@@ -452,13 +452,22 @@ export async function searchRetailerProduct(
         if (body.length > MAX_PRODUCT_RESPONSE_BYTES) throw new Error('Response is too large.')
         const payload = JSON.parse(body) as unknown
         const products = parseKnownProductResults(retailer.id, payload, query)
-        const product = products.reduce<RetailerProductCandidate | undefined>(
-          (best, candidate) => !best || candidate.priceCents < best.priceCents ? candidate : best,
-          undefined,
+        // Relevance first, price second. Cheapest-wins used to pick any cheap
+        // product whose title merely contained the query tokens ("eggs" →
+        // "marshmallow eggs"); the closest title now wins, and the runners-up
+        // ride along so the shopper can swap when word overlap fools us.
+        const ranked = [...products].sort(
+          (left, right) =>
+            candidateRelevance(right.title, query) - candidateRelevance(left.title, query) ||
+            left.priceCents - right.priceCents,
         )
+        const product = ranked[0]
         if (product) {
           return {
             ...product,
+            alternatives: ranked
+              .slice(1, 1 + MAX_MATCH_ALTERNATIVES)
+              .map(({ priceCents, productUrl, title }) => ({ priceCents, productUrl, title })),
             retailerId: retailer.id,
             retailerName: retailer.name,
             sourceKind: 'retailer-api',
@@ -776,6 +785,41 @@ function parseKnownProductResults(
     return parseShopriteGroupProductResults(retailerId, payload, query)
   }
   return []
+}
+
+const MAX_MATCH_ALTERNATIVES = 3
+
+// Words that refine a product without changing what it is. Sizes, pack
+// counts, and digit-led tokens ("30s", "2l") are free; anything else costs.
+const REFINING_TITLE_TOKENS = new Set([
+  'assorted', 'dozen', 'extra', 'family', 'fresh', 'jumbo', 'large',
+  'medium', 'mini', 'mixed', 'pack', 'small', 'tray', 'value',
+])
+
+/**
+ * How closely a product title matches what the shopper typed. Higher is
+ * better. The key signal is adjacency: an unmatched word DIRECTLY before a
+ * matched one is usually a type-changing modifier ("Marshmallow Eggs"), while
+ * front-of-title extras are usually brands ("Nulaid ... Eggs") — so adjacent
+ * modifiers cost 3, other extras cost 1, sizes and counts cost nothing.
+ */
+export function candidateRelevance(title: string, query: string): number {
+  const queryTokens = new Set(productTitleTokens(normalizeUnits(query)))
+  const titleTokens = productTitleTokens(normalizeUnits(title))
+  if (queryTokens.size === 0 || titleTokens.length === 0) return 0
+
+  let score = 0
+  for (let index = 0; index < titleTokens.length; index += 1) {
+    const token = titleTokens[index]
+    if (queryTokens.has(token)) {
+      score += 10
+    } else if (!/^\d/.test(token) && !REFINING_TITLE_TOKENS.has(token)) {
+      const nextMatches = index + 1 < titleTokens.length &&
+        queryTokens.has(titleTokens[index + 1])
+      score -= nextMatches ? 3 : 1
+    }
+  }
+  return score
 }
 
 function matchesQuery(title: string, query: string): boolean {

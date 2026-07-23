@@ -83,17 +83,41 @@ class MemberAccount {
         pendingPlanId: _optionalString(json['pendingPlanId']),
         pendingEffectiveAt: _optionalString(json['pendingEffectiveAt']),
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'email': email,
+        'displayName': displayName,
+        'initials': initials,
+        'planId': planId,
+        'planName': planName,
+        'planStatus': planStatus,
+        'role': role,
+        'propertiesAccess': propertiesAccess,
+        'createdAt': createdAt,
+        'updatedAt': updatedAt,
+        if (billingCycle != null) 'billingCycle': billingCycle,
+        if (pendingPlanId != null) 'pendingPlanId': pendingPlanId,
+        if (pendingEffectiveAt != null)
+          'pendingEffectiveAt': pendingEffectiveAt,
+      };
 }
 
 class MemberSession {
-  const MemberSession({required this.isAuthenticated, this.account});
+  const MemberSession({
+    required this.isAuthenticated,
+    this.account,
+    this.isOffline = false,
+  });
 
   const MemberSession.signedOut()
       : isAuthenticated = false,
-        account = null;
+        account = null,
+        isOffline = false;
 
   final bool isAuthenticated;
   final MemberAccount? account;
+  final bool isOffline;
 
   factory MemberSession.fromJson(Map<String, dynamic> json) {
     final account = _mapOrNull(json['account']);
@@ -102,6 +126,11 @@ class MemberSession {
       account: account == null ? null : MemberAccount.fromJson(account),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'isAuthenticated': isAuthenticated,
+        if (account != null) 'account': account!.toJson(),
+      };
 }
 
 class RetailerSource {
@@ -160,16 +189,24 @@ class Retailer {
 }
 
 class RetailerCatalog {
-  const RetailerCatalog({required this.retailers, required this.sourceKinds});
+  const RetailerCatalog({
+    required this.retailers,
+    required this.sourceKinds,
+    this.totalRetailerCount,
+  });
 
   final List<Retailer> retailers;
   final List<String> sourceKinds;
+  final int? totalRetailerCount;
+
+  int get retailerCount => totalRetailerCount ?? retailers.length;
 
   factory RetailerCatalog.fromJson(Map<String, dynamic> json) {
     final summary = _mapOrEmpty(json['summary']);
     return RetailerCatalog(
       retailers: _mapList(json['retailers']).map(Retailer.fromJson).toList(),
       sourceKinds: _stringList(summary['sourceKinds']),
+      totalRetailerCount: _intOrNull(summary['retailerCount']),
     );
   }
 }
@@ -233,6 +270,7 @@ class RetailerProductSearchMatch {
     required this.retailerId,
     required this.retailerName,
     required this.status,
+    this.alternatives = const [],
     this.isCheapest = false,
     this.priceCents,
     this.productUrl,
@@ -243,6 +281,10 @@ class RetailerProductSearchMatch {
   final String retailerId;
   final String retailerName;
   final String status;
+
+  /// Runner-up products from the same store, most relevant first, so the
+  /// shopper can swap when word overlap picked the wrong item.
+  final List<RetailerProductAlternative> alternatives;
   final bool isCheapest;
   final int? priceCents;
   final String? productUrl;
@@ -254,12 +296,79 @@ class RetailerProductSearchMatch {
         retailerId: _string(json['retailerId']),
         retailerName: _string(json['retailerName']),
         status: _string(json['status'], 'unavailable'),
+        alternatives: _mapList(json['alternatives'])
+            .map(RetailerProductAlternative.fromJson)
+            .toList(),
         isCheapest: json['isCheapest'] == true,
         priceCents: _intOrNull(json['priceCents']),
         productUrl: _optionalString(json['productUrl']),
         sourceKind: _optionalString(json['sourceKind']),
         title: _optionalString(json['title']),
       );
+
+  RetailerProductSearchMatch copyWithCheapest(bool cheapest) =>
+      RetailerProductSearchMatch(
+        retailerId: retailerId,
+        retailerName: retailerName,
+        status: status,
+        alternatives: alternatives,
+        isCheapest: cheapest,
+        priceCents: priceCents,
+        productUrl: productUrl,
+        sourceKind: sourceKind,
+        title: title,
+      );
+
+  /// The same store's row with an alternative product swapped in as the
+  /// compared item. Cheapest flags are recomputed by the caller.
+  RetailerProductSearchMatch withAlternative(
+      RetailerProductAlternative alternative) {
+    final remaining = [
+      if (title != null && priceCents != null && productUrl != null)
+        RetailerProductAlternative(
+            priceCents: priceCents!, productUrl: productUrl!, title: title!),
+      ...alternatives.where((option) => option != alternative),
+    ];
+    return RetailerProductSearchMatch(
+      retailerId: retailerId,
+      retailerName: retailerName,
+      status: status,
+      alternatives: remaining,
+      priceCents: alternative.priceCents,
+      productUrl: alternative.productUrl,
+      sourceKind: sourceKind,
+      title: alternative.title,
+    );
+  }
+}
+
+class RetailerProductAlternative {
+  const RetailerProductAlternative({
+    required this.priceCents,
+    required this.productUrl,
+    required this.title,
+  });
+
+  final int priceCents;
+  final String productUrl;
+  final String title;
+
+  factory RetailerProductAlternative.fromJson(Map<String, dynamic> json) =>
+      RetailerProductAlternative(
+        priceCents: _int(json['priceCents']),
+        productUrl: _string(json['productUrl']),
+        title: _string(json['title']),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is RetailerProductAlternative &&
+      other.priceCents == priceCents &&
+      other.productUrl == productUrl &&
+      other.title == title;
+
+  @override
+  int get hashCode => Object.hash(priceCents, productUrl, title);
 }
 
 class ProductComparisonResult {
@@ -314,6 +423,8 @@ class Deal {
     this.priceText,
     this.previousPriceText,
     this.savingText,
+    this.validFrom,
+    this.validTo,
     this.productUrl,
     this.imageUrl,
     this.pageNumber,
@@ -331,6 +442,8 @@ class Deal {
   final String? priceText;
   final String? previousPriceText;
   final String? savingText;
+  final String? validFrom;
+  final String? validTo;
   final String? productUrl;
   final String? imageUrl;
   final int? pageNumber;
@@ -339,7 +452,7 @@ class Deal {
   factory Deal.fromJson(Map<String, dynamic> json) => Deal(
         id: _string(json['id']),
         retailerId: _string(json['retailerId']),
-        retailerName: _string(json['retailerName']),
+        retailerName: _string(json['retailerName'] ?? json['storeName']),
         sourceLabel: _string(json['sourceLabel']),
         sourceUrl: _string(json['sourceUrl']),
         title: _string(json['title']),
@@ -348,6 +461,8 @@ class Deal {
         priceText: _optionalString(json['priceText']),
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
+        validFrom: _optionalString(json['validFrom']),
+        validTo: _optionalString(json['validTo']),
         productUrl: _optionalString(json['productUrl']),
         imageUrl: _optionalString(json['imageUrl']),
         pageNumber: _intOrNull(json['pageNumber']),
@@ -366,6 +481,8 @@ class Deal {
         'priceText': priceText,
         'previousPriceText': previousPriceText,
         'savingText': savingText,
+        'validFrom': validFrom,
+        'validTo': validTo,
         'evidenceText': evidenceText,
         'imageUrl': imageUrl,
         'pageNumber': pageNumber,
@@ -771,6 +888,46 @@ class SubscriptionCheckout {
       );
 }
 
+/// One message from the public support inbox (bug reports, feature requests,
+/// questions). Admins read and resolve these in the admin console.
+class SupportMessage {
+  const SupportMessage({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.topic,
+    required this.message,
+    required this.status,
+    required this.createdAt,
+    this.accountId,
+    this.adminNote,
+  });
+
+  final String id;
+  final String name;
+  final String email;
+  final String topic;
+  final String message;
+  final String status;
+  final String createdAt;
+  final String? accountId;
+  final String? adminNote;
+
+  bool get isOpen => status == 'open';
+
+  factory SupportMessage.fromJson(Map<String, dynamic> json) => SupportMessage(
+        id: _string(json['id']),
+        name: _string(json['name']),
+        email: _string(json['email']),
+        topic: _string(json['topic']),
+        message: _string(json['message']),
+        status: _string(json['status']),
+        createdAt: _string(json['createdAt']),
+        accountId: _optionalString(json['accountId']),
+        adminNote: _optionalString(json['adminNote']),
+      );
+}
+
 class AdminOverview {
   const AdminOverview({
     required this.accounts,
@@ -779,6 +936,8 @@ class AdminOverview {
     required this.dealCount,
     required this.leafletCount,
     required this.sourceCount,
+    this.support = const [],
+    this.supportOpenCount = 0,
     this.lastScoutedAt,
   });
 
@@ -788,6 +947,8 @@ class AdminOverview {
   final int dealCount;
   final int leafletCount;
   final int sourceCount;
+  final List<SupportMessage> support;
+  final int supportOpenCount;
   final String? lastScoutedAt;
 
   factory AdminOverview.fromJson(Map<String, dynamic> json) {
@@ -800,6 +961,9 @@ class AdminOverview {
       dealCount: _int(scout['dealCount']),
       leafletCount: _int(scout['leafletCount']),
       sourceCount: _int(scout['sourceCount']),
+      support:
+          _mapList(json['support']).map(SupportMessage.fromJson).toList(),
+      supportOpenCount: _int(summary['supportOpenCount']),
       lastScoutedAt: _optionalString(scout['lastScoutedAt']),
     );
   }
@@ -832,6 +996,7 @@ class NearbyStore {
     this.firstSeenAt,
     this.lastSeenAt,
     this.promotionCount = 0,
+    this.detailsLoaded = true,
     this.deals = const [],
     this.catalogues = const [],
   });
@@ -848,6 +1013,7 @@ class NearbyStore {
   final String? firstSeenAt;
   final String? lastSeenAt;
   final int promotionCount;
+  final bool detailsLoaded;
   final List<Deal> deals;
   final List<Catalogue> catalogues;
 
@@ -876,6 +1042,7 @@ class NearbyStore {
       firstSeenAt: _optionalString(json['firstSeenAt']),
       lastSeenAt: _optionalString(json['lastSeenAt']),
       promotionCount: _int(json['promotionCount']),
+      detailsLoaded: json['detailsLoaded'] != false,
       deals: [..._mapList(json['deals']).map(Deal.fromJson), ...promotionDeals],
       catalogues: [...leaflets, ...catalogues],
     );
@@ -894,6 +1061,7 @@ class NearbyStore {
         'firstSeenAt': firstSeenAt,
         'lastSeenAt': lastSeenAt,
         'promotionCount': promotionCount,
+        'detailsLoaded': detailsLoaded,
         'deals': deals.map((deal) => deal.toJson()).toList(),
         'leaflets': catalogues.map((catalogue) => catalogue.toJson()).toList(),
       };
@@ -1020,6 +1188,9 @@ class DiscoveredStoresResult {
     required this.areaCount,
     required this.knownChainCount,
     required this.withPromotionsCount,
+    this.hasMore = false,
+    this.limit = 0,
+    this.offset = 0,
   });
 
   final List<NearbyStore> stores;
@@ -1027,15 +1198,22 @@ class DiscoveredStoresResult {
   final int areaCount;
   final int knownChainCount;
   final int withPromotionsCount;
+  final bool hasMore;
+  final int limit;
+  final int offset;
 
   factory DiscoveredStoresResult.fromJson(Map<String, dynamic> json) {
     final summary = _mapOrEmpty(json['summary']);
+    final pagination = _mapOrEmpty(json['pagination']);
     return DiscoveredStoresResult(
       stores: _mapList(json['stores']).map(NearbyStore.fromJson).toList(),
       storeCount: _int(summary['storeCount']),
       areaCount: _int(summary['areaCount']),
       knownChainCount: _int(summary['knownChainCount']),
       withPromotionsCount: _int(summary['withPromotionsCount']),
+      hasMore: pagination['hasMore'] == true,
+      limit: _int(pagination['limit']),
+      offset: _int(pagination['offset']),
     );
   }
 }

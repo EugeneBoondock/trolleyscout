@@ -313,11 +313,10 @@ export async function upsertDealItems(
   }
 }
 
-export async function listActiveDealItems(
-  env: TrolleyScoutEnv,
+function buildActiveDealItemsStatement(
+  db: D1Database,
   options: ListActiveDealItemsOptions = {},
-): Promise<StoredDealItem[]> {
-  const db = requireDatabase(env)
+): D1PreparedStatement {
   const now = strictInstant(options.now ?? new Date().toISOString(), 'now')
   const limit = boundedInteger(options.limit ?? 100, 'limit', 1, MAX_LIST_LIMIT)
   const offset = boundedInteger(options.offset ?? 0, 'offset', 0, 10_000)
@@ -353,7 +352,7 @@ export async function listActiveDealItems(
   }
 
   bindings.push(limit, offset)
-  const result = await db.prepare(
+  return db.prepare(
     `SELECT
       id, retailer_id, source_key, source_product_id, promotion_id, title,
       current_price_cents, previous_price_cents, image_url, saving_text,
@@ -365,9 +364,36 @@ export async function listActiveDealItems(
     WHERE ${where.join(' AND ')}
     ORDER BY expires_at ASC, retailer_id ASC, title ASC, id ASC
     LIMIT ? OFFSET ?`,
-  ).bind(...bindings).all<DealItemRow>()
+  ).bind(...bindings)
+}
 
+export async function listActiveDealItems(
+  env: TrolleyScoutEnv,
+  options: ListActiveDealItemsOptions = {},
+): Promise<StoredDealItem[]> {
+  const db = requireDatabase(env)
+  const result = await buildActiveDealItemsStatement(db, options).all<DealItemRow>()
   return result.results.map(mapDealItemRow)
+}
+
+/**
+ * Runs many [listActiveDealItems] filters in ONE D1 round trip via db.batch().
+ * The Near-me endpoint issues one filter per retailer × scope combination —
+ * previously 20+ discrete statements per request on the hottest path.
+ */
+export async function listActiveDealItemsBatch(
+  env: TrolleyScoutEnv,
+  optionsList: ListActiveDealItemsOptions[],
+): Promise<StoredDealItem[][]> {
+  const db = requireDatabase(env)
+  if (optionsList.length === 0) {
+    return []
+  }
+  const statements = optionsList.map((options) =>
+    buildActiveDealItemsStatement(db, options),
+  )
+  const results = await db.batch<DealItemRow>(statements)
+  return results.map((result) => result.results.map(mapDealItemRow))
 }
 
 export async function expireDealItems(

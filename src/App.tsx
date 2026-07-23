@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
@@ -12,6 +12,8 @@ import {
   CheckCircle,
   ClipboardText,
   CreditCard,
+  Eye,
+  EyeSlash,
   HandCoins,
   HouseLine,
   Info,
@@ -39,12 +41,9 @@ import {
   X,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
-import { motion } from 'motion/react'
 import { ScoutGuide, ScoutMascot } from './components/ScoutMascot'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
-import { StoreMap } from './components/StoreMap'
-import { PropertiesView } from './views/PropertiesView'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -149,13 +148,8 @@ import {
   type FoodSubcategory,
 } from './services/dealCategories'
 import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/storeGroups'
-import { AboutView, type AboutDestination } from './views/AboutView'
+import type { AboutDestination } from './views/AboutView'
 import { HomeView, type HomeDestination } from './views/HomeView'
-import { LegalView } from './views/LegalView'
-import { SupportView } from './views/SupportView'
-import { ToolkitView } from './views/ToolkitView'
-import { NearMeView } from './views/NearMeView'
-import { VouchersView } from './views/VouchersView'
 import {
   claimVoucher,
   loadVouchers,
@@ -164,6 +158,31 @@ import {
 import type { Voucher } from './services/vouchers/types'
 import { meaningfulWasPrice } from './services/priceDisplay'
 import { topSavingsDeals } from './services/topSavings'
+
+const PropertiesView = lazy(() =>
+  import('./views/PropertiesView').then((module) => ({ default: module.PropertiesView })),
+)
+const StoreMap = lazy(() =>
+  import('./components/StoreMap').then((module) => ({ default: module.StoreMap })),
+)
+const AboutView = lazy(() =>
+  import('./views/AboutView').then((module) => ({ default: module.AboutView })),
+)
+const LegalView = lazy(() =>
+  import('./views/LegalView').then((module) => ({ default: module.LegalView })),
+)
+const NearMeView = lazy(() =>
+  import('./views/NearMeView').then((module) => ({ default: module.NearMeView })),
+)
+const SupportView = lazy(() =>
+  import('./views/SupportView').then((module) => ({ default: module.SupportView })),
+)
+const ToolkitView = lazy(() =>
+  import('./views/ToolkitView').then((module) => ({ default: module.ToolkitView })),
+)
+const VouchersView = lazy(() =>
+  import('./views/VouchersView').then((module) => ({ default: module.VouchersView })),
+)
 
 type ThemeMode = 'light' | 'dark'
 type ActiveView =
@@ -200,6 +219,10 @@ type MemberView =
   | 'admin'
   | 'rules'
   | 'support'
+
+function LazyView({ children, label }: { children: ReactNode; label: string }) {
+  return <Suspense fallback={<LoadingStrip label={label} />}>{children}</Suspense>
+}
 
 // Logged-out shoppers see a trimmed public nav: Near me, Tools, and Stores are
 // members-only, so they are left out here and gated on direct navigation.
@@ -239,11 +262,11 @@ const VIEW_PATHS: Record<ActiveView, string> = {
 
 const VIEW_TITLES: Record<ActiveView, string> = {
   home: 'Trolley Scout: grocery deals, price comparison and properties',
-  discovery: 'Find a deal — this week’s grocery specials | Trolley Scout',
-  near: 'Near me — supermarkets and specials around you | Trolley Scout',
-  tools: 'Tools — product and store comparison | Trolley Scout',
-  sources: 'Stores — official retailer sources | Trolley Scout',
-  vouchers: 'Vouchers — verified retailer vouchers | Trolley Scout',
+  discovery: 'Find a deal: this week’s grocery specials | Trolley Scout',
+  near: 'Near me: supermarkets and specials around you | Trolley Scout',
+  tools: 'Tools: product and store comparison | Trolley Scout',
+  sources: 'Stores: official retailer sources | Trolley Scout',
+  vouchers: 'Vouchers: verified retailer vouchers | Trolley Scout',
   about: 'About & help | Trolley Scout',
   offers: 'Verified offers | Trolley Scout',
   scanner: 'Offer scanner | Trolley Scout',
@@ -753,6 +776,10 @@ function App() {
   }
 
   async function signOutMemberMode() {
+    if (!window.confirm('Sign out of Trolley Scout on this device?')) {
+      return
+    }
+
     const result = await endMemberSession()
     setMemberState(result)
     setSavedSourceState(getInitialSavedSourceState())
@@ -794,6 +821,10 @@ function App() {
   }
 
   async function removeSavedSource(id: string) {
+    if (!window.confirm('Remove this saved source?')) {
+      return
+    }
+
     setDeletingSourceId(id)
     setMemberNotice(undefined)
 
@@ -930,6 +961,10 @@ function App() {
   }
 
   async function removeSavedDeal(id: string) {
+    if (!window.confirm('Remove this saved deal and any linked basket item?')) {
+      return
+    }
+
     setDeletingDealId(id)
     setMemberNotice(undefined)
 
@@ -973,6 +1008,10 @@ function App() {
   }
 
   async function removeBasketItem(id: string) {
+    if (!window.confirm('Remove this item from your basket?')) {
+      return
+    }
+
     setDeletingBasketItemId(id)
     setMemberNotice(undefined)
 
@@ -993,6 +1032,20 @@ function App() {
   }
 
   async function requestCheckout(planId: MemberPlanId, billingCycle: BillingCycle) {
+    const currentAccount = memberSession.account
+    const currentCycle = currentAccount?.billingCycle ?? billingCycle
+    if (
+      currentAccount &&
+      monthlyEquivalent(planId, billingCycle) < monthlyEquivalent(currentAccount.planId, currentCycle) &&
+      !window.confirm(
+        planId === 'free'
+          ? 'Cancel your subscription at the end of the current paid period?'
+          : 'Schedule this lower plan for the end of the current paid period?',
+      )
+    ) {
+      return
+    }
+
     setCheckoutPlanId(planId)
     setMemberNotice(undefined)
 
@@ -1176,6 +1229,10 @@ function App() {
   }
 
   async function removeOffer(id: string) {
+    if (!window.confirm('Delete this verified offer? This cannot be undone.')) {
+      return
+    }
+
     setDeletingOfferId(id)
     setWriteNotice(undefined)
 
@@ -1359,39 +1416,57 @@ function App() {
           />
         )}
 
-        {activeView === 'near' && <NearMeView onViewStoreDeals={viewStoreDeals} />}
+        {activeView === 'near' && (
+          <LazyView label="Opening Near me">
+            <NearMeView onViewStoreDeals={viewStoreDeals} />
+          </LazyView>
+        )}
 
-        {activeView === 'tools' && <ToolkitView />}
+        {activeView === 'tools' && (
+          <LazyView label="Opening tools"><ToolkitView /></LazyView>
+        )}
 
         {activeView === 'vouchers' && (
-          <VouchersView
-            isAuthenticated={memberSession.isAuthenticated}
-            isLoading={vouchersLoading}
-            onClaim={saveVoucher}
-            onRemove={removeSavedVoucher}
-            onRequireAuth={requireVoucherAuthentication}
-            vouchers={vouchers}
-          />
+          <LazyView label="Opening vouchers">
+            <VouchersView
+              isAuthenticated={memberSession.isAuthenticated}
+              isLoading={vouchersLoading}
+              onClaim={saveVoucher}
+              onRemove={removeSavedVoucher}
+              onRequireAuth={requireVoucherAuthentication}
+              vouchers={vouchers}
+            />
+          </LazyView>
         )}
 
         {activeView === 'about' && (
-          <AboutView onOpen={(destination: AboutDestination) => setActiveView(destination)} />
+          <LazyView label="Opening help">
+            <AboutView onOpen={(destination: AboutDestination) => setActiveView(destination)} />
+          </LazyView>
         )}
 
         {activeView === 'support' && (
-          <SupportView
-            defaultEmail={memberSession.account?.email}
-            defaultName={memberSession.account?.displayName}
-          />
+          <LazyView label="Opening support">
+            <SupportView
+              defaultEmail={memberSession.account?.email}
+              defaultName={memberSession.account?.displayName}
+            />
+          </LazyView>
         )}
         {activeView === 'privacy' && (
-          <LegalView docId="privacy" onOpenSupport={() => setActiveView('support')} />
+          <LazyView label="Opening privacy policy">
+            <LegalView docId="privacy" onOpenSupport={() => setActiveView('support')} />
+          </LazyView>
         )}
         {activeView === 'terms' && (
-          <LegalView docId="terms" onOpenSupport={() => setActiveView('support')} />
+          <LazyView label="Opening terms">
+            <LegalView docId="terms" onOpenSupport={() => setActiveView('support')} />
+          </LazyView>
         )}
         {activeView === 'cookies' && (
-          <LegalView docId="cookies" onOpenSupport={() => setActiveView('support')} />
+          <LazyView label="Opening cookie policy">
+            <LegalView docId="cookies" onOpenSupport={() => setActiveView('support')} />
+          </LazyView>
         )}
 
         {(activeView === 'sources' || activeView === 'discovery' || activeView === 'offers' || activeView === 'scanner') && (
@@ -1565,6 +1640,7 @@ function MemberAuthScreen({
   theme: ThemeMode
 }) {
   const isSignup = draft.intent !== 'login'
+  const [showPassword, setShowPassword] = useState(false)
 
   return (
     <div className="app-shell auth-shell">
@@ -1648,17 +1724,31 @@ function MemberAuthScreen({
               />
             </label>
             <label className="field">
-              Password
-              <input
-                autoComplete={isSignup ? 'new-password' : 'current-password'}
-                minLength={8}
-                onChange={(event) => onUpdate('password', event.target.value)}
-                placeholder={isSignup ? 'At least 8 characters' : 'Your password'}
-                required
-                type="password"
-                value={draft.password ?? ''}
-              />
+              <span>Password</span>
+              <span className="password-field">
+                <input
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
+                  minLength={8}
+                  onChange={(event) => onUpdate('password', event.target.value)}
+                  placeholder={isSignup ? 'At least 8 characters' : 'Your password'}
+                  required
+                  type={showPassword ? 'text' : 'password'}
+                  value={draft.password ?? ''}
+                />
+                <button
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword((value) => !value)}
+                  type="button"
+                >
+                  {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
             </label>
+            {!isSignup && (
+              <a className="auth-help-link" href="/support?topic=account">
+                Forgot password?
+              </a>
+            )}
             {(notice || memberState.status === 'error') && (
               <div className="write-notice" role="status">{notice ?? memberState.message}</div>
             )}
@@ -1909,27 +1999,41 @@ function MemberShell({
           />
         )}
 
-        {activeView === 'near' && <NearMeView onViewStoreDeals={onViewStoreDeals} />}
+        {activeView === 'near' && (
+          <LazyView label="Opening Near me">
+            <NearMeView onViewStoreDeals={onViewStoreDeals} />
+          </LazyView>
+        )}
 
-        {activeView === 'tools' && <ToolkitView />}
+        {activeView === 'tools' && (
+          <LazyView label="Opening tools">
+            <ToolkitView preferenceOwnerId={account.id} />
+          </LazyView>
+        )}
 
         {activeView === 'vouchers' && (
-          <VouchersView
-            isAuthenticated
-            isLoading={vouchersLoading}
-            onClaim={onClaimVoucher}
-            onRemove={onRemoveVoucher}
-            onRequireAuth={() => undefined}
-            vouchers={vouchers}
-          />
+          <LazyView label="Opening vouchers">
+            <VouchersView
+              isAuthenticated
+              isLoading={vouchersLoading}
+              onClaim={onClaimVoucher}
+              onRemove={onRemoveVoucher}
+              onRequireAuth={() => undefined}
+              vouchers={vouchers}
+            />
+          </LazyView>
         )}
 
         {activeView === 'about' && (
-          <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
+          <LazyView label="Opening help">
+            <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
+          </LazyView>
         )}
 
         {activeView === 'support' && (
-          <SupportView defaultEmail={account.email} defaultName={account.displayName} />
+          <LazyView label="Opening support">
+            <SupportView defaultEmail={account.email} defaultName={account.displayName} />
+          </LazyView>
         )}
 
         {activeView === 'sources' && (
@@ -1979,7 +2083,13 @@ function MemberShell({
         )}
 
         {activeView === 'properties' && (
-          <PropertiesView account={account} country={country} onUpgrade={() => onSetView('subscription')} />
+          <Suspense fallback={<LoadingStrip label="Opening Properties Scout" />}>
+            <PropertiesView
+              account={account}
+              country={country}
+              onUpgrade={() => onSetView('subscription')}
+            />
+          </Suspense>
         )}
 
         {activeView === 'savedDeals' && (
@@ -3031,6 +3141,11 @@ function AccountSettings({ account }: { account: NonNullable<MemberSession['acco
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSavingPassword, setIsSavingPassword] = useState(false)
   const [passwordNotice, setPasswordNotice] = useState<string>()
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const passwordsMismatch =
+    newPassword.length > 0 && confirmPassword.length > 0 && newPassword !== confirmPassword
 
   async function saveName() {
     setIsSavingName(true)
@@ -3105,39 +3220,83 @@ function AccountSettings({ account }: { account: NonNullable<MemberSession['acco
         }}
       >
         <label className="field">
-          Current password
-          <input
-            autoComplete="current-password"
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            required
-            type="password"
-            value={currentPassword}
-          />
+          <span>Current password</span>
+          <span className="password-field">
+            <input
+              autoComplete="current-password"
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              required
+              type={showCurrentPassword ? 'text' : 'password'}
+              value={currentPassword}
+            />
+            <button
+              aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+              onClick={() => setShowCurrentPassword((value) => !value)}
+              type="button"
+            >
+              {showCurrentPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
         </label>
         <label className="field">
-          New password
-          <input
-            autoComplete="new-password"
-            minLength={8}
-            onChange={(event) => setNewPassword(event.target.value)}
-            placeholder="At least 8 characters"
-            required
-            type="password"
-            value={newPassword}
-          />
+          <span>New password</span>
+          <span className="password-field">
+            <input
+              autoComplete="new-password"
+              minLength={8}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="At least 8 characters"
+              required
+              type={showNewPassword ? 'text' : 'password'}
+              value={newPassword}
+            />
+            <button
+              aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+              onClick={() => setShowNewPassword((value) => !value)}
+              type="button"
+            >
+              {showNewPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
         </label>
         <label className="field">
-          Confirm new password
-          <input
-            autoComplete="new-password"
-            minLength={8}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            required
-            type="password"
-            value={confirmPassword}
-          />
+          <span>Confirm new password</span>
+          <span className="password-field">
+            <input
+              aria-describedby={passwordsMismatch ? 'password-match-error' : undefined}
+              aria-invalid={passwordsMismatch}
+              autoComplete="new-password"
+              minLength={8}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+              type={showConfirmPassword ? 'text' : 'password'}
+              value={confirmPassword}
+            />
+            <button
+              aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+              onClick={() => setShowConfirmPassword((value) => !value)}
+              type="button"
+            >
+              {showConfirmPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
         </label>
-        <button className="ghost-button" disabled={isSavingPassword} type="submit">
+        {passwordsMismatch && (
+          <p className="account-notice" id="password-match-error" role="alert">
+            The new passwords don’t match yet.
+          </p>
+        )}
+        <button
+          className="ghost-button"
+          disabled={
+            isSavingPassword ||
+            passwordsMismatch ||
+            !currentPassword ||
+            newPassword.length < 8 ||
+            confirmPassword.length < 8
+          }
+          type="submit"
+        >
           {isSavingPassword ? 'Saving' : 'Change password'}
         </button>
         {passwordNotice && <p className="account-notice" role="status">{passwordNotice}</p>}
@@ -3897,14 +4056,31 @@ function RuntimeBanner({
 
 export function DiscoveredStoreDirectory({
   discovered,
+  isLoading = false,
+  onLoadMore,
+  onQueryChange,
+  onRetry,
+  query = '',
 }: {
   discovered: DiscoveredStoresResource
+  isLoading?: boolean
+  onLoadMore?: () => void
+  onQueryChange?: (value: string) => void
+  onRetry?: () => void
+  query?: string
 }) {
   const groups = groupDiscoveredStores(discovered.stores)
   const [openGroup, setOpenGroup] = useState<DiscoveredStoreGroup | undefined>()
   const [openBranch, setOpenBranch] = useState<NearbyStoreResult | undefined>()
+  const [branchLoadState, setBranchLoadState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
   const [mapBranch, setMapBranch] = useState<NearbyStoreResult | undefined>()
+
+  const visibleBranches = openGroup
+    ? openGroup.branches
+        .filter((branch) => !openBranch || branch.placeId === openBranch.placeId)
+        .map((branch) => openBranch?.placeId === branch.placeId ? openBranch : branch)
+    : []
 
   useEffect(() => {
     if (!openGroup) {
@@ -3929,6 +4105,25 @@ export function DiscoveredStoreDirectory({
     setOpenLeaflet(cataloguePromotionToLeaflet(branch, promotion))
   }
 
+  async function openBranchDetails(branch: NearbyStoreResult) {
+    setOpenBranch(branch)
+    setBranchLoadState('idle')
+    if (branch.detailsLoaded !== false) {
+      return
+    }
+
+    setBranchLoadState('loading')
+    const detail = await loadDiscoveredStores({ placeId: branch.placeId })
+    const resolved = detail.stores[0]
+    if (!resolved || detail.error) {
+      setBranchLoadState('error')
+      return
+    }
+
+    setOpenBranch(resolved)
+    setBranchLoadState('idle')
+  }
+
   return (
     <div className="discovered-store-directory" aria-label="Stores found near shoppers">
       <div className="section-heading">
@@ -3941,6 +4136,36 @@ export function DiscoveredStoreDirectory({
         </div>
         <Storefront size={26} />
       </div>
+
+      {onQueryChange && (
+        <label className="search-field directory-search">
+          <MagnifyingGlass aria-hidden="true" size={18} />
+          <span className="sr-only">Search the store directory</span>
+          <input
+            autoComplete="off"
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search stores or addresses"
+            type="search"
+            value={query}
+          />
+          {query && (
+            <button onClick={() => onQueryChange('')} type="button">
+              Clear
+            </button>
+          )}
+        </label>
+      )}
+
+      {isLoading && discovered.stores.length === 0 && (
+        <LoadingStrip label="Loading store directory" />
+      )}
+
+      {discovered.error && (
+        <div className="directory-error" role="alert">
+          <span>{discovered.error}</span>
+          {onRetry && <button className="ghost-button" onClick={onRetry} type="button">Try again</button>}
+        </div>
+      )}
 
       {groups.length > 0 ? (
         <div className="discovered-store-grid">
@@ -3973,8 +4198,16 @@ export function DiscoveredStoreDirectory({
             </button>
           ))}
         </div>
+      ) : isLoading ? null : query ? (
+        <p className="directory-empty">No stores match “{query}”. Try a store name or suburb.</p>
       ) : (
         <p className="directory-empty">Use Near me to add the first stores in a searched area.</p>
+      )}
+
+      {discovered.pagination?.hasMore && onLoadMore && (
+        <button className="ghost-button directory-load-more" disabled={isLoading} onClick={onLoadMore} type="button">
+          {isLoading ? 'Loading more' : 'Load more stores'}
+        </button>
       )}
 
       {openGroup && (
@@ -4014,6 +4247,7 @@ export function DiscoveredStoreDirectory({
                 onClick={() => {
                   if (openBranch) {
                     setOpenBranch(undefined)
+                    setBranchLoadState('idle')
                   } else {
                     setOpenGroup(undefined)
                   }
@@ -4025,16 +4259,14 @@ export function DiscoveredStoreDirectory({
             </header>
 
             <div className="store-location-list">
-              {openGroup.branches
-                .filter((branch) => !openBranch || branch.placeId === openBranch.placeId)
-                .map((branch) => (
+              {visibleBranches.map((branch) => (
                 <section className="store-location-section" key={branch.placeId}>
                   <div className="store-location-head">
                     <button
                       aria-label={`Open ${cleanUiPunctuation(branch.name)} deals`}
                       className="store-location-summary"
                       disabled={openBranch?.placeId === branch.placeId}
-                      onClick={() => setOpenBranch(branch)}
+                      onClick={() => void openBranchDetails(branch)}
                       type="button"
                     >
                       <span>
@@ -4065,7 +4297,20 @@ export function DiscoveredStoreDirectory({
                     </div>}
                   </div>
 
-                  {openBranch && ((branch.promotions ?? []).length > 0 ? (
+                  {openBranch && branchLoadState === 'loading' && (
+                    <LoadingStrip label="Loading this store’s specials" />
+                  )}
+
+                  {openBranch && branchLoadState === 'error' && (
+                    <div className="directory-error" role="alert">
+                      <span>This store’s specials could not be loaded.</span>
+                      <button className="ghost-button" onClick={() => void openBranchDetails(branch)} type="button">
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {openBranch && branchLoadState === 'idle' && ((branch.promotions ?? []).length > 0 ? (
                     <div className="store-location-promotions">
                       {branch.promotions.map((promotion) => (
                         <article className="store-location-promotion" key={promotion.id}>
@@ -4127,13 +4372,15 @@ export function DiscoveredStoreDirectory({
       )}
 
       {mapBranch && (
-        <StoreMap
-          lat={mapBranch.lat}
-          lon={mapBranch.lon}
-          onClose={() => setMapBranch(undefined)}
-          storeAddress={mapBranch.address ? cleanUiPunctuation(mapBranch.address) : undefined}
-          storeName={cleanUiPunctuation(mapBranch.name)}
-        />
+        <Suspense fallback={<LoadingStrip label="Opening store map" />}>
+          <StoreMap
+            lat={mapBranch.lat}
+            lon={mapBranch.lon}
+            onClose={() => setMapBranch(undefined)}
+            storeAddress={mapBranch.address ? cleanUiPunctuation(mapBranch.address) : undefined}
+            storeName={cleanUiPunctuation(mapBranch.name)}
+          />
+        </Suspense>
       )}
     </div>
   )
@@ -4183,16 +4430,73 @@ function SourcePanel({
   savedSourceUrls?: Set<string>
   savingSourceUrl?: string
 }) {
+  const directoryPageSize = 60
   const [discovered, setDiscovered] = useState<DiscoveredStoresResource>({
+    pagination: { hasMore: false, limit: directoryPageSize, offset: 0 },
     stores: [],
     summary: { areaCount: 0, knownChainCount: 0, storeCount: 0, withPromotionsCount: 0 },
   })
+  const [directoryQuery, setDirectoryQuery] = useState('')
+  const [directoryReload, setDirectoryReload] = useState(0)
+  const [isDirectoryLoading, setIsDirectoryLoading] = useState(true)
+  const loadMoreController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    loadDiscoveredStores(controller.signal).then(setDiscovered).catch(() => undefined)
-    return () => controller.abort()
-  }, [])
+    setIsDirectoryLoading(true)
+    const timer = window.setTimeout(() => {
+      loadDiscoveredStores({
+        includeDetails: false,
+        limit: directoryPageSize,
+        offset: 0,
+        query: directoryQuery,
+        signal: controller.signal,
+      })
+        .then(setDiscovered)
+        .catch(() => undefined)
+        .finally(() => {
+          if (!controller.signal.aborted) setIsDirectoryLoading(false)
+        })
+    }, directoryQuery ? 300 : 0)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [directoryQuery, directoryReload])
+
+  useEffect(() => () => loadMoreController.current?.abort(), [])
+
+  async function loadMoreStores() {
+    if (isDirectoryLoading || !discovered.pagination?.hasMore) return
+
+    loadMoreController.current?.abort()
+    const controller = new AbortController()
+    loadMoreController.current = controller
+    setIsDirectoryLoading(true)
+    try {
+      const next = await loadDiscoveredStores({
+        includeDetails: false,
+        limit: directoryPageSize,
+        offset: discovered.stores.length,
+        query: directoryQuery,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
+      const stores = new Map(discovered.stores.map((store) => [store.placeId, store]))
+      next.stores.forEach((store) => stores.set(store.placeId, store))
+      setDiscovered({ ...next, stores: [...stores.values()] })
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setDiscovered((current) => ({
+          ...current,
+          error: 'More stores could not be loaded. Check your connection and try again.',
+        }))
+      }
+    } finally {
+      if (!controller.signal.aborted) setIsDirectoryLoading(false)
+    }
+  }
 
   return (
     <section className="source-panel" aria-label="Official source watchlist">
@@ -4206,16 +4510,23 @@ function SourcePanel({
         <CheckCircle size={28} weight="duotone" />
       </div>
       {isLoading && <LoadingStrip label="Refreshing source directory" />}
-      <DiscoveredStoreDirectory discovered={discovered} />
+      <DiscoveredStoreDirectory
+        discovered={discovered}
+        isLoading={isDirectoryLoading}
+        onLoadMore={() => void loadMoreStores()}
+        onQueryChange={setDirectoryQuery}
+        onRetry={() => setDirectoryReload((value) => value + 1)}
+        query={directoryQuery}
+      />
       <div className="source-grid">
         {sourceRetailers.map((retailer, index) => (
-          <motion.article
-            animate={{ opacity: 1, y: 0 }}
-            className="source-card"
-            initial={{ opacity: 0, y: 10 }}
+          <article
+            className="source-card source-card-entry"
             key={retailer.id}
-            style={{ '--card-accent': retailer.accentColor } as CSSProperties}
-            transition={{ delay: Math.min(index * 0.02, 0.18) }}
+            style={{
+              '--card-accent': retailer.accentColor,
+              '--entry-delay': `${Math.min(index * 0.02, 0.18)}s`,
+            } as CSSProperties}
           >
             <div className="source-card-body">
               <div className="source-card-head">
@@ -4254,7 +4565,7 @@ function SourcePanel({
                 ))}
               </div>
             </div>
-          </motion.article>
+          </article>
         ))}
       </div>
     </section>
@@ -4279,7 +4590,7 @@ function PublicSignInGate({ view, onSignIn }: { view: ActiveView; onSignIn: () =
       <p className="eyebrow">Members only</p>
       <h1>{label} is for members</h1>
       <p className="public-signin-gate-lede">
-        Create a free account to use {label} and unlock the full Trolley Scout — every deal,
+        Create a free account to use {label} and unlock the full Trolley Scout: every deal,
         near-me store search, tools, saved lists, and more. No card, no catch.
       </p>
       <button className="primary-button" type="button" onClick={onSignIn}>
@@ -4397,7 +4708,7 @@ function DiscoveryPanel({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Deal finder</p>
-          <h2>Source-backed specials</h2>
+          <h1>Source-backed specials</h1>
           <p className="freshness-line">{describeFreshness(discovery.refreshedAt)}</p>
         </div>
         {canRunDiscovery && (
@@ -4625,7 +4936,7 @@ function DiscoveryPanel({
         <div className="discovery-empty">
           <ScoutMascot pose="search" size={116} />
           <p className="eyebrow">No deal rows yet</p>
-          <h3>{allDeals.length > 0 ? 'No deals match those filters' : 'Run a source check'}</h3>
+          <h2>{allDeals.length > 0 ? 'No deals match those filters' : 'Run a source check'}</h2>
           <p>
             The finder only shows rows extracted from official pages. Script-rendered pages are reported as checked,
             with no product rows copied.

@@ -194,6 +194,23 @@ export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {
   return planId === 'free' ? true : Boolean(resolvePayFastConfig(env))
 }
 
+/// Physically removes expired session rows. Runs from the hourly scout cron
+/// only — the request path relies on the expires_at filter instead.
+export async function purgeExpiredSessions(
+  env: TrolleyScoutEnv,
+  nowIso = new Date().toISOString(),
+): Promise<number> {
+  if (!hasMemberStore(env)) {
+    return 0
+  }
+  const result = await env.DB.prepare(
+    'DELETE FROM member_sessions WHERE expires_at < ?',
+  )
+    .bind(nowIso)
+    .run()
+  return result.meta.changes ?? 0
+}
+
 export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
   if (!hasMemberStore(env)) {
     return {
@@ -209,9 +226,10 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
     }
   }
 
+  // Expired rows are excluded by the expires_at clause below and physically
+  // removed by the hourly scout sweep (purgeExpiredSessions) — never here on
+  // the hot path, where the extra DELETE ran on every authenticated request.
   const now = new Date().toISOString()
-  await env.DB.prepare('DELETE FROM member_sessions WHERE expires_at < ?').bind(now).run()
-
   const row = await env.DB.prepare(
     `SELECT ${ACCOUNT_BILLING_COLUMNS}
       FROM member_sessions
@@ -520,6 +538,59 @@ export async function changeMemberPassword(
     .run()
 
   return { changed: true }
+}
+
+// Every table that stores this member's personal data, keyed by account_id.
+// Billing audit rows (billing_attempts/events) and support messages are
+// intentionally retained: financial records fall outside the erasure request,
+// and support threads may still need a reply.
+const ACCOUNT_DATA_TABLES = [
+  'member_sessions',
+  'member_saved_deals',
+  'member_saved_sources',
+  'member_basket_items',
+  'member_deal_activity',
+  'member_interest_weights',
+  'member_preferences',
+  'member_state',
+  'member_voucher_claims',
+  'deal_watches',
+  'window_saves',
+  'deal_comments',
+  'notification_preferences',
+] as const
+
+/**
+ * Permanently deletes a member account and their personal data (POPIA right
+ * to erasure). The current password is re-verified so an unattended unlocked
+ * phone cannot erase the account.
+ */
+export async function deleteMemberAccount(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  input: { currentPassword: string },
+): Promise<{ deleted: true } | { issues: string[] }> {
+  if (!hasMemberStore(env) || !accountId) {
+    return { issues: ['Sign in before deleting your account.'] }
+  }
+
+  const row = await env.DB.prepare('SELECT password_hash FROM member_accounts WHERE id = ?')
+    .bind(accountId)
+    .first<{ password_hash: string | null }>()
+
+  if (!row || !(await verifyPassword(input.currentPassword ?? '', row.password_hash))) {
+    return { issues: ['Your current password is not correct.'] }
+  }
+
+  const statements = ACCOUNT_DATA_TABLES.map((table) =>
+    env.DB.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(accountId),
+  )
+  statements.push(
+    env.DB.prepare('DELETE FROM member_accounts WHERE id = ?').bind(accountId),
+  )
+  await env.DB.batch(statements)
+
+  return { deleted: true }
 }
 
 // Admin console data. Only ever called after the caller's admin role is
@@ -1473,18 +1544,28 @@ export async function protectLegacyMemberEmails(
       LIMIT ?`,
   ).bind(limit).all<{ email: string; id: string }>()
 
-  let protectedCount = 0
-  for (const row of rows.results) {
+  // Compute every row's new (encrypted email, lookup hash) pair up front, then
+  // submit all the UPDATEs in one D1 round trip instead of one per row.
+  const updates = await Promise.all(rows.results.map(async (row) => {
     const email = await revealEmail(env, row.email)
-    const result = await env.DB.prepare(
+    return {
+      email: isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
+      id: row.id,
+      lookup: await emailLookup(env, email),
+    }
+  }))
+
+  const timestamp = new Date().toISOString()
+  const statements: D1PreparedStatement[] = updates.map((update) =>
+    env.DB.prepare(
       'UPDATE member_accounts SET email = ?, email_lookup = ?, updated_at = ? WHERE id = ?',
-    ).bind(
-      isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
-      await emailLookup(env, email),
-      new Date().toISOString(),
-      row.id,
-    ).run()
-    protectedCount += Number(result.meta.changes ?? 0)
+    ).bind(update.email, update.lookup, timestamp, update.id),
+  )
+
+  let protectedCount = 0
+  if (statements.length > 0) {
+    const results = await env.DB.batch(statements)
+    protectedCount = results.filter((result) => result.meta.changes > 0).length
   }
 
   const remaining = await env.DB.prepare(

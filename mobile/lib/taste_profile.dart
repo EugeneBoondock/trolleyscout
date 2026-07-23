@@ -78,9 +78,9 @@ class TasteStore {
     }
   }
 
-  /// Reinforce the profile from something the shopper likes/saves/opens.
+  /// Record a profile signal from something the shopper likes, saves, or opens.
   /// [weight] lets a save (strong) count more than a passing view (weak).
-  Future<TasteProfile> reinforce({
+  Future<TasteProfile> recordSignal({
     required String title,
     String? category,
     double weight = 1.0,

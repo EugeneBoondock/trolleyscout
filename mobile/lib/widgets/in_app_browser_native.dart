@@ -73,6 +73,15 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
       backgroundColor: TS.bgOf(context),
       appBar: AppBar(
         titleSpacing: 0,
+        // An explicit close (X) icon, not the default back-arrow leading
+        // button — the actions row already has its own "Back in browser"
+        // arrow that means something different (webview history), so this
+        // needs to read as "done", Chrome-Custom-Tabs style.
+        leading: IconButton(
+          tooltip: 'Close',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.close),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

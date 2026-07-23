@@ -25,7 +25,11 @@ type Status = 'idle' | 'sending' | 'sent' | 'error'
 export function SupportView({ defaultName, defaultEmail }: SupportViewProps) {
   const [name, setName] = useState(defaultName ?? '')
   const [email, setEmail] = useState(defaultEmail ?? '')
-  const [topic, setTopic] = useState<SupportTopic>(SUPPORT_TOPICS[0])
+  const [topic, setTopic] = useState<SupportTopic>(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('topic') === 'account'
+      ? 'Account & login'
+      : SUPPORT_TOPICS[0],
+  )
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [notice, setNotice] = useState<string | undefined>()
@@ -70,7 +74,7 @@ export function SupportView({ defaultName, defaultEmail }: SupportViewProps) {
         <section className="support-sent" aria-live="polite">
           <Lifebuoy size={30} weight="duotone" />
           <div>
-            <h2>Thanks — we’ve got it</h2>
+            <h2>Thanks, we’ve got it</h2>
             <p>{notice ?? 'Your message has reached the team. We’ll get back to you by email.'}</p>
             <button
               className="ghost-button"

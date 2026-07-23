@@ -1,8 +1,26 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
+import '../member_state_sync.dart';
 import '../theme.dart';
+import 'common.dart' show formatMoney;
 import 'in_app_browser.dart';
+
+const _maxCompareRetailers = 16;
+
+class _CompareRetailerSelection {
+  const _CompareRetailerSelection({required this.ids, required this.updatedAt});
+
+  final List<String> ids;
+  final int updatedAt;
+
+  Map<String, Object> toJson() => {'ids': ids, 'updatedAt': updatedAt};
+}
 
 /// Searches regular products and promotions at each selected retailer when
 /// the shopper asks. Results come from official retailer APIs and pages.
@@ -22,6 +40,9 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
   String? _error;
   List<String>? _selectedIds;
   ProductComparisonResult? _result;
+  Future<void> _localSelectionSaveQueue = Future<void>.value();
+  Future<void> _remoteSelectionSaveQueue = Future<void>.value();
+  int _lastSelectionUpdatedAt = 0;
 
   @override
   void initState() {
@@ -38,10 +59,15 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
   Future<void> _load() async {
     try {
       final result = await widget.api.retailers();
+      final available = result.retailers.map((store) => store.id).toSet();
+      final stored = await _loadStoredSelection(available);
       if (!mounted) return;
+      _lastSelectionUpdatedAt = stored == null
+          ? _lastSelectionUpdatedAt
+          : math.max(_lastSelectionUpdatedAt, stored.updatedAt);
       setState(() {
         _retailers = result.retailers;
-        _selectedIds ??=
+        _selectedIds ??= stored?.ids ??
             result.retailers.take(2).map((store) => store.id).toList();
         _busy = false;
       });
@@ -52,14 +78,106 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
   }
 
   void _toggleStore(String id) {
+    final current = _selectedIds ?? const <String>[];
+    if (!current.contains(id) && current.length >= _maxCompareRetailers) {
+      setState(() {
+        _error = 'Choose up to $_maxCompareRetailers stores at a time.';
+        _result = null;
+      });
+      return;
+    }
+    final next = current.contains(id)
+        ? current.where((storeId) => storeId != id).toList()
+        : [...current, id];
     setState(() {
       _error = null;
       _result = null;
-      final base = _selectedIds ?? const <String>[];
-      _selectedIds = base.contains(id)
-          ? base.where((storeId) => storeId != id).toList()
-          : [...base, id];
+      _selectedIds = next;
     });
+    final updatedAt = math.max(
+      DateTime.now().millisecondsSinceEpoch,
+      _lastSelectionUpdatedAt + 1,
+    );
+    _lastSelectionUpdatedAt = updatedAt;
+    final selection = _CompareRetailerSelection(
+      ids: next,
+      updatedAt: updatedAt,
+    );
+    _localSelectionSaveQueue = _localSelectionSaveQueue.then(
+      (_) => _saveLocalSelection(selection),
+    );
+    _remoteSelectionSaveQueue = _remoteSelectionSaveQueue.then(
+      (_) => MemberStateSync.instance.push(
+        MemberStateSync.compareRetailersKey,
+        selection.toJson(),
+      ),
+    );
+    unawaited(_localSelectionSaveQueue);
+    unawaited(_remoteSelectionSaveQueue);
+  }
+
+  Future<_CompareRetailerSelection?> _loadStoredSelection(
+      Set<String> available) async {
+    SharedPreferences? preferences;
+    _CompareRetailerSelection? local;
+    try {
+      preferences = await SharedPreferences.getInstance();
+      final encoded =
+          preferences.getString(MemberStateSync.compareRetailersKey);
+      if (encoded != null) {
+        local = _parseCompareRetailerSelection(jsonDecode(encoded), available);
+      }
+    } catch (_) {
+      // The remote copy can still restore the choice.
+    }
+
+    Object? remoteValue;
+    var remoteReadSucceeded = false;
+    try {
+      remoteValue = await widget.api
+          .getMemberState(MemberStateSync.compareRetailersKey)
+          .timeout(const Duration(seconds: 3));
+      remoteReadSucceeded = true;
+    } catch (_) {
+      // Keep the local choice and retry on a later screen load.
+    }
+    final remote = _parseCompareRetailerSelection(remoteValue, available);
+    final selected = _newerCompareRetailerSelection(remote, local);
+
+    if (selected != null && preferences != null) {
+      try {
+        await preferences.setString(
+          MemberStateSync.compareRetailersKey,
+          jsonEncode(selected.toJson()),
+        );
+      } catch (_) {
+        // The in-memory choice still remains usable.
+      }
+    }
+    if (local != null &&
+        remoteReadSucceeded &&
+        (remote == null || local.updatedAt > remote.updatedAt)) {
+      _remoteSelectionSaveQueue = _remoteSelectionSaveQueue.then(
+        (_) => MemberStateSync.instance.push(
+          MemberStateSync.compareRetailersKey,
+          local!.toJson(),
+        ),
+      );
+      unawaited(_remoteSelectionSaveQueue);
+    }
+    return selected;
+  }
+
+  Future<void> _saveLocalSelection(_CompareRetailerSelection selection) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        MemberStateSync.compareRetailersKey,
+        jsonEncode(selection.toJson()),
+      );
+    } catch (_) {
+      // The current in-memory choice remains usable when storage is unavailable.
+    }
   }
 
   Future<void> _compare() async {
@@ -87,6 +205,56 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
     } finally {
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// Swaps a runner-up product in as a store's compared item and recomputes
+  /// which store is cheapest. Purely local: the shopper is correcting our
+  /// pick ("eggs" vs "marshmallow eggs"), not searching again.
+  void _swapAlternative(
+    RetailerProductSearchMatch match,
+    RetailerProductAlternative alternative,
+  ) {
+    final current = _result;
+    if (current == null) return;
+    final swapped = current.matches
+        .map((row) => identical(row, match) ? row.withAlternative(alternative) : row)
+        .toList();
+
+    final priced = swapped
+        .where((row) => row.status == 'priced' && row.priceCents != null)
+        .toList();
+    final canCompare = priced.length >= 2;
+    int? cheapestCents;
+    int? dearestCents;
+    for (final row in priced) {
+      final price = row.priceCents!;
+      cheapestCents =
+          cheapestCents == null || price < cheapestCents ? price : cheapestCents;
+      dearestCents =
+          dearestCents == null || price > dearestCents ? price : dearestCents;
+    }
+    final flagged = swapped
+        .map((row) => row.copyWithCheapest(
+            canCompare && row.priceCents != null && row.priceCents == cheapestCents))
+        .toList();
+    setState(() {
+      _result = ProductComparisonResult(
+        checkedAt: current.checkedAt,
+        country: current.country,
+        foundCount: current.foundCount,
+        matches: flagged,
+        pricedCount: priced.length,
+        query: current.query,
+        savingsCents: canCompare ? dearestCents! - cheapestCents! : 0,
+        unavailableCount: current.unavailableCount,
+        cheapestRetailerId: canCompare
+            ? flagged
+                .firstWhere((row) => row.isCheapest,
+                    orElse: () => flagged.first)
+                .retailerId
+            : null,
+      );
+    });
   }
 
   @override
@@ -122,14 +290,33 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
               child: Center(child: CircularProgressIndicator()),
             )
           else if (_retailers.isEmpty)
-            Text(
-              'No stores are available right now. Try again shortly.',
-              style: TextStyle(color: TS.mutedOf(context)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No stores are available right now. Try again shortly.',
+                  style: TextStyle(color: TS.mutedOf(context)),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _busy = true);
+                    _load();
+                  },
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ],
             )
           else ...[
             Text(
-              'Stores to compare (${picked.length} picked)',
+              'Stores shown in compare (${picked.length} selected)',
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Choose up to $_maxCompareRetailers. Your choice is saved across web and mobile.',
+              style: TextStyle(color: TS.mutedOf(context), fontSize: 11),
             ),
             const SizedBox(height: 6),
             Wrap(
@@ -209,7 +396,8 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
                   style: TextStyle(color: TS.redOf(context), fontSize: 13),
                 ),
               ),
-            if (_result != null) _AutoCompareResult(result: _result!),
+            if (_result != null)
+              _AutoCompareResult(result: _result!, onSwap: _swapAlternative),
           ],
         ],
       ),
@@ -217,9 +405,95 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
   }
 }
 
+_CompareRetailerSelection? _parseCompareRetailerSelection(
+  Object? value,
+  Set<String> available,
+) {
+  final Object? rawIds = value is List
+      ? value
+      : value is Map<String, dynamic>
+          ? value['ids']
+          : value is Map
+              ? value['ids']
+              : null;
+  if (rawIds is! List) return null;
+
+  final ids = rawIds
+      .whereType<String>()
+      .where(available.contains)
+      .toSet()
+      .take(_maxCompareRetailers)
+      .toList();
+  if (rawIds.isNotEmpty && ids.isEmpty) return null;
+
+  final rawUpdatedAt = value is Map ? value['updatedAt'] : null;
+  final updatedAt =
+      rawUpdatedAt is num && rawUpdatedAt.isFinite && rawUpdatedAt >= 0
+          ? rawUpdatedAt.toInt()
+          : 0;
+  return _CompareRetailerSelection(ids: ids, updatedAt: updatedAt);
+}
+
+_CompareRetailerSelection? _newerCompareRetailerSelection(
+  _CompareRetailerSelection? remote,
+  _CompareRetailerSelection? local,
+) {
+  if (remote != null && local != null) {
+    return local.updatedAt > remote.updatedAt ? local : remote;
+  }
+  return remote ?? local;
+}
+
 class _AutoCompareResult extends StatelessWidget {
-  const _AutoCompareResult({required this.result});
+  const _AutoCompareResult({required this.result, required this.onSwap});
   final ProductComparisonResult result;
+  final void Function(RetailerProductSearchMatch, RetailerProductAlternative)
+      onSwap;
+
+  /// The tester's "eggs vs marshmallow eggs" fix: word overlap can pick the
+  /// wrong product, so every store row with runners-up offers a swap sheet.
+  Future<void> _showAlternatives(
+    BuildContext context,
+    RetailerProductSearchMatch match,
+  ) async {
+    final chosen = await showModalBottomSheet<RetailerProductAlternative>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Text(
+                'Other matches at ${match.retailerName}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: Text(
+                'Comparing the wrong product? Pick the one you meant.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+              ),
+            ),
+            for (final option in match.alternatives)
+              ListTile(
+                title: Text(option.title,
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                trailing: Text(
+                  _formatMoney(option.priceCents, result.country),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(option),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen != null) onSwap(match, chosen);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +543,7 @@ class _AutoCompareResult extends StatelessWidget {
                           ),
                           Text(
                             match.status == 'unavailable'
-                                ? 'No public price search we can read — check in store'
+                                ? 'No public price search we can read. Check in store.'
                                 : match.title ?? 'Product found',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -280,10 +554,39 @@ class _AutoCompareResult extends StatelessWidget {
                           ),
                           if (match.status == 'found')
                             Text(
-                              'Product found — price hidden from us; open the product page',
+                              'Product found. The price is hidden, so open the product page.',
                               style: TextStyle(
                                 color: TS.mutedOf(context),
                                 fontSize: 11,
+                              ),
+                            ),
+                          if (match.alternatives.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: InkWell(
+                                onTap: () => _showAlternatives(context, match),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.swap_horiz,
+                                          size: 16, color: TS.redOf(context)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Wrong product? See '
+                                        '${match.alternatives.length} other '
+                                        '${match.alternatives.length == 1 ? 'match' : 'matches'}',
+                                        style: TextStyle(
+                                          color: TS.redOf(context),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                         ],
@@ -350,5 +653,5 @@ String _formatMoney(int cents, CountryOption country) {
   };
   final symbol =
       symbols[country.currencyCode.toUpperCase()] ?? '${country.currencyCode} ';
-  return '$symbol${(cents / 100).toStringAsFixed(2)}';
+  return formatMoney(cents, symbol: symbol);
 }

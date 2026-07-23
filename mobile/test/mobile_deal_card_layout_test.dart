@@ -99,11 +99,20 @@ class _LayoutApi extends Api {
 
   @override
   Future<RetailerCatalog> retailers(
-          {String query = '', String kind = 'all'}) async =>
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
       const RetailerCatalog(retailers: [], sourceKinds: []);
 
   @override
-  Future<DiscoveredStoresResult> discoveredStores() async =>
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+  }) async =>
       const DiscoveredStoresResult(
         stores: [],
         storeCount: 0,
@@ -139,6 +148,9 @@ class _LayoutApi extends Api {
 
   @override
   Future<int> verifiedOfferCount() async => 0;
+
+  @override
+  Future<int> voucherCount() async => 0;
 
   @override
   Future<List<PublicAd>> publicAds(String placement) async => const [];

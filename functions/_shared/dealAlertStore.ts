@@ -14,7 +14,9 @@ export const MAX_DEAL_ALERT_BATCH_KEYS = 5_000
 export const MAX_DEAL_ALERT_SNAPSHOT_KEYS = 20_000
 export const MAX_DEAL_ALERT_RESPONSE_COUNT = 9_999
 const MAX_STABLE_KEY_LENGTH = 200
-const SNAPSHOT_PAGE_SIZE = 200
+// OFFSET paging reads O(pages²/2) rows per pass on D1, so larger pages cut
+// billed row reads roughly linearly (200 → 1000 is ~5x cheaper per snapshot).
+const SNAPSHOT_PAGE_SIZE = 1_000
 
 type AlertIdentityDeal = WatchableDeal & {
   retailerName: string
@@ -188,13 +190,6 @@ export async function snapshotDealAlertKeys(
   ])
   const snapshotDeals = [...snapshots.values()].flatMap((snapshot) => snapshot.deals)
   const dealPromotions = promotions.filter((promotion) => promotion.kind === 'deal')
-  const rowCount = snapshotDeals.length + normalizedDeals.length +
-    dealPromotions.length + siteFeed.deals.length
-  if (rowCount > MAX_DEAL_ALERT_SNAPSHOT_KEYS) {
-    throw new RangeError(
-      `A deal alert snapshot cannot exceed ${MAX_DEAL_ALERT_SNAPSHOT_KEYS} rows.`,
-    )
-  }
 
   const identities = [
     ...snapshotDeals.map(corpusDealIdentity),
@@ -208,7 +203,11 @@ export async function snapshotDealAlertKeys(
     ...siteFeed.deals.map((deal) => `site:${deal.source}:${deal.id.trim()}`),
   ]
   const keys = await Promise.all(identities.map(stableKey))
-  return [...new Set(keys)].sort()
+  // Cap by truncating the SORTED key set rather than throwing: hashed keys
+  // sort stably, so before/after snapshots share the same cut-off boundary and
+  // the new-deal diff stays consistent. Alerts degrade above the cap instead
+  // of silently stopping (the old RangeError was swallowed by callers).
+  return [...new Set(keys)].sort().slice(0, MAX_DEAL_ALERT_SNAPSHOT_KEYS)
 }
 
 export async function recordGlobalDealAlertBatch(
@@ -305,10 +304,11 @@ async function readEveryPage<T>(
       throw new Error('A strict alert snapshot page returned an invalid row set.')
     }
     rows.push(...page)
-    if (rows.length > MAX_DEAL_ALERT_SNAPSHOT_KEYS) {
-      throw new RangeError(
-        `A deal alert snapshot cannot exceed ${MAX_DEAL_ALERT_SNAPSHOT_KEYS} rows.`,
-      )
+    // At the cap, stop paging and work with what we have — reading further
+    // costs O(offset) billed rows per page, and the snapshot itself truncates
+    // deterministically. Throwing here used to kill alerts entirely.
+    if (rows.length >= MAX_DEAL_ALERT_SNAPSHOT_KEYS) {
+      return rows.slice(0, MAX_DEAL_ALERT_SNAPSHOT_KEYS)
     }
     if (page.length < SNAPSHOT_PAGE_SIZE) {
       return rows

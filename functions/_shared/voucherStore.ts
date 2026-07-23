@@ -18,8 +18,6 @@ interface VoucherRow {
   benefit_text: string
   captured_at: string
   claimed: number
-  code_hash: string | null
-  content_fingerprint: string
   created_at: string
   evidence_text: string
   expires_at: string
@@ -229,8 +227,19 @@ export async function listActiveVouchers(env: TrolleyScoutEnv, options: {
   }
   bindings.push(limit, offset)
 
+  // Name every column the mapper reads instead of `vouchers.*` so code_hash —
+  // an internal value that must never leave the DB layer — can never leak
+  // into the API response, even if a future column is added to the table.
   const rows = await db.prepare(
-    `SELECT vouchers.*, CASE WHEN member_voucher_claims.id IS NULL THEN 0 ELSE 1 END AS claimed
+    `SELECT
+      vouchers.id, vouchers.retailer_id, vouchers.external_voucher_id, vouchers.product_id,
+      vouchers.product_title, vouchers.title, vouchers.benefit_text, vouchers.terms_text,
+      vouchers.evidence_text, vouchers.voucher_kind, vouchers.redemption_mode,
+      vouchers.redemption_url, vouchers.source_url, vouchers.image_url, vouchers.public_reusable,
+      vouchers.public_code, vouchers.account_required, vouchers.captured_at, vouchers.valid_from,
+      vouchers.valid_to, vouchers.expires_at, vouchers.status, vouchers.created_at,
+      vouchers.updated_at, vouchers.last_seen_at,
+      CASE WHEN member_voucher_claims.id IS NULL THEN 0 ELSE 1 END AS claimed
       FROM vouchers
       LEFT JOIN member_voucher_claims
         ON member_voucher_claims.voucher_id = vouchers.id
@@ -272,6 +281,21 @@ export async function claimVoucher(
   ).bind(`claim_${await sha256Hex(`${accountId}:${normalizedId}`)}`, accountId, normalizedId, now).run()
 
   return { claimed: true, voucherId: normalizedId }
+}
+
+export async function countActiveVouchers(
+  env: TrolleyScoutEnv,
+  nowInput = new Date().toISOString(),
+) {
+  const db = requireDatabase(env)
+  const now = strictInstant(nowInput, 'now')
+  const row = await db.prepare(
+    `SELECT COUNT(*) AS total FROM vouchers
+      WHERE status = 'active'
+        AND expires_at > ?
+        AND (valid_from IS NULL OR valid_from <= ?)`,
+  ).bind(now, now).first<{ total: number }>()
+  return Number(row?.total ?? 0)
 }
 
 export async function unclaimVoucher(

@@ -4,6 +4,7 @@ import {
   applyPromotionFallbackPrices,
   buildKnownProductSearchRequest,
   buildProductComparison,
+  candidateRelevance,
   parseClicksProductResults,
   parseGameProductResults,
   parseKlevuProductResults,
@@ -15,6 +16,40 @@ import {
   searchRetailerProduct,
   selectOfficialSearchCandidate,
 } from './productPriceSearch'
+
+describe('candidate relevance ranking', () => {
+  it('ranks real eggs above marshmallow eggs even when marshmallows are cheaper', () => {
+    // Regression for the tester report: cheapest-wins used to pick any cheap
+    // product whose title contained the query word.
+    const real = candidateRelevance('Nulaid Large Eggs 30s', 'eggs')
+    const novelty = candidateRelevance('Marshmallow Eggs 6s', 'eggs')
+    expect(real).toBeGreaterThan(novelty)
+
+    const candidates = [
+      { priceCents: 2999, productUrl: 'https://shop.test/marshmallow', title: 'Marshmallow Eggs 6s' },
+      { priceCents: 7999, productUrl: 'https://shop.test/eggs', title: 'Nulaid Large Eggs 30s' },
+    ]
+    const ranked = [...candidates].sort(
+      (left, right) =>
+        candidateRelevance(right.title, 'eggs') - candidateRelevance(left.title, 'eggs') ||
+        left.priceCents - right.priceCents,
+    )
+    expect(ranked[0].title).toBe('Nulaid Large Eggs 30s')
+  })
+
+  it('treats sizes, counts, and refining words as free', () => {
+    expect(candidateRelevance('Eggs Tray 30s', 'eggs'))
+      .toBeGreaterThanOrEqual(candidateRelevance('Nulaid Eggs', 'eggs'))
+    expect(candidateRelevance('Fresh Milk 2l', 'milk 2l'))
+      .toBeGreaterThan(candidateRelevance('Almond Milk 2l', 'milk 2l'))
+  })
+
+  it('still prefers the cheaper candidate between equally relevant titles', () => {
+    const left = candidateRelevance('Clover Milk 2l', 'milk 2l')
+    const right = candidateRelevance('Parmalat Milk 2l', 'milk 2l')
+    expect(left).toBe(right)
+  })
+})
 
 describe('on-demand retailer product results', () => {
   it('normalizes a bounded query and a unique selected-store list', () => {

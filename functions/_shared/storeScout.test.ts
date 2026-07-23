@@ -340,6 +340,194 @@ describe('scheduled discovered-store scouting', () => {
     expect(row?.title).toBe('Branch-only chicken portions 2kg')
   })
 
+  it('resolves and saves a current Shoprite Group branch promotion before fallbacks', async () => {
+    const nowMs = Date.parse('2026-07-22T12:00:00.000Z')
+    const requestedPaths: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedPaths.push(url.pathname)
+      if (url.pathname.endsWith('/get-stores-by-location')) {
+        return jsonResponse({
+          stores: [
+            { id: 'branch-1', brand: 'Checkers', name: 'Checkers The Mutual CBD' },
+          ],
+        })
+      }
+      if (url.pathname.endsWith('/get-products-filter')) {
+        return jsonResponse({
+          products: [
+            {
+              bonusBuys: [
+                {
+                  active: true,
+                  browseStoreIds: ['branch-1'],
+                  endDate: Date.parse('2026-08-09T21:59:59.000Z'),
+                  shortDescription: 'Buy 4 For R20',
+                  startDate: Date.parse('2026-07-20T00:00:00.000Z'),
+                },
+              ],
+              id: 'crackers-1',
+              name: 'Tait’s Crackers',
+              price: 16.99,
+            },
+          ],
+        })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        name: 'Checkers The Mutual CBD',
+        retailerId: 'checkers',
+        website: 'https://www.checkers.co.za/',
+      })],
+      nowMs,
+      1,
+    )
+
+    expect(requestedPaths).toEqual([
+      '/api/browse-by-store/get-stores-by-location',
+      '/api/browse-by-store/get-products-filter',
+    ])
+    const row = await db.prepare(
+      `SELECT title, price_text, saving_text, valid_to
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      price_text: string
+      saving_text: string
+      title: string
+      valid_to: string
+    }>()
+    expect(row).toEqual({
+      price_text: 'R16.99',
+      saving_text: 'Buy 4 For R20',
+      title: 'Tait’s Crackers',
+      valid_to: '2026-08-09',
+    })
+  })
+
+  it('detects a verified Shopify store and saves only discounted catalogue products', async () => {
+    const requestedPaths: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedPaths.push(`${url.pathname}${url.search}`)
+
+      if (url.pathname === '/specials') {
+        return htmlResponse(`
+          <script type="application/ld+json">${JSON.stringify({
+            '@type': 'LocalBusiness',
+            name: 'Market Place',
+          })}</script>
+          <script src="https://cdn.shopify.com/shopifycloud/storefront.js"></script>`)
+      }
+      if (url.pathname === '/products.json') {
+        return jsonResponse({
+          products: [
+            {
+              handle: 'weekly-rice-5kg',
+              title: 'Weekly Rice 5kg',
+              variants: [{ compare_at_price: '109.99', price: '89.99' }],
+            },
+            {
+              handle: 'everyday-milk-2l',
+              title: 'Everyday Milk 2L',
+              variants: [{ compare_at_price: '39.99', price: '39.99' }],
+            },
+          ],
+        })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({ website: 'https://market.test/' })],
+      Date.parse('2026-07-22T12:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedPaths).toEqual([
+      '/specials',
+      '/products.json?limit=50&page=1',
+    ])
+    const rows = await db.prepare(
+      `SELECT title, price_text, previous_price_text, saving_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).all<{
+      previous_price_text: string
+      price_text: string
+      product_url: string
+      saving_text: string
+      title: string
+    }>()
+    expect(rows.results).toEqual([{
+      previous_price_text: 'R109.99',
+      price_text: 'R89.99',
+      product_url: 'https://market.test/products/weekly-rice-5kg',
+      saving_text: 'Online catalogue · Save R20.00',
+      title: 'Weekly Rice 5kg',
+    }])
+  })
+
+  it('scans bounded later catalogue pages and formats the store country currency', async () => {
+    const requestedPages: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/specials') {
+        return htmlResponse(`
+          <script type="application/ld+json">${JSON.stringify({
+            '@type': 'LocalBusiness',
+            name: 'Market Place',
+          })}</script>
+          <script src="https://cdn.shopify.com/shopifycloud/storefront.js"></script>`)
+      }
+      if (url.pathname === '/products.json') {
+        requestedPages.push(url.searchParams.get('page') ?? '')
+        if (url.searchParams.get('page') === '1') {
+          return jsonResponse({
+            products: Array.from({ length: 50 }, (_, index) => ({
+              handle: `regular-${index}`,
+              title: `Regular item ${index}`,
+              variants: [{ compare_at_price: '10.00', price: '10.00' }],
+            })),
+          })
+        }
+        return jsonResponse({
+          products: [{
+            handle: 'later-page-deal',
+            title: 'Later page deal',
+            variants: [{ compare_at_price: '10.00', price: '9.00' }],
+          }],
+        })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({ countryCode: 'US', website: 'https://market.test/' })],
+      Date.parse('2026-07-22T12:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedPages).toEqual(['1', '2'])
+    const row = await db.prepare(
+      `SELECT price_text, previous_price_text, saving_text
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      saving_text: string
+    }>()
+    expect(row).toEqual({
+      previous_price_text: 'USD 10.00',
+      price_text: 'USD 9.00',
+      saving_text: 'Online catalogue · Save USD 1.00',
+    })
+  })
+
   it('continues through every official specials path across runs and resets after the root', async () => {
     const store = discoveredStore({ website: 'https://market.test/' })
     const pathsByRun: string[][] = []
@@ -571,6 +759,48 @@ describe('scheduled discovered-store scouting', () => {
     expect(row?.title).toBe('Albany Bread 700g')
   })
 
+  it('keeps a short retry when a searched catalogue page has a transient store API failure', async () => {
+    const nowMs = Date.parse('2026-07-16T10:00:00.000Z')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'html.duckduckgo.com') {
+        const target = encodeURIComponent('https://freshbasket.co.za/specials')
+        return htmlResponse(
+          `<a class="result__a" href="//duckduckgo.com/l/?uddg=${target}&amp;rut=x">Fresh Basket specials</a>`,
+        )
+      }
+      if (url.hostname === 'freshbasket.co.za' && url.pathname === '/specials') {
+        return htmlResponse(`
+          <script type="application/ld+json">${JSON.stringify({
+            '@type': 'LocalBusiness',
+            name: 'Fresh Basket',
+          })}</script>
+          <script src="https://cdn.shopify.com/shopifycloud/storefront.js"></script>
+          <h1>Fresh Basket weekly specials</h1>`)
+      }
+      if (url.hostname === 'freshbasket.co.za' && url.pathname === '/products.json') {
+        return new Response('', { status: 503 })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({ name: 'Fresh Basket', placeId: 'fresh-basket', website: undefined })],
+      nowMs,
+      1,
+    )
+
+    const promotion = await db.prepare(
+      `SELECT title FROM store_promotions WHERE place_id = 'fresh-basket'`,
+    ).first<{ title: string }>()
+    const log = await db.prepare(
+      `SELECT next_scout_at FROM store_scout_log WHERE place_id = 'fresh-basket'`,
+    ).first<{ next_scout_at: string }>()
+    expect(promotion?.title).toBe('Fresh Basket specials')
+    expect(log?.next_scout_at).toBe('2026-07-16T11:00:00.000Z')
+  })
+
   it('uses the anonymous SPAR branch flow before a generic website probe', async () => {
     const requests: Array<{ cookie?: string; url: string }> = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -798,6 +1028,13 @@ function htmlResponse(body: string, status = 200) {
   return new Response(body, {
     headers: { 'content-type': 'text/html; charset=utf-8' },
     status,
+  })
+}
+
+function jsonResponse(value: unknown) {
+  return new Response(JSON.stringify(value), {
+    headers: { 'content-type': 'application/json' },
+    status: 200,
   })
 }
 

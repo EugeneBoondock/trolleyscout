@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../theme.dart';
+import '../ux.dart';
+import '../widgets/common.dart';
 import '../widgets/in_app_browser.dart';
-import '../widgets/scout_mark.dart';
 
 class VouchersScreen extends StatefulWidget {
   const VouchersScreen({
@@ -45,7 +46,9 @@ class _VouchersScreenState extends State<VouchersScreen> {
       final vouchers = await widget.api.vouchers();
       if (!mounted) return;
       setState(() {
-        _vouchers = vouchers;
+        // Belt-and-braces: the server should already exclude expired
+        // vouchers, but never let a stale one render as claimable.
+        _vouchers = vouchers.where((voucher) => !_isExpired(voucher)).toList();
         _loading = false;
       });
     } on ApiException catch (error) {
@@ -68,48 +71,56 @@ class _VouchersScreenState extends State<VouchersScreen> {
       widget.onRequireAuth();
       return;
     }
+    final wasClaimed = voucher.claimed;
+    uxTap();
+    // Optimistic: flip the button instantly and revert only on failure.
+    setState(() => _vouchers = _setClaimed(_vouchers, voucher.id, !wasClaimed));
     try {
-      final changed = voucher.claimed
+      final changed = wasClaimed
           ? await widget.api.removeVoucherClaim(voucher.id)
           : await widget.api.claimVoucher(voucher.id);
-      if (!mounted || !changed) return;
-      setState(() {
-        _vouchers = _vouchers
-            .map((item) => item.id == voucher.id
-                ? item.copyWith(claimed: !voucher.claimed)
-                : item)
-            .toList();
-      });
-    } on ApiException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+      if (!mounted) return;
+      if (!changed) {
+        setState(
+            () => _vouchers = _setClaimed(_vouchers, voucher.id, wasClaimed));
+        return;
       }
+      if (!wasClaimed) uxReward();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(
+          () => _vouchers = _setClaimed(_vouchers, voucher.id, wasClaimed));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     }
+  }
+
+  static List<Voucher> _setClaimed(
+          List<Voucher> vouchers, String id, bool claimed) =>
+      vouchers
+          .map((item) => item.id == id ? item.copyWith(claimed: claimed) : item)
+          .toList();
+
+  // Defensive parse: validTo may be empty or missing entirely. Treated as
+  // valid through the end of that calendar day.
+  static bool _isExpired(Voucher voucher) {
+    final validTo = voucher.validTo?.trim();
+    if (validTo == null || validTo.isEmpty) return false;
+    final parsed = DateTime.tryParse(validTo);
+    if (parsed == null) return false;
+    final today = DateTime.now();
+    final expiryDay = DateTime(parsed.year, parsed.month, parsed.day);
+    final todayDay = DateTime(today.year, today.month, today.day);
+    return expiryDay.isBefore(todayDay);
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: AnimatedScoutMark(
-          key: ValueKey('voucher-loading-scout-mark'),
-          motion: ScoutMarkMotion.spin,
-          size: 48,
-        ),
-      );
+      return const LoadingPane();
     }
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_error!),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: _load, child: const Text('Retry')),
-          ],
-        ),
-      );
+      return ErrorPane(message: _error!, onRetry: _load);
     }
 
     final retailerIds =
@@ -337,6 +348,8 @@ class _VoucherImage extends StatelessWidget {
             : Image.network(
                 url!,
                 fit: BoxFit.contain,
+                cacheWidth: 216,
+                cacheHeight: 216,
                 errorBuilder: (_, __, ___) => fallback,
               ),
       ),
@@ -344,7 +357,7 @@ class _VoucherImage extends StatelessWidget {
   }
 }
 
-String _clean(String value) => value.replaceAll(RegExp(r'\s*\u2014\s*'), ': ');
+String _clean(String value) => value.replaceAll(RegExp(r'\s*—\s*'), ': ');
 
 String _retailerName(String value) => value
     .split('-')

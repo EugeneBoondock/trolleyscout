@@ -22,6 +22,7 @@ import {
   applyDuePlanChanges,
   type PlanChangeSweepDependencies,
 } from '../functions/_shared/planChangeSweep'
+import { purgeExpiredSessions } from '../functions/_shared/memberStore'
 import { purgeExpired } from '../functions/_shared/locationStore'
 import { readAllStoreCatalogues } from '../functions/_shared/locationStore'
 import { readDueDiscoveredStores } from '../functions/_shared/locationStore'
@@ -431,6 +432,36 @@ export default {
     // Drop saves/comments for deals that have left the live feed so global save
     // counts fall as stores retire deals.
     await pruneWindowSocial(env).catch(() => undefined)
+    // Expired member sessions are only ever removed here; the request path
+    // filters on expires_at instead of paying a DELETE per authenticated call.
+    await purgeExpiredSessions(env).catch(() => undefined)
+    // Rolling retention for append-only audit tables so they stop growing
+    // forever (indexes and insert cost scale with table size).
+    await pruneAuditRows(env).catch(() => undefined)
     console.log(JSON.stringify({ event: 'deal_scout_completed', ...result }))
   },
 } satisfies ExportedHandler<ScoutEnv>
+
+const AUDIT_RETENTION_DAYS = 30
+
+async function pruneAuditRows(env: ScoutEnv): Promise<void> {
+  if (!hasTrolleyScoutDatabase(env)) {
+    return
+  }
+  const cutoff = new Date(
+    Date.now() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const sweeps: Array<[table: string, column: string]> = [
+    ['deal_source_runs', 'finished_at'],
+    ['voucher_source_runs', 'finished_at'],
+  ]
+  for (const [table, column] of sweeps) {
+    try {
+      await env.DB.prepare(`DELETE FROM ${table} WHERE ${column} < ?`)
+        .bind(cutoff)
+        .run()
+    } catch {
+      // A missing table mid-migration must not fail the whole scheduled run.
+    }
+  }
+}

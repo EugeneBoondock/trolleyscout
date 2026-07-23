@@ -59,6 +59,9 @@ void main() {
     // The store card is a summary; its catalogues live on the store's page.
     await tester.tap(find.text('VIEW'));
     await tester.pumpAndSettle();
+    expect(find.text('Milk 2L'), findsOneWidget);
+    expect(find.textContaining('Buy 2 for R35'), findsOneWidget);
+    expect(find.textContaining('Until 2026-08-09'), findsOneWidget);
     await tester.tap(find.text('Rosebank weekly'));
     await tester.pumpAndSettle();
 
@@ -66,10 +69,34 @@ void main() {
     expect(find.text('Page 1 of 2'), findsOneWidget);
   });
 
+  testWidgets('Near Me explains disabled location and opens device settings',
+      (tester) async {
+    var openedSettings = false;
+    await tester.pumpWidget(_wrap(NearMeScreen(
+      api: _CatalogueApi(),
+      historyStore: NearbyHistoryStore(),
+      isLocationServiceEnabled: () async => false,
+      openDeviceLocationSettings: () async {
+        openedSettings = true;
+        return true;
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Use my location'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Device location is off'), findsOneWidget);
+    await tester.tap(find.text('Open location settings'));
+    await tester.pump();
+    expect(openedSettings, isTrue);
+  });
+
   testWidgets('Stores renders one chain card and keeps branches separate',
       (tester) async {
+    final api = _CatalogueApi();
     await tester.pumpWidget(_wrap(
-      StoresScreen(api: _CatalogueApi(), isAuthenticated: false),
+      StoresScreen(api: api, isAuthenticated: false),
     ));
     await tester.pumpAndSettle();
 
@@ -91,8 +118,11 @@ void main() {
     await tester.tap(find.text('Pick n Pay Rosebank'));
     await tester.pumpAndSettle();
 
+    expect(api.detailCalls, 1);
     expect(find.text('Milk 2L'), findsOneWidget);
     expect(find.text('R20.00'), findsOneWidget);
+    expect(find.text('Buy 2 for R35'), findsOneWidget);
+    expect(find.text('Valid until 2026-08-09'), findsOneWidget);
   });
 
   testWidgets('branch modal reads its catalogue without leaving the app',
@@ -124,6 +154,8 @@ Widget _wrap(Widget child) => MaterialApp(
 class _CatalogueApi extends Api {
   _CatalogueApi() : super(baseUrl: 'https://example.test');
 
+  int detailCalls = 0;
+
   @override
   Future<DiscoveryResult> discovery(
           {bool forceLive = false, bool summary = false}) async =>
@@ -138,18 +170,38 @@ class _CatalogueApi extends Api {
 
   @override
   Future<RetailerCatalog> retailers(
-          {String query = '', String kind = 'all'}) async =>
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
       const RetailerCatalog(retailers: [], sourceKinds: []);
 
   @override
-  Future<DiscoveredStoresResult> discoveredStores() async =>
-      const DiscoveredStoresResult(
-        stores: [_rosebank, _sandton],
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+  }) async {
+    if (placeId != null) {
+      detailCalls += 1;
+      return DiscoveredStoresResult(
+        stores: [placeId == _rosebank.placeId ? _rosebank : _sandton],
         storeCount: 2,
         areaCount: 2,
         knownChainCount: 2,
         withPromotionsCount: 2,
       );
+    }
+    return const DiscoveredStoresResult(
+      stores: [_rosebankSummary, _sandtonSummary],
+      storeCount: 2,
+      areaCount: 2,
+      knownChainCount: 2,
+      withPromotionsCount: 2,
+    );
+  }
 }
 
 const _winterCatalogue = Catalogue(
@@ -191,9 +243,21 @@ const _rosebank = NearbyStore(
       title: 'Milk 2L',
       retailerName: 'Pick n Pay Rosebank',
       priceText: 'R20.00',
+      savingText: 'Buy 2 for R35',
+      validTo: '2026-08-09',
     ),
   ],
   catalogues: [_rosebankCatalogue],
+);
+
+const _rosebankSummary = NearbyStore(
+  placeId: 'pnp-rosebank',
+  name: 'Pick n Pay Rosebank',
+  address: '10 Main Road, Rosebank',
+  retailerId: 'pick-n-pay',
+  logoUrl: 'https://cdn.example.test/pnp.png',
+  promotionCount: 2,
+  detailsLoaded: false,
 );
 
 const _sandton = NearbyStore(
@@ -210,4 +274,14 @@ const _sandton = NearbyStore(
       priceText: 'R23.00',
     ),
   ],
+);
+
+const _sandtonSummary = NearbyStore(
+  placeId: 'pnp-sandton',
+  name: 'PnP Sandton',
+  address: '20 High Street, Sandton',
+  retailerId: 'pick-n-pay',
+  logoUrl: 'https://cdn.example.test/pnp.png',
+  promotionCount: 1,
+  detailsLoaded: false,
 );

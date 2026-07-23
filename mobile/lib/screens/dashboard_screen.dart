@@ -40,37 +40,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Future<_DashboardData> _future = _load();
 
   Future<_DashboardData> _load() async {
+    // Each lane falls back independently, but failures are COUNTED so an
+    // offline dashboard says "couldn't refresh" instead of quietly rendering
+    // zeros that look identical to a brand-new account.
+    var failedLanes = 0;
+    Future<T> or<T>(Future<T> operation, T fallback) async {
+      try {
+        return await operation;
+      } catch (_) {
+        failedLanes += 1;
+        return fallback;
+      }
+    }
+
     final results = await Future.wait<dynamic>([
-      widget.api.discovery(summary: true),
-      widget.api.retailers(),
-      widget.api.discoveredStores(),
-      widget.api.savedDeals(),
-      widget.api.savedSources(),
-      widget.api.basket(),
-      widget.api.verifiedOfferCount(),
-      _voucherCount(),
-      _cachedTopDeals(),
+      or(widget.api.discovery(summary: true), _emptyDiscovery),
+      or(widget.api.retailers(summary: true), _emptyRetailers),
+      or(widget.api.discoveredStores(summary: true), _emptyDiscovered),
+      or(widget.api.savedDeals(), const <SavedDeal>[]),
+      or(widget.api.basket(), const Basket.empty()),
+      or(widget.api.voucherCount(), 0),
     ]);
+    // The on-device cache is not a network lane; its failure isn't "offline".
+    List<Deal> topDeals = const [];
+    try {
+      topDeals = await _cachedTopDeals();
+    } catch (_) {
+      // Cache misses are expected on first run.
+    }
     return _DashboardData(
       discovery: results[0] as DiscoveryResult,
       retailers: results[1] as RetailerCatalog,
       discovered: results[2] as DiscoveredStoresResult,
       savedDeals: results[3] as List<SavedDeal>,
-      savedSources: results[4] as List<SavedSource>,
-      basket: results[5] as Basket,
-      verifiedOfferCount: results[6] as int,
-      voucherCount: results[7] as int,
-      topDeals: results[8] as List<Deal>,
+      basket: results[4] as Basket,
+      voucherCount: results[5] as int,
+      topDeals: topDeals,
+      failedLaneCount: failedLanes,
     );
   }
 
-  Future<int> _voucherCount() async {
-    try {
-      return (await widget.api.vouchers()).length;
-    } catch (_) {
-      return 0;
-    }
-  }
+  static const _emptyDiscovery = DiscoveryResult(
+    deals: [],
+    foundDealCount: 0,
+    checkedSourceCount: 0,
+    unavailableSourceCount: 0,
+    leafletCount: 0,
+  );
+  static const _emptyRetailers =
+      RetailerCatalog(retailers: [], sourceKinds: []);
+  static const _emptyDiscovered = DiscoveredStoresResult(
+    stores: [],
+    storeCount: 0,
+    areaCount: 0,
+    knownChainCount: 0,
+    withPromotionsCount: 0,
+  );
 
   // The Find-deals cache is already on-device; showing the biggest live
   // markdowns from it costs nothing and gives the dashboard a reason to be
@@ -109,6 +134,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 planName: account?.planName ?? 'Free',
                 onRefresh: _refresh,
               ),
+              if (data.failedLaneCount > 0) ...[
+                const SizedBox(height: 10),
+                _OfflineBanner(onRetry: _refresh),
+              ],
               const SizedBox(height: 14),
               _SavingsHero(
                 summary: data.basket.summary,
@@ -148,7 +177,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _StatChip(
                     icon: PhosphorIconsFill.storefront,
                     value:
-                        '${data.retailers.retailers.length + data.discovered.storeCount}',
+                        '${data.retailers.retailerCount + data.discovered.storeCount}',
                     label: 'stores covered',
                     onTap: () => widget.onNavigate(AppDestination.stores),
                   ),
@@ -726,7 +755,11 @@ class _TopSavingsStrip extends StatelessWidget {
                   child: Container(
                     key: Key('top-saving-card-${deal.id}'),
                     width: 158,
-                    decoration: TS.card(context),
+                    // Fill behind, stroke in front: the full-bleed product
+                    // photo would otherwise cover the border's inner half at
+                    // the top corners and fade it.
+                    decoration: TS.cardFill(context),
+                    foregroundDecoration: TS.cardStroke(context),
                     clipBehavior: Clip.antiAlias,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -758,7 +791,8 @@ class _TopSavingsStrip extends StatelessWidget {
                               Text(deal.retailerName.toUpperCase(),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TS.eyebrowOf(context)
+                                  style: TS
+                                      .eyebrowOf(context)
                                       .copyWith(fontSize: 10)),
                               const SizedBox(height: 3),
                               Text(deal.title,
@@ -902,7 +936,8 @@ class _SavedDealCard extends StatelessWidget {
           child: Container(
             key: Key('saved-deal-card-${deal.id}'),
             width: 148,
-            decoration: TS.card(context),
+            decoration: TS.cardFill(context),
+            foregroundDecoration: TS.cardStroke(context),
             clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,26 +1114,60 @@ class _StatChip extends StatelessWidget {
       );
 }
 
+/// Shown when one or more dashboard lanes could not refresh, so empty stats
+/// are never mistaken for a real "you have nothing yet" state.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        border: Border.all(color: TS.lineOf(context), width: 2),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 18, color: TS.mutedOf(context)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Some of your data couldn’t refresh. Totals may be behind.',
+              style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
+      ),
+    );
+  }
+}
+
 class _DashboardData {
   const _DashboardData({
     required this.discovery,
     required this.retailers,
     required this.discovered,
     required this.savedDeals,
-    required this.savedSources,
     required this.basket,
-    required this.verifiedOfferCount,
     required this.topDeals,
     required this.voucherCount,
+    this.failedLaneCount = 0,
   });
 
   final DiscoveryResult discovery;
   final RetailerCatalog retailers;
   final DiscoveredStoresResult discovered;
   final List<SavedDeal> savedDeals;
-  final List<SavedSource> savedSources;
   final Basket basket;
-  final int verifiedOfferCount;
   final List<Deal> topDeals;
   final int voucherCount;
+
+  /// How many network lanes fell back to empty data during [._load]. Non-zero
+  /// means the zeros on screen may be connectivity, not reality.
+  final int failedLaneCount;
 }

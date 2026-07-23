@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -55,32 +56,74 @@ class Api {
   Api({
     http.Client? client,
     SessionCookieStore? cookieStore,
+    SessionSnapshotStore? sessionStore,
     bool? useBrowserCookies,
     this.baseUrl = 'https://trolleyscout.co.za',
+    this.requestTimeout = const Duration(seconds: 15),
+    this.slowRequestTimeout = const Duration(seconds: 75),
   })  : _client = client ?? createPlatformHttpClient(),
-        _cookieStore = cookieStore ?? SharedPreferencesSessionCookieStore(),
+        _cookieStore = cookieStore ?? SecureSessionCookieStore(),
+        _sessionStore = sessionStore ?? SecureSessionSnapshotStore(),
         _useBrowserCookies = useBrowserCookies ?? platformUsesBrowserCookies;
 
   final http.Client _client;
   final SessionCookieStore _cookieStore;
+  final SessionSnapshotStore _sessionStore;
   final bool _useBrowserCookies;
   final String baseUrl;
+  final Duration requestTimeout;
+
+  /// Timeout for endpoints that legitimately take a while server-side (live
+  /// scouting sweeps, multi-portal property searches). The default 15s window
+  /// misreports these as failures while the server is still working.
+  final Duration slowRequestTimeout;
 
   Future<MemberSession> session() async {
-    final data = await _request('GET', '/api/member-session');
-    return MemberSession.fromJson(_map(data['session']));
+    try {
+      final data = await _request('GET', '/api/member-session');
+      final session = MemberSession.fromJson(_map(data['session']));
+      await _cacheSession(session);
+      return session;
+    } on ApiException catch (error) {
+      final canUseSnapshot = error.statusCode == null ||
+          (error.statusCode != null && error.statusCode! >= 500);
+      final cached = canUseSnapshot ? await _readCachedSession() : null;
+      if (cached != null) {
+        return MemberSession(
+          isAuthenticated: true,
+          account: cached.account,
+          isOffline: true,
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<MemberSession> authenticate(AuthDraft draft) async {
     final data =
         await _request('POST', '/api/member-session', body: draft.toJson());
-    return MemberSession.fromJson(_map(data['session']));
+    final session = MemberSession.fromJson(_map(data['session']));
+    await _cacheSession(session);
+    return session;
   }
 
   Future<MemberSession> signOut() async {
-    final data = await _request('DELETE', '/api/member-session');
+    try {
+      final data = await _request('DELETE', '/api/member-session');
+      return MemberSession.fromJson(_map(data['session']));
+    } finally {
+      await clearLocalSession();
+    }
+  }
+
+  /// Removes the native session even when the server cannot be reached.
+  Future<void> clearLocalSession() async {
+    try {
+      await _sessionStore.clear();
+    } catch (_) {
+      // Cookie removal below is the security boundary for the live session.
+    }
     await _cookieStore.clear();
-    return MemberSession.fromJson(_map(data['session']));
   }
 
   Future<DiscoveryResult> discovery(
@@ -89,19 +132,49 @@ class Api {
     if (forceLive) query.add('refresh=1');
     if (summary) query.add('summary=1');
     final suffix = query.isEmpty ? '' : '?${query.join('&')}';
-    return DiscoveryResult.fromJson(
-        await _request('GET', '/api/discovery$suffix'));
+    return DiscoveryResult.fromJson(await _request(
+      'GET',
+      '/api/discovery$suffix',
+      // A forced live refresh re-scouts sources server-side and routinely
+      // outlives the standard timeout.
+      timeout: forceLive ? slowRequestTimeout : null,
+    ));
   }
 
   Future<List<Deal>> deals() async => (await discovery()).deals;
 
-  Future<DiscoveredStoresResult> discoveredStores() async =>
-      DiscoveredStoresResult.fromJson(
-          await _request('GET', '/api/discovered-stores'));
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+  }) async {
+    final parameters = <String, String>{};
+    if (summary) parameters['summary'] = '1';
+    if (limit != null) parameters['limit'] = '$limit';
+    if (offset > 0) parameters['offset'] = '$offset';
+    if (query.trim().isNotEmpty) parameters['q'] = query.trim();
+    if (!includeDetails) parameters['details'] = '0';
+    if (placeId?.trim().isNotEmpty == true) {
+      parameters['placeId'] = placeId!.trim();
+    }
+    final suffix =
+        parameters.isEmpty ? '' : '?${Uri(queryParameters: parameters).query}';
+    return DiscoveredStoresResult.fromJson(
+      await _request('GET', '/api/discovered-stores$suffix'),
+    );
+  }
 
   Future<List<Voucher>> vouchers() async {
     final data = await _request('GET', '/api/vouchers');
     return _maps(data['vouchers']).map(Voucher.fromJson).toList();
+  }
+
+  Future<int> voucherCount() async {
+    final data = await _request('GET', '/api/vouchers?summary=1');
+    return (data['summary']?['activeVoucherCount'] as num?)?.toInt() ?? 0;
   }
 
   Future<bool> claimVoucher(String voucherId) async {
@@ -122,10 +195,11 @@ class Api {
   }
 
   Future<RetailerCatalog> retailers(
-      {String query = '', String kind = 'all'}) async {
+      {String query = '', String kind = 'all', bool summary = false}) async {
     final parameters = <String, String>{};
     if (query.trim().isNotEmpty) parameters['q'] = query.trim();
     if (kind != 'all') parameters['kind'] = kind;
+    if (summary) parameters['summary'] = '1';
     final suffix =
         parameters.isEmpty ? '' : '?${Uri(queryParameters: parameters).query}';
     return RetailerCatalog.fromJson(
@@ -340,7 +414,11 @@ class Api {
       '/api/account',
       body: {'action': 'profile', 'displayName': displayName},
     );
-    return MemberAccount.fromJson(_map(data['account']));
+    final account = MemberAccount.fromJson(_map(data['account']));
+    await _cacheSession(
+      MemberSession(isAuthenticated: true, account: account),
+    );
+    return account;
   }
 
   Future<void> changePassword(
@@ -358,6 +436,48 @@ class Api {
 
   Future<AdminOverview> adminOverview() async {
     return AdminOverview.fromJson(await _request('GET', '/api/admin'));
+  }
+
+  /// Permanently deletes the signed-in account and its personal data. The
+  /// current password is re-verified server-side before anything is removed.
+  Future<void> deleteAccount({required String currentPassword}) async {
+    await _request('POST', '/api/account', body: {
+      'action': 'delete',
+      'currentPassword': currentPassword,
+    });
+    await clearLocalSession();
+  }
+
+  /// Sends a support message (bug report, feature request, question). Public
+  /// endpoint; the server links it to the signed-in account when present.
+  /// Returns the server's confirmation copy.
+  Future<String> submitSupportMessage({
+    required String name,
+    required String email,
+    required String topic,
+    required String message,
+  }) async {
+    final data = await _request('POST', '/api/support', body: {
+      'name': name,
+      'email': email,
+      'topic': topic,
+      'message': message,
+    });
+    final note = data['message'];
+    return note is String && note.isNotEmpty
+        ? note
+        : 'Thanks — your message has reached the team.';
+  }
+
+  /// Admin: mark a support message open/resolved. Returns the refreshed
+  /// console overview.
+  Future<AdminOverview> setSupportMessageStatus(
+      String messageId, String status) async {
+    return AdminOverview.fromJson(await _request('POST', '/api/admin', body: {
+      'action': 'set_support_status',
+      'messageId': messageId,
+      'status': status,
+    }));
   }
 
   /// Grants or revokes a single member's Properties Scout access. Admin only;
@@ -404,7 +524,13 @@ class Api {
     final qs = params.entries
         .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
         .join('&');
-    final data = await _request('GET', '/api/properties?$qs');
+    // Property search fans out to many portals server-side; give it the
+    // extended window instead of misreporting slow-but-successful searches.
+    final data = await _request(
+      'GET',
+      '/api/properties?$qs',
+      timeout: slowRequestTimeout,
+    );
     return PropertySearchResult.fromJson(data);
   }
 
@@ -486,7 +612,11 @@ class Api {
   /// MyRunway) for the endless Scroll reel. Public, no auth.
   Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async {
     final suffix = forceLive ? '?refresh=1' : '';
-    final data = await _request('GET', '/api/deal-sites$suffix');
+    final data = await _request(
+      'GET',
+      '/api/deal-sites$suffix',
+      timeout: forceLive ? slowRequestTimeout : null,
+    );
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
   }
 
@@ -598,6 +728,7 @@ class Api {
     String path, {
     Map<String, dynamic>? body,
     bool acceptErrorData = false,
+    Duration? timeout,
   }) async {
     final request = http.Request(method, Uri.parse('$baseUrl$path'));
     request.headers['accept'] = 'application/json';
@@ -613,20 +744,36 @@ class Api {
       }
     }
 
-    final streamed =
-        await _client.send(request).timeout(const Duration(seconds: 30));
-    final response = await http.Response.fromStream(streamed);
+    late final http.Response response;
+    try {
+      response = await (() async {
+        final streamed = await _client.send(request);
+        return http.Response.fromStream(streamed);
+      })()
+          .timeout(timeout ?? requestTimeout);
+    } on TimeoutException {
+      throw const ApiException('The request took too long. Try again.');
+    } catch (_) {
+      throw const ApiException(
+          'Could not connect. Check your connection and try again.');
+    }
     await _captureCookie(response);
 
     Map<String, dynamic> envelope = const {};
     if (response.body.isNotEmpty) {
-      final decoded = jsonDecode(response.body);
+      late final Object? decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        throw const ApiException(
+            'The server returned an invalid response. Try again.');
+      }
       if (decoded is Map) envelope = Map<String, dynamic>.from(decoded);
     }
     final data = _map(envelope['data']);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      if (response.statusCode == 401) await _cookieStore.clear();
+      if (response.statusCode == 401) await clearLocalSession();
       if (!acceptErrorData || data.isEmpty) {
         throw ApiException(
           _firstIssue(data) ??
@@ -650,6 +797,34 @@ class Api {
       await _cookieStore.clear();
     } else {
       await _cookieStore.write(cookie);
+    }
+  }
+
+  Future<void> _cacheSession(MemberSession session) async {
+    try {
+      if (!session.isAuthenticated || session.account == null) {
+        await _sessionStore.clear();
+        return;
+      }
+      await _sessionStore.write(jsonEncode(session.toJson()));
+    } catch (_) {
+      // A cache failure must not replace a valid server session.
+    }
+  }
+
+  Future<MemberSession?> _readCachedSession() async {
+    try {
+      final value = await _sessionStore.read();
+      if (value == null || value.isEmpty) return null;
+      final decoded = jsonDecode(value);
+      if (decoded is! Map) return null;
+      final session =
+          MemberSession.fromJson(Map<String, dynamic>.from(decoded));
+      return session.isAuthenticated && session.account?.id.isNotEmpty == true
+          ? session
+          : null;
+    } catch (_) {
+      return null;
     }
   }
 }

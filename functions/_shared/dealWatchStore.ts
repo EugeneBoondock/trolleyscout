@@ -101,11 +101,17 @@ export async function createDealWatch(
       .run()
 
     // Already watching the same item: hand back the existing watch instead.
-    const stored = (await listDealWatches(env, accountId)).find(
-      (candidate) => normalizeWatchQuery(candidate.queryText) === normalized,
+    // A direct lookup by the unique (account_id, normalized_query) key avoids
+    // re-listing every watch on the account just to find the one row we wrote.
+    const stored = await env.DB.prepare(
+      `SELECT id, query_text, normalized_query, created_at, matched_at, matched_deals_json, seen_at
+        FROM deal_watches
+        WHERE account_id = ? AND normalized_query = ?`,
     )
+      .bind(accountId, normalized)
+      .first<DealWatchRow>()
 
-    return { watch: stored ?? watch }
+    return { watch: stored ? rowToWatch(stored) : watch }
   } catch {
     return { issue: 'Could not save the watch. Try again.' }
   }
@@ -255,7 +261,7 @@ export async function matchPendingWatches(env: TrolleyScoutEnv): Promise<number>
   }
 
   const nowIso = new Date().toISOString()
-  let matched = 0
+  const statements: D1PreparedStatement[] = []
 
   for (const row of pending) {
     const matches = findWatchMatches(row.normalized_query, corpus)
@@ -264,19 +270,26 @@ export async function matchPendingWatches(env: TrolleyScoutEnv): Promise<number>
       continue
     }
 
-    try {
-      await env.DB.prepare(
+    statements.push(
+      env.DB.prepare(
         'UPDATE deal_watches SET matched_at = ?, matched_deals_json = ? WHERE id = ? AND matched_at IS NULL',
-      )
-        .bind(nowIso, JSON.stringify(matches), row.id)
-        .run()
-      matched += 1
-    } catch {
-      // Best-effort; the next sweep retries.
-    }
+      ).bind(nowIso, JSON.stringify(matches), row.id),
+    )
   }
 
-  return matched
+  if (statements.length === 0) {
+    return 0
+  }
+
+  try {
+    // One round trip for every match found this sweep, instead of one UPDATE
+    // per watch.
+    const results = await env.DB.batch(statements)
+    return results.filter((result) => result.meta.changes > 0).length
+  } catch {
+    // Best-effort; the next sweep retries.
+    return 0
+  }
 }
 
 function rowToWatch(row: DealWatchRow): DealWatch {

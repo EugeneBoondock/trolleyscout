@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'app_link_coordinator.dart';
+
 /// Thin wrapper around the local-notifications plugin. The periodic deal check
 /// uses immediate notifications, so no exact-alarm permission is needed.
 class DealNotifications {
@@ -23,13 +25,25 @@ class DealNotifications {
     try {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: darwin),
+        onDidReceiveNotificationResponse: _openNotification,
       );
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp == true &&
+          launch?.notificationResponse != null) {
+        _openNotification(launch!.notificationResponse!);
+      }
       _initialized = true;
       return true;
     } catch (error) {
       debugPrint('Notification init failed: $error');
       return false;
     }
+  }
+
+  void _openNotification(NotificationResponse response) {
+    final uri = Uri.tryParse(response.payload ?? '');
+    AppLinkCoordinator.instance
+        .publish(uri ?? Uri.parse('trolleyscout://deals'));
   }
 
   /// Asks the OS for permission (Android 13+, iOS). Returns true if granted or
@@ -94,7 +108,13 @@ class DealNotifications {
           : (count == 1
               ? '1 new deal just landed. Open the app to grab it.'
               : '$count new deals just landed. Open the app to grab them.');
-      await _plugin.show(1001, title, body, details);
+      await _plugin.show(
+        1001,
+        title,
+        body,
+        details,
+        payload: 'trolleyscout://deals',
+      );
       return true;
     } catch (error) {
       debugPrint('Show notification failed: $error');

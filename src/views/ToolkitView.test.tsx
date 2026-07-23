@@ -1,7 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { loadRetailers, searchProductPrices } from '../services/apiClient'
+import {
+  loadRetailers,
+  readMemberState,
+  searchProductPrices,
+  setMemberState,
+  type ResourceState,
+  type RetailerResource,
+} from '../services/apiClient'
 import { ToolkitView } from './ToolkitView'
 
 vi.mock('../services/apiClient', () => ({
@@ -38,12 +45,17 @@ vi.mock('../services/apiClient', () => ({
     },
   })),
   loadRetailers: vi.fn(),
+  readMemberState: vi.fn(async () => ({ ok: true, value: null })),
   searchProductPrices: vi.fn(),
+  setMemberState: vi.fn(async () => true),
 }))
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
   vi.clearAllMocks()
+  vi.mocked(readMemberState).mockResolvedValue({ ok: true, value: null })
+  vi.mocked(setMemberState).mockResolvedValue(true)
 })
 
 describe('automatic store comparison', () => {
@@ -134,6 +146,7 @@ describe('automatic store comparison', () => {
     render(<ToolkitView />)
 
     await screen.findByText('Checkers')
+    expect(setMemberState).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Item to compare'), { target: { value: 'white bread' } })
     fireEvent.click(screen.getByRole('button', { name: /Compare/ }))
 
@@ -150,4 +163,172 @@ describe('automatic store comparison', () => {
       within(comparison).getByText(/no public price search we can read/i),
     ).toBeTruthy()
   })
+
+  it('restores the account store choice and saves later changes for web and mobile', async () => {
+    vi.mocked(readMemberState).mockResolvedValue({ ok: true, value: ['shoprite'] })
+    vi.mocked(loadRetailers).mockResolvedValue({
+      data: {
+        country: { code: 'ZA', currencyCode: 'ZAR', flag: 'ZA', name: 'South Africa' },
+        retailers: [
+          {
+            accentColor: '#000',
+            group: 'Supermarket',
+            id: 'checkers',
+            name: 'Checkers',
+            program: '',
+            shortName: 'Checkers',
+            sourceNote: '',
+            sources: [],
+            verifiedOn: '2026-07-21',
+          },
+          {
+            accentColor: '#000',
+            group: 'Supermarket',
+            id: 'shoprite',
+            name: 'Shoprite',
+            program: '',
+            shortName: 'Shoprite',
+            sourceNote: '',
+            sources: [],
+            verifiedOn: '2026-07-21',
+          },
+        ],
+        summary: {
+          dataPolicy: '',
+          retailerCount: 2,
+          sourceCount: 0,
+          sourceKinds: [],
+          verifiedOfferCount: 0,
+        },
+      },
+      message: 'API live.',
+      meta: { generatedAt: '2026-07-21T12:00:00.000Z', source: 'cloudflare-pages' },
+      status: 'ready',
+    })
+
+    render(<ToolkitView preferenceOwnerId="member-1" />)
+
+    const shoprite = await screen.findByLabelText('Shoprite') as HTMLInputElement
+    const checkers = screen.getByLabelText('Checkers') as HTMLInputElement
+    expect(shoprite.checked).toBe(true)
+    expect(checkers.checked).toBe(false)
+    expect(screen.getByText(/Your choice is saved across web and mobile/)).toBeTruthy()
+
+    fireEvent.click(checkers)
+
+    await waitFor(() => {
+      expect(setMemberState).toHaveBeenCalledWith(
+        'compare_retailers_v1',
+        expect.objectContaining({
+          ids: ['shoprite', 'checkers'],
+          updatedAt: expect.any(Number),
+        }),
+      )
+    })
+    expect(JSON.parse(localStorage.getItem('ts_compare_retailers_v1:member-1') ?? '{}'))
+      .toEqual(expect.objectContaining({
+        ids: ['shoprite', 'checkers'],
+        updatedAt: expect.any(Number),
+      }))
+  })
+
+  it('carries a public store choice into the first signed-in compare session', async () => {
+    localStorage.setItem('ts_compare_retailers_v1', JSON.stringify({
+      ids: ['shoprite'],
+      updatedAt: 200,
+    }))
+    vi.mocked(loadRetailers).mockResolvedValue(retailerState())
+
+    render(<ToolkitView preferenceOwnerId="new-member" />)
+
+    expect((await screen.findByLabelText('Shoprite') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('Checkers') as HTMLInputElement).checked).toBe(false)
+    expect(JSON.parse(localStorage.getItem('ts_compare_retailers_v1:new-member') ?? '{}'))
+      .toEqual({ ids: ['shoprite'], updatedAt: 200 })
+    await waitFor(() => {
+      expect(setMemberState).toHaveBeenCalledWith(
+        'compare_retailers_v1',
+        { ids: ['shoprite'], updatedAt: 200 },
+      )
+    })
+  })
+
+  it('does not upload local defaults when the account read failed', async () => {
+    localStorage.setItem('ts_compare_retailers_v1:member-1', JSON.stringify({
+      ids: ['checkers'],
+      updatedAt: 300,
+    }))
+    vi.mocked(readMemberState).mockResolvedValue({ ok: false, value: null })
+    vi.mocked(loadRetailers).mockResolvedValue(retailerState())
+
+    render(<ToolkitView preferenceOwnerId="member-1" />)
+
+    expect((await screen.findByLabelText('Checkers') as HTMLInputElement).checked).toBe(true)
+    expect(setMemberState).not.toHaveBeenCalled()
+  })
+
+  it('keeps and retries a newer local choice when the server copy is stale', async () => {
+    localStorage.setItem('ts_compare_retailers_v1:member-1', JSON.stringify({
+      ids: ['checkers'],
+      updatedAt: 300,
+    }))
+    vi.mocked(readMemberState).mockResolvedValue({
+      ok: true,
+      value: { ids: ['shoprite'], updatedAt: 200 },
+    })
+    vi.mocked(loadRetailers).mockResolvedValue(retailerState())
+
+    render(<ToolkitView preferenceOwnerId="member-1" />)
+
+    expect((await screen.findByLabelText('Checkers') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByLabelText('Shoprite') as HTMLInputElement).checked).toBe(false)
+    await waitFor(() => {
+      expect(setMemberState).toHaveBeenCalledWith(
+        'compare_retailers_v1',
+        { ids: ['checkers'], updatedAt: 300 },
+      )
+    })
+  })
 })
+
+function retailerState(): ResourceState<RetailerResource> {
+  return {
+    data: {
+      country: { code: 'ZA', currencyCode: 'ZAR', flag: 'ZA', name: 'South Africa' },
+      retailers: [
+        {
+          accentColor: '#000',
+          group: 'Supermarket',
+          id: 'checkers',
+          name: 'Checkers',
+          program: '',
+          shortName: 'Checkers',
+          sourceNote: '',
+          sources: [],
+          verifiedOn: '2026-07-21',
+        },
+        {
+          accentColor: '#000',
+          group: 'Supermarket',
+          id: 'shoprite',
+          name: 'Shoprite',
+          program: '',
+          shortName: 'Shoprite',
+          sourceNote: '',
+          sources: [],
+          verifiedOn: '2026-07-21',
+        },
+      ],
+      summary: {
+        dataPolicy: '',
+        retailerCount: 2,
+        sourceCount: 0,
+        sourceKinds: [],
+        verifiedOfferCount: 0,
+      },
+    },
+    message: 'API live.',
+    meta: { generatedAt: '2026-07-21T12:00:00.000Z', source: 'cloudflare-pages' },
+    status: 'ready' as const,
+  }
+}

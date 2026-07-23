@@ -49,6 +49,11 @@ describe('matchKnownRetailer', () => {
   test('returns undefined for an unknown independent store', () => {
     expect(matchKnownRetailer("Thabo's Corner Store")).toBeUndefined()
   })
+
+  test('does not tag a LiquorShop as a grocery branch', () => {
+    expect(matchKnownRetailer('Checkers LiquorShop Rosebank')).toBeUndefined()
+    expect(matchKnownRetailer('Shoprite Liquor Shop Cape Town')).toBeUndefined()
+  })
 })
 
 describe('mapGeoapifyStores', () => {

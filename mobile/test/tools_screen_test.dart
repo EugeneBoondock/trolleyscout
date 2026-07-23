@@ -26,6 +26,8 @@ class _ToolsApi extends Api {
 
   @override
   Future<RetailerCatalog> retailers(
-          {String query = '', String kind = 'all'}) async =>
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
       const RetailerCatalog(retailers: [], sourceKinds: []);
 }

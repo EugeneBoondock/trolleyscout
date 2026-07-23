@@ -175,7 +175,7 @@ export function extractPublicVoucherCandidates(input: {
 function extractInlineCodeCandidates(html: string) {
   const text = normalizeText(stripTags(html))
   const pattern =
-    /\b(?:use|with|enter|apply)\s+(?:the\s+)?(?:promo\s+|voucher\s+|discount\s+|coupon\s+)?code\s*[:\-]?\s*([A-Z0-9][A-Z0-9-]{2,19})\b/gi
+    /\b(?:use|with|enter|apply)\s+(?:the\s+)?(?:promo\s+|voucher\s+|discount\s+|coupon\s+)?code\s*[:-]?\s*([A-Z0-9][A-Z0-9-]{2,19})\b/gi
   const found: Array<{ benefitText: string; code: string }> = []
   const seen = new Set<string>()
   let match: RegExpExecArray | null

@@ -3,12 +3,15 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DiscoveredStoreDirectory } from './App'
 import type { DiscoveredStoresResource } from './services/apiClient'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 const resource: DiscoveredStoresResource = {
   stores: [
@@ -92,6 +95,36 @@ describe('DiscoveredStoreDirectory', () => {
     )
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Weekly catalogue' })).toBeNull()
+  })
+
+  it('loads branch-specific promotions only after a compact branch is opened', async () => {
+    const compact: DiscoveredStoresResource = {
+      ...resource,
+      stores: [{
+        ...resource.stores[0],
+        detailsLoaded: false,
+        promotions: [],
+      }],
+    }
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          stores: [{ ...resource.stores[0], detailsLoaded: true }],
+          summary: resource.summary,
+        },
+      }), { headers: { 'content-type': 'application/json' }, status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    render(<DiscoveredStoreDirectory discovered={compact} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Pick n Pay.*1 location/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Pick n Pay Central deals/i }))
+
+    expect(await screen.findByText('Rice 2kg')).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/discovered-stores?placeId=pnp-central',
+      expect.any(Object),
+    )
   })
 
   it('renders every retailer group in the national directory', () => {

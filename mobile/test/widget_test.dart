@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/app_link_coordinator.dart';
 import 'package:trolley_scout/main.dart';
 import 'package:trolley_scout/screens/dashboard_screen.dart';
-import 'package:trolley_scout/screens/home_screen.dart';
+import 'package:trolley_scout/screens/deals_screen.dart';
+import 'package:trolley_scout/screens/stores_screen.dart';
+import 'package:trolley_scout/session_cookie_store.dart';
+import 'package:trolley_scout/theme.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -20,6 +24,36 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Next'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Log in'), findsOneWidget);
     expect(find.byTooltip('Open navigation menu'), findsNothing);
+  });
+
+  testWidgets('onboarding uses new Scout scenes and rounded actions',
+      (tester) async {
+    await tester
+        .pumpWidget(_testApp(_FakeApi(const MemberSession.signedOut())));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    Finder asset(String name) => find.byWidgetPredicate((widget) =>
+        widget is Image &&
+        widget.image is AssetImage &&
+        (widget.image as AssetImage).assetName == name);
+
+    expect(asset('assets/onboarding/scout-budget.png'), findsOneWidget);
+    final next =
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Next'));
+    final shape = next.style?.shape?.resolve(<WidgetState>{});
+    expect(shape, isA<RoundedRectangleBorder>());
+    expect(
+      (shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(TS.controlRadius),
+    );
+
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(asset('assets/onboarding/scout-window.png'), findsOneWidget);
+
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(asset('assets/onboarding/scout-home.png'), findsOneWidget);
   });
 
   testWidgets('onboarding opens the account form and can switch to log in',
@@ -39,6 +73,7 @@ void main() {
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Display name'), findsNothing);
+    expect(find.text('Forgot password?'), findsOneWidget);
   });
 
   testWidgets('drawer contains every consumer destination once signed in',
@@ -57,7 +92,7 @@ void main() {
       'Saved deals',
       'Basket',
       'Subscription',
-      'Profile',
+      'Settings',
       'About & help',
     ]) {
       expect(
@@ -81,19 +116,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(DashboardScreen), findsOneWidget);
-    expect(find.byType(HomeScreen), findsNothing);
 
     final navigation = tester.widget<NavigationBar>(find.byType(NavigationBar));
     final firstDestination = tester.widget<NavigationDestination>(
         find.byType(NavigationDestination).first);
     expect(navigation.selectedIndex, 0);
     expect(navigation.height, 64);
-    expect(firstDestination.label, 'Dashboard');
+    expect(firstDestination.label, 'Home');
     expect(
       tester
           .widgetList<NavigationDestination>(find.byType(NavigationDestination))
           .map((destination) => destination.label),
-      ['Dashboard', 'Stores', 'Near me', 'Deals', 'Window'],
+      ['Home', 'Stores', 'Near me', 'Deals', 'Window'],
     );
     expect(find.text('Money'), findsNothing);
 
@@ -123,7 +157,6 @@ void main() {
     await _logIn(tester);
 
     expect(find.byType(DashboardScreen), findsOneWidget);
-    expect(find.byType(HomeScreen), findsNothing);
   });
 
   testWidgets('sign out prepares Dashboard for the next login', (tester) async {
@@ -135,13 +168,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(find.byTooltip('Sign out'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Sign out?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Stretch your budget'), findsOneWidget);
+    expect(tester.widget<RootShell>(find.byType(RootShell)).controller.busy,
+        isFalse);
 
     await _logIn(tester);
 
+    expect(api.currentSession.isAuthenticated, isTrue);
+    expect(
+        tester
+            .widget<RootShell>(find.byType(RootShell))
+            .controller
+            .session
+            .isAuthenticated,
+        isTrue);
     expect(find.byType(DashboardScreen), findsOneWidget);
-    expect(find.byType(HomeScreen), findsNothing);
   });
 
   testWidgets('profile sign out and re-login returns to Dashboard',
@@ -153,9 +198,9 @@ void main() {
     await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.byTooltip('Profile'));
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Your profile'), findsOneWidget);
+    expect(find.text('Settings'), findsWidgets);
 
     final rootShell = tester.widget<RootShell>(find.byType(RootShell));
     await rootShell.controller.signOut();
@@ -165,7 +210,61 @@ void main() {
     await _logIn(tester);
 
     expect(find.byType(DashboardScreen), findsOneWidget);
-    expect(find.text('Your profile'), findsNothing);
+    expect(find.text('Settings'), findsNothing);
+  });
+
+  testWidgets('system back returns secondary destinations to Dashboard',
+      (tester) async {
+    await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.byIcon(Icons.storefront_outlined),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        0);
+    expect(find.byType(DashboardScreen), findsOneWidget);
+  });
+
+  testWidgets('app links open a destination in a signed-in session',
+      (tester) async {
+    await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    AppLinkCoordinator.instance
+        .publish(Uri.parse('trolleyscout://stores?test=signed-in'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(StoresScreen), findsOneWidget);
+  });
+
+  testWidgets('app links wait for login before opening member content',
+      (tester) async {
+    final api = _FakeApi(
+      const MemberSession.signedOut(),
+      authenticatedSession: _memberSession,
+    );
+    await tester.pumpWidget(_testApp(api));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    AppLinkCoordinator.instance.publish(
+      Uri.parse('trolleyscout://deals?q=milk&test=after-login'),
+    );
+    await tester.pump();
+    expect(find.byType(DealsScreen), findsNothing);
+
+    await _logIn(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(DealsScreen), findsOneWidget);
   });
 
   testWidgets('admin session sees the role-gated console', (tester) async {
@@ -176,7 +275,7 @@ void main() {
     expect(api.sessionCalls, 1);
     expect(api.currentSession.isAuthenticated, isTrue);
     expect(find.byTooltip('Sign out'), findsOneWidget);
-    expect(find.byTooltip('Profile'), findsOneWidget);
+    expect(find.byTooltip('Settings'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pump(const Duration(milliseconds: 500));
@@ -202,7 +301,11 @@ Future<void> _logIn(WidgetTester tester) async {
 
 class _FakeApi extends Api {
   _FakeApi(this.currentSession, {this.authenticatedSession})
-      : super(baseUrl: 'https://example.test');
+      : super(
+          baseUrl: 'https://example.test',
+          cookieStore: MemorySessionCookieStore(),
+          sessionStore: MemorySessionSnapshotStore(),
+        );
 
   MemberSession currentSession;
   final MemberSession? authenticatedSession;
@@ -233,11 +336,20 @@ class _FakeApi extends Api {
 
   @override
   Future<RetailerCatalog> retailers(
-          {String query = '', String kind = 'all'}) async =>
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
       const RetailerCatalog(retailers: [], sourceKinds: []);
 
   @override
-  Future<DiscoveredStoresResult> discoveredStores() async =>
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+  }) async =>
       const DiscoveredStoresResult(
         stores: [],
         storeCount: 0,
@@ -268,6 +380,9 @@ class _FakeApi extends Api {
 
   @override
   Future<int> verifiedOfferCount() async => 0;
+
+  @override
+  Future<int> voucherCount() async => 0;
 
   @override
   Future<List<DealWatch>> dealWatches() async => const [];

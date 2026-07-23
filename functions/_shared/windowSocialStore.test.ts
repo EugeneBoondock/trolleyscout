@@ -43,6 +43,12 @@ describe('listWindowSaves', () => {
             },
           }
         },
+        // Stale saves are now deleted via a single batched DELETE (see
+        // deleteRowsById) instead of one run() per row, so the fake D1 needs
+        // a batch() that executes each already-bound statement in order.
+        async batch(statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>) {
+          return Promise.all(statements.map((statement) => statement.run()))
+        },
       },
     }
 

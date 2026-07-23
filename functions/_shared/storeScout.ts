@@ -42,10 +42,19 @@ import {
   type PlatformDeal,
 } from '../../src/services/dealPlatform'
 import {
+  DEFAULT_COMMON_COMMERCE_PAGE_SIZE,
+  MAX_COMMON_COMMERCE_PAGES,
+  buildCommonCommerceDealsRequest,
+  commonCommercePayloadItemCount,
+  detectCommonCommercePlatform,
+  parseCommonCommerceDeals,
+  type CommonCommercePlatform,
+} from '../../src/services/commonCommerceDeals'
+import {
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
   saveStorePromotions,
-  shouldScoutStore,
+  claimStoreScout,
   type StoreScoutOutcomeStatus,
   type StorePromotion,
 } from './locationStore'
@@ -154,7 +163,10 @@ export async function scoutNearbyStores(
     const isDueQueueItem =
       typeof queuedNextScoutAt === 'string' && queuedNextScoutAt <= nowIso
 
-    if (isDueQueueItem || await shouldScoutStore(env, store.placeId, nowIso)) {
+    // claimStoreScout is an atomic claim, so concurrent nearby searches around
+    // the same due store scrape it exactly once. Cron queue items are already
+    // due-filtered upstream and keep their fast path.
+    if (isDueQueueItem || await claimStoreScout(env, store.placeId, nowIso)) {
       candidates.push(store)
     }
 
@@ -235,6 +247,13 @@ async function scoutStructuredFeedsForStores(
     }
 
     try {
+      // Cooldown before touching the upstream feed: the hourly cron already
+      // sweeps every source, so a nearby search only tops a retailer up when
+      // nothing has run recently. Without this, every shopper near a chain
+      // store re-scraped that chain's API on each location refresh.
+      if (await ranStructuredFeedRecently(env, retailerSources.map((source) => source.key))) {
+        continue
+      }
       // Bounded: a near-me search advances the retailer's feed by a couple of
       // requests, not a full re-crawl (the cron sweep does the deep pass).
       const result = await runStructuredRetailerFeedScout(env, {
@@ -250,6 +269,37 @@ async function scoutStructuredFeedsForStores(
   }
 
   return retailersWithDeals
+}
+
+// A request-path feed top-up is skipped when any of the retailer's sources ran
+// inside this window. The hourly cron is the real cadence; this only exists so
+// a brand-new region isn't empty until the next cron tick.
+const STRUCTURED_FEED_REQUEST_COOLDOWN_MS = 15 * 60 * 1000
+
+async function ranStructuredFeedRecently(
+  env: TrolleyScoutEnv,
+  sourceKeys: string[],
+): Promise<boolean> {
+  if (!env.DB || sourceKeys.length === 0) {
+    return false
+  }
+
+  const cutoff = new Date(Date.now() - STRUCTURED_FEED_REQUEST_COOLDOWN_MS).toISOString()
+  const placeholders = sourceKeys.map(() => '?').join(', ')
+
+  try {
+    const row = await env.DB.prepare(
+      `SELECT 1 AS ran FROM deal_source_runs
+        WHERE source_key IN (${placeholders}) AND finished_at >= ?
+        LIMIT 1`,
+    )
+      .bind(...sourceKeys, cutoff)
+      .first<{ ran: number }>()
+    return Boolean(row?.ran)
+  } catch {
+    // If the audit table is missing (mid-migration), keep the old behavior.
+    return false
+  }
 }
 
 async function scoutStore(
@@ -364,13 +414,27 @@ async function searchStoreCatalogue(
   const pageUrl = page.finalUrl ?? source.url
   const deals = extractPublicStoreDeals(store, page.text, pageUrl, nowMs)
   const leaflets = officialLeaflets(store, page.text, pageUrl, officialOrigin, nowMs)
+  let commonCommerceTransient = false
 
   if (deals.length > 0 || leaflets.length > 0) {
     return outcome('success', [...deals, ...leaflets])
   }
 
+  const commonCommerce = detectCommonCommercePlatform(page.text)
+  if (commonCommerce) {
+    const platform = await scoutCommonCommercePlatform(
+      store,
+      commonCommerce.platform,
+      officialOrigin,
+    )
+    if (platform.promotions.length > 0) {
+      return platform
+    }
+    commonCommerceTransient = platform.status === 'transient_failure'
+  }
+
   if (!isPromotionalSource(pageUrl, source.title, page.text)) {
-    return outcome('empty')
+    return outcome(commonCommerceTransient ? 'transient_failure' : 'empty')
   }
 
   const dates = extractValidDates(
@@ -380,7 +444,7 @@ async function searchStoreCatalogue(
   validFrom = dates.validFrom
   validTo = dates.validTo
 
-  return outcome('success', [
+  return outcome(commonCommerceTransient ? 'transient_failure' : 'success', [
     {
       id: `${store.placeId}-search-${hashString(source.url)}`,
       kind: 'catalogue',
@@ -458,7 +522,13 @@ function platformDealToPromotion(
   store: NearbyStore,
   deal: PlatformDeal,
   sourceUrl: string,
+  scopeLabel?: string,
 ): StorePromotion {
+  const savingText = deal.promoLabel ?? (
+    deal.previousPriceCents !== undefined && deal.previousPriceCents > deal.priceCents
+      ? `Save ${storeMoneyText(store, deal.previousPriceCents - deal.priceCents)}`
+      : undefined
+  )
   return {
     id: `${store.placeId}-platform-${hashString(deal.title + (deal.productUrl ?? ''))}`,
     imageUrl: deal.imageUrl,
@@ -466,12 +536,12 @@ function platformDealToPromotion(
     placeId: store.placeId,
     previousPriceText:
       deal.previousPriceCents !== undefined
-        ? `R${(deal.previousPriceCents / 100).toFixed(2)}`
+        ? storeMoneyText(store, deal.previousPriceCents)
         : undefined,
-    priceText: `R${(deal.priceCents / 100).toFixed(2)}`,
+    priceText: storeMoneyText(store, deal.priceCents),
     productUrl: deal.productUrl ?? sourceUrl,
     retailerId: store.retailerId,
-    savingText: deal.promoLabel,
+    savingText: [scopeLabel, savingText].filter(Boolean).join(' · ') || undefined,
     sourceUrl: deal.productUrl ?? sourceUrl,
     storeName: store.name,
     title: deal.title,
@@ -558,6 +628,24 @@ async function scoutStoreWebsite(
             : await scoutAlgoliaPlatform(store, detection, origin)
       if (platform.promotions.length > 0) {
         return platform
+      }
+      if (platform.status === 'transient_failure') {
+        sawTransientFailure = true
+      }
+    }
+
+    const commonCommerce = detectCommonCommercePlatform(page.text)
+    if (commonCommerce) {
+      const platform = await scoutCommonCommercePlatform(
+        store,
+        commonCommerce.platform,
+        origin,
+      )
+      if (platform.promotions.length > 0) {
+        return platform
+      }
+      if (platform.status === 'transient_failure') {
+        sawTransientFailure = true
       }
     }
   }
@@ -722,6 +810,94 @@ async function scoutAlgoliaPlatform(
   }
 }
 
+async function scoutCommonCommercePlatform(
+  store: NearbyStore,
+  platform: CommonCommercePlatform,
+  origin: string,
+): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const deals: PlatformDeal[] = []
+  const seen = new Set<string>()
+
+  try {
+    for (let page = 1; page <= MAX_COMMON_COMMERCE_PAGES; page += 1) {
+      const request = buildCommonCommerceDealsRequest(
+        platform,
+        origin,
+        DEFAULT_COMMON_COMMERCE_PAGE_SIZE,
+        page,
+      )
+      if (!request) {
+        break
+      }
+      const response = await fetch(request.url, {
+        ...request.init,
+        headers: {
+          ...request.init.headers,
+          'user-agent': BROWSER_UA,
+        },
+        signal: controller.signal,
+      })
+      if (
+        response.status === 408 ||
+        response.status === 425 ||
+        response.status === 429 ||
+        response.status >= 500
+      ) {
+        return deals.length > 0
+          ? commonCommerceOutcome(store, deals, origin)
+          : outcome('transient_failure')
+      }
+      if (!response.ok) {
+        break
+      }
+      const text = await readBoundedBody(response, MAX_BODY_BYTES)
+      const payload = JSON.parse(text) as unknown
+      const pageDeals = parseCommonCommerceDeals(platform, payload, origin)
+      for (const deal of pageDeals) {
+        const key = deal.productUrl ?? deal.title
+        if (!seen.has(key) && deals.length < MAX_PLATFORM_DEALS) {
+          seen.add(key)
+          deals.push(deal)
+        }
+      }
+      if (
+        deals.length >= MAX_PLATFORM_DEALS ||
+        commonCommercePayloadItemCount(platform, payload) < DEFAULT_COMMON_COMMERCE_PAGE_SIZE
+      ) {
+        break
+      }
+    }
+    return deals.length > 0 ? commonCommerceOutcome(store, deals, origin) : outcome('empty')
+  } catch (error) {
+    if (deals.length > 0) {
+      return commonCommerceOutcome(store, deals, origin)
+    }
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function commonCommerceOutcome(
+  store: NearbyStore,
+  deals: PlatformDeal[],
+  origin: string,
+): ScoutOutcome {
+  return outcome(
+    'success',
+    deals.map((deal) => platformDealToPromotion(store, deal, origin, 'Online catalogue')),
+  )
+}
+
+function storeMoneyText(store: NearbyStore, cents: number): string {
+  const currencyCode = countryFromCode(store.countryCode).currencyCode
+  return currencyCode === 'ZAR'
+    ? `R${(cents / 100).toFixed(2)}`
+    : `${currencyCode} ${(cents / 100).toFixed(2)}`
+}
+
 async function readStorePathCursor(
   env: TrolleyScoutEnv,
   sourceKey: string,
@@ -783,7 +959,12 @@ async function scoutShopriteGroupBranch(
   nowMs: number,
 ): Promise<ScoutOutcome> {
   const config = store.retailerId ? SHOPRITE_GROUP_CHAINS[store.retailerId] : undefined
-  if (!config || !Number.isFinite(store.lat) || !Number.isFinite(store.lon)) {
+  if (
+    !config ||
+    /\bliquor(?:\s*shop)?\b/i.test(store.name) ||
+    !Number.isFinite(store.lat) ||
+    !Number.isFinite(store.lon)
+  ) {
     return outcome('permanent_unverified')
   }
 
@@ -792,7 +973,7 @@ async function scoutShopriteGroupBranch(
   if (stores.status !== 'success') {
     return outcome(stores.status)
   }
-  const storeId = selectNearestBranchId(stores.json, config)
+  const storeId = selectNearestBranchId(stores.json, config, store.name)
   if (!storeId) {
     return outcome('permanent_unverified')
   }

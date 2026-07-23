@@ -4,6 +4,8 @@
 // itself is fetched from the API and drives the pickers; this file just prices a
 // choice locally and formats rand.
 
+import 'widgets/common.dart' show formatMoney;
+
 class AdRateCard {
   const AdRateCard({
     required this.perPersonCents,
@@ -113,8 +115,4 @@ class AdPlacementOption {
 }
 
 /// "R2000" for whole rand, "R100.50" when there are cents.
-String formatRandFromCents(int cents) {
-  final amount = cents / 100;
-  final isWhole = amount == amount.roundToDouble();
-  return 'R${isWhole ? amount.toStringAsFixed(0) : amount.toStringAsFixed(2)}';
-}
+String formatRandFromCents(int cents) => formatMoney(cents);

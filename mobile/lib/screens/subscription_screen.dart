@@ -6,9 +6,14 @@ import '../theme.dart';
 import '../widgets/common.dart';
 
 class SubscriptionScreen extends StatefulWidget {
-  const SubscriptionScreen({super.key, required this.api});
+  const SubscriptionScreen({
+    super.key,
+    required this.api,
+    this.openCheckout,
+  });
 
   final Api api;
+  final Future<bool> Function(BuildContext, SubscriptionCheckout)? openCheckout;
 
   @override
   State<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -39,14 +44,50 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         _future = widget.api.subscription();
       });
 
-  Future<void> _choose(MemberPlan plan) async {
+  Future<void> _choose(MemberPlan plan, String? currentPlanId) async {
+    if (!plan.isPaid && currentPlanId != null && currentPlanId != 'free') {
+      final confirmed = await confirmAction(
+        context,
+        title: 'Switch to Free?',
+        message:
+            'Your paid plan will remain active until the end of its current billing period.',
+        confirmLabel: 'Schedule change',
+      );
+      if (!confirmed || !mounted) return;
+    }
     setState(() => _busyPlan = plan.id);
     try {
       final checkout = await widget.api.checkout(plan.id, _billingCycle);
       if (!mounted) return;
-      final opened = await openPayFastCheckout(context, checkout);
-      if (opened && mounted) _reload();
-      if (mounted) showNotice(context, checkout.message);
+      if (checkout.status == 'active' || checkout.status == 'scheduled') {
+        _reload();
+        showNotice(context, checkout.message);
+        return;
+      }
+      final hasCheckout = checkout.redirectUrl != null ||
+          (checkout.engineUrl != null && checkout.onsiteUuid != null);
+      if (!hasCheckout) {
+        showNotice(
+            context,
+            checkout.message.isEmpty
+                ? 'Checkout is unavailable. Try again later.'
+                : checkout.message);
+        return;
+      }
+      final opened = await (widget.openCheckout ?? openPayFastCheckout)(
+        context,
+        checkout,
+      );
+      if (!mounted) return;
+      if (opened) {
+        _reload();
+        showNotice(
+          context,
+          'Checkout opened. Your plan updates after PayFast confirms payment.',
+        );
+      } else {
+        showNotice(context, 'Checkout closed. No plan change was made.');
+      }
     } on ApiException catch (error) {
       if (mounted) showNotice(context, error.message);
     } finally {
@@ -186,7 +227,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         onPressed:
                             data.account?.planId == plan.id || _busyPlan != null
                                 ? null
-                                : () => _choose(plan),
+                                : () => _choose(plan, data.account?.planId),
                         child: Text(
                           data.account?.planId == plan.id
                               ? 'Current plan'

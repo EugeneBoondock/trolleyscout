@@ -1,7 +1,12 @@
 import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
-import { claimVoucher, listActiveVouchers, unclaimVoucher } from '../_shared/voucherStore'
+import {
+  claimVoucher,
+  countActiveVouchers,
+  listActiveVouchers,
+  unclaimVoucher,
+} from '../_shared/voucherStore'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -18,6 +23,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   if (request.method === 'GET') {
     const url = new URL(request.url)
+    if (url.searchParams.get('summary') === '1') {
+      return json(
+        {
+          summary: { activeVoucherCount: await countActiveVouchers(env) },
+          vouchers: [],
+        },
+        { headers: privateHeaders },
+      )
+    }
     const limit = boundedQueryInteger(url.searchParams.get('limit'), 100, 1, 200)
     const offset = boundedQueryInteger(url.searchParams.get('offset'), 0, 0, 10_000)
     const retailerValue = url.searchParams.get('retailerId')?.trim() || ''

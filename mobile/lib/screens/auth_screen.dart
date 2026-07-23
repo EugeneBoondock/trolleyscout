@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../app_controller.dart';
@@ -69,6 +70,17 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Future<void> _openPasswordHelp() async {
+    final opened = await launchUrl(
+      Uri.parse('https://trolleyscout.co.za/support?topic=account'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!mounted || opened) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Password help could not be opened. Try again later.'),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -85,128 +97,144 @@ class _AuthScreenState extends State<AuthScreen> {
                   key: _formKey,
                   child: AutofillGroup(
                     child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.asset('assets/scout-logo.png',
-                              width: 64, height: 64),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text('MEMBER WORKSPACE', style: TS.eyebrowOf(context)),
-                      const SizedBox(height: 8),
-                      Text(
-                        _isSignUp ? 'Create your account' : 'Welcome back',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium
-                            ?.merge(TS.display),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _isSignUp
-                            ? 'Sign up free to save deals and sources, plan a basket, and keep your lists across devices. No card needed.'
-                            : 'Log in to your saved deals, sources, and basket.',
-                      ),
-                      const SizedBox(height: 20),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(
-                              value: 'signup', label: Text('Sign up')),
-                          ButtonSegment(value: 'login', label: Text('Log in')),
-                        ],
-                        selected: {_intent},
-                        onSelectionChanged: (value) =>
-                            setState(() => _intent = value.first),
-                      ),
-                      const SizedBox(height: 20),
-                      if (_isSignUp) ...[
-                        TextFormField(
-                          controller: _displayName,
-                          autofillHints: const [AutofillHints.name],
-                          decoration:
-                              const InputDecoration(labelText: 'Display name'),
-                          textInputAction: TextInputAction.next,
-                          validator: (value) => (value ?? '').trim().length < 2
-                              ? 'Enter your display name.'
-                              : null,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.asset('assets/scout-logo.png',
+                                width: 64, height: 64),
+                          ),
                         ),
                         const SizedBox(height: 14),
-                      ],
-                      TextFormField(
-                        controller: _email,
-                        autofillHints: const [AutofillHints.email],
-                        decoration: const InputDecoration(labelText: 'Email'),
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        validator: (value) {
-                          final email = (value ?? '').trim();
-                          return email.contains('@') && email.contains('.')
-                              ? null
-                              : 'Enter a valid email address.';
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _password,
-                        autofillHints: [
+                        Text('MEMBER WORKSPACE', style: TS.eyebrowOf(context)),
+                        const SizedBox(height: 8),
+                        Text(
+                          _isSignUp ? 'Create your account' : 'Welcome back',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.merge(TS.display),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
                           _isSignUp
-                              ? AutofillHints.newPassword
-                              : AutofillHints.password,
+                              ? 'Sign up free to save deals and sources, plan a basket, and keep your lists across devices. No card needed.'
+                              : 'Log in to your saved deals, sources, and basket.',
+                        ),
+                        const SizedBox(height: 20),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(
+                                value: 'signup', label: Text('Sign up')),
+                            ButtonSegment(
+                                value: 'login', label: Text('Log in')),
+                          ],
+                          selected: {_intent},
+                          onSelectionChanged: (value) => setState(() {
+                            _intent = value.first;
+                            // A validation notice from the other form (e.g.
+                            // "email already registered") no longer applies
+                            // once the shopper switches which one they want.
+                            widget.controller.notice = null;
+                          }),
+                        ),
+                        const SizedBox(height: 20),
+                        if (_isSignUp) ...[
+                          TextFormField(
+                            controller: _displayName,
+                            autofillHints: const [AutofillHints.name],
+                            decoration: const InputDecoration(
+                                labelText: 'Display name'),
+                            textInputAction: TextInputAction.next,
+                            validator: (value) =>
+                                (value ?? '').trim().length < 2
+                                    ? 'Enter your display name.'
+                                    : null,
+                          ),
+                          const SizedBox(height: 14),
                         ],
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          suffixIcon: IconButton(
-                            tooltip: _obscurePassword
-                                ? 'Show password'
-                                : 'Hide password',
-                            onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+                        TextFormField(
+                          controller: _email,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: const InputDecoration(labelText: 'Email'),
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          validator: (value) {
+                            final email = (value ?? '').trim();
+                            return email.contains('@') && email.contains('.')
+                                ? null
+                                : 'Enter a valid email address.';
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _password,
+                          autofillHints: [
+                            _isSignUp
+                                ? AutofillHints.newPassword
+                                : AutofillHints.password,
+                          ],
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Show password'
+                                  : 'Hide password',
+                              onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
                             ),
                           ),
+                          obscureText: _obscurePassword,
+                          onFieldSubmitted: (_) => _submit(),
+                          validator: (value) => (value ?? '').length < 8
+                              ? 'Use at least 8 characters.'
+                              : null,
                         ),
-                        obscureText: _obscurePassword,
-                        onFieldSubmitted: (_) => _submit(),
-                        validator: (value) => (value ?? '').length < 8
-                            ? 'Use at least 8 characters.'
-                            : null,
-                      ),
-                      if (widget.controller.notice != null) ...[
-                        const SizedBox(height: 14),
-                        Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            widget.controller.notice!,
-                            style: TextStyle(
-                                color: TS.redOf(context),
-                                fontWeight: FontWeight.w700),
+                        if (!_isSignUp)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _openPasswordHelp,
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
+                        if (widget.controller.notice != null) ...[
+                          const SizedBox(height: 14),
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              widget.controller.notice!,
+                              style: TextStyle(
+                                  color: TS.redOf(context),
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: widget.controller.busy ? null : _submit,
+                          icon: const Icon(Icons.person_outline),
+                          label: Text(
+                            widget.controller.busy
+                                ? 'Please wait'
+                                : _isSignUp
+                                    ? 'Create account'
+                                    : 'Log in',
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                            onPressed: widget.onBack,
+                            child: const Text('Back')),
                       ],
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: widget.controller.busy ? null : _submit,
-                        icon: const Icon(Icons.person_outline),
-                        label: Text(
-                          widget.controller.busy
-                              ? 'Please wait'
-                              : _isSignUp
-                                  ? 'Create account'
-                                  : 'Log in',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                          onPressed: widget.onBack, child: const Text('Back')),
-                    ],
-                  ),
+                    ),
                   ),
                 ),
               ),

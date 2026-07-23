@@ -10,6 +10,7 @@ import {
   deleteVerifiedOffer,
   endMemberSession,
   loadDiscovery,
+  loadDiscoveredStores,
   loadBasket,
   loadSavedDeals,
   loadMemberSession,
@@ -728,5 +729,39 @@ describe('apiClient', () => {
     expect(subscription.data.plans).toHaveLength(1)
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/subscription', expect.objectContaining({ method: 'POST' }))
     expect(checkout.data.checkout.status).toBe('billing_not_configured')
+  })
+
+  it('requests compact discovered-store pages and one branch detail', async () => {
+    const resource = {
+      pagination: { hasMore: true, limit: 60, offset: 60 },
+      stores: [],
+      summary: { areaCount: 2, knownChainCount: 1, storeCount: 80, withPromotionsCount: 3 },
+    }
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: resource }), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await loadDiscoveredStores({
+      includeDetails: false,
+      limit: 60,
+      offset: 60,
+      query: 'Cape Town & Sea Point',
+    })
+    await loadDiscoveredStores({ placeId: 'branch/one' })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/discovered-stores?details=0&limit=60&offset=60&q=Cape+Town+%26+Sea+Point',
+      expect.any(Object),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/discovered-stores?placeId=branch%2Fone',
+      expect.any(Object),
+    )
   })
 })

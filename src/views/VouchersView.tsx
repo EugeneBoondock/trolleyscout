@@ -123,7 +123,7 @@ export function VouchersView({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Voucher scout</p>
-          <h2>Current retailer vouchers</h2>
+          <h1>Current retailer vouchers</h1>
           <p>
             Verified public codes, product coupons, and loyalty offers from official retailer
             sources. Personal single-use codes are never stored.

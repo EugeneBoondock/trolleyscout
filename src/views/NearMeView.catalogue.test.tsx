@@ -49,6 +49,16 @@ describe('NearMeView catalogue reader', () => {
             productUrl: 'https://official.test/monthly.pdf',
             sourceUrl: 'https://official.test/monthly',
             title: 'Monthly catalogue',
+          }, {
+            capturedAt: '2026-07-18T08:00:00.000Z',
+            id: 'online-deal-1',
+            kind: 'deal',
+            priceText: 'R20.00',
+            savingText: 'Online catalogue · Save R5.00',
+            sourceUrl: 'https://official.test/products/rice',
+            title: 'Rice 2kg',
+            validFrom: '2026-07-20',
+            validTo: '2026-08-09',
           }],
           retailerId: 'pick-n-pay',
         }],
@@ -64,10 +74,13 @@ describe('NearMeView catalogue reader', () => {
     const storeCard = await screen.findByRole('button', {
       name: 'Open Pick n Pay Central deals and catalogues',
     })
-    expect(storeCard.textContent).toContain('deals')
+    expect(storeCard.textContent).toContain('deal')
     expect(storeCard.textContent).toContain('catalogue')
     fireEvent.click(storeCard)
     expect(screen.getByRole('dialog', { name: 'Pick n Pay Central' })).toBeTruthy()
+    expect(screen.getByText('Online catalogue · Save R5.00')).toBeTruthy()
+
+    expect(screen.getByText('Until 2026-08-09')).toBeTruthy()
 
     const weeklyButton = await screen.findByRole('button', { name: /Read Weekly leaflet/i })
     const monthlyButton = screen.getByRole('button', { name: /Read Monthly catalogue/i })

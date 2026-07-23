@@ -111,7 +111,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Link copied — paste to share'),
+        content: Text('Link copied. Paste it to share.'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -186,6 +186,14 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         _error = 'Properties Scout is unavailable right now. Try again.';
       });
     }
+  }
+
+  /// Filters apply themselves: once a search has run, switching Buy/Rent,
+  /// beds, or sort re-runs the last search immediately instead of leaving
+  /// stale results with no obvious way to refresh them (tester feedback).
+  void _applyFilterChange(VoidCallback apply) {
+    setState(apply);
+    if (_searched && !_loading && !_locating) _retryLast();
   }
 
   /// Re-runs whatever the shopper last tried — near-me re-reads the location,
@@ -293,9 +301,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     locating: _locating,
                     filtersExpanded: _filtersExpanded,
                     onListingType: (value) =>
-                        setState(() => _listingType = value),
-                    onMinBeds: (value) => setState(() => _minBeds = value),
-                    onSort: (value) => setState(() => _sort = value),
+                        _applyFilterChange(() => _listingType = value),
+                    onMinBeds: (value) =>
+                        _applyFilterChange(() => _minBeds = value),
+                    onSort: (value) => _applyFilterChange(() => _sort = value),
                     onToggleFilters: () =>
                         setState(() => _filtersExpanded = !_filtersExpanded),
                     onSearch: () => _search(),
@@ -315,7 +324,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       return const _Message(
         mascot: true,
         icon: Icons.favorite_border,
-        text: 'No saved homes yet — tap the heart on any home to keep it here. '
+        text: 'No saved homes yet. Tap the heart on any home to keep it here. '
             'Your saved homes follow your account across devices.',
       );
     }
@@ -586,12 +595,14 @@ class _SearchBar extends StatelessWidget {
                   Expanded(
                       child: _PriceField(
                           controller: minPriceController,
-                          hint: 'Min price (R)')),
+                          hint: 'Min price (R)',
+                          onSubmitted: onSearch)),
                   const SizedBox(width: 8),
                   Expanded(
                       child: _PriceField(
                           controller: maxPriceController,
-                          hint: 'Max price (R)')),
+                          hint: 'Max price (R)',
+                          onSubmitted: onSearch)),
                 ],
               ),
             ],
@@ -620,16 +631,26 @@ class _MotionAwareSize extends StatelessWidget {
 }
 
 class _PriceField extends StatelessWidget {
-  const _PriceField({required this.controller, required this.hint});
+  const _PriceField({
+    required this.controller,
+    required this.hint,
+    this.onSubmitted,
+  });
 
   final TextEditingController controller;
   final String hint;
+
+  /// Pressing done/search on the keyboard applies the price filter to the
+  /// current results, matching how the other filters re-search themselves.
+  final VoidCallback? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.search,
+      onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
       decoration: InputDecoration(
         isDense: true,
         hintText: hint,
@@ -700,7 +721,10 @@ class _PropertyCard extends StatelessWidget {
         child: InkWell(
           onTap: () => onOpen(listing),
           child: Container(
-            decoration: TS.card(context),
+            // Fill behind, stroke in front so the full-bleed photo can't fade
+            // the border at the clipped top corners.
+            decoration: TS.cardFill(context),
+            foregroundDecoration: TS.cardStroke(context),
             clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -720,7 +744,7 @@ class _PropertyCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
-                          color: isRent ? const Color(0xFFBFE3D0) : TS.yellow,
+                          color: isRent ? TS.rentTag : TS.yellow,
                           child: Text(
                             isRent ? 'TO RENT' : 'FOR SALE',
                             style: const TextStyle(
@@ -759,7 +783,7 @@ class _PropertyCard extends StatelessWidget {
                                   : Icons.favorite_border,
                               tooltip: saved
                                   ? 'Remove from saved'
-                                  : 'Save this home',
+                                  : 'Save this property',
                               background: saved
                                   ? TS.red
                                   : Colors.white.withValues(alpha: 0.92),
@@ -769,7 +793,7 @@ class _PropertyCard extends StatelessWidget {
                             const SizedBox(width: 6),
                             _CircleAction(
                               icon: Icons.ios_share,
-                              tooltip: 'Share this home',
+                              tooltip: 'Share this property',
                               background: Colors.white.withValues(alpha: 0.92),
                               foreground: TS.ink,
                               onTap: onShare,

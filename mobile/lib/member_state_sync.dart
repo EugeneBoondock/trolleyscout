@@ -22,16 +22,22 @@ class MemberStateSync {
   static const savedAddressesKey = 'saved_addresses_v1';
   static const savedPropertiesKey = 'saved_properties_v1';
   static const scoutAvatarKey = 'scout_avatar_v1';
+  static const compareRetailersKey = 'compare_retailers_v1';
   static const syncedKeys = [
     nearbyHistoryKey,
     savedAddressesKey,
     savedPropertiesKey,
     scoutAvatarKey,
+    compareRetailersKey,
   ];
 
   Api? _api;
+  int _generation = 0;
 
-  void configure(Api? api) => _api = api;
+  void configure(Api? api) {
+    _generation += 1;
+    _api = api;
+  }
 
   /// Best-effort push of a decoded JSON value for [key] to the account.
   Future<void> push(String key, Object? value) async {
@@ -47,7 +53,7 @@ class MemberStateSync {
   /// Clears the synced keys from local prefs on sign-out so the next account on
   /// a shared device never sees the previous shopper's data.
   Future<void> clearLocal() async {
-    _api = null;
+    configure(null);
     try {
       final prefs = await SharedPreferences.getInstance();
       for (final key in syncedKeys) {
@@ -63,20 +69,28 @@ class MemberStateSync {
   Future<void> hydrate(List<String> keys) async {
     final api = _api;
     if (api == null) return;
+    final generation = _generation;
     SharedPreferences prefs;
     try {
       prefs = await SharedPreferences.getInstance();
     } catch (_) {
       return;
     }
-    for (final key in keys) {
-      try {
-        final value = await api.getMemberState(key);
-        if (value == null) continue;
-        await prefs.setString(key, jsonEncode(value));
-      } catch (_) {
-        // Skip a key that fails; the rest still hydrate.
-      }
+    final remoteValues = await Future.wait(
+      keys.where((key) => key != compareRetailersKey).map((key) async {
+        try {
+          return MapEntry(key, await api.getMemberState(key));
+        } catch (_) {
+          return MapEntry<String, Object?>(key, null);
+        }
+      }),
+    );
+
+    if (generation != _generation || !identical(api, _api)) return;
+    for (final entry in remoteValues) {
+      if (entry.value == null) continue;
+      if (generation != _generation || !identical(api, _api)) return;
+      await prefs.setString(entry.key, jsonEncode(entry.value));
     }
   }
 }

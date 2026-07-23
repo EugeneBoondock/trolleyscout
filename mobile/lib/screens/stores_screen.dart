@@ -21,15 +21,27 @@ class StoresScreen extends StatefulWidget {
 }
 
 class _StoresScreenState extends State<StoresScreen> {
-  late Future<_StoresData> _future = _load();
+  static const _pageSize = 60;
+
+  late Future<_StoresData> _future;
   final _savedUrls = <String>{};
   String _query = '';
   String _kind = 'all';
+  bool _loadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
 
   Future<_StoresData> _load() async {
     final results = await Future.wait<dynamic>([
       widget.api.retailers(),
-      widget.api.discoveredStores(),
+      widget.api.discoveredStores(
+        limit: _pageSize,
+        includeDetails: false,
+      ),
     ]);
     return _StoresData(
       catalog: results[0] as RetailerCatalog,
@@ -37,7 +49,55 @@ class _StoresScreenState extends State<StoresScreen> {
     );
   }
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => setState(() {
+        _future = _load();
+      });
+
+  // Typing filters the already-loaded stores and retailers instantly on the
+  // client — no per-keystroke server round trip, so results never flicker
+  // between a locally filtered list and a server-filtered one. The server is
+  // only asked for more results via "Load more" (pagination) or the initial
+  // load, so search only reaches what's already been fetched.
+  void _search(String value) {
+    setState(() => _query = value.trim().toLowerCase());
+  }
+
+  Future<void> _loadMore(_StoresData current) async {
+    if (_loadingMore || !current.discovered.hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = await widget.api.discoveredStores(
+        limit: _pageSize,
+        offset: current.discovered.stores.length,
+        includeDetails: false,
+      );
+      final byId = <String, NearbyStore>{
+        for (final store in current.discovered.stores) store.placeId: store,
+        for (final store in next.stores) store.placeId: store,
+      };
+      final merged = DiscoveredStoresResult(
+        stores: byId.values.toList(),
+        storeCount: next.storeCount,
+        areaCount: next.areaCount,
+        knownChainCount: next.knownChainCount,
+        withPromotionsCount: next.withPromotionsCount,
+        hasMore: next.hasMore,
+        limit: next.limit,
+        offset: next.offset,
+      );
+      if (mounted) {
+        setState(() {
+          _future = Future.value(
+            _StoresData(catalog: current.catalog, discovered: merged),
+          );
+        });
+      }
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
 
   Future<void> _save(Retailer retailer, RetailerSource source) async {
     if (!widget.isAuthenticated) {
@@ -83,176 +143,195 @@ class _StoresScreenState extends State<StoresScreen> {
                   store.name.toLowerCase().contains(_query) ||
                   (store.address?.toLowerCase().contains(_query) ?? false));
         }).toList();
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            ScreenHeader(
-              eyebrow: 'Official sources',
-              title: 'Source directory',
-              description:
-                  '${allDiscoveredGroups.length} store groups covering ${data.discovered.storeCount} locations, plus official specials pages and store finders.',
-              action: IconButton(
-                  tooltip: 'Refresh stores',
-                  onPressed: _reload,
-                  icon: const Icon(Icons.refresh)),
-            ),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'Search stores',
-                prefixIcon: Icon(Icons.search),
+
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ScreenHeader(
+                      eyebrow: 'Official sources',
+                      title: 'Source directory',
+                      description:
+                          'Showing ${allDiscoveredGroups.length} store groups from ${data.discovered.storeCount} locations, plus official specials pages and store finders.',
+                      action: IconButton(
+                          tooltip: 'Refresh stores',
+                          onPressed: _reload,
+                          icon: const Icon(Icons.refresh)),
+                    ),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Search stores',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: _search,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final kind in ['all', ...catalog.sourceKinds])
+                          ChoiceChip(
+                            label: Text(_kindLabel(kind)),
+                            selected: _kind == kind,
+                            onSelected: (_) => setState(() => _kind = kind),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Stores found near shoppers',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.merge(TS.display)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Saved from successful Near Me searches in the selected country.',
+                      style: TextStyle(color: TS.mutedOf(context)),
+                    ),
+                    const SizedBox(height: 10),
+                    if (discovered.isEmpty)
+                      const EmptyCard(
+                        message: 'No discovered stores match this search yet.',
+                        icon: Icons.travel_explore_outlined,
+                      ),
+                  ],
+                ),
               ),
-              onChanged: (value) =>
-                  setState(() => _query = value.trim().toLowerCase()),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final kind in ['all', ...catalog.sourceKinds])
-                  ChoiceChip(
-                    label: Text(_kindLabel(kind)),
-                    selected: _kind == kind,
-                    onSelected: (_) => setState(() => _kind = kind),
+            if (discovered.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList.builder(
+                  itemCount: discovered.length,
+                  itemBuilder: (context, index) => _DiscoveredGroupCard(
+                    group: discovered[index],
+                    api: widget.api,
                   ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text('Stores found near shoppers',
-                style:
-                    Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
-            const SizedBox(height: 4),
-            Text(
-              'Saved from successful Near Me searches in the selected country.',
-              style: TextStyle(color: TS.mutedOf(context)),
-            ),
-            const SizedBox(height: 10),
-            if (discovered.isEmpty)
-              const EmptyCard(
-                message: 'No discovered stores match this search yet.',
-                icon: Icons.travel_explore_outlined,
-              )
-            else
-              for (final group in discovered)
-                PaperCard(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _StoreLogo(
-                              imageUrl: group.logoUrl,
-                              label: group.displayName),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(group.displayName,
-                                    style: const TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w900)),
-                                Text(
-                                  '${group.branches.length} ${group.branches.length == 1 ? 'location' : 'locations'}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${group.dealCount} deal${group.dealCount == 1 ? '' : 's'} · ${group.catalogueCount} catalogue${group.catalogueCount == 1 ? '' : 's'}',
-                                  style: TS.eyebrowOf(context),
-                                ),
-                                if (group.nearestDistanceM != null)
-                                  Text(
-                                    'Nearest ${_distance(group.nearestDistanceM!)}',
-                                    style: TextStyle(
-                                      color: TS.mutedOf(context),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
+                ),
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (data.discovered.hasMore) ...[
+                      const SizedBox(height: 2),
                       OutlinedButton.icon(
-                        onPressed: () => _showStoreGroup(group),
-                        icon: const Icon(Icons.location_on_outlined),
-                        label: Text(group.branches.length == 1
-                            ? 'View location'
-                            : 'View ${group.branches.length} locations'),
+                        onPressed: _loadingMore ? null : () => _loadMore(data),
+                        icon: _loadingMore
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.expand_more),
+                        label: Text(_loadingMore
+                            ? 'Loading stores…'
+                            : 'Load more stores'),
                       ),
                     ],
+                    const SizedBox(height: 20),
+                    Text('Official retailer sources',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.merge(TS.display)),
+                    const SizedBox(height: 10),
+                    if (retailers.isEmpty)
+                      const EmptyCard(
+                          message: 'No stores match those filters.',
+                          icon: Icons.storefront_outlined),
+                  ],
+                ),
+              ),
+            ),
+            if (retailers.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList.builder(
+                  itemCount: retailers.length,
+                  itemBuilder: (context, index) => _RetailerCard(
+                    retailer: retailers[index],
+                    kind: _kind,
+                    savedUrls: _savedUrls,
+                    onSave: _save,
                   ),
                 ),
-            const SizedBox(height: 20),
-            Text('Official retailer sources',
-                style:
-                    Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
-            const SizedBox(height: 10),
-            if (retailers.isEmpty)
-              const EmptyCard(
-                  message: 'No stores match those filters.',
-                  icon: Icons.storefront_outlined)
-            else
-              for (final retailer in retailers)
-                PaperCard(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          _StoreLogo(
-                              imageUrl: retailer.logoUrl, label: retailer.name),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(retailer.name,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.merge(TS.display)),
-                          ),
-                        ],
-                      ),
-                      Text('${retailer.group} · ${retailer.program}',
-                          style: TextStyle(color: TS.mutedOf(context))),
-                      const SizedBox(height: 6),
-                      Text(retailer.sourceNote),
-                      const SizedBox(height: 10),
-                      for (final source in retailer.sources.where(
-                          (source) => _kind == 'all' || source.kind == _kind))
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.link),
-                          title: Text(source.label),
-                          subtitle: Text(_kindLabel(source.kind)),
-                          onTap: () => showInAppBrowser(
-                            context,
-                            source.url,
-                            title: retailer.name,
-                          ),
-                          trailing: OutlinedButton(
-                            onPressed: _savedUrls.contains(source.url)
-                                ? null
-                                : () => _save(retailer, source),
-                            child: Text(_savedUrls.contains(source.url)
-                                ? 'Saved'
-                                : 'Save'),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              ),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 16)),
           ],
         );
       },
     );
   }
+}
 
-  Future<void> _showStoreGroup(StoreGroup group) => showModalBottomSheet<void>(
+class _DiscoveredGroupCard extends StatelessWidget {
+  const _DiscoveredGroupCard({required this.group, required this.api});
+
+  final StoreGroup group;
+  final Api api;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaperCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StoreLogo(imageUrl: group.logoUrl, label: group.displayName),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(group.displayName,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w900)),
+                    Text(
+                      '${group.branches.length} ${group.branches.length == 1 ? 'location' : 'locations'}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${group.offerCount} current offer${group.offerCount == 1 ? '' : 's'}',
+                      style: TS.eyebrowOf(context),
+                    ),
+                    if (group.nearestDistanceM != null)
+                      Text(
+                        'Nearest ${_distance(group.nearestDistanceM!)}',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => _showStoreGroup(context),
+            icon: const Icon(Icons.location_on_outlined),
+            label: Text(group.branches.length == 1
+                ? 'View location'
+                : 'View ${group.branches.length} locations'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showStoreGroup(BuildContext context) => showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -260,9 +339,72 @@ class _StoresScreenState extends State<StoresScreen> {
         shape: const RoundedRectangleBorder(),
         builder: (_) => FractionallySizedBox(
           heightFactor: 0.92,
-          child: _StoreGroupSheet(group: group, api: widget.api),
+          child: _StoreGroupSheet(group: group, api: api),
         ),
       );
+}
+
+class _RetailerCard extends StatelessWidget {
+  const _RetailerCard({
+    required this.retailer,
+    required this.kind,
+    required this.savedUrls,
+    required this.onSave,
+  });
+
+  final Retailer retailer;
+  final String kind;
+  final Set<String> savedUrls;
+  final Future<void> Function(Retailer, RetailerSource) onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return PaperCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _StoreLogo(imageUrl: retailer.logoUrl, label: retailer.name),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(retailer.name,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.merge(TS.display)),
+              ),
+            ],
+          ),
+          Text('${retailer.group} · ${retailer.program}',
+              style: TextStyle(color: TS.mutedOf(context))),
+          const SizedBox(height: 6),
+          Text(retailer.sourceNote),
+          const SizedBox(height: 10),
+          for (final source in retailer.sources
+              .where((source) => kind == 'all' || source.kind == kind))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.link),
+              title: Text(source.label),
+              subtitle: Text(_kindLabel(source.kind)),
+              onTap: () => showInAppBrowser(
+                context,
+                source.url,
+                title: retailer.name,
+              ),
+              trailing: OutlinedButton(
+                onPressed: savedUrls.contains(source.url)
+                    ? null
+                    : () => onSave(retailer, source),
+                child: Text(savedUrls.contains(source.url) ? 'Saved' : 'Save'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StoresData {
@@ -296,7 +438,10 @@ class _StoreLogo extends StatelessWidget {
         child: imageUrl == null
             ? fallback
             : Image.network(imageUrl!,
-                fit: BoxFit.contain, errorBuilder: (_, __, ___) => fallback),
+                fit: BoxFit.contain,
+                cacheWidth: 138,
+                cacheHeight: 138,
+                errorBuilder: (_, __, ___) => fallback),
       ),
     );
   }
@@ -391,11 +536,10 @@ class _BranchCard extends StatelessWidget {
                             color: TS.mutedOf(context), fontSize: 12)),
                   const SizedBox(height: 8),
                   Text(
-                    '${branch.deals.length} current deal${branch.deals.length == 1 ? '' : 's'} · '
-                    '${branch.catalogues.length} catalogue${branch.catalogues.length == 1 ? '' : 's'}',
+                    '${branch.promotionCount} current offer${branch.promotionCount == 1 ? '' : 's'}',
                     style: TS.eyebrowOf(context),
                   ),
-                  if (!branch.hasSomething)
+                  if (branch.promotionCount == 0)
                     Text('No current deals found yet.',
                         style: TextStyle(color: TS.mutedOf(context))),
                 ],
@@ -409,8 +553,65 @@ class _BranchCard extends StatelessWidget {
   }
 }
 
-class _BranchDetailScreen extends StatelessWidget {
+class _BranchDetailScreen extends StatefulWidget {
   const _BranchDetailScreen({required this.branch, required this.api});
+
+  final NearbyStore branch;
+  final Api api;
+
+  @override
+  State<_BranchDetailScreen> createState() => _BranchDetailScreenState();
+}
+
+class _BranchDetailScreenState extends State<_BranchDetailScreen> {
+  late Future<NearbyStore> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<NearbyStore> _load() async {
+    if (widget.branch.detailsLoaded) return widget.branch;
+    final result = await widget.api.discoveredStores(
+      limit: 1,
+      placeId: widget.branch.placeId,
+    );
+    if (result.stores.isEmpty) {
+      throw const ApiException('This store is no longer available.');
+    }
+    return result.stores.first;
+  }
+
+  void _retry() => setState(() => _future = _load());
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: TS.bgOf(context),
+      appBar: AppBar(title: Text(widget.branch.name)),
+      body: FutureBuilder<NearbyStore>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingPane();
+          }
+          if (snapshot.hasError || snapshot.data == null) {
+            return ErrorPane(
+              message: 'Could not load this store’s current offers.',
+              onRetry: _retry,
+            );
+          }
+          return _BranchDetailBody(branch: snapshot.data!, api: widget.api);
+        },
+      ),
+    );
+  }
+}
+
+class _BranchDetailBody extends StatelessWidget {
+  const _BranchDetailBody({required this.branch, required this.api});
 
   final NearbyStore branch;
   final Api api;
@@ -419,74 +620,70 @@ class _BranchDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: TS.bgOf(context),
-      appBar: AppBar(title: Text(branch.name)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (branch.address != null)
-            Text(branch.address!, style: TextStyle(color: TS.mutedOf(context))),
-          if (branch.distanceM != null)
-            Text(_distance(branch.distanceM!),
-                style: TextStyle(color: TS.mutedOf(context))),
-          if (_hasLocation) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: () => StoreMapView.open(
-                  context,
-                  api: api,
-                  storeName: branch.name,
-                  lat: branch.lat.toDouble(),
-                  lon: branch.lon.toDouble(),
-                  storeAddress: branch.address,
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (branch.address != null)
+          Text(branch.address!, style: TextStyle(color: TS.mutedOf(context))),
+        if (branch.distanceM != null)
+          Text(_distance(branch.distanceM!),
+              style: TextStyle(color: TS.mutedOf(context))),
+        if (_hasLocation) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () => StoreMapView.open(
+                context,
+                api: api,
+                storeName: branch.name,
+                lat: branch.lat.toDouble(),
+                lon: branch.lon.toDouble(),
+                storeAddress: branch.address,
+              ),
+              icon: const Icon(Icons.map_outlined, size: 18),
+              label: const Text('View on map'),
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        Text('Current deals', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        if (branch.deals.isEmpty)
+          const EmptyCard(
+            message: 'No current deals have been found for this store yet.',
+            icon: Icons.local_offer_outlined,
+          )
+        else
+          for (final deal in branch.deals) _BranchDealRow(deal: deal),
+        const SizedBox(height: 18),
+        Text('Catalogues', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        if (branch.catalogues.isEmpty)
+          const EmptyCard(
+            message:
+                'No current catalogues have been found for this store yet.',
+            icon: Icons.menu_book_outlined,
+          )
+        else
+          for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
+            PaperCard(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: _StoreLogo(
+                  imageUrl: catalogue.coverImageUrl,
+                  label: catalogue.name,
                 ),
-                icon: const Icon(Icons.map_outlined, size: 18),
-                label: const Text('View on map'),
+                title: Text(catalogue.name),
+                subtitle: catalogue.validTo == null
+                    ? null
+                    : Text('Valid until ${_shortDate(catalogue.validTo!)}'),
+                trailing: const Icon(Icons.menu_book_outlined),
+                onTap: () => showCatalogueReader(context, catalogue),
               ),
             ),
-          ],
-          const SizedBox(height: 18),
-          Text('Current deals', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          if (branch.deals.isEmpty)
-            const EmptyCard(
-              message: 'No current deals have been found for this store yet.',
-              icon: Icons.local_offer_outlined,
-            )
-          else
-            for (final deal in branch.deals) _BranchDealRow(deal: deal),
-          const SizedBox(height: 18),
-          Text('Catalogues', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          if (branch.catalogues.isEmpty)
-            const EmptyCard(
-              message:
-                  'No current catalogues have been found for this store yet.',
-              icon: Icons.menu_book_outlined,
-            )
-          else
-            for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
-              PaperCard(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: _StoreLogo(
-                    imageUrl: catalogue.coverImageUrl,
-                    label: catalogue.name,
-                  ),
-                  title: Text(catalogue.name),
-                  subtitle: catalogue.validTo == null
-                      ? null
-                      : Text('Valid until ${_shortDate(catalogue.validTo!)}'),
-                  trailing: const Icon(Icons.menu_book_outlined),
-                  onTap: () => showCatalogueReader(context, catalogue),
-                ),
-              ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -524,12 +721,43 @@ class _BranchDealRow extends StatelessWidget {
                     : Image.network(
                         deal.imageUrl!,
                         fit: BoxFit.contain,
+                        cacheWidth: 132,
+                        cacheHeight: 132,
                         errorBuilder: (_, __, ___) => fallback,
                       ),
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(child: Text(deal.title)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(deal.title),
+                  if (deal.savingText != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      deal.savingText!,
+                      style: TextStyle(
+                        color: TS.greenOf(context),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                  if (deal.validTo != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Valid until ${_shortDate(deal.validTo!)}',
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
             if (deal.priceText != null)
               Text(
                 deal.priceText!,

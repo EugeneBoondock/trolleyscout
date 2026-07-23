@@ -59,7 +59,8 @@ export function HomeView({
             </button>
           </div>
           <p className="home-hero-footnote">
-            Free to use. No sign-in needed. Built light so it does not eat your data.
+            Core deals are open to everyone. A free account keeps tools and lists across devices.
+            No card needed.
           </p>
         </div>
 
@@ -153,8 +154,9 @@ export function HomeView({
         <div className="home-promise">
           <Storefront size={20} />
           <p>
-            <strong>Free means free.</strong> Everything a household needs here costs nothing and
-            needs no account. Paid plans only add extras for power users.
+            <strong>Free means free.</strong> Household tools and saved lists cost nothing. A free
+            account keeps them private and available across devices. Paid plans add extras for
+            power users.
           </p>
         </div>
       </section>
@@ -178,7 +180,7 @@ function HomePathCard({
   return (
     <article className="home-path-card">
       {icon}
-      <h3>{title}</h3>
+      <h2>{title}</h2>
       <p>{text}</p>
       <button className="ghost-button" onClick={onClick} type="button">
         {actionLabel}

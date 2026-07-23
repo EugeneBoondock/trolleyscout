@@ -24,17 +24,25 @@ export function hasOfferStore(env: TrolleyScoutEnv): env is TrolleyScoutEnv & { 
   return Boolean(env.DB)
 }
 
-export async function listStoredOffers(env: TrolleyScoutEnv) {
+const DEFAULT_LIST_LIMIT = 200
+const MAX_LIST_LIMIT = 500
+
+export async function listStoredOffers(env: TrolleyScoutEnv, limit = DEFAULT_LIST_LIMIT) {
   if (!hasOfferStore(env)) {
     return []
   }
+
+  const boundedLimit = Math.min(MAX_LIST_LIMIT, Math.max(1, Math.trunc(limit) || DEFAULT_LIST_LIMIT))
 
   const result = await env.DB.prepare(
     `SELECT id, retailer_id, title, source_url, captured_at, valid_from, valid_to,
       price_text, saving_text, terms_text, image_url, created_at, updated_at
       FROM verified_offers
-      ORDER BY updated_at DESC, created_at DESC`,
-  ).all<OfferRow>()
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT ?`,
+  )
+    .bind(boundedLimit)
+    .all<OfferRow>()
 
   return result.results.map(rowToOffer)
 }

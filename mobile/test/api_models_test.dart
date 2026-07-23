@@ -76,6 +76,35 @@ void main() {
     expect(offer.imageUrl, 'https://shop.test/milk.jpg');
   });
 
+  test('keeps branch promotion savings and validity dates in Near me', () {
+    final store = NearbyStore.fromJson({
+      'placeId': 'shoprite-branch',
+      'name': 'Shoprite Example',
+      'lat': -33.9,
+      'lon': 18.4,
+      'promotions': [
+        {
+          'id': 'branch-special-1',
+          'kind': 'deal',
+          'storeName': 'Shoprite Example',
+          'retailerId': 'shoprite',
+          'title': 'Tait’s Crackers',
+          'priceText': 'R16.99',
+          'savingText': 'Buy 4 For R20',
+          'validFrom': '2026-07-20',
+          'validTo': '2026-08-09',
+        }
+      ],
+    });
+
+    expect(store.deals, hasLength(1));
+    expect(store.deals.single.retailerName, 'Shoprite Example');
+    expect(store.deals.single.priceText, 'R16.99');
+    expect(store.deals.single.savingText, 'Buy 4 For R20');
+    expect(store.deals.single.validFrom, '2026-07-20');
+    expect(store.deals.single.validTo, '2026-08-09');
+  });
+
   test('scroll deals preserve a distinct ordered product gallery', () {
     final deal = ScrollDeal.fromJson({
       'id': 'window-1',

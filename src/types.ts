@@ -461,6 +461,10 @@ export interface CountryContext extends CountryOption {
 export type RetailerProductSearchStatus = 'priced' | 'found' | 'unavailable'
 
 export interface RetailerProductSearchMatch {
+  /// Runner-up products from the same retailer's search, most relevant first,
+  /// so a shopper can swap in the right item when word overlap fools the
+  /// primary pick ("eggs" → "marshmallow eggs").
+  alternatives?: RetailerProductAlternative[]
   isCheapest?: boolean
   priceCents?: number
   productUrl?: string
@@ -469,6 +473,12 @@ export interface RetailerProductSearchMatch {
   sourceKind?: 'retailer-api' | 'official-site' | 'promotion'
   status: RetailerProductSearchStatus
   title?: string
+}
+
+export interface RetailerProductAlternative {
+  priceCents: number
+  productUrl: string
+  title: string
 }
 
 export interface ProductComparisonResult {

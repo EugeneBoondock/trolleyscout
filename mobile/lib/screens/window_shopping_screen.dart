@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
+import '../discovery_cache.dart';
 import '../price_display.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
@@ -66,6 +67,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     with WidgetsBindingObserver {
   static const _muteKey = 'window_music_muted';
   static const _reloadAfterBackground = Duration(minutes: 15);
+  static const _discoveryCacheReuse = Duration(hours: 3);
   // Present enough to groove to, soft enough to talk over — store-speaker level.
   static const _musicVolume = 0.35;
 
@@ -74,6 +76,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   late final WindowSeenStore _seenStore;
   late final DateTime Function() _now;
   final _tasteStore = TasteStore();
+  final _discoveryCache = DiscoveryCache();
   final _searchController = TextEditingController();
   final AudioPlayer _music = AudioPlayer(playerId: 'window_ambient');
   // A fresh running order each visit so the same track never greets you twice.
@@ -141,7 +144,10 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   Future<void> _initMusic() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _musicMuted = prefs.getBool(_muteKey) ?? false;
+      // No stored preference means this is the shopper's first visit — open
+      // muted so the ambience never surprises anyone; once they've chosen
+      // either way, that choice sticks.
+      _musicMuted = prefs.getBool(_muteKey) ?? true;
       // Open on a different track each visit so the shop never feels canned.
       _trackIndex = DateTime.now().minute % _tracks.length;
       if (mounted) setState(() {});
@@ -197,17 +203,38 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     } catch (_) {}
   }
 
+  // Cache for the getter below, keyed by the (`_deals`, `_query`) pair it was
+  // computed from. Several call sites read `_visible` more than once per
+  // interaction (page changes, precaching, seen-tracking); recomputing the
+  // filter every time is wasted work once the reel has more than a handful
+  // of deals, so it's only rebuilt when either input actually changes.
+  List<ScrollDeal>? _visibleCache;
+  List<ScrollDeal>? _visibleCacheDeals;
+  String? _visibleCacheQuery;
+
   /// The deals currently in the window: everything, or the search matches.
   List<ScrollDeal> get _visible {
-    if (_query.isEmpty) return _deals;
-    final q = _query.toLowerCase();
-    return _deals
-        .where((d) =>
-            d.title.toLowerCase().contains(q) ||
-            d.retailerName.toLowerCase().contains(q) ||
-            (d.category?.toLowerCase().contains(q) ?? false) ||
-            d.sourceLabel.toLowerCase().contains(q))
-        .toList();
+    if (identical(_visibleCacheDeals, _deals) &&
+        _visibleCacheQuery == _query) {
+      return _visibleCache!;
+    }
+    List<ScrollDeal> result;
+    if (_query.isEmpty) {
+      result = _deals;
+    } else {
+      final q = _query.toLowerCase();
+      result = _deals
+          .where((d) =>
+              d.title.toLowerCase().contains(q) ||
+              d.retailerName.toLowerCase().contains(q) ||
+              (d.category?.toLowerCase().contains(q) ?? false) ||
+              d.sourceLabel.toLowerCase().contains(q))
+          .toList();
+    }
+    _visibleCache = result;
+    _visibleCacheDeals = _deals;
+    _visibleCacheQuery = _query;
+    return result;
   }
 
   void _setQuery(String value) {
@@ -356,6 +383,31 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     }
   }
 
+  // Cache-first, same as the Find-deals screen: a mount or tab switch within
+  // the reuse window renders instantly from disk instead of repeating a
+  // server read; a stale or missing cache falls through to a live fetch,
+  // which then refreshes the cache for next time.
+  Future<DiscoveryResult> _loadStoredDiscovery() async {
+    final cached = await _discoveryCache.load();
+    if (cached != null) {
+      final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
+      if (!age.isNegative && age < _discoveryCacheReuse) {
+        return cached.result;
+      }
+    }
+    final result = await widget.api.discovery(forceLive: false);
+    unawaited(_discoveryCache.save(result, DateTime.now()));
+    return result;
+  }
+
+  Future<List<ScrollDeal>> _discoveryDeals() async {
+    final result = await _loadStoredDiscovery();
+    return result.deals
+        .where((d) => d.imageUrl != null)
+        .map(ScrollDeal.fromDeal)
+        .toList();
+  }
+
   Future<void> _load({bool isRefresh = false}) async {
     final fallbackDeals = List<ScrollDeal>.of(_deals);
     if (!isRefresh) {
@@ -374,13 +426,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
           dealSitesFailed = true;
           return <ScrollDeal>[];
         }),
-        widget.api
-            .discovery(forceLive: false)
-            .then((r) => r.deals
-                .where((d) => d.imageUrl != null)
-                .map(ScrollDeal.fromDeal)
-                .toList())
-            .catchError((_) {
+        _discoveryDeals().catchError((_) {
           discoveryFailed = true;
           return <ScrollDeal>[];
         }),
@@ -519,7 +565,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     if (wasSaved) {
       await _tasteStore.weaken(title: deal.title, category: deal.category);
     } else {
-      await _tasteStore.reinforce(
+      await _tasteStore.recordSignal(
           title: deal.title, category: deal.category, weight: 2.0);
     }
   }
@@ -536,7 +582,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     }
     HapticFeedback.selectionClick();
     // Opening a deal is a mild interest signal.
-    _tasteStore.reinforce(
+    _tasteStore.recordSignal(
         title: deal.title, category: deal.category, weight: 0.5);
     await showInAppBrowser(context, uri.toString(), title: deal.retailerName);
   }
@@ -783,7 +829,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '♪ ${_tracks[_trackIndex].title} — Kevin MacLeod (CC BY)',
+                        '♪ ${_tracks[_trackIndex].title} · Kevin MacLeod (CC BY)',
                         style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 10,
@@ -938,40 +984,57 @@ class _RoundIcon extends StatelessWidget {
   final String? tooltip;
   final String? badge;
 
+  // The tappable area is 48x48 (the accessible minimum) while the visible
+  // circle stays 40x40, centred inside it via an even 4px inset — so the
+  // control reads the same size on screen but is easier to hit.
+  static const _hitSize = 48.0;
+  static const _visualSize = 40.0;
+  static const _inset = (_hitSize - _visualSize) / 2;
+
   @override
   Widget build(BuildContext context) {
     final button = GestureDetector(
       onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 20),
-          ),
-          if (badge != null)
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: _hitSize,
+        height: _hitSize,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
             Positioned(
-              right: -3,
-              top: -3,
+              left: _inset,
+              top: _inset,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                width: _visualSize,
+                height: _visualSize,
                 decoration: BoxDecoration(
-                  color: TS.red,
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.black.withValues(alpha: 0.45),
+                  shape: BoxShape.circle,
                 ),
-                child: Text(badge!,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900)),
+                child: Icon(icon, color: Colors.white, size: 20),
               ),
             ),
-        ],
+            if (badge != null)
+              Positioned(
+                right: _inset - 3,
+                top: _inset - 3,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: TS.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(badge!,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900)),
+                ),
+              ),
+          ],
+        ),
       ),
     );
     return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
@@ -1316,6 +1379,8 @@ class _SavedSheetState extends State<_SavedSheet> {
                                         upgradeImageUrl(deal.imageUrl),
                                         width: 46,
                                         height: 46,
+                                        cacheWidth: 138,
+                                        cacheHeight: 138,
                                         fit: BoxFit.cover,
                                         errorBuilder: (_, __, ___) =>
                                             const Icon(
@@ -1588,7 +1653,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                   child: Text(
-                    'No comments yet. Be the first — comments stay with the deal.',
+                    'No comments yet. Be the first. Comments stay with the deal.',
                     style: TextStyle(color: TS.mutedOf(context)),
                   ),
                 )

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -102,6 +103,43 @@ void main() {
       expect(await cookieStore.read(), isNull);
     });
 
+    test('sign out clears the native cookie when the server is unavailable',
+        () async {
+      final cookieStore =
+          MemorySessionCookieStore('ts_member_session=secret-token');
+      final api = Api(
+        client: MockClient((request) async => throw Exception('offline')),
+        cookieStore: cookieStore,
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      await expectLater(api.signOut(), throwsException);
+
+      expect(await cookieStore.read(), isNull);
+    });
+
+    test('times out when the response body never finishes', () async {
+      final api = Api(
+        client: _StalledBodyClient(),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+        requestTimeout: const Duration(milliseconds: 20),
+      );
+
+      await expectLater(
+        api.session(),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.message,
+            'message',
+            'The request took too long. Try again.',
+          ),
+        ),
+      );
+    });
+
     test('surfaces the first API issue', () async {
       final api = Api(
         client: MockClient((request) async => http.Response(
@@ -133,6 +171,53 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('uses the encrypted account snapshot during a network outage',
+        () async {
+      final snapshot = MemorySessionSnapshotStore(jsonEncode({
+        'isAuthenticated': true,
+        'account': _accountJson,
+      }));
+      final api = Api(
+        client: MockClient((request) async => throw Exception('offline')),
+        cookieStore: MemorySessionCookieStore(),
+        sessionStore: snapshot,
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final session = await api.session();
+
+      expect(session.isAuthenticated, isTrue);
+      expect(session.isOffline, isTrue);
+      expect(session.account?.displayName, 'Sam Shopper');
+    });
+
+    test('does not use a cached account after the server rejects the session',
+        () async {
+      final snapshot = MemorySessionSnapshotStore(jsonEncode({
+        'isAuthenticated': true,
+        'account': _accountJson,
+      }));
+      final api = Api(
+        client: MockClient((request) async => http.Response(
+              jsonEncode({
+                'data': {
+                  'session': {'isAuthenticated': false},
+                },
+              }),
+              401,
+            )),
+        cookieStore: MemorySessionCookieStore('ts_member_session=old'),
+        sessionStore: snapshot,
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      await expectLater(api.session(), throwsA(isA<ApiException>()));
+
+      expect(await snapshot.read(), isNull);
     });
 
     test('uses the server refresh flag for a forced discovery run', () async {
@@ -322,6 +407,94 @@ void main() {
       expect(result.storeCount, 1);
     });
 
+    test('requests a lightweight discovered-store page and one branch detail',
+        () async {
+      final requests = <Uri>[];
+      final api = Api(
+        client: MockClient((request) async {
+          requests.add(request.url);
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'stores': [
+                  {
+                    'placeId':
+                        request.url.queryParameters['placeId'] ?? 'store-1',
+                    'name': 'Local Market',
+                    'lat': -26.1,
+                    'lon': 28.05,
+                    'detailsLoaded':
+                        request.url.queryParameters['details'] != '0',
+                  }
+                ],
+                'pagination': {'hasMore': true, 'limit': 60, 'offset': 60},
+                'summary': {'storeCount': 140, 'areaCount': 9},
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final page = await api.discoveredStores(
+        limit: 60,
+        offset: 60,
+        query: 'corner shop',
+        includeDetails: false,
+      );
+      final detail = await api.discoveredStores(placeId: 'store/1', limit: 1);
+
+      expect(page.hasMore, isTrue);
+      expect(page.stores.single.detailsLoaded, isFalse);
+      expect(requests.first.queryParameters, containsPair('details', '0'));
+      expect(requests.first.queryParameters, containsPair('offset', '60'));
+      expect(requests.first.queryParameters, containsPair('q', 'corner shop'));
+      expect(requests.last.queryParameters, containsPair('placeId', 'store/1'));
+      expect(detail.stores.single.placeId, 'store/1');
+    });
+
+    test('requests compact dashboard store and voucher summaries', () async {
+      final requests = <Uri>[];
+      final api = Api(
+        client: MockClient((request) async {
+          requests.add(request.url);
+          if (request.url.path == '/api/discovered-stores') {
+            return http.Response(
+              jsonEncode({
+                'data': {
+                  'stores': [],
+                  'summary': {'storeCount': 42, 'areaCount': 7},
+                },
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'summary': {'activeVoucherCount': 9},
+                'vouchers': [],
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final stores = await api.discoveredStores(summary: true);
+      final vouchers = await api.voucherCount();
+
+      expect(stores.storeCount, 42);
+      expect(vouchers, 9);
+      expect(requests.map((uri) => uri.queryParameters['summary']), ['1', '1']);
+    });
+
     test('lists, saves, and removes vouchers through the member API', () async {
       final requests = <http.Request>[];
       final api = Api(
@@ -381,6 +554,12 @@ void main() {
           requests.map((request) => request.method), ['GET', 'POST', 'DELETE']);
     });
   });
+}
+
+class _StalledBodyClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async =>
+      http.StreamedResponse(StreamController<List<int>>().stream, 200);
 }
 
 class _SaveBasketApi extends Api {

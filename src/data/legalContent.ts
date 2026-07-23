@@ -51,7 +51,7 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
           'Account details: your email address, encrypted before it is stored; your display name; and a securely hashed version of your password. We never store your password in plain text.',
           'Things you save: saved deals, baskets, property favourites, deal watches, and your notification and address preferences, so the app can remember them for you.',
           'Location for "Near me": the suburb or address you type, or the GPS location you choose to share, which we convert to map coordinates to find nearby stores. You control whether to share this and can use the rest of the app without it.',
-          'Payment records: when you subscribe, PayFast processes the payment. We receive a confirmation and a subscription reference — we never see or store your card or banking details.',
+          'Payment records: when you subscribe, PayFast processes the payment. We receive a confirmation and a subscription reference. We never see or store your card or banking details.',
           'Technical information: basic logs such as your device type and app version, used to keep the service working and secure.',
         ],
       },
@@ -123,7 +123,7 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
         heading: 'What Trolley Scout is',
         body: [
           'Trolley Scout is an information tool. It gathers grocery specials, retailer catalogues, nearby store information, and property listings from their source platforms, then presents them in one place with the date each item was last checked.',
-          'Prices, specials and catalogue dates belong to the retailers and can change or sell out at any time. We show the source link and checked date so you can confirm — we do not guarantee that a price is still current, and the deal is always subject to the retailer’s own terms.',
+          'Prices, specials and catalogue dates belong to the retailers and can change or sell out at any time. We show the source link and checked date so you can confirm. We do not guarantee that a price is still current, and the deal is always subject to the retailer’s own terms.',
         ],
       },
       {
@@ -185,7 +185,7 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
       {
         heading: 'How we use cookies and local storage',
         body: [
-          'Trolley Scout keeps things simple. We use only what the app needs to work — we do not use advertising or cross-site tracking cookies, and we do not sell your browsing behaviour.',
+          'Trolley Scout keeps things simple. We use only what the app needs to work. We do not use advertising or cross-site tracking cookies, and we do not sell your browsing behaviour.',
         ],
       },
       {

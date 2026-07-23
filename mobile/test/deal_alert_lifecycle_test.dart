@@ -7,6 +7,7 @@ import 'package:trolley_scout/app_controller.dart';
 import 'package:trolley_scout/deal_alert_lifecycle.dart';
 import 'package:trolley_scout/deal_alert_scheduler.dart';
 import 'package:trolley_scout/notification_prefs_store.dart';
+import 'package:trolley_scout/session_cookie_store.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -114,56 +115,52 @@ void main() {
     expect(tasks.cancelledNames, [DealAlertScheduler.uniqueTaskName]);
   });
 
-  test('the app controller keeps restored members behind lifecycle sync',
+  test('the app controller shows restored members before lifecycle sync',
       () async {
     final api = _SessionApi();
     final lifecycle = _BlockingLifecycle();
     final controller = AppController(api, dealAlerts: lifecycle);
 
-    var completed = false;
-    final restore = controller.restore().whenComplete(() => completed = true);
+    await controller.restore();
     await lifecycle.syncStarted.future;
-    await Future<void>.delayed(Duration.zero);
-    try {
-      expect(controller.restoring, isTrue);
-      expect(completed, isFalse);
-    } finally {
-      lifecycle.completeSync();
-      await restore;
-    }
-
     expect(controller.restoring, isFalse);
     expect(lifecycle.syncedApis, [api]);
 
+    lifecycle.completeSync();
     await controller.signOut();
     expect(lifecycle.signedOutCalls, 1);
   });
 
-  test('the app controller waits for lifecycle sync before login returns',
-      () async {
+  test('the app controller returns from login before lifecycle sync', () async {
     final api = _SessionApi();
     final lifecycle = _BlockingLifecycle();
     final controller = AppController(api, dealAlerts: lifecycle);
 
-    var completed = false;
-    final authentication = controller
-        .authenticate(const AuthDraft.login(
-          email: 'shopper@example.test',
-          password: 'password1',
-        ))
-        .whenComplete(() => completed = true);
+    final authenticated = await controller.authenticate(
+      const AuthDraft.login(
+        email: 'shopper@example.test',
+        password: 'password1',
+      ),
+    );
     await lifecycle.syncStarted.future;
-    await Future<void>.delayed(Duration.zero);
-    try {
-      expect(controller.busy, isTrue);
-      expect(completed, isFalse);
-    } finally {
-      lifecycle.completeSync();
-    }
-
-    expect(await authentication, isTrue);
+    expect(authenticated, isTrue);
     expect(controller.busy, isFalse);
     expect(lifecycle.syncedApis, [api]);
+    lifecycle.completeSync();
+  });
+
+  test('offline sign-out clears the active session on this device', () async {
+    final api = _OfflineSignOutApi();
+    final lifecycle = _BlockingLifecycle()..completeSync();
+    final controller = AppController(api, dealAlerts: lifecycle);
+    await controller.restore();
+
+    await controller.signOut();
+
+    expect(controller.session.isAuthenticated, isFalse);
+    expect(controller.watches, isEmpty);
+    expect(controller.busy, isFalse);
+    expect(controller.notice, 'You’re signed out on this device.');
   });
 }
 
@@ -192,7 +189,12 @@ class _DelayedPreferenceApi extends Api {
 }
 
 class _SessionApi extends Api {
-  _SessionApi() : super(baseUrl: 'https://example.test');
+  _SessionApi()
+      : super(
+          baseUrl: 'https://example.test',
+          cookieStore: MemorySessionCookieStore(),
+          sessionStore: MemorySessionSnapshotStore(),
+        );
 
   @override
   Future<MemberSession> session() async => _memberSession;
@@ -208,6 +210,13 @@ class _SessionApi extends Api {
 
   @override
   Future<Object?> getMemberState(String key) async => null;
+}
+
+class _OfflineSignOutApi extends _SessionApi {
+  @override
+  Future<MemberSession> signOut() async {
+    throw const ApiException('Offline');
+  }
 }
 
 class _BlockingLifecycle extends DealAlertLifecycle {

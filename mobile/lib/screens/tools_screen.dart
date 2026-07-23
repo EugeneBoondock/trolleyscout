@@ -17,7 +17,7 @@ class ToolsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const ScreenHeader(
-          eyebrow: 'Tools',
+          eyebrow: 'Price comparisons',
           title: 'Compare before you buy',
           description:
               'Search the same product across selected stores, or compare a full shopping list side by side.',

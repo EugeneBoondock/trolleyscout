@@ -914,6 +914,7 @@ export interface NearbyStoreResult {
   firstSeenAt?: string
   lastSeenAt?: string
   promotionCount?: number
+  detailsLoaded?: boolean
   deals: DiscoveredDeal[]
   leaflets: StoreLeaflet[]
   promotions: Array<{
@@ -933,7 +934,13 @@ export interface NearbyStoreResult {
 }
 
 export interface DiscoveredStoresResource {
+  error?: string
   stores: NearbyStoreResult[]
+  pagination?: {
+    hasMore: boolean
+    limit: number
+    offset: number
+  }
   summary: {
     areaCount: number
     knownChainCount: number
@@ -942,13 +949,33 @@ export interface DiscoveredStoresResource {
   }
 }
 
+export interface DiscoveredStoreQuery {
+  includeDetails?: boolean
+  limit?: number
+  offset?: number
+  placeId?: string
+  query?: string
+  signal?: AbortSignal
+  summaryOnly?: boolean
+}
+
 export async function loadDiscoveredStores(
-  signal?: AbortSignal,
+  options: AbortSignal | DiscoveredStoreQuery = {},
 ): Promise<DiscoveredStoresResource> {
+  const query = options instanceof AbortSignal ? { signal: options } : options
+  const params = new URLSearchParams()
+  if (query.includeDetails === false) params.set('details', '0')
+  if (query.limit !== undefined) params.set('limit', String(query.limit))
+  if (query.offset !== undefined) params.set('offset', String(query.offset))
+  if (query.placeId) params.set('placeId', query.placeId)
+  if (query.query?.trim()) params.set('q', query.query.trim())
+  if (query.summaryOnly) params.set('summary', '1')
+  const suffix = params.size > 0 ? `?${params.toString()}` : ''
+
   try {
-    const response = await fetch('/api/discovered-stores', {
+    const response = await fetch(`/api/discovered-stores${suffix}`, {
       headers: { accept: 'application/json' },
-      signal,
+      signal: query.signal,
     })
 
     if (!response.ok) {
@@ -963,6 +990,8 @@ export async function loadDiscoveredStores(
     }
 
     return {
+      error: 'The store directory could not be loaded. Check your connection and try again.',
+      pagination: { hasMore: false, limit: query.limit ?? 0, offset: query.offset ?? 0 },
       stores: [],
       summary: { areaCount: 0, knownChainCount: 0, storeCount: 0, withPromotionsCount: 0 },
     }
@@ -1597,7 +1626,7 @@ export async function submitSupportMessage(input: {
     return {
       message:
         envelope.data?.message ??
-        (response.ok ? 'Thanks — your message has reached the team.' : 'Could not send your message.'),
+        (response.ok ? 'Thanks, your message has reached the team.' : 'Could not send your message.'),
       ok: response.ok,
     }
   } catch {
@@ -1654,18 +1683,30 @@ export async function protectLegacyEmails(countryCode = 'ZA') {
 // Generic per-account key/value state (cross-device sync). Best-effort: a
 // signed-out shopper or a network error just returns null / false, and the
 // caller keeps its local copy.
-export async function getMemberState<T>(key: string, signal?: AbortSignal): Promise<T | null> {
+export interface MemberStateReadResult<T> {
+  ok: boolean
+  value: T | null
+}
+
+export async function readMemberState<T>(
+  key: string,
+  signal?: AbortSignal,
+): Promise<MemberStateReadResult<T>> {
   try {
     const response = await fetch(`/api/member-state?key=${encodeURIComponent(key)}`, {
       headers: { accept: 'application/json' },
       signal,
     })
-    if (!response.ok) return null
+    if (!response.ok) return { ok: false, value: null }
     const envelope = (await response.json()) as { data?: { value?: T | null } }
-    return envelope.data?.value ?? null
+    return { ok: true, value: envelope.data?.value ?? null }
   } catch {
-    return null
+    return { ok: false, value: null }
   }
+}
+
+export async function getMemberState<T>(key: string, signal?: AbortSignal): Promise<T | null> {
+  return (await readMemberState<T>(key, signal)).value
 }
 
 export async function setMemberState(key: string, value: unknown): Promise<boolean> {

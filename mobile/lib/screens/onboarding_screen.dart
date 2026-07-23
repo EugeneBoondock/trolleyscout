@@ -25,20 +25,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _slides = <_Slide>[
     _Slide(
-      icon: Icons.local_offer_outlined,
+      asset: 'assets/onboarding/scout-budget.png',
       title: 'Stretch your budget',
-      body: "This week's real grocery specials from stores in your country, "
-          'checked against the official pages — never a forwarded screenshot.',
+      body: 'This week’s real grocery specials from stores in your country, '
+          'checked against official pages, never a forwarded screenshot.',
     ),
     _Slide(
-      icon: Icons.window_outlined,
+      asset: 'assets/onboarding/scout-window.png',
       title: 'Window shopping',
       body:
           'Drift through deals one swipe at a time, with easy in-store music. '
           'Save the ones you love and we learn your taste.',
     ),
     _Slide(
-      icon: Icons.apartment_outlined,
+      asset: 'assets/onboarding/scout-home.png',
       title: 'And a place to call home',
       body: 'Household members can search homes to buy or rent across the '
           'country with Properties Scout.',
@@ -67,22 +67,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     if (_showAuth) {
-      return Scaffold(
-        backgroundColor: TS.bgOf(context),
-        body: SafeArea(
-          child: AuthScreen(
-            controller: widget.controller,
-            initialIntent: _authIntent,
-            onBack: () => setState(() => _showAuth = false),
-            // Nothing to do: authenticating flips the session, and the root
-            // shell rebuilds to show the app in this widget's place.
-            onAuthenticated: () {},
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) setState(() => _showAuth = false);
+        },
+        child: Scaffold(
+          backgroundColor: TS.bgOf(context),
+          body: SafeArea(
+            child: AuthScreen(
+              controller: widget.controller,
+              initialIntent: _authIntent,
+              onBack: () => setState(() => _showAuth = false),
+              // Authenticating flips the session, and the root shell rebuilds.
+              onAuthenticated: () {},
+            ),
           ),
         ),
       );
     }
 
     final isLast = _page == _slides.length - 1;
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final compactHeader =
+        MediaQuery.sizeOf(context).width < 360 || textScale > 1.3;
     return Scaffold(
       backgroundColor: TS.bgOf(context),
       body: SafeArea(
@@ -97,8 +105,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: Image.asset('assets/scout-logo.png',
                         width: 36, height: 36),
                   ),
-                  const SizedBox(width: 8),
-                  const Text('TROLLEY SCOUT', style: TS.display),
+                  if (!compactHeader) ...[
+                    const SizedBox(width: 8),
+                    const Text('TROLLEY SCOUT', style: TS.display),
+                  ],
                   const Spacer(),
                   TextButton(
                     onPressed: () => _openAuth('login'),
@@ -127,7 +137,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: TS.yellow,
                         foregroundColor: TS.ink,
-                        shape: const RoundedRectangleBorder(),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(TS.controlRadius),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       onPressed: isLast ? () => _openAuth('signup') : _next,
@@ -143,7 +155,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: Text(
                       isLast
                           ? 'I already have an account · Log in'
-                          : 'Skip — create an account',
+                          : 'Skip and create an account',
                     ),
                   ),
                 ],
@@ -157,9 +169,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 class _Slide {
-  const _Slide({required this.icon, required this.title, required this.body});
+  const _Slide({required this.asset, required this.title, required this.body});
 
-  final IconData icon;
+  final String asset;
   final String title;
   final String body;
 }
@@ -171,35 +183,45 @@ class _SlideView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              color: TS.yellow,
-              border: Border.all(color: TS.lineOf(context), width: 3),
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight - 32),
+          child: Semantics(
+            namesRoute: true,
+            label: '${slide.title}. ${slide.body}',
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset(
+                  slide.asset,
+                  excludeFromSemantics: true,
+                  fit: BoxFit.contain,
+                  height: largeText ? 112 : 176,
+                  width: largeText ? 112 : 176,
+                ),
+                SizedBox(height: largeText ? 12 : 20),
+                Text(
+                  slide.title,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.merge(TS.display),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  slide.body,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: TS.mutedOf(context), fontSize: 15, height: 1.4),
+                ),
+              ],
             ),
-            child: Icon(slide.icon, size: 46, color: TS.ink),
           ),
-          const SizedBox(height: 28),
-          Text(
-            slide.title,
-            textAlign: TextAlign.center,
-            style:
-                Theme.of(context).textTheme.headlineMedium?.merge(TS.display),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            slide.body,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: TS.mutedOf(context), fontSize: 15, height: 1.4),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -225,15 +247,17 @@ class _OnboardingProgress extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                isLast ? "You're ready to start" : 'Getting started',
-                style: TextStyle(
-                    color: TS.mutedOf(context),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12),
+              Expanded(
+                child: Text(
+                  isLast ? 'You’re ready to start' : 'Getting started',
+                  style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12),
+                ),
               ),
+              const SizedBox(width: 12),
               Text(
                 '$step of $total',
                 style: TextStyle(

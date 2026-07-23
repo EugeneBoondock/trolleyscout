@@ -103,7 +103,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.deletedDealCalls, 1);
-    expect(find.text('No saved deals yet.'), findsOneWidget);
+    expect(find.textContaining('No saved deals yet'), findsOneWidget);
   });
 
   testWidgets('basket quantity can be increased', (tester) async {
@@ -118,6 +118,72 @@ void main() {
     expect(find.text('2'), findsOneWidget);
   });
 
+  testWidgets('profile prevents incomplete and mismatched password changes',
+      (tester) async {
+    final api = _FeatureApi();
+    final controller = AppController(api)
+      ..restoring = false
+      ..session = _memberSession;
+    await tester.pumpWidget(_wrap(ProfileScreen(controller: controller)));
+    await tester.pumpAndSettle();
+    final updateButton = find.widgetWithText(OutlinedButton, 'Update password');
+    await tester.ensureVisible(updateButton);
+    await tester.pumpAndSettle();
+
+    tester.widget<OutlinedButton>(updateButton).onPressed!();
+    await tester.pump();
+    expect(find.text('Enter your current password.'), findsOneWidget);
+
+    Finder field(String label) => find.byWidgetPredicate((widget) =>
+        widget is TextField && widget.decoration?.labelText == label);
+    await tester.enterText(field('Current password'), 'current-password');
+    await tester.enterText(field('New password'), 'new-password');
+    await tester.enterText(field('Confirm new password'), 'different-password');
+    expect(tester.widget<TextField>(field('Current password')).controller?.text,
+        'current-password');
+    expect(tester.widget<TextField>(field('New password')).controller?.text,
+        'new-password');
+    expect(
+        tester
+            .widget<TextField>(field('Confirm new password'))
+            .controller
+            ?.text,
+        'different-password');
+    await tester.ensureVisible(updateButton);
+    await tester.pumpAndSettle();
+    tester.widget<OutlinedButton>(updateButton).onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.text('The new passwords do not match.'), findsOneWidget);
+    expect(api.passwordChangeCalls, 0);
+
+    await tester.enterText(field('Confirm new password'), 'new-password');
+    await tester.ensureVisible(updateButton);
+    await tester.pumpAndSettle();
+    tester.widget<OutlinedButton>(updateButton).onPressed!();
+    await tester.pumpAndSettle();
+    expect(api.passwordChangeCalls, 1);
+    expect(find.text('Password updated.'), findsOneWidget);
+  });
+
+  testWidgets('a removed basket item can be restored from the snackbar',
+      (tester) async {
+    final api = _FeatureApi();
+    await tester.pumpWidget(_wrap(BasketScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Remove basket item'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your basket is empty.'), findsOneWidget);
+    expect(find.text('Undo'), findsOneWidget);
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    expect(api.deletedBasketCalls, 1);
+    expect(api.restoredBasketCalls, 1);
+    expect(find.text('Example maize meal'), findsOneWidget);
+  });
+
   testWidgets('remaining parity screens render their real content',
       (tester) async {
     final api = _FeatureApi();
@@ -129,7 +195,7 @@ void main() {
       OffersScreen(api: api, canDelete: false): 'Verified offers',
       ScannerScreen(api: api): 'Offer scanner',
       SubscriptionScreen(api: api): 'Choose your plan',
-      ProfileScreen(controller: controller): 'Your profile',
+      ProfileScreen(controller: controller): 'Settings',
       AboutScreen(onNavigate: (_) {}): 'How Trolley Scout helps',
       const RulesScreen(): 'Data rules',
       AdminScreen(api: api): 'Admin console',
@@ -149,8 +215,7 @@ void main() {
     await tester.pumpWidget(_wrap(AdminScreen(api: api)));
     await tester.pumpAndSettle();
 
-    await tester.tap(
-        find.widgetWithText(FilledButton, 'Refresh deal sources'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Refresh deal sources'));
     await tester.pumpAndSettle();
 
     expect(api.dealRefreshCalls, 1);
@@ -167,12 +232,16 @@ class _FeatureApi extends Api {
   int savedSourceCalls = 0;
   int deletedDealCalls = 0;
   int dealRefreshCalls = 0;
+  int deletedBasketCalls = 0;
+  int restoredBasketCalls = 0;
+  int passwordChangeCalls = 0;
   int? updatedBasketQuantity;
   var _savedDeals = <SavedDeal>[_savedDeal];
   var _basket = _exampleBasket;
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [_deal],
         foundDealCount: 1,
@@ -183,11 +252,20 @@ class _FeatureApi extends Api {
 
   @override
   Future<RetailerCatalog> retailers(
-          {String query = '', String kind = 'all'}) async =>
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
       const RetailerCatalog(retailers: [_retailer], sourceKinds: ['specials']);
 
   @override
-  Future<DiscoveredStoresResult> discoveredStores() async =>
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+  }) async =>
       const DiscoveredStoresResult(
         stores: [_discoveredStore],
         storeCount: 1,
@@ -217,7 +295,16 @@ class _FeatureApi extends Api {
   }
 
   @override
+  Future<void> changePassword(
+      String currentPassword, String newPassword) async {
+    passwordChangeCalls += 1;
+  }
+
+  @override
   Future<int> verifiedOfferCount() async => 1;
+
+  @override
+  Future<int> voucherCount() async => 0;
 
   @override
   Future<Basket> basket() async => _basket;
@@ -240,6 +327,20 @@ class _FeatureApi extends Api {
         savingsCents: 2000,
       ),
     );
+    return _basket;
+  }
+
+  @override
+  Future<Basket> deleteBasketItem(String id) async {
+    deletedBasketCalls += 1;
+    _basket = const Basket.empty();
+    return _basket;
+  }
+
+  @override
+  Future<Basket> addBasketItem(String savedDealId, {int quantity = 1}) async {
+    restoredBasketCalls += 1;
+    _basket = _exampleBasket;
     return _basket;
   }
 

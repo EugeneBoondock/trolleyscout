@@ -15,6 +15,7 @@ describe('selectNearestBranchId', () => {
     const payload = {
       stores: [
         { id: 'liq1', brand: 'Checkers LiquorShop', name: 'Checkers LiquorShop CBD' },
+        { id: 'liq2', brand: 'Checkers LiquorShop', name: 'Checkers CBD' },
         { id: 'ck1', brand: 'Checkers', name: 'Checkers The Mutual CBD' },
       ],
     }
@@ -24,6 +25,38 @@ describe('selectNearestBranchId', () => {
   it('returns undefined when no branch of the chain is nearby', () => {
     const payload = { stores: [{ id: 'x', brand: 'Shoprite', name: 'Shoprite Foo' }] }
     expect(selectNearestBranchId(payload, SHOPRITE_GROUP_CHAINS.checkers)).toBeUndefined()
+  })
+
+  it('prefers the returned branch whose name matches the discovered store', () => {
+    const payload = {
+      stores: [
+        { id: 'ck1', brand: 'Checkers', name: 'Checkers Cavendish' },
+        { id: 'ck2', brand: 'Checkers', name: 'Checkers The Mutual CBD' },
+      ],
+    }
+    expect(
+      selectNearestBranchId(
+        payload,
+        SHOPRITE_GROUP_CHAINS.checkers,
+        'Checkers The Mutual CBD',
+      ),
+    ).toBe('ck2')
+  })
+
+  it('keeps the nearest branch when no returned name is an exact match', () => {
+    const payload = {
+      stores: [
+        { id: 'nearest', brand: 'Checkers', name: 'Checkers Rosebank Mall' },
+        { id: 'farther', brand: 'Checkers', name: 'Checkers Rosebank' },
+      ],
+    }
+    expect(
+      selectNearestBranchId(
+        payload,
+        SHOPRITE_GROUP_CHAINS.checkers,
+        'Checkers Rosebank Central',
+      ),
+    ).toBe('nearest')
   })
 })
 
@@ -78,12 +111,17 @@ describe('parseShopriteGroupPromotions', () => {
     }])
   })
 
-  it('skips products with no bonus buy, an expired one, or one scoped to other stores', () => {
+  it('skips products without an active, current promotion scoped to this branch', () => {
     const result = parseShopriteGroupPromotions('www.shoprite.co.za', 'store-1', {
       products: [
         product({ id: 'none', bonusBuys: [] }),
         product({ id: 'expired', bonusBuys: [bonusBuy({ endDate: Date.parse('2026-07-01T00:00:00Z') })] }),
+        product({ id: 'future', bonusBuys: [bonusBuy({ startDate: Date.parse('2026-08-01T00:00:00Z') })] }),
         product({ id: 'elsewhere', bonusBuys: [bonusBuy({ browseStoreIds: ['store-99'] })] }),
+        product({ id: 'unscoped', bonusBuys: [bonusBuy({ browseStoreIds: undefined })] }),
+        product({ id: 'inactive', bonusBuys: [bonusBuy({ active: false })] }),
+        product({ id: 'missing-active', bonusBuys: [bonusBuy({ active: undefined })] }),
+        product({ id: 'undated', bonusBuys: [bonusBuy({ endDate: undefined })] }),
       ],
     }, NOW)
 

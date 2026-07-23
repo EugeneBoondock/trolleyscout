@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../catalogue_sort.dart';
@@ -16,6 +17,7 @@ import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
+import '../widgets/common.dart' show validUntilInfo;
 import '../widgets/login_gate_card.dart';
 import '../widgets/scout_mascot.dart';
 import '../widgets/skeleton.dart';
@@ -33,6 +35,7 @@ class DealsScreen extends StatefulWidget {
     this.initialQuery,
     this.alertScheduler,
     this.requestNotificationPermission,
+    this.openNotificationSettings,
   });
   final Api api;
   final bool isAuthenticated;
@@ -43,6 +46,7 @@ class DealsScreen extends StatefulWidget {
   final String? initialQuery;
   final DealAlertScheduler? alertScheduler;
   final Future<bool> Function()? requestNotificationPermission;
+  final Future<bool> Function()? openNotificationSettings;
 
   @override
   State<DealsScreen> createState() => _DealsScreenState();
@@ -169,9 +173,12 @@ class _DealsScreenState extends State<DealsScreen> {
             DealNotifications.instance.requestPermission());
         if (!granted) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Turn on notifications in your phone settings to get deal alerts.'),
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Notifications are off for Trolley Scout.'),
+              action: SnackBarAction(
+                label: 'Settings',
+                onPressed: _openNotificationSettings,
+              ),
             ));
           }
           return;
@@ -223,6 +230,13 @@ class _DealsScreenState extends State<DealsScreen> {
     } finally {
       if (mounted) setState(() => _notifBusy = false);
     }
+  }
+
+  void _openNotificationSettings() {
+    unawaited(
+      (widget.openNotificationSettings?.call() ?? Geolocator.openAppSettings())
+          .catchError((_) => false),
+    );
   }
 
   @override
@@ -958,9 +972,7 @@ class _DealsScreenState extends State<DealsScreen> {
                 leading:
                     Icon(Icons.menu_book_outlined, color: TS.redOf(context)),
                 title: Text(catalogue.name),
-                subtitle: catalogue.validTo != null
-                    ? Text('Until ${catalogue.validTo!.substring(0, 10)}')
-                    : null,
+                subtitle: _catalogueValidToSubtitle(context, catalogue),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.of(context).pop();
@@ -1025,6 +1037,19 @@ class _DealsScreenState extends State<DealsScreen> {
       ),
     );
   }
+}
+
+/// The catalogue-group sheet's "valid until" subtitle — flags an expired
+/// catalogue instead of quietly showing a date that has already passed.
+Widget? _catalogueValidToSubtitle(BuildContext context, Catalogue catalogue) {
+  final info = validUntilInfo(catalogue.validTo);
+  if (info == null) return null;
+  return Text(
+    info.label,
+    style: info.isExpired
+        ? TextStyle(color: TS.redOf(context), fontWeight: FontWeight.w700)
+        : null,
+  );
 }
 
 class _DealRow extends StatelessWidget {
@@ -1156,7 +1181,9 @@ class _DealRow extends StatelessWidget {
                         fontSize: 18,
                         fontWeight: FontWeight.w900),
                   ),
-                if (meaningfulWasPrice(deal.previousPriceText, deal.priceText) != null)
+                if (meaningfulWasPrice(
+                        deal.previousPriceText, deal.priceText) !=
+                    null)
                   Text(
                     meaningfulWasPrice(deal.previousPriceText, deal.priceText)!,
                     maxLines: 1,
@@ -1188,14 +1215,14 @@ class _DealRow extends StatelessWidget {
                     ),
                     icon: Icons.language,
                   ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 8),
                 _DealActionIcon(
                   tooltip: 'Share on WhatsApp',
                   onPressed: _share,
                   icon: Icons.share_outlined,
                 ),
                 if (onSave != null) ...[
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   _DealActionIcon(
                     tooltip: isSaved ? 'Deal saved' : 'Save deal',
                     onPressed: isSaved ? null : onSave,
@@ -1203,11 +1230,11 @@ class _DealRow extends StatelessWidget {
                   ),
                 ],
                 if (onAddToBasket != null) ...[
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 44),
+                        minimumSize: const Size(0, 48),
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         visualDensity: VisualDensity.compact,
                       ),
@@ -1245,7 +1272,7 @@ class _DealActionIcon extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
-        constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
           foregroundColor: TS.inkOf(context),

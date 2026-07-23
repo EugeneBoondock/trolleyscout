@@ -13,16 +13,47 @@ const publicHeaders = {
   'cache-control': 'public, max-age=120',
 }
 
-export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
+const EDGE_CACHE_SECONDS = 120
+
+export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, waitUntil }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method, 'GET')
   }
 
   const requested = new URL(request.url).searchParams.get('placement')
   const placement: AdPlacement = isValidAdPlacement(requested) ? requested : 'feed'
-  const nowIso = new Date().toISOString()
 
+  // The live-ads feed never varies by session — no member data goes in or
+  // out — so every visitor for a placement can share one edge copy.
+  const edgeCache = await openEdgeCache()
+  const edgeCacheKey = `https://edge-cache.trolleyscout.co.za/api/public-ads?placement=${placement}`
+  if (edgeCache) {
+    const cached = await edgeCache.match(edgeCacheKey)
+    if (cached) {
+      return cached
+    }
+  }
+
+  const nowIso = new Date().toISOString()
   const ads = await listLiveAds(env, placement, nowIso)
 
-  return json({ ads, placement }, { headers: publicHeaders })
+  return cacheResponse(json({ ads, placement }, { headers: publicHeaders }))
+
+  function cacheResponse(value: Response) {
+    if (!edgeCache) return value
+    const publicResponse = new Response(value.body, value)
+    publicResponse.headers.set('cache-control', `public, max-age=60, s-maxage=${EDGE_CACHE_SECONDS}`)
+    waitUntil(edgeCache.put(edgeCacheKey, publicResponse.clone()).catch(() => undefined))
+    return publicResponse
+  }
+}
+
+// The Cache API is absent in unit tests and some local runtimes — treat it
+// as an optional accelerator, never a requirement.
+async function openEdgeCache(): Promise<Cache | undefined> {
+  try {
+    return typeof caches === 'undefined' ? undefined : caches.default
+  } catch {
+    return undefined
+  }
 }

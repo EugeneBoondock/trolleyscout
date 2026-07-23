@@ -22,11 +22,8 @@ class StoreGroup {
     return null;
   }
 
-  int get dealCount =>
-      branches.fold(0, (total, branch) => total + branch.deals.length);
-
-  int get catalogueCount =>
-      branches.fold(0, (total, branch) => total + branch.catalogues.length);
+  int get offerCount =>
+      branches.fold(0, (total, branch) => total + branch.promotionCount);
 
   num? get nearestDistanceM {
     final distances =

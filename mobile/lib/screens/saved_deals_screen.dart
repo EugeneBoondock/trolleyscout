@@ -6,9 +6,12 @@ import '../widgets/common.dart';
 import '../widgets/in_app_browser.dart';
 
 class SavedDealsScreen extends StatefulWidget {
-  const SavedDealsScreen({super.key, required this.api});
+  const SavedDealsScreen({super.key, required this.api, this.onFindDeals});
 
   final Api api;
+
+  /// Empty-state CTA: jump to Find deals so a new member isn't stranded.
+  final VoidCallback? onFindDeals;
 
   @override
   State<SavedDealsScreen> createState() => _SavedDealsScreenState();
@@ -16,14 +19,41 @@ class SavedDealsScreen extends StatefulWidget {
 
 class _SavedDealsScreenState extends State<SavedDealsScreen> {
   late Future<List<SavedDeal>> _future = widget.api.savedDeals();
+  final Set<String> _busyIds = {};
 
   void _reload() => setState(() {
         _future = widget.api.savedDeals();
       });
 
-  Future<void> _remove(String id) async {
+  Future<void> _remove(SavedDeal deal) async {
+    if (_busyIds.contains(deal.id)) return;
+    setState(() => _busyIds.add(deal.id));
     try {
-      final deals = await widget.api.deleteSavedDeal(id);
+      final deals = await widget.api.deleteSavedDeal(deal.id);
+      if (mounted) {
+        setState(() {
+          _future = Future.value(deals);
+        });
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text('${deal.title} removed.'),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => _restore(deal),
+            ),
+          ));
+      }
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(deal.id));
+    }
+  }
+
+  Future<void> _restore(SavedDeal deal) async {
+    try {
+      final deals = await widget.api.saveDeal(deal);
       if (mounted) {
         setState(() {
           _future = Future.value(deals);
@@ -52,8 +82,12 @@ class _SavedDealsScreenState extends State<SavedDealsScreen> {
           return const LoadingPane();
         }
         if (snapshot.hasError || snapshot.data == null) {
+          final error = snapshot.error;
           return ErrorPane(
-              message: 'Could not load saved deals.', onRetry: _reload);
+            message: 'Could not load saved deals.',
+            detail: error is ApiException ? error.message : null,
+            onRetry: _reload,
+          );
         }
         final deals = snapshot.data!;
         return ListView(
@@ -66,8 +100,17 @@ class _SavedDealsScreenState extends State<SavedDealsScreen> {
                   'Keep official deals for later and add them to your basket plan.',
             ),
             if (deals.isEmpty)
-              const EmptyCard(
-                  message: 'No saved deals yet.', icon: Icons.wallet_outlined)
+              EmptyCard(
+                message: 'No saved deals yet. Save any deal to plan your '
+                    'basket around it.',
+                icon: Icons.wallet_outlined,
+                action: widget.onFindDeals == null
+                    ? null
+                    : FilledButton(
+                        onPressed: widget.onFindDeals,
+                        child: const Text('Find deals'),
+                      ),
+              )
             else
               for (final deal in deals)
                 PaperCard(
@@ -108,7 +151,9 @@ class _SavedDealsScreenState extends State<SavedDealsScreen> {
                           ),
                           IconButton(
                             tooltip: 'Remove saved deal',
-                            onPressed: () => _remove(deal.id),
+                            onPressed: _busyIds.contains(deal.id)
+                                ? null
+                                : () => _remove(deal),
                             icon: const Icon(Icons.delete_outline),
                           ),
                         ],

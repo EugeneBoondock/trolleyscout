@@ -22,6 +22,14 @@ class _OffersScreenState extends State<OffersScreen> {
       });
 
   Future<void> _delete(VerifiedOffer offer) async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete this offer?',
+      message: 'This removes “${offer.title}” from the verified offer board.',
+      confirmLabel: 'Delete offer',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
     try {
       await widget.api.deleteOffer(offer.id);
       final offers = await widget.api.offers();
@@ -44,8 +52,12 @@ class _OffersScreenState extends State<OffersScreen> {
           return const LoadingPane();
         }
         if (snapshot.hasError || snapshot.data == null) {
+          final error = snapshot.error;
           return ErrorPane(
-              message: 'Could not load verified offers.', onRetry: _reload);
+            message: 'Could not load verified offers.',
+            detail: error is ApiException ? error.message : null,
+            onRetry: _reload,
+          );
         }
         final offers = snapshot.data!;
         return ListView(

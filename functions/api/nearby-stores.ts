@@ -10,7 +10,7 @@ import type { DiscoveredDeal, StoreLeaflet } from '../../src/types'
 import { readDealSnapshots, readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import {
-  listActiveDealItems,
+  listActiveDealItemsBatch,
   type DealItemScopeFilter,
   type StoredDealItem,
 } from '../_shared/dealItemStore'
@@ -260,19 +260,23 @@ async function readNormalizedItemsForRetailers(
   stores: NearbyStore[],
   now: string,
 ): Promise<StoredDealItem[]> {
-  const pages = await Promise.all(buildNearMeDealQueries(stores).map(async (query) => {
-    try {
-      return await listActiveDealItems(env, {
+  // One db.batch() round trip for every retailer × scope filter — this used to
+  // be 20+ discrete D1 statements per nearby search.
+  let pages: StoredDealItem[][] = []
+  try {
+    pages = await listActiveDealItemsBatch(
+      env,
+      buildNearMeDealQueries(stores).map((query) => ({
         limit: 200,
         now,
         ...(query.retailerId ? { retailerIds: [query.retailerId] } : {}),
         scope: query.scope,
-      })
-    } catch {
-      // The older snapshot lane remains available during migration rollout.
-      return []
-    }
-  }))
+      })),
+    )
+  } catch {
+    // The older snapshot lane remains available during migration rollout.
+    pages = []
+  }
 
   return [...new Map(pages.flat().map((item) => [item.id, item])).values()]
 }

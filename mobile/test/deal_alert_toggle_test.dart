@@ -42,6 +42,7 @@ void main() {
   testWidgets('denied device permission leaves alerts off', (tester) async {
     final api = _ToggleApi();
     final tasks = _TaskPlatform();
+    var openedSettings = false;
 
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
@@ -51,6 +52,10 @@ void main() {
           isAuthenticated: true,
           alertScheduler: DealAlertScheduler(platform: tasks),
           requestNotificationPermission: () async => false,
+          openNotificationSettings: () async {
+            openedSettings = true;
+            return true;
+          },
         ),
       ),
     ));
@@ -62,7 +67,11 @@ void main() {
     expect(api.savedPreferences, isEmpty);
     expect(tasks.scheduledNames, isEmpty);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
-    expect(find.textContaining('phone settings'), findsOneWidget);
+    expect(
+        find.text('Notifications are off for Trolley Scout.'), findsOneWidget);
+    await tester.tap(find.text('Settings'));
+    await tester.pump();
+    expect(openedSettings, isTrue);
   });
 
   testWidgets('restoring the screen preserves a device-level denial',
@@ -126,7 +135,8 @@ class _ToggleApi extends Api {
   final bool initialServerPreference;
 
   @override
-  Future<DiscoveryResult> discovery({bool forceLive = false, bool summary = false}) async =>
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
       const DiscoveryResult(
         deals: [],
         foundDealCount: 0,

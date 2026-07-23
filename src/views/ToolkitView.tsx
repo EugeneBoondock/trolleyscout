@@ -1,12 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { MagnifyingGlass, Plus, Trash } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { compareShops, formatCents, parsePriceInput } from '../services/shopCompare'
-import { loadRetailers, searchProductPrices } from '../services/apiClient'
+import {
+  loadRetailers,
+  readMemberState,
+  searchProductPrices,
+  setMemberState,
+} from '../services/apiClient'
 import type { CountryOption, ProductComparisonResult, Retailer } from '../types'
 
-export function ToolkitView() {
+const COMPARE_RETAILERS_STATE_KEY = 'compare_retailers_v1'
+const COMPARE_RETAILERS_LOCAL_KEY = 'ts_compare_retailers_v1'
+const MAX_COMPARE_RETAILERS = 16
+
+export function ToolkitView({ preferenceOwnerId }: { preferenceOwnerId?: string } = {}) {
   return (
     <div className="toolkit-view">
       <section className="member-section-head">
@@ -19,7 +28,7 @@ export function ToolkitView() {
           </p>
         </div>
       </section>
-      <AutoShopCompare />
+      <AutoShopCompare preferenceOwnerId={preferenceOwnerId} />
       <ShopCompare />
     </div>
   )
@@ -31,9 +40,14 @@ interface CompareRow {
   prices: string[]
 }
 
+interface CompareRetailerSelection {
+  ids: string[]
+  updatedAt: number
+}
+
 // Auto compare searches each selected retailer when the shopper asks. This is
 // separate from discovery because regular shelf products may have no promotion.
-function AutoShopCompare() {
+function AutoShopCompare({ preferenceOwnerId }: { preferenceOwnerId?: string }) {
   const [retailers, setRetailers] = useState<Retailer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSearching, setIsSearching] = useState(false)
@@ -43,24 +57,56 @@ function AutoShopCompare() {
   // picked" choice, so deselecting every store must not resurrect defaults.
   const [selectedIds, setSelectedIds] = useState<string[] | undefined>()
   const [result, setResult] = useState<ProductComparisonResult | undefined>()
+  const preferenceSaveQueue = useRef<Promise<void>>(Promise.resolve())
+  const lastPreferenceUpdate = useRef(0)
 
   useEffect(() => {
     const controller = new AbortController()
+    const localKey = compareRetailersLocalKey(preferenceOwnerId)
+    const accountLocalValue = readLocalCompareRetailerSelection(localKey)
+    const publicLocalValue = preferenceOwnerId
+      ? readLocalCompareRetailerSelection(COMPARE_RETAILERS_LOCAL_KEY)
+      : undefined
 
-    loadRetailers({ query: '', signal: controller.signal, sourceKind: 'all' })
-      .then((state) => {
+    Promise.all([
+      loadRetailers({ query: '', signal: controller.signal, sourceKind: 'all' }),
+      readMemberState<unknown>(COMPARE_RETAILERS_STATE_KEY, controller.signal),
+    ])
+      .then(([state, remoteRead]) => {
         if (controller.signal.aborted) {
           return
         }
         const loaded = state.data.retailers
+        const remoteSelection = parseCompareRetailerSelection(remoteRead.value, loaded)
+        const localSelection =
+          parseCompareRetailerSelection(accountLocalValue, loaded) ??
+          parseCompareRetailerSelection(publicLocalValue, loaded)
+        const savedSelection = newerCompareRetailerSelection(remoteSelection, localSelection)
+        const initialSelection = savedSelection ?? {
+          ids: loaded.slice(0, 2).map((retailer) => retailer.id),
+          updatedAt: 0,
+        }
         setRetailers(loaded)
-        setSelectedIds((current) => current ?? loaded.slice(0, 2).map((retailer) => retailer.id))
+        setSelectedIds(initialSelection.ids)
+        lastPreferenceUpdate.current = Math.max(
+          lastPreferenceUpdate.current,
+          initialSelection.updatedAt,
+        )
+        writeLocalCompareRetailerSelection(localKey, initialSelection)
+        if (localSelection && remoteRead.ok && (
+          !remoteSelection || localSelection.updatedAt > remoteSelection.updatedAt
+        )) {
+          preferenceSaveQueue.current = preferenceSaveQueue.current
+            .catch(() => undefined)
+            .then(() => setMemberState(COMPARE_RETAILERS_STATE_KEY, localSelection))
+            .then(() => undefined)
+        }
         setIsLoading(false)
       })
       .catch(() => setIsLoading(false))
 
     return () => controller.abort()
-  }, [])
+  }, [preferenceOwnerId])
 
   const storeOptions = retailers.map((retailer) => ({ id: retailer.id, name: retailer.name }))
   const stores = selectedIds ?? []
@@ -68,10 +114,22 @@ function AutoShopCompare() {
   function toggleStore(id: string) {
     setResult(undefined)
     setError('')
-    setSelectedIds((current) => {
-      const base = current ?? []
-      return base.includes(id) ? base.filter((storeId) => storeId !== id) : [...base, id]
-    })
+    if (!stores.includes(id) && stores.length >= MAX_COMPARE_RETAILERS) {
+      setError(`Choose up to ${MAX_COMPARE_RETAILERS} stores at a time.`)
+      return
+    }
+    const next = stores.includes(id)
+      ? stores.filter((storeId) => storeId !== id)
+      : [...stores, id]
+    const updatedAt = Math.max(Date.now(), lastPreferenceUpdate.current + 1)
+    lastPreferenceUpdate.current = updatedAt
+    const selection = { ids: next, updatedAt }
+    setSelectedIds(next)
+    writeLocalCompareRetailerSelection(compareRetailersLocalKey(preferenceOwnerId), selection)
+    preferenceSaveQueue.current = preferenceSaveQueue.current
+      .catch(() => undefined)
+      .then(() => setMemberState(COMPARE_RETAILERS_STATE_KEY, selection))
+      .then(() => undefined)
   }
 
   async function compare() {
@@ -113,7 +171,10 @@ function AutoShopCompare() {
       ) : (
         <>
           <fieldset className="auto-compare-stores">
-            <legend>Stores to compare ({stores.length} picked)</legend>
+            <legend>Stores shown in compare ({stores.length} selected)</legend>
+            <p className="auto-compare-preference-note">
+              Choose up to {MAX_COMPARE_RETAILERS}. Your choice is saved across web and mobile.
+            </p>
             {storeOptions.map((store) => (
               <label
                 className={clsx('auto-compare-store', stores.includes(store.id) && 'is-picked')}
@@ -178,7 +239,7 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
             <span className="auto-compare-store-name">{match.retailerName}</span>
             {match.status === 'unavailable' ? (
               <span className="auto-compare-missing">
-                This store has no public price search we can read — check in store
+                This store has no public price search we can read. Check in store.
               </span>
             ) : (
               <>
@@ -196,7 +257,7 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
                 )}
                 {match.priceCents === undefined ? (
                   <span className="auto-compare-status">
-                    Product found — the site hides its price from us; open the product page
+                    Product found. The site hides its price from us, so open the product page.
                   </span>
                 ) : (
                   <span className="auto-compare-price">
@@ -233,6 +294,76 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
       ) : null}
     </div>
   )
+}
+
+function compareRetailersLocalKey(preferenceOwnerId: string | undefined): string {
+  return preferenceOwnerId
+    ? `${COMPARE_RETAILERS_LOCAL_KEY}:${encodeURIComponent(preferenceOwnerId)}`
+    : COMPARE_RETAILERS_LOCAL_KEY
+}
+
+function readLocalCompareRetailerSelection(key: string): unknown {
+  try {
+    const value = localStorage.getItem(key)
+    return value ? JSON.parse(value) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeLocalCompareRetailerSelection(
+  key: string,
+  selection: CompareRetailerSelection,
+): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(selection))
+  } catch {
+    // Account sync still keeps the choice when browser storage is unavailable.
+  }
+}
+
+function parseCompareRetailerSelection(
+  value: unknown,
+  retailers: Retailer[],
+): CompareRetailerSelection | undefined {
+  const rawIds = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.ids)
+      ? value.ids
+      : undefined
+  if (!rawIds) {
+    return undefined
+  }
+  const available = new Set(retailers.map((retailer) => retailer.id))
+  const ids = rawIds
+    .filter((id): id is string => typeof id === 'string' && available.has(id))
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .slice(0, MAX_COMPARE_RETAILERS)
+
+  if (rawIds.length > 0 && ids.length === 0) {
+    return undefined
+  }
+  const updatedAt = isRecord(value) &&
+    typeof value.updatedAt === 'number' &&
+    Number.isFinite(value.updatedAt) &&
+    value.updatedAt >= 0
+    ? value.updatedAt
+    : 0
+  return { ids, updatedAt }
+}
+
+function newerCompareRetailerSelection(
+  remote: CompareRetailerSelection | undefined,
+  local: CompareRetailerSelection | undefined,
+): CompareRetailerSelection | undefined {
+  if (remote && local) {
+    return local.updatedAt > remote.updatedAt ? local : remote
+  }
+  return remote ?? local
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function formatCountryMoney(cents: number, country: CountryOption): string {

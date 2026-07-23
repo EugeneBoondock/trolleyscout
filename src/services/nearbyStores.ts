@@ -169,6 +169,10 @@ const RETAILER_NAME_ALIASES: Array<{ id: RetailerId; patterns: RegExp[] }> = [
 export function matchKnownRetailer(storeName: string): RetailerId | undefined {
   const name = storeName.toLowerCase()
 
+  if (/\bliquor(?:\s*shop)?\b/i.test(name)) {
+    return undefined
+  }
+
   for (const alias of RETAILER_NAME_ALIASES) {
     if (alias.patterns.some((pattern) => pattern.test(name))) {
       return alias.id

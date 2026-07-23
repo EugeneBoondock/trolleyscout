@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   claimVoucher: vi.fn(),
+  countActiveVouchers: vi.fn(),
   getMemberSession: vi.fn(),
   listActiveVouchers: vi.fn(),
   unclaimVoucher: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../_shared/memberStore', () => ({
 
 vi.mock('../_shared/voucherStore', () => ({
   claimVoucher: mocks.claimVoucher,
+  countActiveVouchers: mocks.countActiveVouchers,
   listActiveVouchers: mocks.listActiveVouchers,
   unclaimVoucher: mocks.unclaimVoucher,
 }))
@@ -23,6 +25,7 @@ describe('/api/vouchers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+    mocks.countActiveVouchers.mockResolvedValue(12)
     mocks.listActiveVouchers.mockResolvedValue([{ id: 'voucher-1', claimed: false }])
   })
 
@@ -39,6 +42,17 @@ describe('/api/vouchers', () => {
       offset: 0,
       retailerId: undefined,
     })
+  })
+
+  it('returns only the active count for dashboard summaries', async () => {
+    const response = await invoke(new Request(
+      'https://trolleyscout.co.za/api/vouchers?summary=1',
+    ))
+
+    expect(await response.json()).toMatchObject({
+      data: { summary: { activeVoucherCount: 12 }, vouchers: [] },
+    })
+    expect(mocks.listActiveVouchers).not.toHaveBeenCalled()
   })
 
   it('does not expose internal code hashes in the public voucher envelope', async () => {

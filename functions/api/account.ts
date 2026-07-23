@@ -1,5 +1,6 @@
 import {
   changeMemberPassword,
+  deleteMemberAccount,
   getMemberSession,
   updateMemberProfile,
 } from '../_shared/memberStore'
@@ -11,7 +12,7 @@ const privateHeaders = {
 }
 
 interface AccountUpdateBody {
-  action?: 'profile' | 'password'
+  action?: 'profile' | 'password' | 'delete'
   currentPassword?: string
   displayName?: string
   newPassword?: string
@@ -36,6 +37,27 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json(
       { issues: ['Request body must be valid JSON.'] },
       { headers: privateHeaders, status: 400 },
+    )
+  }
+
+  if (body.action === 'delete') {
+    const result = await deleteMemberAccount(env, session.account.id, {
+      currentPassword: body.currentPassword ?? '',
+    })
+
+    if ('issues' in result) {
+      return json({ issues: result.issues }, { headers: privateHeaders, status: 422 })
+    }
+
+    // The session rows are already gone; expire the cookie client-side too.
+    return json(
+      { deleted: true, message: 'Your account and personal data have been deleted.' },
+      {
+        headers: {
+          ...privateHeaders,
+          'set-cookie': 'ts_member_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+        },
+      },
     )
   }
 

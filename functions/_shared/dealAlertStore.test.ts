@@ -8,6 +8,7 @@ import type { TrolleyScoutEnv } from './env'
 import {
   MAX_DEAL_ALERT_BATCH_KEYS,
   MAX_DEAL_ALERT_RESPONSE_COUNT,
+  MAX_DEAL_ALERT_SNAPSHOT_KEYS,
   readDealAlertSummary,
   recordGlobalDealAlertBatch,
   runDealRefreshWithAlerts,
@@ -128,8 +129,8 @@ describe('deal alert store', () => {
     expect(first).toEqual([...first].sort())
   })
 
-  it('pages beyond two hundred active normalized deals without truncating the snapshot', async () => {
-    const deals = Array.from({ length: 450 }, (_, index) => ({
+  it('pages beyond one full page of active normalized deals without truncating the snapshot', async () => {
+    const deals = Array.from({ length: 2_450 }, (_, index) => ({
       productUrl: `https://shop.test/products/${index}`,
       retailerName: 'Shop Test',
       sourceUrl: 'https://shop.test/specials',
@@ -150,21 +151,59 @@ describe('deal alert store', () => {
       readSnapshots: async () => new Map(),
     })
 
-    expect(keys).toHaveLength(450)
+    expect(keys).toHaveLength(2_450)
     expect(readNormalizedDealsPage).toHaveBeenNthCalledWith(
       1,
       env,
       '2026-07-19T12:00:00.000Z',
-      200,
+      1_000,
       0,
     )
     expect(readNormalizedDealsPage).toHaveBeenNthCalledWith(
       3,
       env,
       '2026-07-19T12:00:00.000Z',
-      200,
-      400,
+      1_000,
+      2_000,
     )
+  })
+
+  it('truncates the snapshot deterministically at the cap instead of failing', async () => {
+    const deals = Array.from(
+      { length: MAX_DEAL_ALERT_SNAPSHOT_KEYS + 500 },
+      (_, index) => ({
+        productUrl: `https://shop.test/products/${index}`,
+        retailerName: 'Shop Test',
+        sourceUrl: 'https://shop.test/specials',
+        title: `Deal ${index}`,
+      }),
+    )
+    const readNormalizedDealsPage = async (
+      _env: TrolleyScoutEnv,
+      _now: string,
+      limit: number,
+      offset: number,
+    ) => deals.slice(offset, offset + limit)
+
+    const keys = await snapshotDealAlertKeys(env, {
+      nowMs: () => Date.parse('2026-07-19T12:00:00.000Z'),
+      readDealSites: async () => ({ deals: [], sources: [] }),
+      readNormalizedDealsPage,
+      readPromotionsPage: async () => [],
+      readSnapshots: async () => new Map(),
+    })
+    const again = await snapshotDealAlertKeys(env, {
+      nowMs: () => Date.parse('2026-07-19T12:05:00.000Z'),
+      readDealSites: async () => ({ deals: [], sources: [] }),
+      readNormalizedDealsPage,
+      readPromotionsPage: async () => [],
+      readSnapshots: async () => new Map(),
+    })
+
+    // Alerts keep functioning above the cap: the snapshot is capped, sorted,
+    // and stable across runs so the before/after diff reports no phantom deals.
+    expect(keys).toHaveLength(MAX_DEAL_ALERT_SNAPSHOT_KEYS)
+    expect(again).toEqual(keys)
   })
 
   it('rejects the whole snapshot when one strict corpus lane fails', async () => {

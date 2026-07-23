@@ -6,12 +6,11 @@ import 'scout_avatar_view.dart';
 import 'in_app_browser.dart';
 
 enum AppDestination {
-  home('Home', Icons.home_outlined, false),
   near('Near me', Icons.near_me_outlined, false),
   deals('Find deals', Icons.local_offer_outlined, false),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
-  tools('Tools', Icons.calculate_outlined, false),
+  tools('Price comparisons', Icons.calculate_outlined, false),
   dashboard('Dashboard', Icons.dashboard_outlined, true),
   stores('Stores', Icons.storefront_outlined, false),
   vouchers('Vouchers', Icons.confirmation_number_outlined, false),
@@ -22,7 +21,7 @@ enum AppDestination {
   scanner('Scanner', Icons.verified_outlined, false),
   advertise('Advertise', Icons.campaign_outlined, true),
   subscription('Subscription', Icons.credit_card_outlined, true),
-  profile('Profile', Icons.account_circle_outlined, true),
+  profile('Settings', Icons.settings_outlined, true),
   about('About & help', Icons.info_outline, false),
   rules('Rules', Icons.rule_outlined, false),
   admin('Admin console', Icons.admin_panel_settings_outlined, true);
@@ -49,24 +48,39 @@ class AppMenuDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final account = session.account;
-    const hiddenConsumerPages = {
-      AppDestination.savedSources,
-      AppDestination.offers,
-      AppDestination.scanner,
-      AppDestination.rules,
-    };
-    final destinations = <AppDestination>[
-      AppDestination.dashboard,
-      ...AppDestination.values.where(
-        (item) =>
-            item != AppDestination.home &&
-            item != AppDestination.dashboard &&
-            item != AppDestination.admin &&
-            !hiddenConsumerPages.contains(item),
+    final groups = <(String, List<AppDestination>)>[
+      (
+        'Shop',
+        [
+          AppDestination.dashboard,
+          AppDestination.stores,
+          AppDestination.near,
+          AppDestination.deals,
+          AppDestination.scroll,
+          AppDestination.vouchers,
+        ],
       ),
+      (
+        'Plan',
+        [
+          AppDestination.tools,
+          AppDestination.properties,
+          AppDestination.savedDeals,
+          AppDestination.basket,
+        ],
+      ),
+      (
+        'Account',
+        [
+          AppDestination.advertise,
+          AppDestination.subscription,
+          AppDestination.profile,
+        ],
+      ),
+      ('Support', [AppDestination.about]),
     ];
     if (account?.isAdmin == true) {
-      destinations.insert(6, AppDestination.admin);
+      groups.insert(3, ('Administration', [AppDestination.admin]));
     }
     return Drawer(
       backgroundColor: TS.bgOf(context),
@@ -134,30 +148,36 @@ class AppMenuDrawer extends StatelessWidget {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final item in destinations)
-                        ListTile(
-                          selected: destination == item,
-                          selectedTileColor: TS.yellow,
-                          selectedColor: TS.ink,
-                          iconColor: TS.mutedOf(context),
-                          textColor: TS.inkOf(context),
-                          // A single clean accent bar marks the current page — no
-                          // top/bottom rules that read as bleeding into the header.
-                          shape: destination == item
-                              ? Border(
-                                  left: BorderSide(
-                                      color: TS.redOf(context), width: 5),
-                                )
-                              : null,
-                          leading: Icon(item.icon),
-                          title: Text(item.label),
-                          trailing:
-                              item.requiresAuth && !session.isAuthenticated
-                                  ? const Icon(Icons.lock_outline, size: 16)
-                                  : null,
-                          onTap: () => onSelect(item),
+                      for (final group in groups) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 14, 20, 5),
+                          child: Text(group.$1.toUpperCase(),
+                              style: TS.eyebrowOf(context)),
                         ),
+                        for (final item in group.$2)
+                          ListTile(
+                            selected: destination == item,
+                            selectedTileColor: TS.yellow,
+                            selectedColor: TS.ink,
+                            iconColor: TS.mutedOf(context),
+                            textColor: TS.inkOf(context),
+                            shape: destination == item
+                                ? Border(
+                                    left: BorderSide(
+                                        color: TS.redOf(context), width: 5),
+                                  )
+                                : null,
+                            leading: Icon(item.icon),
+                            title: Text(item.label),
+                            trailing:
+                                item.requiresAuth && !session.isAuthenticated
+                                    ? const Icon(Icons.lock_outline, size: 16)
+                                    : null,
+                            onTap: () => onSelect(item),
+                          ),
+                      ],
                     ],
                   ),
                 ),

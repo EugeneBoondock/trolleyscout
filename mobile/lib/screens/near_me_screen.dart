@@ -7,9 +7,12 @@ import '../saved_addresses_store.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
+import '../widgets/common.dart';
 import '../widgets/login_gate_card.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/sponsored_ad_card.dart';
+
+enum _LocationSettingsTarget { app, device }
 
 class NearMeScreen extends StatefulWidget {
   const NearMeScreen({
@@ -20,6 +23,12 @@ class NearMeScreen extends StatefulWidget {
     this.onViewStoreDeals,
     this.isAuthenticated = false,
     this.onWantsAuth,
+    this.isLocationServiceEnabled,
+    this.checkLocationPermission,
+    this.requestLocationPermission,
+    this.readCurrentPosition,
+    this.openAppLocationSettings,
+    this.openDeviceLocationSettings,
   });
   final Api api;
   final NearbyHistoryStore? historyStore;
@@ -28,6 +37,12 @@ class NearMeScreen extends StatefulWidget {
   final void Function(String? retailerId, String storeName)? onViewStoreDeals;
   final bool isAuthenticated;
   final VoidCallback? onWantsAuth;
+  final Future<bool> Function()? isLocationServiceEnabled;
+  final Future<LocationPermission> Function()? checkLocationPermission;
+  final Future<LocationPermission> Function()? requestLocationPermission;
+  final Future<Position> Function()? readCurrentPosition;
+  final Future<bool> Function()? openAppLocationSettings;
+  final Future<bool> Function()? openDeviceLocationSettings;
 
   @override
   State<NearMeScreen> createState() => _NearMeScreenState();
@@ -54,6 +69,12 @@ class _NearMeScreenState extends State<NearMeScreen> {
   double? _currentLon;
   String? _currentLabel;
   String? _currentFormatted;
+  _LocationSettingsTarget? _locationSettingsTarget;
+  // True only when the most recent search attempt actually failed (network
+  // or lookup error) — never for "no stores found" or a permission/service
+  // prompt, which already have their own contextual actions.
+  bool _searchFailed = false;
+  Future<void> Function()? _lastSearch;
 
   @override
   void initState() {
@@ -121,39 +142,101 @@ class _NearMeScreenState extends State<NearMeScreen> {
     final next = await _historyStore.removeEntry(entry.id);
     if (!mounted) return;
     setState(() => _history = next);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('${entry.locationLabel} removed from recent searches.'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => _undoHistoryRemoval(entry),
+        ),
+      ));
+  }
+
+  Future<void> _undoHistoryRemoval(NearbyHistoryEntry entry) async {
+    final next = await _historyStore.save(
+      entry.result,
+      entry.capturedAt,
+      label: entry.locationLabel,
+    );
+    if (mounted) setState(() => _history = next);
   }
 
   Future<void> _findNearby() async {
+    _lastSearch = _findNearby;
     setState(() {
       _busy = true;
+      _locationSettingsTarget = null;
+      _searchFailed = false;
       _message = 'Finding your location…';
     });
 
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      final serviceEnabled = await (widget.isLocationServiceEnabled?.call() ??
+          Geolocator.isLocationServiceEnabled());
+      if (!mounted) return;
+      if (!serviceEnabled) {
         setState(() {
           _busy = false;
-          _message = 'Allow location to see the stores near you.';
+          _locationSettingsTarget = _LocationSettingsTarget.device;
+          _message =
+              'Device location is off. Turn it on, or search for an address instead.';
         });
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings:
-            const LocationSettings(accuracy: LocationAccuracy.medium),
-      );
+      var permission = await (widget.checkLocationPermission?.call() ??
+          Geolocator.checkPermission());
+      if (permission == LocationPermission.denied) {
+        permission = await (widget.requestLocationPermission?.call() ??
+            Geolocator.requestPermission());
+      }
+      if (!mounted) return;
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _busy = false;
+          _locationSettingsTarget = _LocationSettingsTarget.app;
+          _message =
+              'Location access is blocked. Allow it in app settings, or search for an address instead.';
+        });
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _busy = false;
+          _message =
+              'Location was not allowed. You can try again or search for an address instead.';
+        });
+        return;
+      }
+
+      final pos = await (widget.readCurrentPosition?.call() ??
+          Geolocator.getCurrentPosition(
+            locationSettings:
+                const LocationSettings(accuracy: LocationAccuracy.medium),
+          ));
+      if (!mounted) return;
       await _loadNearbyFor(pos.latitude, pos.longitude);
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
+        _searchFailed = true;
         _message = 'Could not read your location. Try again.';
       });
     }
+  }
+
+  Future<void> _openLocationSettings() async {
+    final target = _locationSettingsTarget;
+    if (target == null) return;
+    final opened = target == _LocationSettingsTarget.app
+        ? await (widget.openAppLocationSettings?.call() ??
+            Geolocator.openAppSettings())
+        : await (widget.openDeviceLocationSettings?.call() ??
+            Geolocator.openLocationSettings());
+    if (!mounted || opened) return;
+    showNotice(context, 'Could not open settings on this device.');
   }
 
   // Geocodes a typed address, then searches around it. Keeps its own error copy
@@ -161,10 +244,12 @@ class _NearMeScreenState extends State<NearMeScreen> {
   Future<void> _findByAddress() async {
     final query = _addressController.text.trim();
     if (query.length < 3) return;
+    _lastSearch = _findByAddress;
     FocusScope.of(context).unfocus();
     uxTap();
     setState(() {
       _busy = true;
+      _searchFailed = false;
       _message = 'Looking up “$query”…';
     });
 
@@ -175,6 +260,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _searchFailed = true;
         _message = error.message;
       });
       return;
@@ -182,6 +268,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _searchFailed = true;
         _message = 'We could not find that address. Try a suburb or town.';
       });
       return;
@@ -203,8 +290,10 @@ class _NearMeScreenState extends State<NearMeScreen> {
     String? label,
     String? formatted,
   }) async {
+    _lastSearch = () => _loadNearbyFor(lat, lon, label: label, formatted: formatted);
     setState(() {
       _busy = true;
+      _searchFailed = false;
       _message = 'Checking stores near ${label ?? 'you'}…';
     });
 
@@ -234,9 +323,26 @@ class _NearMeScreenState extends State<NearMeScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // Mirrors the deals screen's cache-first fallback: a failed live fetch
+      // still shows the shopper their most recent search, clearly labelled,
+      // rather than an empty screen with no next step.
+      final fallback = _history.isNotEmpty ? _history.first : null;
       setState(() {
         _busy = false;
-        _message = 'Could not check that location. Try again.';
+        _searchFailed = true;
+        if (fallback != null) {
+          _stores = fallback.result.stores;
+          _capturedAt = fallback.capturedAt;
+          _viewingId = fallback.id;
+          _currentLabel = fallback.locationLabel;
+          _currentFormatted = null;
+          _currentLat = null;
+          _currentLon = null;
+          _message = 'Could not check ${label ?? 'that location'}. Showing '
+              'your last search near ${fallback.locationLabel} — retry to check again.';
+        } else {
+          _message = 'Could not check that location. Try again.';
+        }
       });
     }
   }
@@ -264,6 +370,20 @@ class _NearMeScreenState extends State<NearMeScreen> {
     final next = await _addressStore.remove(address.id);
     if (!mounted) return;
     setState(() => _savedAddresses = next);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('“${address.label}” removed.'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => _restoreSavedAddress(address),
+        ),
+      ));
+  }
+
+  Future<void> _restoreSavedAddress(SavedAddress address) async {
+    final next = await _addressStore.add(address);
+    if (mounted) setState(() => _savedAddresses = next);
   }
 
   static String _shortLabelFor(String query, String? formatted) {
@@ -278,8 +398,52 @@ class _NearMeScreenState extends State<NearMeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    final visibleStores =
+        widget.isAuthenticated ? _stores : _stores.take(3).toList();
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          sliver: SliverToBoxAdapter(child: _header(context)),
+        ),
+        // The store list is the section that can grow long (every nearby
+        // supermarket for a signed-in shopper), so it alone builds lazily.
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverList.builder(
+            itemCount: visibleStores.length,
+            itemBuilder: (context, index) => _StoreCard(
+              store: visibleStores[index],
+              onViewDeals: widget.onViewStoreDeals == null
+                  ? null
+                  : () => widget.onViewStoreDeals!(
+                      visibleStores[index].retailerId,
+                      visibleStores[index].name),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          sliver: SliverToBoxAdapter(
+            child: !widget.isAuthenticated &&
+                    _stores.length > 3 &&
+                    widget.onWantsAuth != null
+                ? LoginGateCard(
+                    message:
+                        'You are seeing 3 of ${_stores.length} nearby stores. '
+                        'Log in or sign up free to see them all and save addresses.',
+                    onLogin: widget.onWantsAuth!,
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _header(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('NEAR ME', style: TS.eyebrowOf(context)),
         const SizedBox(height: 4),
@@ -376,16 +540,49 @@ class _NearMeScreenState extends State<NearMeScreen> {
                 border: Border.all(color: TS.lineOf(context), width: 2),
                 color: TS.surfaceOf(context)),
             padding: const EdgeInsets.all(14),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.place_outlined, color: TS.redOf(context)),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Text(_message,
-                        style: TextStyle(color: TS.mutedOf(context)))),
+                Row(
+                  children: [
+                    Icon(Icons.place_outlined, color: TS.redOf(context)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(_message,
+                            style: TextStyle(color: TS.mutedOf(context))),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_searchFailed && _lastSearch != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _lastSearch!(),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
+        if (_stores.isEmpty && _locationSettingsTarget != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _openLocationSettings,
+              icon: const Icon(Icons.settings_outlined),
+              label: Text(_locationSettingsTarget == _LocationSettingsTarget.app
+                  ? 'Open app settings'
+                  : 'Open location settings'),
+            ),
+          ),
+        ],
         if (_history.length > 1) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
@@ -406,7 +603,41 @@ class _NearMeScreenState extends State<NearMeScreen> {
           ),
           const SizedBox(height: 14),
         ],
-        if (_stores.isNotEmpty)
+        if (_stores.isNotEmpty && _searchFailed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                  border: Border.all(color: TS.lineOf(context), width: 2),
+                  color: TS.surfaceOf(context)),
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.history, size: 18, color: TS.mutedOf(context)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _message,
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed:
+                        _busy || _lastSearch == null ? null : () => _lastSearch!(),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_stores.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
@@ -436,21 +667,6 @@ class _NearMeScreenState extends State<NearMeScreen> {
           ),
         if (_ads.isNotEmpty && _stores.isNotEmpty)
           SponsoredAdCard(ad: _ads.first),
-        for (final store in widget.isAuthenticated ? _stores : _stores.take(3))
-          _StoreCard(
-            store: store,
-            onViewDeals: widget.onViewStoreDeals == null
-                ? null
-                : () => widget.onViewStoreDeals!(store.retailerId, store.name),
-          ),
-        if (!widget.isAuthenticated &&
-            _stores.length > 3 &&
-            widget.onWantsAuth != null)
-          LoginGateCard(
-            message: 'You are seeing 3 of ${_stores.length} nearby stores. '
-                'Log in or sign up free to see them all and save addresses.',
-            onLogin: widget.onWantsAuth!,
-          ),
       ],
     );
   }
@@ -488,9 +704,8 @@ class _SavedAddressChip extends StatelessWidget {
             ),
             IconButton(
               icon: const Icon(Icons.close, size: 15),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.only(left: 6),
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+              padding: EdgeInsets.zero,
               color: TS.mutedOf(context),
               tooltip: 'Remove',
               onPressed: onRemove,
@@ -558,9 +773,8 @@ class _HistoryChip extends StatelessWidget {
             ),
             IconButton(
               icon: const Icon(Icons.close, size: 15),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.only(left: 6),
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+              padding: EdgeInsets.zero,
               color: selected ? TS.ink : TS.mutedOf(context),
               tooltip: 'Remove',
               onPressed: onRemove,
@@ -759,8 +973,27 @@ class _NearStoreDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                        child: Text(deal.title,
-                            style: const TextStyle(fontSize: 13.5))),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(deal.title,
+                              style: const TextStyle(fontSize: 13.5)),
+                          if (deal.savingText != null || deal.validTo != null)
+                            Text(
+                              [
+                                if (deal.savingText != null) deal.savingText!,
+                                if (deal.validTo != null)
+                                  'Until ${_shortDate(deal.validTo!)}',
+                              ].join('  '),
+                              style: TextStyle(
+                                color: TS.mutedOf(context),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                     Text(deal.priceText ?? '',
                         style: TextStyle(
                             color: TS.redOf(context),
@@ -846,6 +1079,8 @@ class _ImageThumb extends StatelessWidget {
             : Image.network(
                 imageUrl!,
                 fit: BoxFit.contain,
+                cacheWidth: (size * 3).round(),
+                cacheHeight: (size * 3).round(),
                 errorBuilder: (_, __, ___) => fallback,
               ),
       ),

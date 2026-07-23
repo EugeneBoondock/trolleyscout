@@ -49,6 +49,33 @@
   background: var(--surface-soft);
 }
 
+.directory-search {
+  margin: 0 0 1rem;
+  background: var(--surface);
+}
+
+.directory-search button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.directory-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 1rem;
+  padding: 0.85rem;
+  border: 2px solid var(--red);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.directory-load-more {
+  margin: 1rem auto 0;
+}
+
 .discovered-store-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
@@ -603,6 +630,7 @@ mark {
   gap: 0.6rem;
   align-items: center;
   width: max-content;
+  min-height: 2.75rem;
   color: var(--ink);
   font-family: var(--display);
   font-size: 1.35rem;
@@ -739,8 +767,8 @@ mark {
 
 .scout-guide > button {
   display: grid;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -772,9 +800,11 @@ mark {
 .view-switcher {
   display: inline-flex;
   gap: 0.15rem;
+  min-width: 0;
 }
 
 .switcher-button {
+  min-height: 2.75rem;
   padding: 0.5rem 0.85rem;
   border: 2px solid transparent;
   color: var(--muted);
@@ -810,6 +840,7 @@ mark {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
+  min-height: 2.75rem;
   padding: 0.45rem 0.9rem;
   border: 2px solid var(--line);
   background: var(--surface);
@@ -827,9 +858,10 @@ mark {
 
 .icon-button {
   display: inline-grid;
+  flex: 0 0 2.75rem;
   place-items: center;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 2px solid transparent;
   color: var(--muted);
 }
@@ -902,6 +934,7 @@ main {
   border-bottom: 3px solid var(--line);
 }
 
+.section-heading h1,
 .section-heading h2 {
   margin: 0.2rem 0 0;
   font-size: clamp(1.5rem, 3vw, 2rem);
@@ -1130,8 +1163,10 @@ main {
 
 .store-deal-price {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   align-items: baseline;
+  justify-content: flex-end;
   white-space: nowrap;
   font-weight: 800;
   color: var(--red);
@@ -1140,6 +1175,13 @@ main {
 .store-deal-price s {
   color: var(--faint);
   font-weight: 500;
+}
+
+.store-deal-saving,
+.store-deal-validity {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .store-catalogue {
@@ -1215,17 +1257,51 @@ main {
   font-size: 0.88rem;
 }
 
+.password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(44px, 2.75rem, 56px);
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.password-field input {
+  min-width: 0;
+  width: 100%;
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.password-field button {
+  display: grid;
+  min-width: 44px;
+  min-height: 2.75rem;
+  place-items: center;
+  border: 2px solid var(--line);
+  border-left: 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  color: var(--ink);
+  background: var(--surface-soft);
+}
+
+.password-field input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
 /* Auth: sign up / log in toggle */
 
 .auth-toggle {
-  display: inline-flex;
+  display: flex;
   gap: 0.15rem;
+  width: 100%;
   margin-bottom: 0.4rem;
   border: 2px solid var(--line);
   background: var(--surface);
 }
 
 .auth-toggle-button {
+  flex: 1;
+  min-width: 0;
   padding: 0.45rem 1rem;
   color: var(--muted);
   font-size: 0.82rem;
@@ -1237,6 +1313,15 @@ main {
 .auth-toggle-button.is-active {
   background: var(--yellow);
   color: #1c1710;
+}
+
+.auth-help-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-self: end;
+  color: var(--red);
+  font-weight: 800;
 }
 
 /* Admin console */
@@ -1728,6 +1813,7 @@ main {
 .field {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
   font-size: 0.85rem;
   font-weight: 800;
   letter-spacing: 0.03em;
@@ -1738,6 +1824,9 @@ main {
 .field input,
 .field select,
 .field textarea {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
   padding: 0.6rem 0.75rem;
   border: 2px solid var(--line);
   border-radius: var(--radius-control);
@@ -1919,7 +2008,7 @@ main {
   color: var(--red);
 }
 
-.about-step-card h3 {
+.about-step-card h2 {
   margin: 0;
   font-size: 1.1rem;
 }
@@ -2183,7 +2272,7 @@ main {
   color: var(--red);
 }
 
-.home-path-card h3 {
+.home-path-card h2 {
   margin: 0;
   font-size: 1.1rem;
 }
@@ -2349,6 +2438,23 @@ main {
   border: 2px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-soft);
+}
+
+.source-card-entry {
+  animation: source-card-in 220ms ease-out both;
+  animation-delay: var(--entry-delay, 0s);
+}
+
+@keyframes source-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .source-card-body {
@@ -3189,6 +3295,7 @@ main {
   color: var(--faint);
 }
 
+.discovery-empty h2,
 .discovery-empty h3,
 .basket-empty h2 {
   margin: 0;
@@ -3403,6 +3510,8 @@ main {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2rem;
   width: min(56rem, 100%);
+  min-width: 0;
+  max-width: 100%;
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border: 2px solid var(--line);
   background: var(--surface);
@@ -3422,6 +3531,7 @@ main {
   display: grid;
   gap: 0.9rem;
   align-content: start;
+  min-width: 0;
 }
 
 .member-shell {
@@ -3909,6 +4019,21 @@ main {
 
   .dash-action:hover {
     transform: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .topbar .brand-mark > span:not(.scout-mark) {
+    display: none;
+  }
+
+  .view-switcher {
+    gap: 0;
+  }
+
+  .switcher-button {
+    padding: 0.45rem;
+    font-size: 0.75rem;
   }
 }
 
@@ -4503,12 +4628,35 @@ main {
 
   .topbar {
     grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .auth-shell .topbar > div {
+    display: none;
+  }
+
+  .auth-shell main {
+    padding: 24px 16px;
+  }
+
+  .auth-panel {
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .auth-copy,
+  .auth-form,
+  .auth-form .field,
+  .scanner-actions {
+    min-width: 0;
   }
 
   .view-switcher {
     grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
+    max-width: 100%;
     overflow-x: auto;
   }
 
@@ -4709,6 +4857,13 @@ main {
   text-transform: uppercase;
 }
 
+.auto-compare-preference-note {
+  color: var(--muted);
+  flex-basis: 100%;
+  font-size: 12px;
+  margin: 0;
+}
+
 .auto-compare-store {
   align-items: center;
   border: 2px solid var(--line);
@@ -4833,6 +4988,11 @@ a.auto-compare-title:hover {
 }
 
 .foot-link {
+  display: inline-flex;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   cursor: pointer;
@@ -4841,6 +5001,12 @@ a.auto-compare-title:hover {
   font-weight: 800;
   text-decoration: none;
   padding: 2px 0;
+}
+
+.site-foot p a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
 }
 
 .foot-link:hover {

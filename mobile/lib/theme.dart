@@ -17,6 +17,9 @@ class TS {
   static const redBright = Color(0xFFD92D1C);
   static const yellow = Color(0xFFFFD42E);
   static const green = Color(0xFF0D6B3D);
+  // Mint tag for "to rent" property badges — accent surface with ink text,
+  // theme-independent like [yellow].
+  static const rentTag = Color(0xFFBFE3D0);
 
   static const _darkBg = Color(0xFF191410);
   static const _darkSurface = Color(0xFF221C15);
@@ -220,8 +223,17 @@ class TS {
       Theme.of(context).colorScheme.onSurface;
   static Color mutedOf(BuildContext context) =>
       Theme.of(context).colorScheme.onSurfaceVariant;
-  static Color faintOf(BuildContext context) =>
-      Theme.of(context).colorScheme.onSurfaceVariant;
+  // Genuinely fainter than mutedOf in both themes (the old alias returned the
+  // identical colour, so "faint" text silently rendered as "muted"). Light
+  // mode uses the static [faint] tone, which still clears WCAG AA (4.5:1) on
+  // the cream background where an alpha blend would not; dark mode has far
+  // more contrast headroom, so a light alpha fade is safe there.
+  static Color faintOf(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.brightness == Brightness.dark
+        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.85)
+        : faint;
+  }
   static Color lineOf(BuildContext context) =>
       Theme.of(context).colorScheme.outline;
   static Color lineSoftOf(BuildContext context) =>
@@ -256,6 +268,36 @@ class TS {
             blurRadius: 16,
           ),
         ],
+      );
+
+  /// Card chrome for cards whose child bleeds to the edges (product photos):
+  /// use [cardFill] as `decoration` and [cardStroke] as `foregroundDecoration`.
+  /// A full-bleed image clipped to the card's outer radius paints over the
+  /// inner half of a background border at the top corners, fading the stroke —
+  /// painting the stroke in the foreground keeps it crisp on every corner.
+  static BoxDecoration cardFill(BuildContext context, {Color? color}) =>
+      BoxDecoration(
+        color: color ?? surfaceOf(context),
+        borderRadius: BorderRadius.circular(cardRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0x8C000000)
+                : const Color(0x291C1710),
+            offset: const Offset(0, 5),
+            blurRadius: 16,
+          ),
+        ],
+      );
+
+  static BoxDecoration cardStroke(
+    BuildContext context, {
+    Color? border,
+    double width = 2,
+  }) =>
+      BoxDecoration(
+        border: Border.all(color: border ?? lineOf(context), width: width),
+        borderRadius: BorderRadius.circular(cardRadius),
       );
 
   static const display = TextStyle(

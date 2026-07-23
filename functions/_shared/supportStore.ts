@@ -223,18 +223,28 @@ export async function protectLegacySupportEmails(
       LIMIT ?`,
   ).bind(limit).all<{ email: string; id: string }>()
 
-  let protectedCount = 0
-  for (const row of rows.results) {
+  // Compute every row's new (encrypted email, lookup hash) pair up front, then
+  // submit all the UPDATEs in one D1 round trip instead of one per row.
+  const updates = await Promise.all(rows.results.map(async (row) => {
     const email = await revealEmail(env, row.email)
-    const result = await env.DB.prepare(
+    return {
+      email: isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
+      id: row.id,
+      lookup: await emailLookup(env, email),
+    }
+  }))
+
+  const timestamp = new Date().toISOString()
+  const statements: D1PreparedStatement[] = updates.map((update) =>
+    env.DB.prepare(
       'UPDATE support_messages SET email = ?, email_lookup = ?, updated_at = ? WHERE id = ?',
-    ).bind(
-      isProtectedEmail(row.email) ? row.email : await protectEmail(env, email),
-      await emailLookup(env, email),
-      new Date().toISOString(),
-      row.id,
-    ).run()
-    protectedCount += Number(result.meta.changes ?? 0)
+    ).bind(update.email, update.lookup, timestamp, update.id),
+  )
+
+  let protectedCount = 0
+  if (statements.length > 0) {
+    const results = await env.DB.batch(statements)
+    protectedCount = results.filter((result) => result.meta.changes > 0).length
   }
 
   return {

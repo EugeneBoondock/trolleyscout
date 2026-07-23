@@ -24,7 +24,6 @@
     "clsx": "^2.1.1",
     "countries-list": "3.4.1",
     "leaflet": "^1.9.4",
-    "motion": "^12.42.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-leaflet": "^5.0.0",

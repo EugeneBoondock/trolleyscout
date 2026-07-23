@@ -149,6 +149,12 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            SupportInboxSection(
+              api: widget.api,
+              initialMessages: overview.support,
+              initialOpenCount: overview.supportOpenCount,
+            ),
+            const SizedBox(height: 20),
             AdReviewSection(api: widget.api),
             const SizedBox(height: 20),
             Text('Recent accounts',
@@ -157,9 +163,15 @@ class _AdminScreenState extends State<AdminScreen> {
                     .headlineSmall
                     ?.merge(TS.display)),
             const SizedBox(height: 8),
-            for (final account in overview.accounts)
-              _MemberAccessTile(
-                  key: ValueKey(account.id), api: widget.api, account: account),
+            if (overview.accounts.isEmpty)
+              Text('No accounts yet.',
+                  style: TextStyle(color: TS.mutedOf(context)))
+            else
+              for (final account in overview.accounts)
+                _MemberAccessTile(
+                    key: ValueKey(account.id),
+                    api: widget.api,
+                    account: account),
           ],
         );
       },
@@ -248,7 +260,7 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
                 Expanded(
                   child: Text(
                     _planBased
-                        ? 'Properties Scout — included with plan'
+                        ? 'Properties Scout, included with plan'
                         : 'Properties Scout access',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
                   ),
@@ -438,5 +450,129 @@ class _AdReviewSectionState extends State<AdReviewSection> {
   String _rand(int cents) {
     final amount = cents / 100;
     return 'R${amount == amount.roundToDouble() ? amount.toStringAsFixed(0) : amount.toStringAsFixed(2)}';
+  }
+}
+
+/// The support inbox: bug reports, errors, and feature requests submitted from
+/// About & help. Open messages sort first; resolving keeps them in the list so
+/// context isn't lost mid-review.
+class SupportInboxSection extends StatefulWidget {
+  const SupportInboxSection({
+    super.key,
+    required this.api,
+    required this.initialMessages,
+    required this.initialOpenCount,
+  });
+
+  final Api api;
+  final List<SupportMessage> initialMessages;
+  final int initialOpenCount;
+
+  @override
+  State<SupportInboxSection> createState() => _SupportInboxSectionState();
+}
+
+class _SupportInboxSectionState extends State<SupportInboxSection> {
+  late List<SupportMessage> _messages = widget.initialMessages;
+  late int _openCount = widget.initialOpenCount;
+  String? _busyId;
+
+  Future<void> _setStatus(SupportMessage message, String status) async {
+    if (_busyId != null) return;
+    setState(() => _busyId = message.id);
+    try {
+      uxTap();
+      final overview =
+          await widget.api.setSupportMessageStatus(message.id, status);
+      if (mounted) {
+        setState(() {
+          _messages = overview.support;
+          _openCount = overview.supportOpenCount;
+        });
+      }
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } catch (_) {
+      if (mounted) {
+        showNotice(context, 'Could not update that support message.');
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Support inbox ($_openCount open)',
+            style:
+                Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+        const SizedBox(height: 8),
+        if (_messages.isEmpty)
+          Text('No support messages yet.',
+              style: TextStyle(color: TS.mutedOf(context)))
+        else
+          for (final message in _messages)
+            PaperCard(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          message.topic.isEmpty ? 'Message' : message.topic,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 15),
+                        ),
+                      ),
+                      Text(
+                        message.isOpen ? 'OPEN' : 'RESOLVED',
+                        style: TextStyle(
+                          color: message.isOpen
+                              ? TS.redOf(context)
+                              : TS.greenOf(context),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${message.name} · ${message.email} · '
+                    '${message.createdAt.split('T').first}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(message.message),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: message.isOpen
+                        ? FilledButton(
+                            onPressed: _busyId == message.id
+                                ? null
+                                : () => _setStatus(message, 'resolved'),
+                            child: const Text('Mark resolved'),
+                          )
+                        : OutlinedButton(
+                            onPressed: _busyId == message.id
+                                ? null
+                                : () => _setStatus(message, 'open'),
+                            child: const Text('Reopen'),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+      ],
+    );
   }
 }

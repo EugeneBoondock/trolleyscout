@@ -15,7 +15,7 @@ import {
 } from '../../src/services/areaStoreScout'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from './env'
-import { recordStoreScout, shouldScoutStore, writeCachedStores } from './locationStore'
+import { claimStoreScout, recordStoreScout, writeCachedStores } from './locationStore'
 import { searchWeb } from './searchWeb'
 
 const MAX_GEOCODES_PER_RUN = 4
@@ -38,7 +38,9 @@ export async function scoutAreaStores(
   // The scout log doubles as a per-tile rate limit: one area sweep a day.
   const areaMarker: NearbyStore = { lat, lon, name: '__area-scout__', placeId: `area:${tileKey}` }
 
-  if (!(await shouldScoutStore(env, areaMarker.placeId, new Date(nowMs).toISOString()))) {
+  // Atomic claim: concurrent searches on the same tile run one sweep, not one
+  // each (a sweep costs a reverse geocode + web search + up to 4 geocodes).
+  if (!(await claimStoreScout(env, areaMarker.placeId, new Date(nowMs).toISOString()))) {
     return
   }
 

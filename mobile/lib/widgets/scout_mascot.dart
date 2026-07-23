@@ -56,7 +56,8 @@ class ScoutGuideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     return TweenAnimationBuilder<double>(
       duration:
           reduceMotion ? Duration.zero : const Duration(milliseconds: 360),
@@ -105,7 +106,8 @@ class ScoutGuideCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                constraints:
+                    const BoxConstraints.tightFor(width: 48, height: 48),
                 icon: const Icon(Icons.close, size: 18),
                 onPressed: onDismiss,
                 tooltip: 'Dismiss Scout’s tip',

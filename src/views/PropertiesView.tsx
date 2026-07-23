@@ -123,7 +123,7 @@ export function PropertiesView({ account, country, onUpgrade }: Props) {
   async function handleShare(listing: PropertyListing) {
     const shareData = {
       title: listing.title,
-      text: `${listing.priceText ?? ''} — ${listing.title}`.trim(),
+      text: `${listing.priceText ?? ''}: ${listing.title}`.trim(),
       url: listing.listingUrl,
     }
     try {
@@ -581,7 +581,7 @@ function PropertyGallery({ images, alt }: { images: string[]; alt: string }) {
             ) : (
               <img
                 src={src}
-                alt={i === 0 ? alt : `${alt} — photo ${i + 1}`}
+                alt={i === 0 ? alt : `${alt}, photo ${i + 1}`}
                 loading="lazy"
                 onError={() => setBroken((b) => ({ ...b, [i]: true }))}
               />

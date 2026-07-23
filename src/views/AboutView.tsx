@@ -132,7 +132,7 @@ function AboutStep({
   return (
     <article className="about-step-card">
       {icon}
-      <h3>{title}</h3>
+      <h2>{title}</h2>
       <p>{text}</p>
       <button className="ghost-button" onClick={onClick} type="button">
         {actionLabel}

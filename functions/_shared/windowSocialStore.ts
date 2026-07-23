@@ -11,6 +11,11 @@ import { readDealSiteFeed } from './dealSiteScout'
 // Sources whose deals rotate out; a save/comment is stale once the id is gone.
 const DEAL_SITE_SOURCES = new Set(['onedayonly', 'hyperli', 'daddysdeals', 'myrunway'])
 
+// Prune sweeps scan at most this many rows per table per run. Bounded so the
+// scheduled maintenance job stays a cheap, predictable D1 read even as saves
+// and comments grow; a table larger than this drains over several sweeps.
+const PRUNE_SCAN_LIMIT = 5000
+
 interface SaveRow {
   id: string
   deal_id: string
@@ -276,11 +281,27 @@ export async function addDealComment(
   }
 }
 
-async function deleteRowsById(env: TrolleyScoutEnv, table: string, ids: string[]): Promise<void> {
+// Chunks the id list at 100 per statement (D1's practical bound-parameter
+// ceiling) and submits every chunk's DELETE in one env.DB.batch() round trip.
+const DELETE_CHUNK_SIZE = 100
+
+async function deleteRowsById(
+  env: TrolleyScoutEnv,
+  table: string,
+  ids: string[],
+  column = 'id',
+): Promise<void> {
   if (!hasTrolleyScoutDatabase(env) || ids.length === 0) return
-  const placeholders = ids.map(() => '?').join(',')
+  const statements: D1PreparedStatement[] = []
+  for (let index = 0; index < ids.length; index += DELETE_CHUNK_SIZE) {
+    const chunk = ids.slice(index, index + DELETE_CHUNK_SIZE)
+    const placeholders = chunk.map(() => '?').join(',')
+    statements.push(
+      env.DB.prepare(`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`).bind(...chunk),
+    )
+  }
   try {
-    await env.DB.prepare(`DELETE FROM ${table} WHERE id IN (${placeholders})`).bind(...ids).run()
+    await env.DB.batch(statements)
   } catch {
     // best-effort
   }
@@ -294,16 +315,20 @@ export async function pruneWindowSocial(env: TrolleyScoutEnv): Promise<void> {
   if (live.availableSources.size === 0) return
   try {
     const saves = await env.DB.prepare(
-      'SELECT id, deal_id, source, deal_json, created_at FROM window_saves',
-    ).all<SaveRow>()
+      'SELECT id, deal_id, source, deal_json, created_at FROM window_saves LIMIT ?',
+    )
+      .bind(PRUNE_SCAN_LIMIT)
+      .all<SaveRow>()
     const staleSaveIds = saves.results.filter((r) => isStale(r, live)).map((r) => r.id)
     await deleteRowsById(env, 'window_saves', staleSaveIds)
 
     // Comments only exist for deal-site/discovery deals; prune those whose deal
     // is a known-gone deal-site id.
     const comments = await env.DB.prepare(
-      'SELECT DISTINCT deal_id FROM deal_comments',
-    ).all<{ deal_id: string }>()
+      'SELECT DISTINCT deal_id FROM deal_comments LIMIT ?',
+    )
+      .bind(PRUNE_SCAN_LIMIT)
+      .all<{ deal_id: string }>()
     const staleDealIds = comments.results
       .map((r) => r.deal_id)
       .filter((id) => {
@@ -312,9 +337,7 @@ export async function pruneWindowSocial(env: TrolleyScoutEnv): Promise<void> {
           live.availableSources.has(source) &&
           !live.idsBySource.get(source)?.has(id)
       })
-    for (const dealId of staleDealIds) {
-      await env.DB.prepare('DELETE FROM deal_comments WHERE deal_id = ?').bind(dealId).run()
-    }
+    await deleteRowsById(env, 'deal_comments', staleDealIds, 'deal_id')
   } catch {
     // best-effort
   }

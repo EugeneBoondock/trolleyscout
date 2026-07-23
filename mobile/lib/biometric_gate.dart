@@ -3,6 +3,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'theme.dart';
+import 'widgets/common.dart' show confirmAction;
 import 'widgets/scout_mark.dart';
 
 /// Fingerprint / device unlock for returning shoppers. Enabled per-device from
@@ -66,6 +67,7 @@ class BiometricGate extends StatefulWidget {
 
 class _BiometricGateState extends State<BiometricGate> {
   bool _authing = false;
+  String? _error;
 
   @override
   void initState() {
@@ -75,11 +77,28 @@ class _BiometricGateState extends State<BiometricGate> {
 
   Future<void> _prompt() async {
     if (_authing) return;
-    setState(() => _authing = true);
+    setState(() {
+      _authing = true;
+      _error = null;
+    });
     final ok = await BiometricPrefs.authenticate('Unlock Trolley Scout');
     if (!mounted) return;
-    setState(() => _authing = false);
+    setState(() {
+      _authing = false;
+      _error = ok ? null : 'Fingerprint not recognised — try again.';
+    });
     if (ok) widget.onUnlocked();
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Sign out?',
+      message: 'You will need to log in again to unlock Trolley Scout.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    );
+    if (confirmed) await widget.onSignOut();
   }
 
   @override
@@ -101,6 +120,20 @@ class _BiometricGateState extends State<BiometricGate> {
                   textAlign: TextAlign.center,
                   style: TextStyle(color: TS.mutedOf(context))),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 44),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: TS.redOf(context),
+                          fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               style: FilledButton.styleFrom(
@@ -115,7 +148,7 @@ class _BiometricGateState extends State<BiometricGate> {
             ),
             const SizedBox(height: 6),
             TextButton(
-              onPressed: () => widget.onSignOut(),
+              onPressed: _confirmSignOut,
               child: const Text('Sign out instead'),
             ),
           ],
