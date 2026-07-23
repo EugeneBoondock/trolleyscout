@@ -159,11 +159,10 @@ function isCountryRelevantResult(
 }
 
 function isRetailerResult(
-  country: CountryOption,
+  _country: CountryOption,
   result: { title: string; url: string },
   url: URL,
 ): boolean {
-  if (url.hostname.toLowerCase().endsWith(`.${country.code.toLowerCase()}`)) return true
   const searchable = normalizeSearchText(`${result.title} ${url.pathname}`)
   return looksLikePromotionSignal(searchable) ||
     /\b(?:cash and carry|chemist|food|grocery|hypermarket|hypermarche|loja|magasin|marche|market|mercado|pharmacy|retail|shop|store|supermarket|supermarche|supermercado)\b/.test(searchable)

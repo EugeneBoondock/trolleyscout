@@ -82,6 +82,13 @@ describe('global country support', () => {
       'Game Mozambique',
       'Kin Marché',
     ])
+
+    expect(buildCountryRetailers(countryFromCode('TZ'), [
+      {
+        title: 'Tanzania E-Immigration Online Portal',
+        url: 'https://eservices.immigration.go.tz/',
+      },
+    ])).toEqual([])
   })
 
   it('derives the retailer brand from an official promotion-page host', () => {
@@ -123,10 +130,12 @@ describe('global country support', () => {
     const retailers = buildCountryRetailers(countryFromCode('ZW'), [
       {
         title: 'SPAR Zimbabwe',
+        trusted: true,
         url: 'https://www.spar.co.zw/',
       },
       {
         title: 'SPAR Zimbabwe \u2014 Fresh. Fast. Local.',
+        trusted: true,
         url: 'https://online-spar.co.zw/',
       },
     ])
