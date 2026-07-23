@@ -101,6 +101,47 @@ export function extractSearchResults(html: string, limit = 12): SearchResult[] {
   return results
 }
 
+export function extractJinaSearchResults(value: string, limit = 12): SearchResult[] {
+  try {
+    const payload = JSON.parse(value) as { data?: unknown }
+    if (!Array.isArray(payload.data)) {
+      return []
+    }
+
+    const results: SearchResult[] = []
+    const seen = new Set<string>()
+
+    for (const item of payload.data) {
+      if (!item || typeof item !== 'object') {
+        continue
+      }
+      const record = item as Record<string, unknown>
+      const title = typeof record.title === 'string' ? stripTags(record.title) : ''
+      const url = typeof record.url === 'string' ? record.url.trim() : ''
+
+      if (
+        !title ||
+        !url ||
+        seen.has(url) ||
+        isJunkHost(url) ||
+        !/^https?:\/\//i.test(url)
+      ) {
+        continue
+      }
+
+      seen.add(url)
+      results.push({ title, url })
+      if (results.length >= limit) {
+        break
+      }
+    }
+
+    return results
+  } catch {
+    return []
+  }
+}
+
 // A PDF is evidence only after its host has been verified as the store's own
 // site. With no verified host, return an HTML candidate so the caller can
 // verify store identity before following any catalogue links.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ad_pricing.dart';
 import 'api_models.dart';
@@ -77,6 +78,9 @@ class Api {
   /// scouting sweeps, multi-portal property searches). The default 15s window
   /// misreports these as failures while the server is still working.
   final Duration slowRequestTimeout;
+  static const _adminCountryPreferenceKey = 'ts_admin_country_override_v1';
+  String? _adminCountryCode;
+  bool _adminCountryLoaded = false;
 
   Future<MemberSession> session() async {
     try {
@@ -124,6 +128,14 @@ class Api {
       // Cookie removal below is the security boundary for the live session.
     }
     await _cookieStore.clear();
+    _adminCountryCode = null;
+    _adminCountryLoaded = true;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_adminCountryPreferenceKey);
+    } catch (_) {
+      // Session clearing still succeeds when preferences are unavailable.
+    }
   }
 
   Future<DiscoveryResult> discovery(
@@ -438,6 +450,23 @@ class Api {
     return AdminOverview.fromJson(await _request('GET', '/api/admin'));
   }
 
+  Future<AdminOverview> setAdminTestCountry(String countryCode) async {
+    final code = countryCode.trim().toUpperCase();
+    final data = await _request('POST', '/api/admin', body: {
+      'action': 'set_test_country',
+      'countryCode': code,
+    });
+    _adminCountryCode = code;
+    _adminCountryLoaded = true;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_adminCountryPreferenceKey, code);
+    } catch (_) {
+      // The in-memory override remains active for this app session.
+    }
+    return AdminOverview.fromJson(data);
+  }
+
   /// Permanently deletes the signed-in account and its personal data. The
   /// current password is re-verified server-side before anything is removed.
   Future<void> deleteAccount({required String currentPassword}) async {
@@ -730,8 +759,12 @@ class Api {
     bool acceptErrorData = false,
     Duration? timeout,
   }) async {
+    await _loadAdminCountryOverride();
     final request = http.Request(method, Uri.parse('$baseUrl$path'));
     request.headers['accept'] = 'application/json';
+    if (_adminCountryCode != null && _adminCountryCode!.isNotEmpty) {
+      request.headers['x-trolley-scout-test-country'] = _adminCountryCode!;
+    }
     if (body != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -785,6 +818,23 @@ class Api {
     }
 
     return data;
+  }
+
+  Future<void> _loadAdminCountryOverride() async {
+    if (_adminCountryLoaded) return;
+    _adminCountryLoaded = true;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final code = preferences
+          .getString(_adminCountryPreferenceKey)
+          ?.trim()
+          .toUpperCase();
+      if (code != null && RegExp(r'^[A-Z]{2}$').hasMatch(code)) {
+        _adminCountryCode = code;
+      }
+    } catch (_) {
+      _adminCountryCode = null;
+    }
   }
 
   Future<void> _captureCookie(http.Response response) async {

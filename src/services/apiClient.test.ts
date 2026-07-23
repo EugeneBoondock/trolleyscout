@@ -11,6 +11,7 @@ import {
   endMemberSession,
   loadDiscovery,
   loadDiscoveredStores,
+  loadAdminOverview,
   loadBasket,
   loadSavedDeals,
   loadMemberSession,
@@ -29,6 +30,52 @@ import {
 describe('apiClient', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('loads the admin overview for the active test country when no stats country is chosen', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            accounts: [],
+            countries: [],
+            emailProtection: {
+              configured: true,
+              pendingAccounts: 0,
+              pendingSupport: 0,
+            },
+            scout: {
+              dealCount: 0,
+              leafletCount: 0,
+              sourceCount: 0,
+              storeCount: 0,
+            },
+            selectedCountry: {
+              code: 'ZW',
+              currencyCode: 'ZWG',
+              flag: '🇿🇼',
+              name: 'Zimbabwe',
+            },
+            summary: {
+              accountCount: 0,
+              planCounts: {},
+              supportOpenCount: 0,
+            },
+            support: [],
+          },
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await loadAdminOverview()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin', expect.any(Object))
+    expect(result.data?.selectedCountry.code).toBe('ZW')
   })
 
   it('loads retailers from the API when available', async () => {

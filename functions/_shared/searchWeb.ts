@@ -8,6 +8,7 @@
 import {
   buildDuckDuckGoUrl,
   buildJinaReaderUrl,
+  extractJinaSearchResults,
   extractSearchResults,
   extractSearchResultsFromMarkdown,
   type SearchResult,
@@ -19,43 +20,107 @@ const BROWSER_UA =
 const MAX_BODY_BYTES = 1_500_000
 
 export async function searchWeb(query: string, jinaApiKey?: string): Promise<SearchResult[]> {
+  return (await searchWebWithStatus(query, jinaApiKey)).results
+}
+
+export async function searchWebWithStatus(
+  query: string,
+  jinaApiKey?: string,
+): Promise<{
+  results: SearchResult[]
+  status: 'success' | 'empty' | 'transient_failure'
+}> {
   const ddgUrl = buildDuckDuckGoUrl(query)
 
   const direct = await fetchBody(ddgUrl)
-  const directResults = direct ? extractSearchResults(direct) : []
+  const directResults = direct.body ? extractSearchResults(direct.body) : []
 
   if (directResults.length > 0) {
-    return directResults
+    return { results: directResults, status: 'success' }
+  }
+
+  let sawSuccessfulProvider = direct.status === 'success'
+
+  if (jinaApiKey) {
+    const jina = await fetchBody('https://s.jina.ai/', {
+      body: JSON.stringify({ num: 12, q: query }),
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${jinaApiKey}`,
+        'content-type': 'application/json',
+        'x-respond-with': 'no-content',
+      },
+      method: 'POST',
+    })
+    const jinaResults = jina.body ? extractJinaSearchResults(jina.body) : []
+    if (jinaResults.length > 0) {
+      return { results: jinaResults, status: 'success' }
+    }
+    sawSuccessfulProvider ||= jina.status === 'success'
   }
 
   const proxied = await fetchBody(
     buildJinaReaderUrl(ddgUrl),
-    jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : undefined,
+    {
+      headers: jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : undefined,
+    },
   )
+  const proxiedResults = proxied.body
+    ? extractSearchResultsFromMarkdown(proxied.body)
+    : []
 
-  return proxied ? extractSearchResultsFromMarkdown(proxied) : []
+  if (proxiedResults.length > 0) {
+    return { results: proxiedResults, status: 'success' }
+  }
+
+  sawSuccessfulProvider ||= proxied.status === 'success'
+  return {
+    results: [],
+    status: sawSuccessfulProvider ? 'empty' : 'transient_failure',
+  }
 }
 
 async function fetchBody(
   url: string,
-  extraHeaders?: Record<string, string>,
-): Promise<string | undefined> {
+  options: {
+    body?: string
+    headers?: Record<string, string>
+    method?: 'GET' | 'POST'
+  } = {},
+): Promise<{
+  body?: string
+  status: 'success' | 'transient_failure' | 'permanent_failure'
+}> {
   try {
     const response = await fetch(url, {
+      body: options.body,
       headers: {
         accept: 'text/html, text/plain;q=0.9, */*;q=0.8',
         'user-agent': BROWSER_UA,
-        ...extraHeaders,
+        ...options.headers,
       },
+      method: options.method ?? 'GET',
       redirect: 'follow',
     })
 
-    if (!response.ok) {
-      return undefined
+    if (
+      response.status === 408 ||
+      response.status === 425 ||
+      response.status === 429 ||
+      response.status >= 500
+    ) {
+      return { status: 'transient_failure' }
     }
 
-    return (await response.text()).slice(0, MAX_BODY_BYTES)
+    if (!response.ok) {
+      return { status: 'permanent_failure' }
+    }
+
+    return {
+      body: (await response.text()).slice(0, MAX_BODY_BYTES),
+      status: 'success',
+    }
   } catch {
-    return undefined
+    return { status: 'transient_failure' }
   }
 }

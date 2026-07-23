@@ -716,6 +716,28 @@ describe('scheduled discovered-store scouting', () => {
   })
 
   it('verifies a newly discovered official domain from LocalBusiness structured data', async () => {
+    const store = discoveredStore({
+      name: 'Fresh Basket',
+      placeId: 'fresh-basket',
+      website: undefined,
+    })
+    await db.prepare(
+      `INSERT INTO discovered_stores (
+        place_id, store_name, address, website, lat, lon, retailer_id,
+        first_seen_at, last_seen_at, last_source_tile, last_scout_at,
+        next_scout_at, promotion_count, country_code
+      ) VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, NULL, NULL, ?, 0, 'ZA')`,
+    ).bind(
+      store.placeId,
+      store.name,
+      store.address,
+      store.lat,
+      store.lon,
+      store.firstSeenAt,
+      store.lastSeenAt,
+      store.nextScoutAt,
+    ).run()
+
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
       if (url.hostname === 'html.duckduckgo.com') {
@@ -748,15 +770,18 @@ describe('scheduled discovered-store scouting', () => {
 
     await scoutNearbyStores(
       env,
-      [discoveredStore({ name: 'Fresh Basket', placeId: 'fresh-basket', website: undefined })],
+      [store],
       Date.parse('2026-07-16T10:00:00.000Z'),
       1,
     )
 
     const row = await db.prepare(
-      `SELECT title FROM store_promotions WHERE place_id = 'fresh-basket'`,
-    ).first<{ title: string }>()
+      `SELECT
+        (SELECT title FROM store_promotions WHERE place_id = 'fresh-basket') AS title,
+        (SELECT website FROM discovered_stores WHERE place_id = 'fresh-basket') AS website`,
+    ).first<{ title: string; website: string | null }>()
     expect(row?.title).toBe('Albany Bread 700g')
+    expect(row?.website).toBe('https://freshbasket.co.za')
   })
 
   it('keeps a short retry when a searched catalogue page has a transient store API failure', async () => {

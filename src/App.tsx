@@ -72,6 +72,7 @@ import {
   loadMemberSession,
   changeAccountPassword,
   loadAdminOverview,
+  setAdminTestCountry,
   setMemberPropertiesAccess,
   setMemberPlan,
   setSupportStatus,
@@ -3559,7 +3560,7 @@ function AdminConsole() {
   const [overview, setOverview] = useState<AdminOverview | undefined>()
   const [message, setMessage] = useState('Loading admin data.')
   const [pendingId, setPendingId] = useState<string | undefined>()
-  const [selectedCountryCode, setSelectedCountryCode] = useState('ZA')
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string>()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -3568,6 +3569,9 @@ function AdminConsole() {
     loadAdminOverview(controller.signal, selectedCountryCode)
       .then((result) => {
         setOverview(result.data)
+        if (result.data) {
+          setSelectedCountryCode((current) => current ?? result.data?.selectedCountry.code)
+        }
         setMessage(result.data ? '' : result.message)
       })
       .catch((error: unknown) => {
@@ -3579,12 +3583,15 @@ function AdminConsole() {
     return () => controller.abort()
   }, [selectedCountryCode])
 
+  const activeCountryCode =
+    selectedCountryCode ?? overview?.selectedCountry.code ?? 'ZA'
+
   async function onToggleAccess(member: MemberAccount) {
     setPendingId(member.id)
     const result = await setMemberPropertiesAccess(
       member.id,
       !member.propertiesAccess,
-      selectedCountryCode,
+      activeCountryCode,
     )
     setPendingId(undefined)
     if (result.ok && result.account) {
@@ -3604,7 +3611,7 @@ function AdminConsole() {
 
   async function onChangePlan(memberId: string, planId: string) {
     setPendingId(memberId)
-    const result = await setMemberPlan(memberId, planId, selectedCountryCode)
+    const result = await setMemberPlan(memberId, planId, activeCountryCode)
     setPendingId(undefined)
     if (result.ok && result.account) {
       const updated = result.account
@@ -3631,7 +3638,7 @@ function AdminConsole() {
 
   async function onSetSupportStatus(messageId: string, status: 'open' | 'resolved') {
     setPendingId(messageId)
-    const result = await setSupportStatus(messageId, status, selectedCountryCode)
+    const result = await setSupportStatus(messageId, status, activeCountryCode)
     setPendingId(undefined)
 
     if (result.ok && result.support) {
@@ -3656,13 +3663,25 @@ function AdminConsole() {
 
   async function onProtectLegacyEmails() {
     setPendingId('email-protection')
-    const result = await protectLegacyEmails(selectedCountryCode)
+    const result = await protectLegacyEmails(activeCountryCode)
     setPendingId(undefined)
 
     if (result.ok && result.data) {
       setOverview(result.data)
     }
     setMessage(result.message)
+  }
+
+  async function onChangeTestCountry(countryCode: string) {
+    setSelectedCountryCode(countryCode)
+    setPendingId('test-country')
+    const result = await setAdminTestCountry(countryCode)
+    setPendingId(undefined)
+    setMessage(result.message)
+
+    if (result.ok) {
+      window.location.reload()
+    }
   }
 
   return (
@@ -3672,15 +3691,17 @@ function AdminConsole() {
           <p className="eyebrow">Admin</p>
           <h1>Console</h1>
           <p className="section-lede">
-            Accounts, plans, support, and scout health for {overview?.selectedCountry.name ?? 'South Africa'}.
+            Accounts, plans, support, and scout health for {overview?.selectedCountry.name ?? 'your test location'}.
           </p>
         </div>
         {overview && (
           <label className="admin-country-picker">
-            <span>Country view</span>
+            <span>App test location</span>
             <select
-              onChange={(event) => setSelectedCountryCode(event.target.value)}
-              value={selectedCountryCode}
+              aria-describedby="admin-test-location-help"
+              disabled={pendingId === 'test-country'}
+              onChange={(event) => void onChangeTestCountry(event.target.value)}
+              value={activeCountryCode}
             >
               {overview.countries.map((country) => (
                 <option key={country.code} value={country.code}>
@@ -3688,6 +3709,9 @@ function AdminConsole() {
                 </option>
               ))}
             </select>
+            <small id="admin-test-location-help">
+              Changes stores, deals, compare, and properties for this admin session.
+            </small>
           </label>
         )}
       </div>

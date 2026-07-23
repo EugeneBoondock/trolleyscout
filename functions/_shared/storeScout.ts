@@ -9,11 +9,8 @@ import {
   type ShopriteGroupPromotion,
 } from '../../src/services/shopriteGroupDeals'
 import {
-  buildDuckDuckGoUrl,
   buildJinaReaderUrl,
   buildStoreSpecialsQuery,
-  extractSearchResults,
-  extractSearchResultsFromMarkdown,
   extractValidDates,
   pickCatalogueSource,
   type SearchResult,
@@ -59,6 +56,7 @@ import {
   type StorePromotion,
 } from './locationStore'
 import { countryFromCode } from './countryContext'
+import { searchWebWithStatus } from './searchWeb'
 
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -110,6 +108,7 @@ const KNOWN_RETAILER_HOSTS: Record<string, string> = {
 
 interface ScoutOutcome {
   promotions: StorePromotion[]
+  resolvedWebsite?: string
   status: StoreScoutOutcomeStatus
 }
 
@@ -180,6 +179,9 @@ export async function scoutNearbyStores(
   for (const store of candidates) {
     try {
       const outcome = await scoutStore(env, store, nowMs)
+      const resolvedStore = outcome.resolvedWebsite
+        ? { ...store, website: outcome.resolvedWebsite }
+        : store
       const promotions = outcome.promotions.map((promotion) => ({
         ...promotion,
         countryCode: store.countryCode ?? 'ZA',
@@ -191,7 +193,7 @@ export async function scoutNearbyStores(
       if (saved && outcome.status === 'success' && promotions.length > 0) {
         await reconcileSuccessfulStorePromotions(env, store.placeId, promotions)
       }
-      await recordStoreScout(env, store, promotions.length, nowMs, outcome.status)
+      await recordStoreScout(env, resolvedStore, promotions.length, nowMs, outcome.status)
     } catch {
       // A malformed store or unexpected source response is isolated to this
       // queue item so every later due store still receives an attempt.
@@ -342,12 +344,12 @@ async function scoutStore(
   }
 
   if (attempts.some((attempt) => attempt.status === 'transient_failure')) {
-    return outcome('transient_failure')
+    return outcome('transient_failure', [], resolvedWebsiteFrom(attempts))
   }
   if (attempts.some((attempt) => attempt.status === 'empty')) {
-    return outcome('empty')
+    return outcome('empty', [], resolvedWebsiteFrom(attempts))
   }
-  return outcome('permanent_unverified')
+  return outcome('permanent_unverified', [], resolvedWebsiteFrom(attempts))
 }
 
 // Searches the open web for a store's current catalogue and turns the best
@@ -388,7 +390,11 @@ async function searchStoreCatalogue(
   let validTo: string | undefined
 
   if (source.kind === 'pdf') {
-    return outcome('success', [cataloguePromotion(store, source.url, source.title)])
+    return outcome(
+      'success',
+      [cataloguePromotion(store, source.url, source.title)],
+      safeOrigin(source.url),
+    )
   }
 
   const page = await fetchText(source.url)
@@ -417,7 +423,7 @@ async function searchStoreCatalogue(
   let commonCommerceTransient = false
 
   if (deals.length > 0 || leaflets.length > 0) {
-    return outcome('success', [...deals, ...leaflets])
+    return outcome('success', [...deals, ...leaflets], officialOrigin)
   }
 
   const commonCommerce = detectCommonCommercePlatform(page.text)
@@ -428,13 +434,17 @@ async function searchStoreCatalogue(
       officialOrigin,
     )
     if (platform.promotions.length > 0) {
-      return platform
+      return { ...platform, resolvedWebsite: officialOrigin }
     }
     commonCommerceTransient = platform.status === 'transient_failure'
   }
 
   if (!isPromotionalSource(pageUrl, source.title, page.text)) {
-    return outcome(commonCommerceTransient ? 'transient_failure' : 'empty')
+    return outcome(
+      commonCommerceTransient ? 'transient_failure' : 'empty',
+      [],
+      officialOrigin,
+    )
   }
 
   const dates = extractValidDates(
@@ -444,50 +454,30 @@ async function searchStoreCatalogue(
   validFrom = dates.validFrom
   validTo = dates.validTo
 
-  return outcome(commonCommerceTransient ? 'transient_failure' : 'success', [
-    {
-      id: `${store.placeId}-search-${hashString(source.url)}`,
-      kind: 'catalogue',
-      placeId: store.placeId,
-      productUrl: source.url,
-      sourceUrl: source.url,
-      storeName: store.name,
-      title: `${store.name} specials`,
-      validFrom,
-      validTo,
-    },
-  ])
+  return outcome(
+    commonCommerceTransient ? 'transient_failure' : 'success',
+    [
+      {
+        id: `${store.placeId}-search-${hashString(source.url)}`,
+        kind: 'catalogue',
+        placeId: store.placeId,
+        productUrl: source.url,
+        sourceUrl: source.url,
+        storeName: store.name,
+        title: `${store.name} specials`,
+        validFrom,
+        validTo,
+      },
+    ],
+    officialOrigin,
+  )
 }
 
 async function searchOfficialWeb(
   query: string,
   jinaApiKey?: string,
 ): Promise<{ results: SearchResult[]; status: 'success' | 'empty' | 'transient_failure' }> {
-  const directUrl = buildDuckDuckGoUrl(query)
-  const direct = await fetchText(directUrl, undefined, true)
-
-  if (direct.status === 'success' && direct.text) {
-    const results = extractSearchResults(direct.text)
-    if (results.length > 0) {
-      return { results, status: 'success' }
-    }
-  }
-
-  const proxied = await fetchText(
-    buildJinaReaderUrl(directUrl),
-    jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : undefined,
-    true,
-  )
-
-  if (proxied.status === 'success' && proxied.text) {
-    const results = extractSearchResultsFromMarkdown(proxied.text)
-    return { results, status: results.length > 0 ? 'success' : 'empty' }
-  }
-
-  if (direct.status === 'transient_failure' && proxied.status === 'transient_failure') {
-    return { results: [], status: 'transient_failure' }
-  }
-  return { results: [], status: 'empty' }
+  return searchWebWithStatus(query, jinaApiKey)
 }
 
 function cityFromAddress(address: string): string | undefined {
@@ -1743,8 +1733,16 @@ function cataloguePromotion(store: NearbyStore, url: string, title?: string): St
   }
 }
 
-function outcome(status: StoreScoutOutcomeStatus, promotions: StorePromotion[] = []): ScoutOutcome {
-  return { promotions, status }
+function outcome(
+  status: StoreScoutOutcomeStatus,
+  promotions: StorePromotion[] = [],
+  resolvedWebsite?: string,
+): ScoutOutcome {
+  return { promotions, resolvedWebsite, status }
+}
+
+function resolvedWebsiteFrom(attempts: ScoutOutcome[]): string | undefined {
+  return attempts.find((attempt) => attempt.resolvedWebsite)?.resolvedWebsite
 }
 
 async function fetchText(

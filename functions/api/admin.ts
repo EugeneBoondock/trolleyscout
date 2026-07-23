@@ -2,6 +2,7 @@ import {
   getAdminOverview,
   getMemberSession,
   protectLegacyMemberEmails,
+  setAdminCountryCookie,
   setMemberPropertiesAccess,
   setMemberPlan,
 } from '../_shared/memberStore'
@@ -96,6 +97,35 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
+    if (body.action === 'set_test_country') {
+      const requestedCode = body.countryCode?.trim().toUpperCase()
+      if (!requestedCode) {
+        return json(
+          { message: 'countryCode is required.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      const overview = await buildAdminOverview(env, requestedCode)
+      if (!overview || overview.selectedCountry.code !== requestedCode) {
+        return json(
+          { message: 'Choose a valid country.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      return json(
+        {
+          ...overview,
+          message: `App test location changed to ${overview.selectedCountry.name}.`,
+        },
+        {
+          headers: {
+            ...privateHeaders,
+            'set-cookie': setAdminCountryCookie(requestedCode),
+          },
+        },
+      )
+    }
+
     if (body.action === 'set_member_plan') {
       if (!body.accountId || !body.planId) {
         return json(
@@ -154,7 +184,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json({ message: 'Unknown admin action.' }, { headers: privateHeaders, status: 400 })
   }
 
-  const countryCode = new URL(request.url).searchParams.get('country') ?? 'ZA'
+  const countryCode =
+    new URL(request.url).searchParams.get('country') ??
+    session.account.countryCode
   const overview = await buildAdminOverview(env, countryCode)
 
   if (!overview) {

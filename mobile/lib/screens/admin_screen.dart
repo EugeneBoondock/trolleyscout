@@ -16,6 +16,7 @@ class AdminScreen extends StatefulWidget {
 
 class _AdminScreenState extends State<AdminScreen> {
   late Future<AdminOverview> _future = widget.api.adminOverview();
+  bool _changingCountry = false;
   bool _refreshingDeals = false;
 
   void _reload() => setState(() {
@@ -54,6 +55,33 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> _changeTestCountry(String? countryCode) async {
+    if (countryCode == null || _changingCountry) return;
+    setState(() => _changingCountry = true);
+    try {
+      uxTap();
+      final overview = await widget.api.setAdminTestCountry(countryCode);
+      if (!mounted) return;
+      setState(() {
+        _future = Future.value(overview);
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content:
+              Text('Testing ${overview.selectedCountry.name} across the app.'),
+        ));
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _changingCountry = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AdminOverview>(
@@ -75,6 +103,48 @@ class _AdminScreenState extends State<AdminScreen> {
               title: 'Admin console',
               description: 'Accounts, plans, and scout status.',
             ),
+            PaperCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'App test location',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Changes stores, deals, compare, and properties for your admin session.',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: const Key('admin-test-country'),
+                    initialValue: overview.selectedCountry.code,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      prefixIcon: Icon(Icons.public),
+                    ),
+                    isExpanded: true,
+                    items: [
+                      for (final country in overview.countries)
+                        DropdownMenuItem(
+                          value: country.code,
+                          child: Text('${country.flag} ${country.name}'),
+                        ),
+                    ],
+                    onChanged: _changingCountry ? null : _changeTestCountry,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -183,7 +253,8 @@ class _AdminScreenState extends State<AdminScreen> {
 /// admins always have access via their plan/role, so the toggle only appears for
 /// other members; granting one flips their access on immediately.
 class _MemberAccessTile extends StatefulWidget {
-  const _MemberAccessTile({super.key, required this.api, required this.account});
+  const _MemberAccessTile(
+      {super.key, required this.api, required this.account});
 
   final Api api;
   final MemberAccount account;
@@ -403,8 +474,7 @@ class _AdReviewSectionState extends State<AdReviewSection> {
                   Text(ad.targetUrl,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: TS.redOf(context), fontSize: 12)),
+                      style: TextStyle(color: TS.redOf(context), fontSize: 12)),
                   if (ad.status == 'pending') ...[
                     const SizedBox(height: 10),
                     Row(

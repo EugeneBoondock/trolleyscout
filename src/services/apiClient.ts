@@ -1048,10 +1048,11 @@ export async function loadNearbyStores(
 
 export async function loadAdminOverview(
   signal?: AbortSignal,
-  countryCode = 'ZA',
+  countryCode?: string,
 ): Promise<{ data?: AdminOverview; message: string; status: 'ready' | 'error' }> {
   try {
-    const response = await fetch(`/api/admin?country=${encodeURIComponent(countryCode)}`, {
+    const suffix = countryCode ? `?country=${encodeURIComponent(countryCode)}` : ''
+    const response = await fetch(`/api/admin${suffix}`, {
       headers: { accept: 'application/json' },
       signal,
     })
@@ -1072,6 +1073,26 @@ export async function loadAdminOverview(
     }
 
     return { message: 'Admin data unavailable.', status: 'error' }
+  }
+}
+
+export async function setAdminTestCountry(countryCode: string) {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({ action: 'set_test_country', countryCode }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as { data?: AdminOverview & { message?: string } }
+    return {
+      data: envelope.data,
+      message:
+        envelope.data?.message ??
+        (response.ok ? 'App test location updated.' : 'App test location could not be updated.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
   }
 }
 

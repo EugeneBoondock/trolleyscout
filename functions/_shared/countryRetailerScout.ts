@@ -7,10 +7,14 @@ import { searchWeb } from './searchWeb'
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const RESULT_LIMIT = 18
 const BLOCKED_HOSTS = [
+  'cataloguespecials.',
   'facebook.com',
+  'guzzle.',
   'instagram.com',
+  'kimbino.',
   'linkedin.com',
   'tiktok.com',
+  'tiendeo.',
   'wikipedia.org',
   'youtube.com',
   'yellowpages',

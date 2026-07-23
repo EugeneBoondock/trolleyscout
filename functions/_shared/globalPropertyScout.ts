@@ -49,10 +49,14 @@ export async function searchGlobalProperties(
 
   if (cached && Date.now() - Date.parse(cached.fetched_at) < SEARCH_TTL_MS) {
     const parsed = parseCached(cached.payload_json)
-    listings = parsed.listings
-    sources = parsed.sources
-    refreshedAt = cached.fetched_at
-  } else {
+    if (parsed.listings.length > 0 || parsed.sources.length > 0) {
+      listings = parsed.listings
+      sources = parsed.sources
+      refreshedAt = cached.fetched_at
+    }
+  }
+
+  if (listings.length === 0 && sources.length === 0) {
     const action = params.listingType === 'rent' ? 'property to rent' : 'property for sale'
     const results = await searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY)
     const fetched = await Promise.all(
@@ -73,7 +77,9 @@ export async function searchGlobalProperties(
     listings = dedupeListings(fetched.flatMap((entry) => entry.listings))
     sources = mergeSources(fetched.map((entry) => entry.source))
     refreshedAt = new Date().toISOString()
-    await writeCache(env, key, country.code, { listings, sources })
+    if (listings.length > 0 || sources.length > 0) {
+      await writeCache(env, key, country.code, { listings, sources })
+    }
   }
 
   listings = filterAndSortListings(listings, {
@@ -114,8 +120,9 @@ export function parseGenericPropertyListings(
     }
   }
 
-  const portalName = labelFromHost(source.hostname)
-  const portal = `web:${slug(source.hostname)}`
+  const sourceHost = normalizeSourceHost(source.hostname)
+  const portalName = labelFromHost(sourceHost)
+  const portal = `web:${slug(sourceHost)}`
   const listings = objects
     .filter(isPropertyObject)
     .map((object) => objectToListing(object, {
@@ -257,7 +264,7 @@ function fallbackSearchListing(
 
 function sourceFromUrl(urlValue: string, ok: boolean): PropertyPortalSourceMeta {
   const url = safeHttpUrl(urlValue)
-  const host = url?.hostname ?? 'web'
+  const host = normalizeSourceHost(url?.hostname ?? 'web')
   return { count: ok ? 1 : 0, id: `web:${slug(host)}`, label: labelFromHost(host), ok }
 }
 
@@ -425,8 +432,17 @@ function formatMoney(value: number, currencyCode: string): string {
 }
 
 function labelFromHost(host: string): string {
-  const token = host.replace(/^www\./, '').split('.').slice(-2, -1)[0] ?? host
+  const labels = normalizeSourceHost(host).split('.')
+  const secondLevelIndex =
+    labels.length >= 3 && ['co', 'com', 'net', 'org'].includes(labels.at(-2) ?? '')
+      ? labels.length - 3
+      : Math.max(0, labels.length - 2)
+  const token = labels[secondLevelIndex] ?? host
   return token.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function normalizeSourceHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, '')
 }
 
 function slug(value: string): string {

@@ -891,13 +891,15 @@ export async function recordStoreScout(
       .run();
     await env.DB.prepare(
       `UPDATE discovered_stores
-        SET last_scout_at = ?, next_scout_at = ?, promotion_count = CASE
+        SET website = COALESCE(?, website),
+          last_scout_at = ?, next_scout_at = ?, promotion_count = CASE
           WHEN ? = 1 THEN promotion_count
           ELSE ?
         END
         WHERE place_id = ?`,
     )
       .bind(
+        store.website ?? null,
         new Date(nowMs).toISOString(),
         nextScoutAt,
         preservePromotionCount ? 1 : 0,

@@ -936,6 +936,21 @@ class AdminOverview {
     required this.dealCount,
     required this.leafletCount,
     required this.sourceCount,
+    this.countries = const [
+      CountryOption(
+        code: 'ZA',
+        currencyCode: 'ZAR',
+        flag: '🇿🇦',
+        name: 'South Africa',
+      ),
+    ],
+    this.selectedCountry = const CountryOption(
+      code: 'ZA',
+      currencyCode: 'ZAR',
+      flag: '🇿🇦',
+      name: 'South Africa',
+    ),
+    this.storeCount = 0,
     this.support = const [],
     this.supportOpenCount = 0,
     this.lastScoutedAt,
@@ -947,6 +962,9 @@ class AdminOverview {
   final int dealCount;
   final int leafletCount;
   final int sourceCount;
+  final List<CountryOption> countries;
+  final CountryOption selectedCountry;
+  final int storeCount;
   final List<SupportMessage> support;
   final int supportOpenCount;
   final String? lastScoutedAt;
@@ -961,8 +979,12 @@ class AdminOverview {
       dealCount: _int(scout['dealCount']),
       leafletCount: _int(scout['leafletCount']),
       sourceCount: _int(scout['sourceCount']),
-      support:
-          _mapList(json['support']).map(SupportMessage.fromJson).toList(),
+      countries:
+          _mapList(json['countries']).map(CountryOption.fromJson).toList(),
+      selectedCountry:
+          CountryOption.fromJson(_mapOrEmpty(json['selectedCountry'])),
+      storeCount: _int(scout['storeCount']),
+      support: _mapList(json['support']).map(SupportMessage.fromJson).toList(),
       supportOpenCount: _int(summary['supportOpenCount']),
       lastScoutedAt: _optionalString(scout['lastScoutedAt']),
     );

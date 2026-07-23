@@ -35,6 +35,21 @@ describe('global country support', () => {
     expect(retailers[0].sources[0]).toMatchObject({ kind: 'specials' })
   })
 
+  it('does not present catalogue aggregators as official country retailers', () => {
+    const retailers = buildCountryRetailers(countryFromCode('ZW'), [
+      {
+        title: 'Kimbino Zimbabwe weekly catalogues',
+        url: 'https://www.kimbino.co.zw/supermarkets',
+      },
+      {
+        title: 'OK Zimbabwe | Official website',
+        url: 'https://www.okzimbabwe.co.zw/specials',
+      },
+    ])
+
+    expect(retailers.map((retailer) => retailer.name)).toEqual(['OK Zimbabwe'])
+  })
+
 })
 
 describe('email protection', () => {

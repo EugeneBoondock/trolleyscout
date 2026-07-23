@@ -40,6 +40,7 @@ import {
 } from './emailProtection'
 
 const sessionCookieName = 'ts_member_session'
+const adminCountryCookieName = 'ts_admin_country'
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 30
 
 interface MemberAccountRow {
@@ -188,6 +189,11 @@ export function setMemberCookie(token: string) {
   return `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}`
 }
 
+export function setAdminCountryCookie(countryCode: string) {
+  const country = countryFromCode(countryCode)
+  return `${adminCountryCookieName}=${country.code}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}`
+}
+
 export function getSubscriptionPlans() {
   return memberPlans
 }
@@ -242,9 +248,39 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
     .bind(token, now)
     .first<MemberAccountRow>()
 
+  const storedAccount = row ? await accountRowToMember(env, row) : undefined
+  const account = applyAdminCountryOverride(storedAccount, request)
+
   return {
-    account: row ? await accountRowToMember(env, row) : undefined,
+    account,
     isAuthenticated: Boolean(row),
+  }
+}
+
+function applyAdminCountryOverride(
+  account: MemberAccount | undefined,
+  request: Request,
+): MemberAccount | undefined {
+  if (account?.role !== 'admin') {
+    return account
+  }
+
+  const requestedCode = (
+    request.headers.get('x-trolley-scout-test-country') ??
+    getCookie(request, adminCountryCookieName) ??
+    ''
+  ).trim().toUpperCase()
+  const country = countryFromCode(requestedCode)
+
+  if (!requestedCode || country.code !== requestedCode) {
+    return account
+  }
+
+  return {
+    ...account,
+    countryCode: country.code,
+    countryName: country.name,
+    currencyCode: country.currencyCode,
   }
 }
 
