@@ -128,9 +128,8 @@ describe('global property source discovery', () => {
 
     expect(result.listings.map((listing) => listing.title)).toEqual([
       'Appartement à louer à Kinshasa',
-      'Moradia para venda em Maputo',
     ])
-    expect(result.sources).toHaveLength(2)
+    expect(result.sources).toHaveLength(1)
     expect(result.sources.every((source) => source.label === 'Example')).toBe(true)
   })
 })

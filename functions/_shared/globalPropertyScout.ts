@@ -60,8 +60,21 @@ export async function searchGlobalProperties(
 
   if (listings.length === 0 && sources.length === 0) {
     const action = params.listingType === 'rent' ? 'property to rent' : 'property for sale'
-    const results = await searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY)
-    const relevantResults = results.filter(isLikelyPropertySearchResult)
+    const resultGroups = await Promise.all([
+      searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY),
+      searchWeb(
+        `(immobilier OR imoveis OR nyumba) ${locationText} ${country.name} ${
+          params.listingType === 'rent'
+            ? '(louer OR alugar OR kukodisha)'
+            : '(vente OR venda OR inauzwa)'
+        }`,
+        env.JINA_API_KEY,
+      ),
+    ])
+    const results = dedupeSearchResults(resultGroups.flat())
+    const relevantResults = results.filter((result) =>
+      isLikelyPropertySearchResult(result, country, locationText),
+    )
     const fetched = await Promise.all(
       relevantResults.slice(0, MAX_RESULTS_TO_FETCH).map(async (result) => {
         const html = await fetchPropertyPage(env, result.url)
@@ -342,12 +355,35 @@ function fallbackSearchListing(
   }]
 }
 
-function isLikelyPropertySearchResult(result: { title: string; url: string }): boolean {
+function isLikelyPropertySearchResult(
+  result: { title: string; url: string },
+  country?: CountryOption,
+  locationText?: string,
+): boolean {
   const searchable = `${result.title} ${result.url}`
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-  return /property|real[\s-]*estate|realty|house|home|apartment|flat|bedroom|immobilier|imobiliari|imoveis|maison|appartement|moradia|venda|alugar|arrendar|terrain|nyumba|kiwanja/.test(searchable)
+  const propertyMatch =
+    /property|real[\s-]*estate|realty|house|home|apartment|flat|bedroom|immobilier|imobiliari|imoveis|maison|appartement|moradia|venda|alugar|arrendar|terrain|nyumba|kiwanja/.test(searchable)
+  if (!propertyMatch || !country) return propertyMatch
+
+  const host = safeHttpUrl(result.url)?.hostname.toLowerCase() ?? ''
+  if (host.endsWith(`.${country.code.toLowerCase()}`)) return true
+  return [country.name, country.capital, locationText].some((value) => {
+    if (!value) return false
+    const normalized = value
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+    return normalized.length >= 3 && searchable.includes(normalized)
+  })
+}
+
+function dedupeSearchResults(
+  results: Array<{ title: string; url: string }>,
+): Array<{ title: string; url: string }> {
+  return [...new Map(results.map((result) => [result.url, result])).values()]
 }
 
 function sourceFromUrl(urlValue: string, ok: boolean): PropertyPortalSourceMeta {

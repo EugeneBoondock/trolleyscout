@@ -19,6 +19,8 @@ const BLOCKED_HOSTS = [
   'tiendeo.',
   'wikipedia.org',
   'youtube.com',
+  'yahoo.com',
+  'bing.com',
   'yellowpages',
   'tripadvisor.',
 ]
@@ -43,17 +45,27 @@ export async function getCountryRetailers(
     if (parsed.length > 0) return parsed
   }
 
-  const [results, stores] = await Promise.all([
-    searchWeb(
-      `supermarkets grocery chains ${country.name} official specials catalogues`,
-      env.JINA_API_KEY,
-    ),
+  const [resultGroups, stores] = await Promise.all([
+    Promise.all([
+      searchWeb(
+        `supermarkets grocery chains ${country.name} official specials catalogues`,
+        env.JINA_API_KEY,
+      ),
+      searchWeb(
+        `(supermarché OR supermercado OR hypermarché) ${country.name} (promotions OR offres OR ofertas OR catalogues)`,
+        env.JINA_API_KEY,
+      ),
+    ]),
     readStoreWebsites(env, country.code),
   ])
 
   const discovered = buildCountryRetailers(country, [
-    ...stores.map((store) => ({ title: store.store_name, url: store.website })),
-    ...results,
+    ...stores.map((store) => ({
+      title: store.store_name,
+      trusted: true,
+      url: store.website,
+    })),
+    ...dedupeSearchResults(resultGroups.flat()),
   ])
 
   if (discovered.length > 0) {
@@ -66,13 +78,20 @@ export async function getCountryRetailers(
 
 export function buildCountryRetailers(
   country: CountryOption,
-  results: Array<{ title: string; url: string }>,
+  results: Array<{ title: string; trusted?: boolean; url: string }>,
 ): Retailer[] {
   const byBrand = new Map<string, Retailer>()
 
   for (const result of results) {
     const url = safeHttpUrl(result.url)
     if (!url || BLOCKED_HOSTS.some((host) => url.hostname.includes(host))) continue
+    if (
+      !result.trusted &&
+      (
+        !isCountryRelevantResult(country, result, url) ||
+        !isRetailerResult(country, result, url)
+      )
+    ) continue
 
     const host = url.hostname.replace(/^www\./, '')
     const name = retailerName(result.title, host)
@@ -112,6 +131,46 @@ export function buildCountryRetailers(
   }
 
   return [...byBrand.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function dedupeSearchResults(
+  results: Array<{ title: string; url: string }>,
+): Array<{ title: string; url: string }> {
+  return [...new Map(results.map((result) => [result.url, result])).values()]
+}
+
+function isCountryRelevantResult(
+  country: CountryOption,
+  result: { title: string; url: string },
+  url: URL,
+): boolean {
+  const countryCode = country.code.toLowerCase()
+  const host = url.hostname.toLowerCase()
+  if (host.endsWith(`.${countryCode}`)) return true
+
+  const searchable = normalizeSearchText(`${result.title} ${result.url}`)
+  return [
+    country.name,
+    country.capital,
+  ].some((value) => value && searchable.includes(normalizeSearchText(value)))
+}
+
+function isRetailerResult(
+  country: CountryOption,
+  result: { title: string; url: string },
+  url: URL,
+): boolean {
+  if (url.hostname.toLowerCase().endsWith(`.${country.code.toLowerCase()}`)) return true
+  const searchable = normalizeSearchText(`${result.title} ${url.pathname}`)
+  return looksLikePromotionSignal(searchable) ||
+    /\b(?:cash and carry|chemist|food|grocery|hypermarket|hypermarche|loja|magasin|marche|market|mercado|pharmacy|retail|shop|store|supermarket|supermarche|supermercado)\b/.test(searchable)
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
 }
 
 export function resolveCountryRetailerWebsite(

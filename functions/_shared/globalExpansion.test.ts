@@ -54,6 +54,25 @@ describe('global country support', () => {
     expect(retailers.map((retailer) => retailer.name)).toEqual(['OK Zimbabwe'])
   })
 
+  it('rejects search-provider navigation and results unrelated to the active country', () => {
+    const retailers = buildCountryRetailers(countryFromCode('MZ'), [
+      {
+        title: 'Yahoo Finance',
+        url: 'https://finance.yahoo.com/',
+      },
+      {
+        title: 'The Camellias | Luxury property',
+        url: 'https://thecamellias.dlf.in/',
+      },
+      {
+        title: 'Game Mozambique | Loja online',
+        url: 'https://www.game.co.mz/',
+      },
+    ])
+
+    expect(retailers.map((retailer) => retailer.name)).toEqual(['Game Mozambique'])
+  })
+
   it('derives the retailer brand from an official promotion-page host', () => {
     const retailers = buildCountryRetailers(countryFromCode('BW'), [
       {

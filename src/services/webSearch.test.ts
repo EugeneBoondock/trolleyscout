@@ -69,6 +69,8 @@ describe('extractSearchResultsFromMarkdown', () => {
 
   test('decodes Yahoo result redirects returned by the reader proxy', () => {
     const markdown = `
+[Yahoo Finance](https://finance.yahoo.com/)
+[Yahoo Help](https://help.yahoo.com/)
 [Promotions](https://r.search.yahoo.com/path/RU=https%3a%2f%2fchoppies.co.bw%2fspecials-promotions%2f/RK=2/RS=x)
 `
 

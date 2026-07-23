@@ -941,6 +941,65 @@ describe('scheduled discovered-store scouting', () => {
     expect(row?.website).toBe('https://freshbasket.co.za')
   })
 
+  it('rejects a matching brand website that has no evidence for the store country', async () => {
+    const store = discoveredStore({
+      address: 'Port Louis, Mauritius',
+      countryCode: 'MU',
+      countryName: 'Mauritius',
+      name: 'Pharmalink',
+      placeId: 'pharmalink-mauritius',
+      website: undefined,
+    })
+    await db.prepare(
+      `INSERT INTO discovered_stores (
+        place_id, store_name, address, website, lat, lon, retailer_id,
+        first_seen_at, last_seen_at, last_source_tile, last_scout_at,
+        next_scout_at, promotion_count, country_code
+      ) VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, NULL, NULL, ?, 0, 'MU')`,
+    ).bind(
+      store.placeId,
+      store.name,
+      store.address,
+      store.lat,
+      store.lon,
+      store.firstSeenAt,
+      store.lastSeenAt,
+      store.nextScoutAt,
+    ).run()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'html.duckduckgo.com') {
+        const target = encodeURIComponent('https://pharmalinkinc.com/promotions')
+        return htmlResponse(
+          `<a class="result__a" href="//duckduckgo.com/l/?uddg=${target}&amp;rut=x">Pharmalink promotions</a>`,
+        )
+      }
+      if (url.hostname === 'pharmalinkinc.com') {
+        return htmlResponse(`
+          <script type="application/ld+json">${JSON.stringify({
+            '@type': 'LocalBusiness',
+            name: 'Pharmalink',
+          })}</script>
+          <h1>Pharmalink promotions</h1>
+          <img src="/manufacturing-promotion.jpg" alt="Manufacturing promotion">`)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [store],
+      Date.parse('2026-07-23T12:00:00.000Z'),
+      1,
+    )
+
+    const row = await db.prepare(
+      `SELECT website, promotion_count
+       FROM discovered_stores WHERE place_id = 'pharmalink-mauritius'`,
+    ).first<{ promotion_count: number; website: string | null }>()
+    expect(row).toEqual({ promotion_count: 0, website: null })
+  })
+
   it('keeps a short retry when a searched catalogue page has a transient store API failure', async () => {
     const nowMs = Date.parse('2026-07-16T10:00:00.000Z')
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -1065,6 +1124,38 @@ describe('scheduled discovered-store scouting', () => {
         store_name: 'KWIKSPAR Dowerglen',
       },
     ])
+  })
+
+  it('does not use South African native retailer adapters for stores in another country', async () => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      requests.push(String(input))
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [
+        discoveredStore({
+          countryCode: 'ZW',
+          name: 'Spar Harare',
+          placeId: 'spar-harare',
+          retailerId: 'spar',
+        }),
+        discoveredStore({
+          countryCode: 'ZW',
+          name: 'Shoprite Harare',
+          placeId: 'shoprite-harare',
+          retailerId: 'shoprite',
+        }),
+      ],
+      Date.parse('2026-07-23T12:00:00.000Z'),
+      2,
+    )
+
+    expect(requests.some((url) => url.includes('mobile.spar.co.za'))).toBe(false)
+    expect(requests.some((url) => url.includes('api.browse-by-store'))).toBe(false)
+    expect(requests.some((url) => decodeURIComponent(url).includes('site:spar.co.za'))).toBe(false)
   })
 
   it('continues to the official website when the preferred SPAR branch method is unavailable', async () => {

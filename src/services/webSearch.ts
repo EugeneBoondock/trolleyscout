@@ -47,6 +47,8 @@ const JUNK_HOSTS = [
   'pinterest.com',
   'wikipedia.org',
   'duckduckgo.com',
+  'yahoo.com',
+  'bing.com',
 ]
 
 // DuckDuckGo blocks direct fetches from datacenter IPs (Workers), so we retry

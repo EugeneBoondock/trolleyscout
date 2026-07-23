@@ -358,10 +358,15 @@ async function scoutStore(
   nowMs: number,
 ): Promise<ScoutOutcome> {
   const attempts: ScoutOutcome[] = []
+  const isSouthAfricanStore = countryFromCode(store.countryCode).code === 'ZA'
 
   // A discovered Shoprite/Checkers branch can serve its OWN current specials
   // through the anonymous browse-by-store API, keyed off the store's location.
-  if (store.retailerId && SHOPRITE_GROUP_CHAINS[store.retailerId]) {
+  if (
+    isSouthAfricanStore &&
+    store.retailerId &&
+    SHOPRITE_GROUP_CHAINS[store.retailerId]
+  ) {
     const group = await scoutShopriteGroupBranch(store, nowMs)
     attempts.push(group)
     if (group.promotions.length > 0) {
@@ -369,7 +374,7 @@ async function scoutStore(
     }
   }
 
-  if (store.retailerId === 'spar') {
+  if (isSouthAfricanStore && store.retailerId === 'spar') {
     const spar = await scoutSparBranch(store, nowMs)
     attempts.push(spar)
     if (spar.promotions.length > 0) {
@@ -410,7 +415,7 @@ async function searchStoreCatalogue(
 ): Promise<ScoutOutcome> {
   const area = store.address ? cityFromAddress(store.address) : undefined
   const websiteHost = safeHost(store.website)
-  const knownRetailerHost = store.retailerId
+  const knownRetailerHost = countryFromCode(store.countryCode).code === 'ZA' && store.retailerId
     ? KNOWN_RETAILER_HOSTS[store.retailerId]
     : undefined
   const verifiedHost = knownRetailerHost ?? websiteHost
@@ -451,7 +456,10 @@ async function searchStoreCatalogue(
     return outcome(page.status)
   }
 
-  if (!knownRetailerHost && !verifyOfficialStorePage(store, page.text)) {
+  if (
+    !knownRetailerHost &&
+    !verifyOfficialStorePage(store, page.text, page.finalUrl ?? source.url, true)
+  ) {
     return outcome('permanent_unverified')
   }
 
@@ -601,7 +609,7 @@ async function scoutStoreWebsite(
     return outcome('permanent_unverified')
   }
 
-  const knownRetailerHost = store.retailerId
+  const knownRetailerHost = countryFromCode(store.countryCode).code === 'ZA' && store.retailerId
     ? KNOWN_RETAILER_HOSTS[store.retailerId]
     : undefined
   if (knownRetailerHost && safeHost(origin) !== knownRetailerHost) {
@@ -642,7 +650,7 @@ async function scoutStoreWebsite(
     if (!sameOrigin(finalUrl, origin)) {
       continue
     }
-    if (!verifyOfficialStorePage(store, page.text)) {
+    if (!verifyOfficialStorePage(store, page.text, finalUrl)) {
       continue
     }
 
@@ -2002,7 +2010,20 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<st
   return text + decoder.decode()
 }
 
-function verifyOfficialStorePage(store: NearbyStore, html: string): boolean {
+function verifyOfficialStorePage(
+  store: NearbyStore,
+  html: string,
+  sourceUrl?: string,
+  requireCountryEvidence = false,
+): boolean {
+  const pageText = normalizeWords(stripHtml(html).slice(0, 100_000))
+  if (
+    requireCountryEvidence &&
+    countryFromCode(store.countryCode).code !== 'ZA' &&
+    !hasStoreCountryEvidence(store, sourceUrl, pageText)
+  ) {
+    return false
+  }
   const records = embeddedRecords(html)
   const organizationMatch = records.some((record) => {
     const type = record['@type']
@@ -2017,7 +2038,6 @@ function verifyOfficialStorePage(store: NearbyStore, html: string): boolean {
     return true
   }
 
-  const pageText = normalizeWords(stripHtml(html).slice(0, 100_000))
   const nameTokens = meaningfulTokens(store.name)
   const nameMatch = nameTokens.length > 0 &&
     nameTokens.filter((token) => pageText.includes(token)).length >= Math.ceil(nameTokens.length * 0.6)
@@ -2028,6 +2048,25 @@ function verifyOfficialStorePage(store: NearbyStore, html: string): boolean {
     .some((part) => pageText.includes(part))
 
   return nameMatch && addressMatch
+}
+
+function hasStoreCountryEvidence(
+  store: NearbyStore,
+  sourceUrl: string | undefined,
+  pageText: string,
+): boolean {
+  const country = countryFromCode(store.countryCode)
+  const host = safeHost(sourceUrl)
+  if (host?.endsWith(`.${country.code.toLowerCase()}`)) return true
+
+  const countryName = normalizeWords(store.countryName ?? country.name)
+  if (countryName && pageText.includes(countryName)) return true
+
+  const addressParts = (store.address ?? '')
+    .split(',')
+    .map(normalizeWords)
+    .filter((part) => part.length >= 4 && part !== countryName)
+  return addressParts.some((part) => pageText.includes(part))
 }
 
 function namesMatch(expected: string, actual: string | undefined): boolean {
