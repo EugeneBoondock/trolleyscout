@@ -88,8 +88,11 @@ export function buildCountryRetailers(
     if (
       !result.trusted &&
       (
-        !isCountryRelevantResult(country, result, url) ||
-        !isRetailerResult(country, result, url)
+        !isRetailerResult(country, result, url) ||
+        (
+          !isCountryRelevantResult(country, result, url) &&
+          !isStrongRetailerResult(result, url)
+        )
       )
     ) continue
 
@@ -164,6 +167,15 @@ function isRetailerResult(
   const searchable = normalizeSearchText(`${result.title} ${url.pathname}`)
   return looksLikePromotionSignal(searchable) ||
     /\b(?:cash and carry|chemist|food|grocery|hypermarket|hypermarche|loja|magasin|marche|market|mercado|pharmacy|retail|shop|store|supermarket|supermarche|supermercado)\b/.test(searchable)
+}
+
+function isStrongRetailerResult(
+  result: { title: string; url: string },
+  url: URL,
+): boolean {
+  const searchable = normalizeSearchText(`${result.title} ${url.pathname}`)
+  return looksLikePromotionSignal(searchable) ||
+    /\b(?:cash and carry|chemist|grocery|hypermarket|hypermarche|loja|magasin|marche|market|mercado|pharmacy|supermarket|supermarche|supermercado)\b/.test(searchable)
 }
 
 function normalizeSearchText(value: string): string {

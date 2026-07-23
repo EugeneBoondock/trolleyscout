@@ -69,12 +69,19 @@ describe('global country support', () => {
         url: 'https://www.game.co.mz/',
       },
       {
+        title: 'Kin Marché | Supermarché en ligne',
+        url: 'https://www.kinmarche.com/',
+      },
+      {
         title: 'Promotions',
         url: 'https://contact@pharmacie-example.co.mz/',
       },
     ])
 
-    expect(retailers.map((retailer) => retailer.name)).toEqual(['Game Mozambique'])
+    expect(retailers.map((retailer) => retailer.name)).toEqual([
+      'Game Mozambique',
+      'Kin Marché',
+    ])
   })
 
   it('derives the retailer brand from an official promotion-page host', () => {
