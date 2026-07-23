@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { countryFromCode } from './countryContext'
-import { buildCountryRetailers } from './countryRetailerScout'
+import {
+  applyCountryRetailerWebsites,
+  buildCountryRetailers,
+  resolveCountryRetailerWebsite,
+} from './countryRetailerScout'
 import { emailLookup, protectEmail, revealEmail } from './emailProtection'
 import { parseGenericPropertyListings } from './globalPropertyScout'
 import type { TrolleyScoutEnv } from './env'
@@ -48,6 +52,59 @@ describe('global country support', () => {
     ])
 
     expect(retailers.map((retailer) => retailer.name)).toEqual(['OK Zimbabwe'])
+  })
+
+  it('merges official brand sites, removes title copy, and matches a nearby branch', () => {
+    const retailers = buildCountryRetailers(countryFromCode('ZW'), [
+      {
+        title: 'SPAR Zimbabwe',
+        url: 'https://www.spar.co.zw/',
+      },
+      {
+        title: 'SPAR Zimbabwe \u2014 Fresh. Fast. Local.',
+        url: 'https://online-spar.co.zw/',
+      },
+    ])
+
+    expect(retailers).toHaveLength(1)
+    expect(retailers[0]?.name).toBe('SPAR Zimbabwe')
+    expect(retailers[0]?.sources).toHaveLength(2)
+    expect(
+      resolveCountryRetailerWebsite(
+        'Spar Montague',
+        countryFromCode('ZW'),
+        retailers,
+      ),
+    ).toBe('https://online-spar.co.zw/')
+
+    expect(applyCountryRetailerWebsites(
+      [
+        {
+          countryCode: 'ZW',
+          countryName: 'Zimbabwe',
+          lat: -17.83,
+          lon: 31.05,
+          name: 'Spar Montague',
+          placeId: 'spar-montague',
+        },
+        {
+          countryCode: 'ZW',
+          countryName: 'Zimbabwe',
+          lat: -17.82,
+          lon: 31.04,
+          name: 'Independent Corner Shop',
+          placeId: 'corner-shop',
+        },
+      ],
+      countryFromCode('ZW'),
+      retailers,
+    )).toEqual([
+      expect.objectContaining({
+        name: 'Spar Montague',
+        website: 'https://online-spar.co.zw/',
+      }),
+      expect.not.objectContaining({ website: expect.anything() }),
+    ])
   })
 
 })

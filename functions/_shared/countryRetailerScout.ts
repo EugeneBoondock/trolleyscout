@@ -1,4 +1,5 @@
 import { countSources, getSourceKinds } from '../../src/services/sourceEngine'
+import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { Retailer, RetailerGroup, SourceKind } from '../../src/types'
 import type { CountryOption } from '../../src/types'
 import type { TrolleyScoutEnv } from './env'
@@ -66,24 +67,37 @@ export function buildCountryRetailers(
   country: CountryOption,
   results: Array<{ title: string; url: string }>,
 ): Retailer[] {
-  const byHost = new Map<string, Retailer>()
+  const byBrand = new Map<string, Retailer>()
 
   for (const result of results) {
-    if (byHost.size >= RESULT_LIMIT) break
     const url = safeHttpUrl(result.url)
     if (!url || BLOCKED_HOSTS.some((host) => url.hostname.includes(host))) continue
 
     const host = url.hostname.replace(/^www\./, '')
-    if (byHost.has(host)) continue
     const name = retailerName(result.title, host)
     if (!name || !looksOfficial(name, host)) continue
 
     const sourceKind: SourceKind = /special|deal|promot|catalog|leaflet|offer/i.test(url.pathname)
       ? 'specials'
       : 'store-finder'
+    const source = {
+      kind: sourceKind,
+      label: sourceKind === 'specials' ? 'Offers and catalogues' : 'Official website',
+      url: url.toString(),
+    } as const
+    const brandKey = slug(name)
+    const existing = byBrand.get(brandKey)
+    if (existing) {
+      if (!existing.sources.some((item) => safeHost(item.url) === host)) {
+        existing.sources.push(source)
+      }
+      continue
+    }
+    if (byBrand.size >= RESULT_LIMIT) break
+
     const checked = new Date().toISOString().slice(0, 10)
 
-    byHost.set(host, {
+    byBrand.set(brandKey, {
       accentColor: colorFromHost(host),
       group: classifyGroup(name),
       id: `country:${country.code.toLowerCase()}:${slug(host)}`,
@@ -91,12 +105,65 @@ export function buildCountryRetailers(
       program: `${country.name} store`,
       shortName: name,
       sourceNote: `Found from a live ${country.name} web search. Open the source to confirm current local offers.`,
-      sources: [{ kind: sourceKind, label: sourceKind === 'specials' ? 'Offers and catalogues' : 'Official website', url: url.toString() }],
+      sources: [source],
       verifiedOn: checked,
     })
   }
 
-  return [...byHost.values()].sort((left, right) => left.name.localeCompare(right.name))
+  return [...byBrand.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function resolveCountryRetailerWebsite(
+  storeName: string,
+  country: CountryOption,
+  retailers: Retailer[],
+): string | undefined {
+  const storeTokens = new Set(words(storeName))
+  if (storeTokens.size === 0) return undefined
+
+  const countryTokens = new Set(words(country.name))
+  const matches: Array<{ retailer: Retailer; score: number }> = []
+
+  for (const retailer of retailers) {
+    const brandTokens = words(retailer.name).filter((token) => (
+      !countryTokens.has(token) &&
+      !RETAILER_NAME_STOP_WORDS.has(token) &&
+      (token.length >= 3 || token === 'ok')
+    ))
+    if (
+      brandTokens.length === 0 ||
+      !brandTokens.every((token) => storeTokens.has(token))
+    ) {
+      continue
+    }
+
+    matches.push({
+      retailer,
+      score: brandTokens.reduce((total, token) => total + token.length, 0),
+    })
+  }
+
+  matches.sort((left, right) => right.score - left.score)
+  if (
+    matches.length === 0 ||
+    (matches[1] && matches[1].score === matches[0]?.score)
+  ) {
+    return undefined
+  }
+
+  return preferredRetailerSource(matches[0]!.retailer)?.url
+}
+
+export function applyCountryRetailerWebsites(
+  stores: NearbyStore[],
+  country: CountryOption,
+  retailers: Retailer[],
+): NearbyStore[] {
+  return stores.map((store) => {
+    if (store.website) return store
+    const website = resolveCountryRetailerWebsite(store.name, country, retailers)
+    return website ? { ...store, website } : store
+  })
 }
 
 export function countryRetailerSummary(retailers: Retailer[]) {
@@ -169,11 +236,62 @@ function safeHttpUrl(value: string): URL | undefined {
 }
 
 function retailerName(title: string, host: string): string {
-  const first = title.split(/\s+[|–-]\s+/)[0]?.trim()
+  const first = title.split(/\s+(?:[|\u2013\u2014-])\s+/)[0]?.trim()
   const generic = /^(home|official site|supermarkets?|grocery stores?|specials?|catalogues?)$/i
   if (first && first.length >= 2 && first.length <= 60 && !generic.test(first)) return first
   const token = host.split('.').slice(-2, -1)[0] ?? host
   return token.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+const RETAILER_NAME_STOP_WORDS = new Set([
+  'and',
+  'cash',
+  'carry',
+  'food',
+  'foods',
+  'fresh',
+  'grocer',
+  'grocery',
+  'local',
+  'market',
+  'online',
+  'shop',
+  'store',
+  'stores',
+  'supermarket',
+  'supermarkets',
+])
+
+function words(value: string): string[] {
+  return value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function preferredRetailerSource(retailer: Retailer) {
+  return [...retailer.sources]
+    .filter((source) => safeHttpUrl(source.url))
+    .sort((left, right) => sourceScore(right) - sourceScore(left))[0]
+}
+
+function sourceScore(source: Retailer['sources'][number]): number {
+  let score = source.kind === 'specials' ? 100 : 0
+  try {
+    const url = new URL(source.url)
+    if (/special|deal|promot|catalog|leaflet|offer/i.test(url.pathname)) score += 80
+    if (/(?:^|[.-])(?:online|shop)(?:[.-]|$)/i.test(url.hostname)) score += 40
+  } catch {
+    return -1
+  }
+  return score
+}
+
+function safeHost(value: string): string | undefined {
+  return safeHttpUrl(value)?.hostname.replace(/^www\./, '')
 }
 
 function looksOfficial(name: string, host: string): boolean {

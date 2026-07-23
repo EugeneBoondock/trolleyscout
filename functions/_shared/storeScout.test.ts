@@ -307,6 +307,54 @@ describe('scheduled discovered-store scouting', () => {
     await miniflare.dispose()
   })
 
+  it('uses a discovered country retailer website for a matching nearby branch', async () => {
+    const retailers = [{
+      accentColor: '#00843d',
+      group: 'Supermarket',
+      id: 'country:zw:spar-co-zw',
+      name: 'SPAR Zimbabwe',
+      program: 'Zimbabwe store',
+      shortName: 'SPAR Zimbabwe',
+      sourceNote: 'Official Zimbabwe website.',
+      sources: [
+        {
+          kind: 'store-finder',
+          label: 'Official website',
+          url: 'https://online-spar.co.zw/',
+        },
+      ],
+      verifiedOn: '2026-07-23',
+    }]
+    await db.prepare(
+      `INSERT INTO country_retailer_cache
+        (country_code, retailers_json, checked_at, source_count)
+       VALUES ('ZW', ?, ?, 1)`,
+    ).bind(JSON.stringify(retailers), new Date().toISOString()).run()
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      return url.hostname === 'online-spar.co.zw'
+        ? htmlResponse(jsonLdDeal('Zimbabwe branch rice 2kg', 'SPAR Zimbabwe'))
+        : htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Spar Montague',
+      })],
+      Date.parse('2026-07-23T10:00:00.000Z'),
+      1,
+    )
+
+    const row = await db.prepare(
+      `SELECT website FROM store_scout_log WHERE place_id = 'market-place'`,
+    ).first<{ website: string }>()
+    expect(row?.website).toBe('https://online-spar.co.zw/')
+  })
+
   it('checks a discovered branch page before generic specials paths', async () => {
     const requestedPaths: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -1110,6 +1158,10 @@ async function createScoutTables(db: D1Database) {
     `CREATE TABLE deal_source_cursors (
       source_key TEXT PRIMARY KEY, cursor_kind TEXT NOT NULL,
       cursor_value TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE country_retailer_cache (
+      country_code TEXT PRIMARY KEY, retailers_json TEXT NOT NULL,
+      checked_at TEXT NOT NULL, source_count INTEGER NOT NULL DEFAULT 0
     )`,
   ]
 

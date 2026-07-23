@@ -56,6 +56,10 @@ import {
   type StorePromotion,
 } from './locationStore'
 import { countryFromCode } from './countryContext'
+import {
+  applyCountryRetailerWebsites,
+  getCountryRetailers,
+} from './countryRetailerScout'
 import { searchWebWithStatus } from './searchWeb'
 
 const BROWSER_UA =
@@ -175,8 +179,9 @@ export async function scoutNearbyStores(
   }
 
   let savedAnyPromotions = false
+  const preparedCandidates = await enrichCountryRetailerWebsites(env, candidates)
 
-  for (const store of candidates) {
+  for (const store of preparedCandidates) {
     try {
       const outcome = await scoutStore(env, store, nowMs)
       const resolvedStore = outcome.resolvedWebsite
@@ -210,6 +215,38 @@ export async function scoutNearbyStores(
       // Alerts are best-effort; the cron sweep retries every pending watch.
     }
   }
+}
+
+async function enrichCountryRetailerWebsites(
+  env: TrolleyScoutEnv,
+  stores: NearbyStore[],
+): Promise<NearbyStore[]> {
+  const enriched = [...stores]
+  const indexesByCountry = new Map<string, number[]>()
+
+  for (const [index, store] of stores.entries()) {
+    const countryCode = store.countryCode?.toUpperCase()
+    if (!countryCode || countryCode === 'ZA' || store.website) continue
+    const indexes = indexesByCountry.get(countryCode) ?? []
+    indexes.push(index)
+    indexesByCountry.set(countryCode, indexes)
+  }
+
+  for (const [countryCode, indexes] of indexesByCountry) {
+    try {
+      const country = countryFromCode(countryCode)
+      const retailers = await getCountryRetailers(env, country)
+      const countryStores = indexes.map((index) => enriched[index]!)
+      const resolved = applyCountryRetailerWebsites(countryStores, country, retailers)
+      indexes.forEach((index, offset) => {
+        enriched[index] = resolved[offset]!
+      })
+    } catch {
+      // Country directory lookup is optional. The direct website search still runs.
+    }
+  }
+
+  return enriched
 }
 
 // Runs the structured deal feed for each distinct known chain among the nearby
