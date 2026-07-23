@@ -2151,7 +2151,11 @@ function safeHost(value: string | undefined): string | undefined {
 function safeOrigin(website: string): string | undefined {
   try {
     const url = new URL(website)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : undefined
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password
+    ) ? url.origin : undefined
   } catch {
     return undefined
   }

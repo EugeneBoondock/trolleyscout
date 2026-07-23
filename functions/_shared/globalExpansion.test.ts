@@ -68,6 +68,10 @@ describe('global country support', () => {
         title: 'Game Mozambique | Loja online',
         url: 'https://www.game.co.mz/',
       },
+      {
+        title: 'Promotions',
+        url: 'https://contact@pharmacie-example.co.mz/',
+      },
     ])
 
     expect(retailers.map((retailer) => retailer.name)).toEqual(['Game Mozambique'])

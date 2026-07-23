@@ -289,7 +289,11 @@ function parseRetailerCache(value: string): Retailer[] {
 function safeHttpUrl(value: string): URL | undefined {
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url : undefined
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password
+    ) ? url : undefined
   } catch {
     return undefined
   }
