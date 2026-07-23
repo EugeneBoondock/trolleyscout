@@ -2,7 +2,7 @@
 // Goal: the app shell and tools keep working on flaky or absent connections,
 // while HTML navigations stay network-first so updates are never stuck.
 
-const CACHE_NAME = 'trolley-scout-v1'
+const CACHE_NAME = 'trolley-scout-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['/'])))
@@ -47,18 +47,18 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Static assets (hashed filenames): cache first.
+  // Static assets: network first so a newly deployed shell cannot be paired
+  // with an older cached module. The browser and Cloudflare still handle HTTP
+  // caching, while this cache remains the offline fallback.
   event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ??
-        fetch(request).then((response) => {
-          if (response.ok) {
-            const copy = response.clone()
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
-          }
-          return response
-        }),
-    ),
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+        }
+        return response
+      })
+      .catch(() => caches.match(request).then((cached) => cached ?? Response.error())),
   )
 })
