@@ -1420,7 +1420,7 @@ function App() {
 
         {activeView === 'near' && (
           <LazyView label="Opening Near me">
-            <NearMeView onViewStoreDeals={viewStoreDeals} />
+            <NearMeView countryCode={activeCountryCode} onViewStoreDeals={viewStoreDeals} />
           </LazyView>
         )}
 
@@ -2005,7 +2005,7 @@ function MemberShell({
 
         {activeView === 'near' && (
           <LazyView label="Opening Near me">
-            <NearMeView onViewStoreDeals={onViewStoreDeals} />
+            <NearMeView countryCode={account.countryCode} onViewStoreDeals={onViewStoreDeals} />
           </LazyView>
         )}
 

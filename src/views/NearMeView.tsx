@@ -24,8 +24,10 @@ const INITIAL: NearbyStoresState = {
 }
 
 export function NearMeView({
+  countryCode = 'ZA',
   onViewStoreDeals,
 }: {
+  countryCode?: string
   onViewStoreDeals?: (store: NearbyStoreResult) => void
 }) {
   const [state, setState] = useState<NearbyStoresState>(INITIAL)
@@ -34,10 +36,15 @@ export function NearMeView({
   const [history, setHistory] = useState<NearbyHistoryEntry[]>([])
   const [viewingLabel, setViewingLabel] = useState<string>()
 
-  // On first open, restore the most recent search so the page is never blank.
+  // Restore only searches from the active country. Changing an admin test
+  // country also clears any open result from the previous country.
   useEffect(() => {
-    const stored = loadNearbyHistory()
+    const stored = loadNearbyHistory(countryCode)
+    setState(INITIAL)
+    setOpenLeaflet(undefined)
+    setOpenStore(undefined)
     setHistory(stored)
+    setViewingLabel(undefined)
     if (stored.length > 0) {
       const latest = stored[0]
       setState({
@@ -48,7 +55,7 @@ export function NearMeView({
       })
       setViewingLabel(latest.locationLabel)
     }
-  }, [])
+  }, [countryCode])
 
   function showHistoryEntry(entry: NearbyHistoryEntry) {
     setState({
@@ -61,7 +68,7 @@ export function NearMeView({
   }
 
   function removeHistory(id: string) {
-    setHistory(removeNearbyHistoryEntry(id))
+    setHistory(removeNearbyHistoryEntry(id, countryCode))
   }
 
   function findNearby() {
@@ -84,6 +91,7 @@ export function NearMeView({
                 position.coords.latitude,
                 position.coords.longitude,
                 result.stores,
+                countryCode,
               )
               setHistory(saved)
               setViewingLabel(saved[0]?.locationLabel)

@@ -46,6 +46,7 @@ describe('nearby history storage', () => {
       store({ address: 'A, B, Edenvale, Gauteng, 1609, South Africa', distanceM: 100 }),
     ])
     expect(saved).toHaveLength(1)
+    expect(saved[0].countryCode).toBe('ZA')
     expect(saved[0].locationLabel).toBe('Edenvale')
     expect(loadNearbyHistory()).toHaveLength(1)
   })
@@ -66,5 +67,41 @@ describe('nearby history storage', () => {
 
   it('ignores empty searches', () => {
     expect(saveNearbyHistorySearch(-26.14, 28.15, [])).toHaveLength(0)
+  })
+
+  it('keeps each country history isolated', () => {
+    saveNearbyHistorySearch(-26.14, 28.15, [
+      store({ address: 'A, B, Edenvale, Gauteng, 1609, South Africa', distanceM: 100 }),
+    ])
+    saveNearbyHistorySearch(-20.16, 28.58, [
+      store({
+        address: 'A, B, Bulawayo, Zimbabwe',
+        distanceM: 100,
+        lat: -20.16,
+        lon: 28.58,
+        placeId: 'zw-1',
+      }),
+    ], 'zw')
+
+    expect(loadNearbyHistory('ZA').map((entry) => entry.locationLabel)).toEqual(['Edenvale'])
+    expect(loadNearbyHistory('ZW').map((entry) => entry.locationLabel)).toEqual(['Bulawayo'])
+
+    const zimbabweEntry = loadNearbyHistory('ZW')[0]
+    expect(removeNearbyHistoryEntry(zimbabweEntry.id, 'ZW')).toHaveLength(0)
+    expect(loadNearbyHistory('ZA')).toHaveLength(1)
+  })
+
+  it('treats history written before country support as South African', () => {
+    localStorage.setItem('trolley_scout_nearby_history_v1', JSON.stringify([{
+      capturedAt: '2026-07-23T08:00:00.000Z',
+      id: 'legacy',
+      lat: -26.14,
+      locationLabel: 'Edenvale',
+      lon: 28.15,
+      stores: [store({ distanceM: 100 })],
+    }]))
+
+    expect(loadNearbyHistory('ZA')).toHaveLength(1)
+    expect(loadNearbyHistory('ZW')).toHaveLength(0)
   })
 })

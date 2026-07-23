@@ -7,6 +7,7 @@ import type { NearbyStoreResult } from './apiClient'
 export interface NearbyHistoryEntry {
   id: string
   capturedAt: string
+  countryCode: string
   locationLabel: string
   lat: number
   lon: number
@@ -16,7 +17,12 @@ export interface NearbyHistoryEntry {
 const STORAGE_KEY = 'trolley_scout_nearby_history_v1'
 const MAX_ENTRIES = 8
 
-export function loadNearbyHistory(): NearbyHistoryEntry[] {
+function normalizeCountryCode(countryCode: string | undefined): string {
+  const normalized = countryCode?.trim().toUpperCase()
+  return normalized && /^[A-Z]{2}$/.test(normalized) ? normalized : 'ZA'
+}
+
+function loadAllNearbyHistory(): NearbyHistoryEntry[] {
   if (typeof localStorage === 'undefined') {
     return []
   }
@@ -26,24 +32,66 @@ export function loadNearbyHistory(): NearbyHistoryEntry[] {
     if (!raw) {
       return []
     }
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? (parsed as NearbyHistoryEntry[]) : []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed.flatMap((candidate): NearbyHistoryEntry[] => {
+      if (!candidate || typeof candidate !== 'object') {
+        return []
+      }
+
+      const entry = candidate as Partial<NearbyHistoryEntry>
+      if (
+        typeof entry.id !== 'string' ||
+        typeof entry.capturedAt !== 'string' ||
+        typeof entry.locationLabel !== 'string' ||
+        typeof entry.lat !== 'number' ||
+        !Number.isFinite(entry.lat) ||
+        typeof entry.lon !== 'number' ||
+        !Number.isFinite(entry.lon) ||
+        !Array.isArray(entry.stores)
+      ) {
+        return []
+      }
+
+      return [{
+        capturedAt: entry.capturedAt,
+        countryCode: normalizeCountryCode(entry.countryCode),
+        id: entry.id,
+        lat: entry.lat,
+        locationLabel: entry.locationLabel,
+        lon: entry.lon,
+        stores: entry.stores,
+      }]
+    })
   } catch {
     return []
   }
+}
+
+export function loadNearbyHistory(countryCode = 'ZA'): NearbyHistoryEntry[] {
+  const selectedCountry = normalizeCountryCode(countryCode)
+  return loadAllNearbyHistory()
+    .filter((entry) => entry.countryCode === selectedCountry)
+    .slice(0, MAX_ENTRIES)
 }
 
 export function saveNearbyHistorySearch(
   lat: number,
   lon: number,
   stores: NearbyStoreResult[],
+  countryCode = 'ZA',
 ): NearbyHistoryEntry[] {
+  const selectedCountry = normalizeCountryCode(countryCode)
   if (typeof localStorage === 'undefined' || stores.length === 0) {
-    return loadNearbyHistory()
+    return loadNearbyHistory(selectedCountry)
   }
 
   const entry: NearbyHistoryEntry = {
     capturedAt: new Date().toISOString(),
+    countryCode: selectedCountry,
     id: `${lat.toFixed(3)}:${lon.toFixed(3)}:${Date.now()}`,
     lat,
     locationLabel: deriveLocationLabel(stores, lat, lon),
@@ -53,12 +101,17 @@ export function saveNearbyHistorySearch(
 
   // Collapse repeat searches from essentially the same spot into the newest.
   const sameSpot = (candidate: NearbyHistoryEntry) =>
-    Math.abs(candidate.lat - lat) < 0.01 && Math.abs(candidate.lon - lon) < 0.01
+    candidate.countryCode === selectedCountry &&
+    Math.abs(candidate.lat - lat) < 0.01 &&
+    Math.abs(candidate.lon - lon) < 0.01
 
-  const next = [entry, ...loadNearbyHistory().filter((candidate) => !sameSpot(candidate))].slice(
-    0,
-    MAX_ENTRIES,
-  )
+  const countryCounts = new Map<string, number>()
+  const next = [entry, ...loadAllNearbyHistory().filter((candidate) => !sameSpot(candidate))]
+    .filter((candidate) => {
+      const count = countryCounts.get(candidate.countryCode) ?? 0
+      countryCounts.set(candidate.countryCode, count + 1)
+      return count < MAX_ENTRIES
+    })
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
@@ -66,17 +119,18 @@ export function saveNearbyHistorySearch(
     // Storage full or blocked; the in-memory list still updates.
   }
 
-  return next
+  return next.filter((candidate) => candidate.countryCode === selectedCountry)
 }
 
-export function removeNearbyHistoryEntry(id: string): NearbyHistoryEntry[] {
-  const next = loadNearbyHistory().filter((entry) => entry.id !== id)
+export function removeNearbyHistoryEntry(id: string, countryCode = 'ZA'): NearbyHistoryEntry[] {
+  const selectedCountry = normalizeCountryCode(countryCode)
+  const next = loadAllNearbyHistory().filter((entry) => entry.id !== id)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   } catch {
     // Best-effort.
   }
-  return next
+  return next.filter((entry) => entry.countryCode === selectedCountry)
 }
 
 // A human label for where the search happened, taken from the nearest store's
