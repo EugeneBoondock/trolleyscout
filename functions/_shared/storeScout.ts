@@ -971,7 +971,16 @@ async function scoutCommonCommercePlatform(
         break
       }
       const text = await readBoundedBody(response, MAX_BODY_BYTES)
-      const payload = JSON.parse(text) as unknown
+      let payload: unknown
+      try {
+        payload = JSON.parse(text)
+      } catch {
+        // A catalogue page can exceed the read limit (a store was seen serving
+        // a single 2.8MB page), leaving the body truncated mid-JSON. That page
+        // is unreadable, but the store's other pages are still worth reading,
+        // so skip it instead of abandoning the whole catalogue.
+        continue
+      }
       const pageDeals = parseCommonCommerceDeals(platform, payload, origin)
       for (const deal of pageDeals) {
         const key = deal.productUrl ?? deal.title

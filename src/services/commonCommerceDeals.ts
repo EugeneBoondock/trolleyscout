@@ -7,7 +7,13 @@ export type { PlatformDeal } from './dealPlatform'
 export const COMMON_COMMERCE_DEAL_SCOPE = 'online-catalogue' as const
 export const MAX_COMMON_COMMERCE_PAGE_SIZE = 100
 export const MAX_COMMON_COMMERCE_DEALS = 40
-export const MAX_COMMON_COMMERCE_PAGES = 3
+// A large catalogue can carry its discounts well past the first pages (a ZW
+// Shopify store was seen with its first discount only after product 100).
+// Paging deeper costs nothing for a store with plenty of deals — the scout
+// stops as soon as it has MAX_COMMON_COMMERCE_DEALS — and only spends extra
+// requests on sparse catalogues. Page size stays modest so each response body
+// stays well inside the scout's read limit.
+export const MAX_COMMON_COMMERCE_PAGES = 6
 export const DEFAULT_COMMON_COMMERCE_PAGE_SIZE = 50
 
 export type CommonCommercePlatform = 'shopify' | 'woocommerce' | 'magento' | 'vtex'

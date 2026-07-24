@@ -15,6 +15,15 @@ import {
   parseMakroFeed,
 } from '../../src/services/retailerFeeds/makro'
 import { parseMassmartFeed } from '../../src/services/retailerFeeds/massmart'
+import {
+  TAKEALOT_PROMOTIONS_URL,
+  buildTakealotPromotionProductsUrl,
+  decodeTakealotCursor,
+  encodeTakealotCursor,
+  isTakealotPromotionsPayload,
+  parseTakealotFeed,
+  parseTakealotPromotions,
+} from '../../src/services/retailerFeeds/takealot'
 import { parseWoolworthsFeed } from '../../src/services/retailerFeeds/woolworths'
 import {
   retailerSlug,
@@ -33,13 +42,20 @@ import {
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 
 const PAGE_SIZE = 100
-const DEFAULT_REQUEST_CAP = 10
-const MAX_REQUEST_CAP = 10
+// One request per source per run, so the budget must cover every registered
+// source or the ones at the end of the list never run at all.
+export const DEFAULT_REQUEST_CAP = 30
+const MAX_REQUEST_CAP = 60
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
 const DEFAULT_RESPONSE_BYTES = 4 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024
 const MAX_CANDIDATES_PER_RUN = 100
+// Takealot runs ~70 campaigns at once and a source only advances one request
+// per run, so a single source would take over a week to walk them all. The
+// sweep is split into shards that each take every Nth campaign, so the whole
+// deal catalogue lands within about a day and then keeps refreshing.
+const TAKEALOT_SHARD_COUNT = 8
 const INITIAL_STATE_MARKER = 'window.__INITIAL_STATE__'
 const WINDOW_CURSOR_PREFIX = 'trolley-scout:candidate-window:v1:'
 
@@ -230,6 +246,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   buildersSource(),
   makroSource(),
   dischemSource(),
+  ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
 export function getStructuredRetailerSources(): readonly RetailerFeedSource[] {
@@ -695,6 +712,65 @@ function makroSource(): RetailerFeedSource {
     retailerId: retailerSlug('makro'),
     retailerName: 'Makro',
     sourceLabel: 'Catalogue products',
+    sourceUrl,
+  }
+}
+
+// Sweeps Takealot's live promotion campaigns. The first request reads the
+// campaign list and plans the sweep; each later request reads one campaign's
+// products, carrying the remaining campaign ids in the cursor. When the sweep
+// finishes the cursor resets, so the next run re-reads the campaign list and
+// picks up newly launched deals.
+function takealotSource(shardIndex: number): RetailerFeedSource {
+  const sourceUrl = 'https://www.takealot.com/deals'
+
+  return {
+    buildRequest(cursor) {
+      const plan = cursor.kind === 'token' ? decodeTakealotCursor(cursor.token) : undefined
+      const promotionId = plan?.ids[plan.index]
+      return {
+        init: { headers: { ...BROWSER_HEADERS, accept: 'application/json' } },
+        url: promotionId === undefined
+          ? TAKEALOT_PROMOTIONS_URL
+          : buildTakealotPromotionProductsUrl(promotionId),
+      }
+    },
+    decode: (body) => JSON.parse(body) as unknown,
+    initialCursor: { kind: 'token', token: 'campaign-list' },
+    key: `takealot::promotion-campaigns-${shardIndex}`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      if (isTakealotPromotionsPayload(payload)) {
+        const ids = parseTakealotPromotions(payload, capturedAt)
+          .filter((_, index) => index % TAKEALOT_SHARD_COUNT === shardIndex)
+        return {
+          candidates: [],
+          catalogues: [],
+          nextCursor: ids.length > 0
+            ? { kind: 'token', token: encodeTakealotCursor({ ids, index: 0 }) }
+            : undefined,
+        }
+      }
+
+      const plan = cursor.kind === 'token' ? decodeTakealotCursor(cursor.token) : undefined
+      const page = parseTakealotFeed(
+        payload,
+        { capturedAt, sourceUrl: officialSourceUrl },
+        { promotionId: plan?.ids[plan.index] },
+      )
+      const nextIndex = plan ? plan.index + 1 : 0
+
+      return {
+        ...page,
+        // Undefined resets the source to its initial cursor, restarting the
+        // sweep from a fresh campaign list on the next run.
+        nextCursor: plan && nextIndex < plan.ids.length
+          ? { kind: 'token', token: encodeTakealotCursor({ ids: plan.ids, index: nextIndex }) }
+          : undefined,
+      }
+    },
+    retailerId: retailerSlug('takealot'),
+    retailerName: 'Takealot',
+    sourceLabel: 'Promotion campaigns',
     sourceUrl,
   }
 }

@@ -7,6 +7,7 @@ import type {
   RetailerFeedPage,
 } from '../../src/services/retailerFeeds/types'
 import {
+  DEFAULT_REQUEST_CAP,
   decodeClicksPromotions,
   decodeWoolworthsInitialState,
   getStructuredRetailerSources,
@@ -65,8 +66,53 @@ describe('structured retailer source decoders', () => {
       'builders::deals',
       'makro::catalogues-store',
       'dis-chem::klevu-promotions',
+      // Takealot's campaign sweep is sharded so the whole catalogue is walked
+      // in about a day rather than over a week.
+      'takealot::promotion-campaigns-0',
+      'takealot::promotion-campaigns-1',
+      'takealot::promotion-campaigns-2',
+      'takealot::promotion-campaigns-3',
+      'takealot::promotion-campaigns-4',
+      'takealot::promotion-campaigns-5',
+      'takealot::promotion-campaigns-6',
+      'takealot::promotion-campaigns-7',
     ])
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
+  })
+
+  it('gives every registered source room to run inside the per-run request cap', () => {
+    // One request per source per run: a cap below the source count would
+    // silently starve whatever sits at the end of the list.
+    expect(getStructuredRetailerSources().length).toBeLessThanOrEqual(DEFAULT_REQUEST_CAP)
+  })
+
+  it('shards Takealot campaigns without overlap', () => {
+    const shards = getStructuredRetailerSources()
+      .filter((source) => source.key.startsWith('takealot::'))
+    const capturedAt = '2026-07-24T12:00:00.000Z'
+    const payload = {
+      response: Array.from({ length: 24 }, (_, index) => ({
+        date_end: '2026-08-30 00:00:00',
+        date_start: '2026-07-01 00:00:00',
+        is_active: true,
+        promotion_id: 1000 + index,
+      })),
+    }
+
+    const swept = shards.flatMap((source) => {
+      const page = source.parse({
+        capturedAt,
+        cursor: source.initialCursor,
+        payload,
+        sourceUrl: source.sourceUrl,
+      })
+      const token = page.nextCursor?.kind === 'token' ? page.nextCursor.token : '{}'
+      return (JSON.parse(token).ids ?? []) as number[]
+    })
+
+    expect(new Set(swept).size).toBe(swept.length)
+    expect(swept.sort((left, right) => left - right))
+      .toEqual(payload.response.map((row) => row.promotion_id))
   })
 
   it('builds bounded official requests for Fair Price, Builders, Makro, and Dis-Chem', () => {
