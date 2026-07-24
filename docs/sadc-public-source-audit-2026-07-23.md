@@ -61,6 +61,60 @@ supplies.
   find), so their country-scoped deals still populate.
 - **Corrections.** Choppies exited Zimbabwe (rebranded Sai Mart); Jet uses
   jetstores.co.zw, not Bash; Halsteds is `.co.zw` plural. Unreachable from the
-  edge and therefore not deal-scoutable: OK Online (revoked TLS certificate),
-  Bon Marché, Halsted's legacy host, Zim MegaStore (country-blocked), Ubuy
-  (bot challenge).
+  edge and therefore not deal-scoutable: Bon Marché, Halsted's legacy host, Zim
+  MegaStore (country-blocked), Ubuy (bot challenge).
+- **OK Zimbabwe is alive.** A second pass with realistic browser headers and a
+  longer timeout showed okonline.co.zw is a live WooCommerce store with genuine
+  grocery markdowns. The only obstacle is its TLS certificate, which expired in
+  December 2025 on both the apex and `www` host, so an edge fetch cannot
+  complete the handshake. It stays registered so the deals appear with no code
+  change once the certificate is renewed. Certificate validation is not
+  bypassed. Bhiks Home Stores and Baby Sprouts have the same problem.
+- **Re-probing beat path guessing.** Trying shop sub-paths on the 76
+  catalogue-only sites surfaced no new platforms — those storefronts really are
+  bespoke. What did convert sites was retrying with browser headers and a
+  longer timeout, which found five slow-but-alive WooCommerce shops among the
+  ones first recorded as unreachable.
+
+## South African online storefronts (24 July 2026)
+
+South Africa already has a curated retailer directory, so online-only shops are
+registered separately in `onlineStoreRegistry.ts` and read for their deals
+rather than listed as chains. 199 shops were probed against their own platform
+endpoint and answered with a live catalogue, covering tech, gaming, cameras,
+fashion, home, baby, pets, sport, health, beauty, food, liquor, books, music,
+garden, motoring and hardware. A sample of twelve returned 468 live deals.
+
+Notes for future work:
+
+- The TFG brands (Foschini, Markham, Sportscene, Totalsports, @Home, Volpes,
+  American Swiss, Sterns, Jet, Zando) all redirect to `bash.com`, so they are
+  one VTEX catalogue rather than ten storefronts. Keedo redirects to Edgars,
+  Everyshop to HiFi Corp, Petshop Science to Checkers, bidorbuy to Bobshop.
+- Several large chains run bespoke stacks with no standard feed and would each
+  need their own adapter, the way Takealot now has one: Makro, Game, Loot,
+  Superbalist, Mr Price, Yuppiechef, Cape Union Mart, Wootware and Evetech.
+  Their platforms are known (Klevu on Mr Price and Hirsch's, Algolia on
+  Sportsmans Warehouse, Salesforce Commerce Cloud on Cape Union Mart and Lewis,
+  SAP Hybris on Clicks), which is the starting point for each.
+
+## Takealot deals (24 July 2026)
+
+Takealot had no structured feed and fell back to page scraping, surfacing 16
+deals. It now reads Takealot's own API: `/promotions` lists every live campaign
+and each campaign's products come from the product search filtered by that
+campaign id. That yields about 1,350 live deals, 924 of them with a genuine
+was-price.
+
+Two payload facts drive the parser:
+
+- `buybox_summary.prices` is a variant price range, so its top value is not a
+  previous price — only `listing_price` can strike a price through. Treating
+  the range top as a was-price would have invented discounts.
+- the search API ignores its offset parameter and always returns the first
+  page, so campaigns are the pagination axis, not offsets.
+
+A source advances one request per run, so the campaign sweep is sharded eight
+ways to walk the whole catalogue in about a day. Registering it also exposed a
+latent bug: the per-run request cap equalled the number of registered sources,
+so anything added to the end of the list would silently never run.
