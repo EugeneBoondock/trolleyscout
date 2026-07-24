@@ -362,6 +362,40 @@ export const retailers: Retailer[] = [
     ],
   },
   {
+    id: 'loot',
+    name: 'Loot',
+    shortName: 'Loot',
+    group: 'Marketplace',
+    program: 'Loot sale',
+    sourceNote: 'Official Loot sale rails carrying the list price beside the sale price.',
+    verifiedOn: '2026-07-25',
+    accentColor: '#f58220',
+    sources: [
+      {
+        label: 'Sale',
+        url: 'https://www.loot.co.za/sale',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'bobshop',
+    name: 'Bob Shop',
+    shortName: 'Bob Shop',
+    group: 'Marketplace',
+    program: 'Bob Shop listings',
+    sourceNote: 'Official Bob Shop marketplace cards quoting a seller recommended retail price.',
+    verifiedOn: '2026-07-25',
+    accentColor: '#fb8c00',
+    sources: [
+      {
+        label: 'Featured listings',
+        url: 'https://www.bobshop.co.za/',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
     id: 'game',
     name: 'Game',
     shortName: 'Game',
@@ -408,6 +442,45 @@ export const retailers: Retailer[] = [
       {
         label: 'Sale items',
         url: 'https://www.fairprice.co.za/',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'evetech',
+    name: 'Evetech',
+    shortName: 'Evetech',
+    group: 'General retailer',
+    program: 'Evetech specials',
+    sourceNote: 'Official Evetech specials listings carrying the old price beside the sale price.',
+    verifiedOn: '2026-07-25',
+    accentColor: '#ff5f15',
+    sources: [
+      {
+        label: 'Specials',
+        url: 'https://www.evetech.co.za/specials',
+        kind: 'specials',
+      },
+      {
+        label: 'AMD laptops on special',
+        url: 'https://www.evetech.co.za/amd-laptops-on-special/l/682',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'wootware',
+    name: 'Wootware',
+    shortName: 'Wootware',
+    group: 'General retailer',
+    program: 'Open-box specials',
+    sourceNote: 'Official Wootware open-box and refurbished specials listing.',
+    verifiedOn: '2026-07-25',
+    accentColor: '#1b2733',
+    sources: [
+      {
+        label: 'Open-box specials',
+        url: 'https://www.wootware.co.za/computer-hardware/open-box-reburbished-specials',
         kind: 'specials',
       },
     ],
@@ -663,6 +736,23 @@ export const retailers: Retailer[] = [
       {
         label: 'Outlet',
         url: 'https://www.sportsmanswarehouse.co.za/category/outlet/',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
+    id: 'decathlon',
+    name: 'Decathlon',
+    shortName: 'Decathlon',
+    group: 'Sports and outdoors',
+    program: 'Price drops',
+    sourceNote: 'Official Decathlon price-drop listing quoting the regular price per product.',
+    verifiedOn: '2026-07-25',
+    accentColor: '#0082c3',
+    sources: [
+      {
+        label: 'Price drops',
+        url: 'https://www.decathlon.co.za/prices-drop',
         kind: 'specials',
       },
     ],

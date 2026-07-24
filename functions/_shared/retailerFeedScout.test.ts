@@ -66,6 +66,12 @@ describe('structured retailer source decoders', () => {
       'builders::deals',
       'makro::catalogues-store',
       'dis-chem::klevu-promotions',
+      'decathlon::prices-drop',
+      'evetech::specials',
+      'loot::sale',
+      'wootware::open-box-specials',
+      'bobshop::featured-listings',
+      'mr-price::markdowns',
       // Takealot's campaign sweep is sharded so the whole catalogue is walked
       // in about a day rather than over a week.
       'takealot::promotion-campaigns-0',
@@ -166,6 +172,67 @@ describe('structured retailer source decoders', () => {
     }).url
     expect(pagedUrl).toContain('filterResults=promo_discount_sap%3A20')
     expect(pagedUrl).toContain('paginationStartsFrom=100')
+  })
+
+  it('asks every online storefront in South African English', () => {
+    const onlineKeys = [
+      'decathlon::prices-drop',
+      'evetech::specials',
+      'loot::sale',
+      'wootware::open-box-specials',
+      'bobshop::featured-listings',
+      'mr-price::markdowns',
+    ]
+
+    for (const key of onlineKeys) {
+      const source = getStructuredRetailerSources().find((entry) => entry.key === key)
+      expect(source, key).toBeDefined()
+
+      const request = source!.buildRequest(source!.initialCursor)
+      expect(request.init?.headers, key).toMatchObject({
+        'accept-language': 'en-ZA,en;q=0.9',
+        'user-agent': expect.stringContaining('Mozilla/5.0'),
+      })
+      expect(new URL(request.url).protocol, key).toBe('https:')
+    }
+  })
+
+  it('builds the price-drop, storefront, and GraphQL requests these feeds require', () => {
+    const sources = getStructuredRetailerSources()
+    const find = (key: string) => sources.find((source) => source.key === key)!
+
+    // Decathlon only answers with its search index when asked as an XHR.
+    const decathlon = find('decathlon::prices-drop').buildRequest({ kind: 'page', page: 4 })
+    const decathlonUrl = new URL(decathlon.url)
+    expect(decathlonUrl.host).toBe('www.decathlon.co.za')
+    expect(decathlonUrl.pathname).toBe('/prices-drop')
+    expect(decathlonUrl.searchParams.get('ajax')).toBe('1')
+    expect(decathlonUrl.searchParams.get('page')).toBe('4')
+    expect(decathlon.init?.headers).toMatchObject({
+      accept: 'application/json',
+      'x-requested-with': 'XMLHttpRequest',
+    })
+
+    expect(find('evetech::specials').buildRequest({ kind: 'page', page: 0 }).url)
+      .toBe('https://www.evetech.co.za/amd-laptops-on-special/l/682')
+    expect(find('loot::sale').buildRequest({ kind: 'page', page: 0 }).url)
+      .toBe('https://www.loot.co.za/sale')
+    expect(find('wootware::open-box-specials').buildRequest({ kind: 'page', page: 0 }).url)
+      .toBe('https://www.wootware.co.za/computer-hardware/open-box-reburbished-specials')
+    expect(find('bobshop::featured-listings').buildRequest({ kind: 'page', page: 0 }).url)
+      .toBe('https://www.bobshop.co.za/')
+
+    // Mr Price's GraphQL endpoint answers 404 without the store header.
+    const mrPrice = find('mr-price::markdowns').buildRequest({ kind: 'page', page: 0 })
+    expect(mrPrice.url).toBe('https://apiprd.omni.mrpg.com/graphql')
+    expect(mrPrice.init).toMatchObject({
+      headers: expect.objectContaining({
+        'content-type': 'application/json',
+        store: 'en_za',
+      }),
+      method: 'POST',
+    })
+    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('final_price { value }')
   })
 })
 

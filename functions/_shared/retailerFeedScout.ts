@@ -1,20 +1,47 @@
+import {
+  BOBSHOP_HOME_URL,
+  decodeBobshopProductCards,
+  parseBobshopFeed,
+} from '../../src/services/retailerFeeds/bobshop'
 import { parseBuildersFeed } from '../../src/services/retailerFeeds/builders'
 import { parseClicksFeed } from '../../src/services/retailerFeeds/clicks'
+import {
+  DECATHLON_PRICES_DROP_URL,
+  buildDecathlonPricesDropUrl,
+  parseDecathlonFeed,
+} from '../../src/services/retailerFeeds/decathlon'
 import {
   buildDischemKlevuUrl,
   parseDischemKlevuCursor,
   parseDischemKlevuFeed,
 } from '../../src/services/retailerFeeds/dischem'
 import {
+  EVETECH_SPECIALS_URL,
+  decodeEvetechProducts,
+  parseEvetechFeed,
+} from '../../src/services/retailerFeeds/evetech'
+import {
   FAIR_PRICE_PROMOTIONS_URL,
   parseFairPricePromotionPage,
 } from '../../src/services/retailerFeeds/fairPrice'
 import { parseFoodLoversFeed } from '../../src/services/retailerFeeds/foodLovers'
 import {
+  LOOT_SALE_URL,
+  decodeLootNextData,
+  parseLootFeed,
+} from '../../src/services/retailerFeeds/loot'
+import {
   decodeMakroInitialState,
   parseMakroFeed,
 } from '../../src/services/retailerFeeds/makro'
 import { parseMassmartFeed } from '../../src/services/retailerFeeds/massmart'
+import {
+  MR_PRICE_GRAPHQL_URL,
+  MR_PRICE_ORIGIN,
+  MR_PRICE_STORE_HEADER,
+  buildMrPriceProductsQuery,
+  parseMrPriceFeed,
+} from '../../src/services/retailerFeeds/mrPrice'
 import {
   TAKEALOT_PROMOTIONS_URL,
   buildTakealotPromotionProductsUrl,
@@ -25,6 +52,11 @@ import {
   parseTakealotPromotions,
 } from '../../src/services/retailerFeeds/takealot'
 import { parseWoolworthsFeed } from '../../src/services/retailerFeeds/woolworths'
+import {
+  WOOTWARE_SPECIALS_URL,
+  decodeWootwareDataLayer,
+  parseWootwareFeed,
+} from '../../src/services/retailerFeeds/wootware'
 import {
   retailerSlug,
   type FeedCursor,
@@ -63,6 +95,18 @@ const BROWSER_HEADERS = {
   accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
   'user-agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+}
+
+// The online storefronts price and stock per locale, so they are asked in
+// South African English rather than whatever a Worker would default to.
+const STOREFRONT_HEADERS = {
+  ...BROWSER_HEADERS,
+  'accept-language': 'en-ZA,en;q=0.9',
+}
+
+const STOREFRONT_HTML_HEADERS = {
+  ...STOREFRONT_HEADERS,
+  accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
 }
 
 export interface RetailerFeedRequest {
@@ -246,6 +290,12 @@ const structuredSources: readonly RetailerFeedSource[] = [
   buildersSource(),
   makroSource(),
   dischemSource(),
+  decathlonSource(),
+  evetechSource(),
+  lootSource(),
+  wootwareSource(),
+  bobshopSource(),
+  mrPriceSource(),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
@@ -802,6 +852,166 @@ function dischemSource(): RetailerFeedSource {
     retailerName: 'Dis-Chem',
     sourceLabel: 'On promotion',
     sourceUrl,
+  }
+}
+
+// Decathlon's price-drop listing answers with its search index when asked for
+// JSON. It serves a fixed 24 hits a page across ~190 pages, so the page cursor
+// walks the catalogue and resets to page one when it runs off the end.
+function decathlonSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const page = requireCursor(cursor, 'page')
+      return {
+        init: {
+          headers: {
+            ...STOREFRONT_HEADERS,
+            accept: 'application/json',
+            'x-requested-with': 'XMLHttpRequest',
+          },
+        },
+        url: buildDecathlonPricesDropUrl(page),
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Decathlon'),
+    initialCursor: { kind: 'page', page: 1 },
+    key: 'decathlon::prices-drop',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      return parseDecathlonFeed(
+        payload,
+        { capturedAt, sourceUrl },
+        { page: requireCursor(cursor, 'page') },
+      )
+    },
+    retailerId: retailerSlug('decathlon'),
+    retailerName: 'Decathlon',
+    sourceLabel: 'Price drops',
+    sourceUrl: DECATHLON_PRICES_DROP_URL,
+  }
+}
+
+function evetechSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      requireCursor(cursor, 'page')
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: EVETECH_SPECIALS_URL,
+      }
+    },
+    decode: decodeEvetechProducts,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'evetech::specials',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseEvetechFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('evetech'),
+    retailerName: 'Evetech',
+    sourceLabel: 'Specials',
+    sourceUrl: EVETECH_SPECIALS_URL,
+  }
+}
+
+function lootSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      requireCursor(cursor, 'page')
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: LOOT_SALE_URL,
+      }
+    },
+    decode: decodeLootNextData,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'loot::sale',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseLootFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('loot'),
+    retailerName: 'Loot',
+    sourceLabel: 'Sale',
+    sourceUrl: LOOT_SALE_URL,
+  }
+}
+
+// Cloudflare answers some scheduled runs with a 403 interstitial. That is a
+// transient failure the run already records per source, so nothing here treats
+// it specially: the next run simply tries again.
+function wootwareSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      requireCursor(cursor, 'page')
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: WOOTWARE_SPECIALS_URL,
+      }
+    },
+    decode: decodeWootwareDataLayer,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'wootware::open-box-specials',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseWootwareFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('wootware'),
+    retailerName: 'Wootware',
+    sourceLabel: 'Open-box specials',
+    sourceUrl: WOOTWARE_SPECIALS_URL,
+  }
+}
+
+function bobshopSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      requireCursor(cursor, 'page')
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: BOBSHOP_HOME_URL,
+      }
+    },
+    decode: decodeBobshopProductCards,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'bobshop::featured-listings',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseBobshopFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('bobshop'),
+    retailerName: 'Bob Shop',
+    sourceLabel: 'Featured listings',
+    sourceUrl: BOBSHOP_HOME_URL,
+  }
+}
+
+// The `store` header is mandatory: without it the endpoint answers 404. Mr
+// Price publishes no markdowns at present, so this source is expected to
+// accept nothing until they run one.
+function mrPriceSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      requireCursor(cursor, 'page')
+      return {
+        init: {
+          body: JSON.stringify({ query: buildMrPriceProductsQuery() }),
+          headers: {
+            ...STOREFRONT_HEADERS,
+            accept: 'application/json',
+            'content-type': 'application/json',
+            store: MR_PRICE_STORE_HEADER,
+          },
+          method: 'POST',
+        },
+        url: MR_PRICE_GRAPHQL_URL,
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Mr Price'),
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'mr-price::markdowns',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseMrPriceFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('mr-price'),
+    retailerName: 'Mr Price',
+    sourceLabel: 'Markdowns',
+    sourceUrl: `${MR_PRICE_ORIGIN}/en_za/`,
   }
 }
 
