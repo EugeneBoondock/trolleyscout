@@ -1,0 +1,273 @@
+// Online storefronts whose deals the scout can read directly.
+//
+// These shops run a standard commerce platform (Shopify, WooCommerce, Magento,
+// VTEX), so the existing platform detector reads their live on-sale feed
+// without a per-shop parser. They are listed here rather than in the country
+// retailer directory because most have no branch a shopper can walk into: the
+// deal is the product, and the directory stays a curated list of chains.
+//
+// Every entry below was probed against its own platform endpoint in July 2026
+// and answered with a live catalogue. A shop with no discount running today is
+// still listed — its feed works, so its next markdown is picked up
+// automatically.
+
+export interface OnlineStoreSource {
+  category: string
+  name: string
+  url: string
+}
+
+const store = (category: string, name: string, url: string): OnlineStoreSource => ({
+  category,
+  name,
+  url,
+})
+
+export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreSource[]>> = {
+  ZA: [
+    // Tech, computers and phones
+    store('Tech', 'Smartphone Shop', 'https://smartphoneshop.co.za/'),
+    store('Tech', 'Revibe', 'https://revibe.co.za/'),
+    store('Tech', 'Souk SA', 'https://souksa.co.za/'),
+    store('Tech', 'CCTV Direct', 'https://cctv-direct.co.za/'),
+    store('Tech', 'Technomobi', 'https://www.technomobi.co.za/'),
+    store('Tech', 'JK Phones', 'https://jkphones.co.za/'),
+    store('Tech', 'Go Gadgets', 'https://gogadgets.co.za/'),
+    store('Tech', 'Super Communications', 'https://www.supercomm.co.za/'),
+    store('Tech', 'WeFix', 'https://wefix.co.za/'),
+    store('Tech', 'Shop and Ship', 'https://www.shopandship.co.za/'),
+    store('Tech', 'TechMarkIt', 'https://techmarkit.co.za/'),
+    store('Tech', 'E-piphany', 'https://www.e-piphany.co.za/'),
+    store('Tech', 'Cellucity', 'https://cellucity.co.za/'),
+    store('Tech', 'Chaos Computers', 'https://chaoscomputers.co.za/'),
+    store('Tech', 'TechExchange', 'https://www.techexchange.co.za/'),
+    store('Tech', 'PC Shopper', 'https://www.pcshopper.co.za/'),
+    store('Tech', 'Device Shop', 'https://deviceshop.co.za/'),
+    store('Tech', 'Audio Exchange', 'https://audioexchange.co.za/'),
+    store('Tech', 'Security Wholesalers', 'https://securitywholesale.co.za/'),
+    store('Tech', 'Audioholics SA', 'https://audioholics.co.za/'),
+    store('Tech', 'Just Ink', 'https://justink.co.za/'),
+    store('Tech', 'The Cartridge Guy', 'https://thecartridgeguy.co.za/'),
+    store('Tech', 'Dell Online South Africa', 'https://www.dellonline.co.za/'),
+    store('Tech', 'HP Shop South Africa', 'https://www.hpshop.co.za/'),
+    store('Tech', 'ZEEK Online', 'https://www.zeekonline.co.za/'),
+    store('Tech', 'ITAD Africa Store', 'https://itadstore.co.za/'),
+    store('Tech', 'Only Laptops', 'https://onlylaptops.co.za/'),
+    store('Tech', 'Computer Mania', 'https://computermania.co.za/'),
+    store('Tech', 'Wireless Camera', 'https://wirelesscamera.co.za/'),
+    store('Tech', 'Light Market', 'https://www.lightmarket.co.za/'),
+    store('Tech', 'New World', 'https://newworld.co.za/'),
+    store('Tech', 'iStore', 'https://www.istore.co.za/'),
+    store('Tech', 'iStore Pre-owned', 'https://istorepreowned.co.za/'),
+    store('Tech', 'AudioHead', 'https://www.audiohead.co.za/'),
+    store('Tech', 'FirstShop', 'https://www.firstshop.co.za/'),
+    store('Tech', 'PC International', 'https://pcinternational.co.za/'),
+    store('Tech', 'Ink Station', 'https://inkstation.co.za/'),
+    store('Tech', 'Incredible Connection', 'https://www.incredible.co.za/'),
+    store('Tech', 'HiFi Corp', 'https://www.hificorp.co.za/'),
+    store('Tech', 'Syntech', 'https://www.syntech.co.za/'),
+    store('Tech', 'Matrix Warehouse', 'https://matrixwarehouse.co.za/'),
+    store('Tech', 'Communica', 'https://www.communica.co.za/'),
+    store('Tech', 'Switchcom Distribution', 'https://www.switchcom.co.za/'),
+    store('Tech', 'Rentoza', 'https://rentoza.co.za/'),
+    store('Tech', 'Hisense South Africa', 'https://hisense.co.za/'),
+    // Gaming
+    store('Gaming', 'HeadsUp SA', 'https://headsupsa.co.za/'),
+    store('Gaming', 'BT Games', 'https://btgames.co.za/'),
+    store('Gaming', 'Rebel Gaming', 'https://rebelgaming.co.za/'),
+    store('Gaming', 'Galactic Traders', 'https://galactictraders.co.za/'),
+    store('Gaming', 'GAME 4U', 'https://game4u.co.za/'),
+    store('Gaming', 'WeAreGamers', 'https://wearegamers.co.za/'),
+    store('Gaming', 'Redragon SA', 'https://redragon.co.za/'),
+    // Cameras and drones
+    store('Cameras', 'Foto Discount World', 'https://www.fotodiscountworld.co.za/'),
+    store('Cameras', 'CameraStuff', 'https://camerastuff.co.za/'),
+    store('Cameras', 'Camera Warehouse', 'https://www.camerawarehouse.co.za/'),
+    store('Cameras', 'Cine Photo Tools', 'https://cinephototools.co.za/'),
+    store('Cameras', 'Outdoorphoto', 'https://www.outdoorphoto.co.za/'),
+    store('Cameras', 'Orms Direct', 'https://www.ormsdirect.co.za/'),
+    store('Cameras', 'Cameraland', 'https://cameraland.co.za/'),
+    store('Cameras', 'GoUAV', 'https://gouav.co.za/'),
+    // Daily deals
+    store('Deals', 'Hyperli', 'https://hyperli.com/'),
+    // Fashion and footwear
+    store('Fashion', 'Kheper Activewear', 'https://kheper.co.za/'),
+    store('Fashion', 'Koko Active', 'https://kokoactive.co.za/'),
+    store('Fashion', 'The Space', 'https://thespace.co.za/'),
+    store('Fashion', 'Chepa Streetwear', 'https://www.chepa.co.za/'),
+    store('Fashion', 'Shoe Box', 'https://shoebox.co.za/'),
+    store('Fashion', 'Bathu', 'https://www.bathu.co.za/'),
+    store('Fashion', 'Bash', 'https://bash.com/'),
+    store('Fashion', 'Johnos Skate Shop', 'https://johnosskateshop.co.za/'),
+    store('Fashion', 'Tekkie Town', 'https://tekkietown.co.za/'),
+    store('Fashion', 'ChooseMe Intimate', 'https://chooseme.co.za/'),
+    store('Fashion', 'Ackermans', 'https://www.ackermans.co.za/'),
+    store('Fashion', 'The Sole Provider', 'https://thesoleprovider.co.za/'),
+    store('Fashion', 'Livv Activewear', 'https://www.livvactivewear.co.za/'),
+    store('Fashion', 'Swest Kicks', 'https://swestkicks.co.za/'),
+    store('Fashion', 'The Store Stuff', 'https://www.thestorestuff.co.za/'),
+    store('Fashion', 'Butan', 'https://butan.co.za/'),
+    store('Fashion', 'Komsurf', 'https://komsurf.com/'),
+    store('Fashion', 'K-Swiss South Africa', 'https://www.kswiss.co.za/'),
+    store('Fashion', 'Edgars', 'https://www.edgars.co.za/'),
+    store('Fashion', 'Boardhub', 'https://www.boardhub.co.za/'),
+    store('Fashion', 'Darkstar Direct', 'https://darkstardirect.co.za/'),
+    store('Fashion', 'Tigerlilly', 'https://tigerlilly.co.za/'),
+    store('Fashion', 'PEP', 'https://www.pepstores.com/'),
+    store('Fashion', 'Studio 88', 'https://www.studio-88.co.za/'),
+    // Home, furniture and bedding
+    store('Home', 'Direct Deals', 'https://directdeals.co.za/'),
+    store('Home', 'Decofurn', 'https://decofurnsa.co.za/'),
+    store('Home', 'Homzy', 'https://homzy.co.za/'),
+    store('Home', 'Coricraft', 'https://coricraft.co.za/'),
+    store('Home', 'Linen and Bath', 'https://linenandbath.co.za/'),
+    store('Home', 'Online Braai Shop', 'https://onlinebraaishop.co.za/'),
+    store('Home', 'Dial-a-Bed', 'https://www.dialabed.co.za/'),
+    store('Home', 'Bargains Online', 'https://www.bargainsonline.co.za/'),
+    store('Home', 'Drommedaris', 'https://drommedaris.co.za/'),
+    store('Home', 'The Mattress Warehouse', 'https://www.themattresswarehouse.co.za/'),
+    store('Home', 'The Bedroom Shop Online', 'https://www.thebedroomshoponline.co.za/'),
+    store('Home', 'Patio Warehouse', 'https://www.patiowarehouse.co.za/'),
+    store('Home', 'The Bed Centre', 'https://thebedcentre.co.za/'),
+    store('Home', 'Mojo Beds', 'https://www.mojobeds.co.za/'),
+    store('Home', 'The Mattress Company', 'https://the-mattress-company.co.za/'),
+    store('Home', 'Linen Lifestyle', 'https://linenlifestyle.co.za/'),
+    store('Home', 'Fit For Bed', 'https://www.fit.co.za/'),
+    store('Home', 'Beds Online', 'https://www.bedsonline.co.za/'),
+    store('Home', 'Chef Gas Braais', 'https://chef.co.za/'),
+    store('Home', 'Weylandts', 'https://www.weylandts.co.za/'),
+    store('Home', 'Russells', 'https://www.russells.co.za/'),
+    store('Home', 'Bradlows', 'https://www.bradlows.co.za/'),
+    store('Home', 'Sheet Street', 'https://www.sheetstreet.com/'),
+    // Baby and kids
+    store('Baby', 'Baby Closet', 'https://babyscloset.co.za/'),
+    store('Baby', 'Tiny Necessities', 'https://www.tinynecessities.co.za/'),
+    store('Baby', 'Baby City', 'https://www.babycity.co.za/'),
+    store('Baby', 'NOOLA', 'https://www.noola.co.za/'),
+    store('Baby', 'Kids Living', 'https://kidsliving.co.za/'),
+    store('Baby', 'Babies R Us', 'https://www.babiesrus.co.za/'),
+    // Pets
+    store('Pets', 'Petworld Online', 'https://petworld.co.za/'),
+    store('Pets', 'Canine and Co', 'https://canineandco.co.za/'),
+    // Sport and outdoor
+    store('Sport', 'Bike Addict', 'https://bike-addict.co.za/'),
+    store('Sport', 'Camp and Climb', 'https://campandclimb.co.za/'),
+    store('Sport', 'Buycycle', 'https://www.buycycle.co.za/'),
+    store('Sport', 'The Kingfisher', 'https://www.kingfisher.co.za/'),
+    store('Sport', 'Blades and Outdoor', 'https://blades-and-outdoor.co.za/'),
+    store('Sport', 'Naturehike Africa', 'https://www.naturehike.co.za/'),
+    store('Sport', 'Drifters Adventure Centre', 'https://www.driftersshop.co.za/'),
+    store('Sport', 'The Fishing Specialist', 'https://fishingstore.co.za/'),
+    store('Sport', 'Tackle Cabin SA', 'https://tacklecabin.co.za/'),
+    store('Sport', 'Bike and Tackle', 'https://bikeandtackle.co.za/'),
+    store('Sport', 'Safari Outdoor', 'https://safarioutdoor.co.za/'),
+    // Health and supplements
+    store('Health', 'Xtreme Nutrition', 'https://xtremenutrition.co.za/'),
+    store('Health', 'Feel Healthy', 'https://www.feelhealthy.co.za/'),
+    store('Health', 'Health Synergy', 'https://healthsynergy.co.za/'),
+    store('Health', 'Fresh Earth Food Store', 'https://freshearth.co.za/'),
+    store('Health', 'SSA Supplements', 'https://ssasupplements.com/'),
+    store('Health', 'USN South Africa', 'https://za.usn.global/'),
+    store('Health', 'Fitness Empire', 'https://fitnessempire.co.za/'),
+    // Beauty and hair
+    store('Beauty', 'AbsoluteSkin', 'https://absoluteskin.co.za/'),
+    store('Beauty', 'Shara Hair', 'https://sharahair.co.za/'),
+    store('Beauty', 'Hair City', 'https://www.haircity.co.za/'),
+    store('Beauty', 'Hair Majesty', 'https://www.hairmajesty.co.za/'),
+    store('Beauty', 'Cosmetology', 'https://www.cosmetology.co.za/'),
+    store('Beauty', 'NiceHair SA', 'https://nicehairsa.co.za/'),
+    store('Beauty', 'BeautyOnTApp', 'https://beautyontapp.com/'),
+    store('Beauty', 'Glamouriche', 'https://glamouriche.co.za/'),
+    store('Beauty', 'Cosmetics SA', 'https://cosmeticsa.co.za/'),
+    store('Beauty', 'Wellness Warehouse', 'https://wellnesswarehouse.com/'),
+    store('Beauty', 'Dermastore', 'https://dermastore.co.za/'),
+    store('Beauty', 'Sorbet', 'https://www.sorbet.co.za/'),
+    // Food and drink
+    store('Groceries', 'Biltong Boytjies', 'https://www.biltongboytjies.co.za/'),
+    store('Groceries', 'Cape Coffee Beans', 'https://capecoffeebeans.co.za/'),
+    store('Groceries', 'Bean There Coffee', 'https://beanthere.co.za/'),
+    store('Groceries', 'Slivers Biltong and Nuts', 'https://slivers.co.za/'),
+    store('Groceries', 'Bean Online', 'https://beanonline.co.za/'),
+    store('Liquor', 'Getwine', 'https://www.getwine.co.za/'),
+    store('Liquor', 'Winetime Online', 'https://winetimeonline.co.za/'),
+    store('Liquor', 'Winefolk', 'https://winefolk.co.za/'),
+    store('Liquor', 'Vinty Wines', 'https://vinty.co.za/'),
+    store('Liquor', 'Norman Goodfellows', 'https://www.ngf.co.za/'),
+    store('Liquor', 'Bar Keeper', 'https://barkeeper.co.za/'),
+    store('Liquor', 'Mothercity Liquor', 'https://mothercityliquor.co.za/'),
+    // Books, toys, art and office
+    store('Books', 'Readers Warehouse', 'https://www.readerswarehouse.co.za/'),
+    store('Books', 'Caxton Books', 'https://caxtonbooks.co.za/'),
+    store('Books', 'Van Schaik Bookstore', 'https://www.vanschaik.com/'),
+    store('Books', 'Wordsworth Books', 'https://www.wordsworth.co.za/'),
+    store('Books', 'Exclusive Books', 'https://exclusivebooks.co.za/'),
+    store('Toys', 'Toy Kingdom', 'https://toykingdom.co.za/'),
+    store('Toys', 'The Hidden Den', 'https://thehiddenden.co.za/'),
+    store('Toys', 'Toys R Us South Africa', 'https://www.toysrus.co.za/'),
+    store('Art', 'Art Savings Club', 'https://artsavingsclub.co.za/'),
+    store('Art', 'Art Images', 'https://www.artimages.co.za/'),
+    store('Art', 'Deckle Edge', 'https://www.deckleedge.co.za/'),
+    store('Art', 'Craftup', 'https://craftup.co.za/'),
+    store('Office', 'MHC World', 'https://www.mhcworld.co.za/'),
+    store('Office', 'Penfile', 'https://www.penfile.co.za/'),
+    store('Office', 'PNA', 'https://www.pna.co.za/'),
+    // Music
+    store('Music', 'Music Experience', 'https://www.musicexperience.co.za/'),
+    store('Music', 'Sound Select ZA', 'https://soundselect.co.za/'),
+    store('Music', 'Bothners', 'https://bothners.co.za/'),
+    store('Music', 'Marshall Music', 'https://www.marshallmusic.co.za/'),
+    store('Music', 'OneStop Music', 'https://onestopmusic.co.za/'),
+    store('Music', 'Guitar Gallery', 'https://guitargallery.co.za/'),
+    // Garden
+    store('Garden', 'Stodels', 'https://www.stodels.com/'),
+    store('Garden', 'ClicknPlant', 'https://www.clicknplant.co.za/'),
+    store('Garden', 'Plantland', 'https://plantland.co.za/'),
+    store('Garden', 'Gardening South Africa', 'https://gardening.co.za/'),
+    store('Garden', 'Cape Garden Centre', 'https://www.capegardencentre.co.za/'),
+    // Workwear, jewellery and eyewear
+    store('Workwear', 'Pinnacle Shop', 'https://pinnacleshop.co.za/'),
+    store('Jewellery', 'Police Lifestyle', 'https://www.policelifestyle.co.za/'),
+    store('Eyewear', 'Oculux', 'https://www.oculux.co.za/'),
+    // Motoring
+    store('Motoring', 'Spares Direct', 'https://sparesdirect.co.za/'),
+    store('Motoring', 'AutoSupply', 'https://autosupply.co.za/'),
+    store('Motoring', 'Midas', 'https://midas.co.za/'),
+    store('Motoring', 'Start My Car', 'https://www.startmycar.co.za/'),
+    store('Motoring', 'Tiger Wheel and Tyre', 'https://twt.co.za/'),
+    // Hardware and general
+    store('Hardware', 'Gelmar', 'https://www.gelmar.co.za/'),
+    store('Hardware', 'Leroy Merlin South Africa', 'https://leroymerlin.co.za/'),
+    store('Hardware', 'Brights Hardware', 'https://www.brights.co.za/'),
+    store('Hardware', 'Chamberlains', 'https://www.chamberlains.co.za/'),
+    store('General', 'SuperbHyper', 'https://superbhyper.co.za/'),
+    store('General', 'FairPrice Online', 'https://www.fairprice.co.za/'),
+    store('General', 'OK Furniture', 'https://www.okfurniture.co.za/'),
+  ],
+  ZW: [
+    // OK Zimbabwe serves a live WooCommerce catalogue with real grocery
+    // markdowns, but its TLS certificate expired in December 2025, so an edge
+    // fetch cannot complete the handshake. It is kept here deliberately: the
+    // moment the certificate is renewed the scout picks the deals up with no
+    // code change, and until then the failure is a clean transient one.
+    store('Groceries', 'OK Zimbabwe', 'https://okonline.co.zw/'),
+    store('Groceries', 'From Me', 'https://www.fromme.co.zw/'),
+    store('Tech', 'Celltrade', 'https://celltrade.co.zw/'),
+    store('Tech', 'Laptop Zone', 'https://laptopzone.co.zw/'),
+    store('Tech', 'Reeltec Electronics', 'https://reeltecelectronics.co.zw/'),
+    store('Tech', 'Spellbound Mobile', 'https://spellboundmobile.com/'),
+    store('General', 'Bandauko', 'https://bandauko.co.zw/'),
+    store('Home', 'Bhiks Home Stores', 'https://bhikshomestore.co.zw/'),
+    store('Hardware', 'Depot Solar', 'https://depotsolar.co.zw/'),
+    store('Pharmacy', 'Ayasam', 'https://www.ayasam.co.zw/'),
+    store('Fashion', 'The Shoe Barn', 'https://www.theshoebarn.co.zw/'),
+    store('Baby', 'Baby Sprouts Zimbabwe', 'https://babysproutszimbabwe.com/'),
+  ],
+}
+
+export function getOnlineStoreCountryCodes(): string[] {
+  return Object.keys(ONLINE_STORE_SOURCES)
+}
+
+export function getOnlineStoreSources(countryCode: string): readonly OnlineStoreSource[] {
+  return ONLINE_STORE_SOURCES[countryCode.toUpperCase()] ?? []
+}

@@ -1,30 +1,45 @@
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import {
+  getOnlineStoreCountryCodes,
+  getOnlineStoreSources,
+} from '../../src/services/onlineStoreRegistry'
+import {
   getSadcCountryCodes,
   getSadcRetailSources,
 } from '../../src/services/sadcSourceRegistry'
 import { countryFromCode } from './countryContext'
 
 // The near-me scout only reaches retailers with a physical branch Geoapify can
-// return. Many verified country-registry shops are online-only (or online-first)
-// — they have a website and live specials but no branch to be discovered near a
-// shopper. This turns each registry retail source into a national online store
-// so the scheduled scout runs the same deal detector on it and its deals land
-// in store_promotions, scoped to the country.
+// return. Many verified shops are online-only (or online-first) — they have a
+// website and live specials but no branch to be discovered near a shopper. This
+// turns every registered storefront into a national online store so the
+// scheduled scout runs the same deal detector on it and its deals land in
+// store_promotions, scoped to the country.
 //
 // Stores carry no coordinates (they are national, not a pinned branch) and are
 // never persisted to discovered_stores — they are handed straight to
 // scoutNearbyStores in memory, which paces them through store_scout_log.
 
 export function buildRegistryOnlineStores(
-  countryCodes: string[] = getSadcCountryCodes(),
+  countryCodes: string[] = allRegisteredCountryCodes(),
 ): NearbyStore[] {
   const perCountry = countryCodes.map((code) => {
     const country = countryFromCode(code)
     const seen = new Set<string>()
     const stores: NearbyStore[] = []
 
-    for (const source of getSadcRetailSources(code)) {
+    const sources = [
+      ...getSadcRetailSources(code).map((source) => ({
+        name: source.retailerName,
+        url: source.url,
+      })),
+      ...getOnlineStoreSources(code).map((source) => ({
+        name: source.name,
+        url: source.url,
+      })),
+    ]
+
+    for (const source of sources) {
       const host = safeHost(source.url)
       if (!host || seen.has(host)) {
         continue
@@ -35,7 +50,7 @@ export function buildRegistryOnlineStores(
         countryName: country.name,
         lat: 0,
         lon: 0,
-        name: source.retailerName,
+        name: source.name,
         placeId: `online:${country.code.toLowerCase()}:${host}`,
         website: source.url,
         // Verify the page as a directory-matched chain page, not a branch, so a
@@ -61,6 +76,10 @@ export function buildRegistryOnlineStores(
   }
 
   return interleaved
+}
+
+function allRegisteredCountryCodes(): string[] {
+  return [...new Set([...getSadcCountryCodes(), ...getOnlineStoreCountryCodes()])]
 }
 
 function safeHost(value: string): string | undefined {

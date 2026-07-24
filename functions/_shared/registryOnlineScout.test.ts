@@ -39,4 +39,24 @@ describe('buildRegistryOnlineStores', () => {
     expect(countries.has('ZW')).toBe(true)
     expect(countries.size).toBeGreaterThan(5)
   })
+
+  it('includes South African online storefronts, which have no country directory', () => {
+    const za = buildRegistryOnlineStores(['ZA'])
+    const hosts = za.map((store) => store.placeId)
+
+    expect(hosts).toContain('online:za:techexchange.co.za')
+    expect(za.length).toBeGreaterThan(100)
+    expect(za.every((store) => store.countryCode === 'ZA')).toBe(true)
+  })
+
+  it('merges the country directory and the online registry without repeating a host', () => {
+    const zw = buildRegistryOnlineStores(['ZW'])
+    const hosts = zw.map((store) => store.placeId)
+
+    expect(new Set(hosts).size).toBe(hosts.length)
+    // Drawn from the country directory...
+    expect(hosts).toContain('online:zw:tmpnponline.co.zw')
+    // ...and from the online-only registry.
+    expect(hosts).toContain('online:zw:celltrade.co.zw')
+  })
 })

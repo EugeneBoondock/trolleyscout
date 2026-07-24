@@ -69,10 +69,11 @@ export interface ScheduledScoutOptions {
   refreshDealSources?: boolean
 }
 
-// How many online-only registry retailers to scout per deal-refresh run. Kept
-// small so a single run stays light; store_scout_log's day-long cooldown spreads
-// the full registry across successive runs.
-const ONLINE_RETAILER_SCOUT_LIMIT = 12
+// How many online-only registry retailers to scout per deal-refresh run. The
+// registry runs to a few hundred storefronts, so this paces a steady sweep:
+// store_scout_log's day-long cooldown stops a shop being revisited, and the
+// round-robin ordering keeps every country moving forward together.
+const ONLINE_RETAILER_SCOUT_LIMIT = 24
 
 const defaultDependencies: ScheduledScoutDependencies = {
   applyDuePlanChanges,

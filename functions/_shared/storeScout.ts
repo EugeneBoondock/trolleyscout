@@ -642,7 +642,7 @@ async function scoutStoreWebsite(
     return outcome('permanent_unverified')
   }
 
-  const pathPlan = storeSpecialsPathPlan(store.website)
+  const pathPlan = storeSpecialsPathPlan(store.website, store.websiteSource === 'country-retailer')
   const cursorKey = `store-paths::${hashString(store.placeId)}`
   const cursorState = await readStorePathCursor(env, cursorKey, pathPlan.length)
   const start = cursorState.start
@@ -1098,7 +1098,7 @@ async function readStorePathCursor(
   }
 }
 
-function storeSpecialsPathPlan(website: string): string[] {
+function storeSpecialsPathPlan(website: string, preferHomePage = false): string[] {
   try {
     const url = new URL(website)
     const exactPath = `${url.pathname || '/'}${url.search}`
@@ -1107,6 +1107,14 @@ function storeSpecialsPathPlan(website: string): string[] {
     }
   } catch {
     // The caller already validates the origin; retain the standard path plan.
+  }
+  // A national online storefront keeps its deals behind a shop platform rather
+  // than on a printed specials page, and the platform is identified from any
+  // page of the site. Its home page is the one page certain to exist, so try it
+  // first — otherwise a Shopify or Magento shop spends several runs collecting
+  // 404s from leaflet paths it will never have.
+  if (preferHomePage) {
+    return ['/', ...SPECIALS_PATHS.filter((path) => path !== '/')]
   }
   return [...SPECIALS_PATHS]
 }
