@@ -76,8 +76,8 @@ import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 const PAGE_SIZE = 100
 // One request per source per run, so the budget must cover every registered
 // source or the ones at the end of the list never run at all.
-export const DEFAULT_REQUEST_CAP = 30
-const MAX_REQUEST_CAP = 60
+export const DEFAULT_REQUEST_CAP = 45
+const MAX_REQUEST_CAP = 80
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
 const DEFAULT_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -87,7 +87,7 @@ const MAX_CANDIDATES_PER_RUN = 100
 // per run, so a single source would take over a week to walk them all. The
 // sweep is split into shards that each take every Nth campaign, so the whole
 // deal catalogue lands within about a day and then keeps refreshing.
-const TAKEALOT_SHARD_COUNT = 8
+const TAKEALOT_SHARD_COUNT = 16
 const INITIAL_STATE_MARKER = 'window.__INITIAL_STATE__'
 const WINDOW_CURSOR_PREFIX = 'trolley-scout:candidate-window:v1:'
 

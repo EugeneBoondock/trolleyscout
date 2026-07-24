@@ -76,7 +76,7 @@ export interface ScheduledScoutOptions {
 // registry runs to a few hundred storefronts, so this paces a steady sweep:
 // store_scout_log's day-long cooldown stops a shop being revisited, and the
 // round-robin ordering keeps every country moving forward together.
-const ONLINE_RETAILER_SCOUT_LIMIT = 24
+const ONLINE_RETAILER_SCOUT_LIMIT = 40
 
 const defaultDependencies: ScheduledScoutDependencies = {
   applyDuePlanChanges,

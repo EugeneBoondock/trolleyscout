@@ -82,6 +82,14 @@ describe('structured retailer source decoders', () => {
       'takealot::promotion-campaigns-5',
       'takealot::promotion-campaigns-6',
       'takealot::promotion-campaigns-7',
+      'takealot::promotion-campaigns-8',
+      'takealot::promotion-campaigns-9',
+      'takealot::promotion-campaigns-10',
+      'takealot::promotion-campaigns-11',
+      'takealot::promotion-campaigns-12',
+      'takealot::promotion-campaigns-13',
+      'takealot::promotion-campaigns-14',
+      'takealot::promotion-campaigns-15',
     ])
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
   })
