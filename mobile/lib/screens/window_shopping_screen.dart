@@ -4,7 +4,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../discovery_cache.dart';
@@ -14,6 +13,7 @@ import '../theme.dart';
 import '../ux.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/scout_mascot.dart';
+import '../widgets/share_card.dart';
 import '../widgets/in_app_browser.dart';
 import '../window_saved_store.dart';
 import '../window_seen_store.dart';
@@ -609,19 +609,10 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     }
   }
 
-  Future<void> _share(ScrollDeal deal) async {
-    final productUri = safeWindowWebUri(deal.productUrl);
-    final parts = [
-      deal.title,
-      if (deal.priceText != null) deal.priceText!,
-      'at ${deal.retailerName}',
-      if (productUri != null) productUri.toString(),
-      'found on Trolley Scout',
-    ];
-    final text = Uri.encodeComponent(parts.join(' · '));
-    await launchUrl(Uri.parse('https://wa.me/?text=$text'),
-        mode: LaunchMode.externalApplication);
-  }
+  /// Deals leave the reel as a card, not a text blob: preview the poster, then
+  /// hand it to the native share sheet with the link in the caption.
+  Future<void> _share(ScrollDeal deal) =>
+      showShareCardSheet(context, ShareCardData.fromScrollDeal(deal));
 
   void _openSaved() {
     HapticFeedback.selectionClick();

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../catalogue_sort.dart';
 import '../deal_categories.dart';
@@ -20,6 +19,7 @@ import '../widgets/catalogue_reader.dart';
 import '../widgets/common.dart' show validUntilInfo;
 import '../widgets/login_gate_card.dart';
 import '../widgets/scout_mascot.dart';
+import '../widgets/share_card.dart';
 import '../widgets/skeleton.dart';
 import '../widgets/sponsored_ad_card.dart';
 import '../widgets/in_app_browser.dart';
@@ -1073,19 +1073,10 @@ class _DealRow extends StatelessWidget {
   final VoidCallback? onAddToBasket;
   final bool isAddingToBasket;
 
-  // WhatsApp is how deals travel between South African households.
-  Future<void> _share() async {
-    final parts = [
-      deal.title,
-      if (deal.priceText != null) deal.priceText!,
-      'at ${deal.retailerName}',
-      if (deal.productUrl != null) deal.productUrl!,
-      'found on https://trolleyscout.co.za',
-    ];
-    final text = Uri.encodeComponent(parts.join(' · '));
-    await launchUrl(Uri.parse('https://wa.me/?text=$text'),
-        mode: LaunchMode.externalApplication);
-  }
+  // Deals travel between South African households as a picture now: preview
+  // the card, then send it through whichever app the shopper already uses.
+  Future<void> _share(BuildContext context) =>
+      showShareCardSheet(context, ShareCardData.fromDeal(deal));
 
   @override
   Widget build(BuildContext context) {
@@ -1222,8 +1213,8 @@ class _DealRow extends StatelessWidget {
                   ),
                 const SizedBox(width: 8),
                 _DealActionIcon(
-                  tooltip: 'Share on WhatsApp',
-                  onPressed: _share,
+                  tooltip: 'Share this deal',
+                  onPressed: () => _share(context),
                   icon: Icons.share_outlined,
                 ),
                 if (onSave != null) ...[

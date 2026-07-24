@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../api.dart';
@@ -10,6 +9,7 @@ import '../ux.dart';
 import '../widgets/common.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
+import '../widgets/share_card.dart';
 import '../widgets/skeleton.dart';
 
 /// Properties Scout is a Household-tier tool that searches property platforms
@@ -123,16 +123,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
-  Future<void> _share(PropertyListing listing) async {
-    await Clipboard.setData(ClipboardData(text: listing.listingUrl));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Link copied. Paste it to share.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
+  /// Homes go out as a card too — the photo, the price and the suburb in one
+  /// image, with the listing link riding in the caption.
+  Future<void> _share(PropertyListing listing) =>
+      showShareCardSheet(context, ShareCardData.fromProperty(listing));
 
   @override
   void dispose() {
