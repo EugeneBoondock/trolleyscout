@@ -2,6 +2,7 @@
 // list, and auto-removal once a deal leaves the live feed.
 import { getMemberSession } from '../_shared/memberStore'
 import {
+  getDealCommentCounts,
   getWindowSaveCounts,
   listWindowSaves,
   saveWindowDeal,
@@ -28,7 +29,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     const counts = url.searchParams.get('counts')
     if (counts !== null) {
       const ids = counts.split(',').map((s) => s.trim()).filter(Boolean)
-      return json({ counts: await getWindowSaveCounts(env, accountId, ids) }, { headers: privateHeaders })
+      // Comment totals ride along with the save counts, so a card can show how
+      // busy a deal's conversation is before anyone opens it.
+      const [saveCounts, commentCounts] = await Promise.all([
+        getWindowSaveCounts(env, accountId, ids),
+        getDealCommentCounts(env, ids),
+      ])
+      return json(
+        { commentCounts, counts: saveCounts },
+        { headers: privateHeaders },
+      )
     }
     return json({ deals: await listWindowSaves(env, accountId) }, { headers: privateHeaders })
   }

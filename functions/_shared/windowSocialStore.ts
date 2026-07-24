@@ -235,6 +235,33 @@ export async function getWindowSaveCounts(
 // deal_comments
 // ---------------------------------------------------------------------------
 
+// Comment totals for a screenful of deals, so a shopper can see whether a
+// conversation is worth opening before they open it. Counted in one query for
+// the whole batch rather than per card.
+export async function getDealCommentCounts(
+  env: TrolleyScoutEnv,
+  dealIds: string[],
+): Promise<Record<string, number>> {
+  const out: Record<string, number> = {}
+  const ids = dealIds.filter(Boolean).slice(0, 200)
+  if (!hasTrolleyScoutDatabase(env) || ids.length === 0) return out
+
+  try {
+    const placeholders = ids.map(() => '?').join(',')
+    const counts = await env.DB.prepare(
+      `SELECT deal_id, COUNT(*) AS n FROM deal_comments
+        WHERE deal_id IN (${placeholders}) GROUP BY deal_id`,
+    )
+      .bind(...ids)
+      .all<{ deal_id: string; n: number }>()
+    for (const id of ids) out[id] = 0
+    for (const row of counts.results) out[row.deal_id] = row.n
+    return out
+  } catch {
+    return out
+  }
+}
+
 export async function listDealComments(
   env: TrolleyScoutEnv,
   dealId: string,

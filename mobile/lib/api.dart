@@ -719,8 +719,18 @@ class Api {
     final query = ids.map(Uri.encodeComponent).join(',');
     final data = await _request('GET', '/api/window-saves?counts=$query');
     final counts = _map(data['counts']);
-    return counts
-        .map((key, value) => MapEntry(key, SaveStat.fromJson(_map(value))));
+    final commentCounts = _map(data['commentCounts']);
+    return counts.map((key, value) => MapEntry(
+          key,
+          SaveStat.fromJson(_map(value))
+              .withCommentCount(_commentCount(commentCounts[key])),
+        ));
+  }
+
+  static int _commentCount(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('${value ?? ''}') ?? 0;
   }
 
   Future<List<DealComment>> dealComments(String dealId) async {

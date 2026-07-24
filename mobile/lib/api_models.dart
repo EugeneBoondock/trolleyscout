@@ -1726,14 +1726,25 @@ class PropertySearchResult {
 }
 
 /// How many shoppers saved a deal, and whether the current shopper did.
+/// How a Window Shopping deal is doing socially: how many shoppers saved it,
+/// whether this shopper did, and how busy its comment thread is. The comment
+/// total is shown on the card so nobody has to open a thread to find it empty.
 class SaveStat {
-  const SaveStat({required this.count, required this.saved});
+  const SaveStat({
+    required this.count,
+    required this.saved,
+    this.commentCount = 0,
+  });
 
   final int count;
   final bool saved;
+  final int commentCount;
 
   factory SaveStat.fromJson(Map<String, dynamic> json) =>
       SaveStat(count: _int(json['count']), saved: json['saved'] == true);
+
+  SaveStat withCommentCount(int value) =>
+      SaveStat(count: count, saved: saved, commentCount: value);
 }
 
 /// One comment on a Window Shopping deal. Comments live with the deal and are

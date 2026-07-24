@@ -100,6 +100,7 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('Fashion', 'Chepa Streetwear', 'https://www.chepa.co.za/'),
     store('Fashion', 'Shoe Box', 'https://shoebox.co.za/'),
     store('Fashion', 'Bathu', 'https://www.bathu.co.za/'),
+    store('Fashion', 'Angelwear', 'https://angelwear.co.za/'),
     store('Fashion', 'Bash', 'https://bash.com/'),
     store('Fashion', 'Johnos Skate Shop', 'https://johnosskateshop.co.za/'),
     store('Fashion', 'Tekkie Town', 'https://tekkietown.co.za/'),

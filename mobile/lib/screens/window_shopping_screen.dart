@@ -739,6 +739,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                   deal: deal,
                   saved: _saved.contains(deal.id),
                   saveCount: _saveStats[deal.id]?.count ?? 0,
+                  commentCount: _saveStats[deal.id]?.commentCount ?? 0,
                   onOpen: () => _open(deal),
                   onSave: () => _toggleSave(deal),
                   onShare: () => _share(deal),
@@ -1040,6 +1041,7 @@ class _WindowCard extends StatelessWidget {
     required this.deal,
     required this.saved,
     required this.saveCount,
+    this.commentCount = 0,
     required this.onOpen,
     required this.onSave,
     required this.onShare,
@@ -1051,6 +1053,7 @@ class _WindowCard extends StatelessWidget {
   final ScrollDeal deal;
   final bool saved;
   final int saveCount;
+  final int commentCount;
   final VoidCallback onOpen;
   final VoidCallback onSave;
   final VoidCallback onShare;
@@ -1119,7 +1122,11 @@ class _WindowCard extends StatelessWidget {
                 _RailButton(
                   icon: Icons.mode_comment_outlined,
                   color: Colors.white,
-                  label: 'Comment',
+                  // Show how busy the thread is before it is opened, so nobody
+                  // taps through only to find it empty.
+                  label: commentCount > 0
+                      ? formatCount(commentCount)
+                      : 'Comment',
                   onTap: onComment,
                 ),
                 const SizedBox(height: 18),
@@ -1861,6 +1868,7 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
             deal: deal,
             saved: _saved.contains(deal.id),
             saveCount: _saveStats[deal.id]?.count ?? 0,
+            commentCount: _saveStats[deal.id]?.commentCount ?? 0,
             onOpen: () => widget.onOpen(deal),
             onSave: () => _toggle(deal),
             onShare: () => widget.onShare(deal),
