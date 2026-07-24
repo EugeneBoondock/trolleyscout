@@ -27,10 +27,24 @@
   --paper-faint: #6f7a68;
   --shadow-hard: 0 0.7rem 1.8rem rgba(28, 23, 16, 0.16);
   --shadow-soft: 0 0.35rem 1rem rgba(28, 23, 16, 0.11);
+  /* Lift used on hover for anything that behaves like a card you can enter. */
+  --shadow-lift: 0 1.1rem 2.4rem rgba(28, 23, 16, 0.2);
   --radius-control: 0.8rem;
   --radius-card: 1.15rem;
   --radius-panel: 1.65rem;
-  --display: "Anton", "Arial Narrow", "Impact", sans-serif;
+  --radius-pill: 999px;
+  /* One spacing scale so every section, grid gap and card pad lines up. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --display: "Anton", "Arial Narrow", system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 16px;
@@ -40,6 +54,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* The UI stack ships 400 to 700 only. Without this the browser fakes 800/900
+     and the result is the smeared "bold" the shop floor should never show. */
+  font-synthesis: none;
+  font-synthesis-weight: none;
 }
 
 .discovered-store-directory {
@@ -200,7 +218,7 @@
   color: var(--ink);
   background: var(--surface);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -243,7 +261,7 @@
 .promotion-kind {
   color: var(--red);
   font-size: 0.7rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -343,7 +361,7 @@
   cursor: pointer;
   padding: 0.8rem;
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .advanced-deal-filter-grid {
@@ -416,7 +434,7 @@
   border: 1.5px solid var(--line);
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -472,7 +490,7 @@
   color: var(--faint);
   background: var(--surface);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -505,7 +523,7 @@
 .retailer-picker-option.is-selected {
   background: var(--yellow);
   color: #1c1710;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .retailer-picker-option.is-selected .retailer-picker-option-count {
@@ -758,7 +776,7 @@ mark {
   border: 2px solid var(--line);
   background: var(--yellow);
   color: #1c1710;
-  font-weight: 800;
+  font-weight: 700;
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -969,7 +987,7 @@ mark {
   border: 2px solid transparent;
   color: var(--muted);
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -1005,7 +1023,7 @@ mark {
   border: 2px solid var(--line);
   background: var(--surface);
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   box-shadow: var(--shadow-soft);
@@ -1042,7 +1060,7 @@ mark {
 
 .data-desk-nav > span {
   color: var(--faint);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   font-size: 0.68rem;
@@ -1074,7 +1092,7 @@ main {
   margin: 0;
   color: var(--red);
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -1157,7 +1175,7 @@ main {
   margin: 0;
   color: var(--red);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -1249,7 +1267,7 @@ main {
   background: var(--green);
   color: #fff;
   font-size: 0.66rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1303,7 +1321,7 @@ main {
   margin-left: auto;
   color: var(--red);
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1328,7 +1346,7 @@ main {
   align-items: baseline;
   justify-content: flex-end;
   white-space: nowrap;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--red);
 }
 
@@ -1366,7 +1384,7 @@ main {
   margin-left: auto;
   color: var(--red);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1465,7 +1483,7 @@ main {
   padding: 0.45rem 1rem;
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -1481,7 +1499,7 @@ main {
   align-items: center;
   justify-self: end;
   color: var(--red);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 /* Admin console */
@@ -1511,7 +1529,7 @@ main {
   min-width: min(18rem, 100%);
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .admin-country-picker select,
@@ -1568,7 +1586,7 @@ main {
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 0.7rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -1605,7 +1623,7 @@ main {
   border: 1.5px solid var(--line-soft);
   color: var(--muted);
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
 }
 
@@ -1622,7 +1640,7 @@ main {
   color: var(--ink);
   background: var(--surface);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -1723,7 +1741,7 @@ main {
   min-width: 7rem;
   color: var(--ink);
   font-size: 0.82rem;
-  font-weight: 900;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -1738,7 +1756,7 @@ main {
   color: var(--ink);
   background: var(--surface);
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .leaflet-page-controls button:hover:not(:disabled),
@@ -1820,7 +1838,7 @@ main {
   background: var(--surface);
   color: var(--ink);
   font-size: 0.68rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .leaflet-image-failure {
@@ -1897,7 +1915,7 @@ main {
   border: 2px solid var(--line);
   color: var(--ink);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-decoration: none;
   text-transform: uppercase;
@@ -1916,7 +1934,7 @@ main {
   padding: 0.65rem 1.15rem;
   border: 2px solid var(--line);
   font-size: 0.88rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   box-shadow: var(--shadow-hard);
@@ -1975,7 +1993,7 @@ main {
   gap: 0.35rem;
   min-width: 0;
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2114,7 +2132,7 @@ main {
 .metric-card span {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -2263,12 +2281,22 @@ main {
   font-size: 0.85rem;
 }
 
+/* The entrance. One panel, one promise, one primary action, and the shopfront
+   photograph framed like a display window. */
+
 .home-hero {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
   gap: clamp(1.5rem, 4vw, 3.5rem);
   align-items: center;
-  padding-top: 1rem;
+  padding: clamp(1.5rem, 3.5vw, 2.6rem);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(120% 140% at 88% 0%, color-mix(in srgb, var(--yellow) 22%, transparent) 0, transparent 58%),
+    var(--surface);
+  box-shadow: var(--shadow-soft);
 }
 
 .home-hero-copy {
@@ -2326,20 +2354,152 @@ main {
   object-position: 63% center;
 }
 
-/* Staples strip: live prices for the foods that decide the month. */
+/* ---------------------------------------------------------------
+   The mall floor: departments, shelves, live figures, and the app
+   --------------------------------------------------------------- */
 
+.mall-directory,
+.mall-figures,
 .staple-strip {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
-.staple-strip-head {
+/* A directory board rather than a flat row: the busiest aisle takes the big
+   panel and the rest sit beside it two by two. */
+.mall-departments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mall-departments > li {
+  display: grid;
+}
+
+.mall-departments > li:first-child {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.mall-departments > li:first-child .mall-department {
+  gap: var(--space-3);
+  background:
+    radial-gradient(110% 130% at 8% 0%, color-mix(in srgb, var(--yellow) 20%, transparent) 0, transparent 60%),
+    var(--surface);
+}
+
+.mall-departments > li:first-child .mall-department-icon {
+  width: 3.6rem;
+  height: 3.6rem;
+}
+
+.mall-departments > li:first-child .mall-department-title {
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+}
+
+.mall-departments > li:first-child .mall-department-text {
+  max-width: 30rem;
+  font-size: 1rem;
+}
+
+/* Each department is one press target that walks you into an aisle. */
+.mall-department {
+  display: grid;
+  /* Icon, title, copy, cue. The copy row flexes so every cue lines up across
+     the board no matter how long the description runs. */
+  grid-template-rows: auto auto 1fr auto;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mall-department:hover,
+.mall-department:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+}
+
+.mall-department:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-soft);
+}
+
+.mall-department-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--red);
+  background: var(--bg);
+}
+
+.mall-department-title {
   display: flex;
-  gap: 1rem;
-  align-items: flex-end;
-  justify-content: space-between;
-  padding-bottom: 0.6rem;
-  border-bottom: 3px solid var(--line);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  font-family: var(--display);
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.mall-department-tag {
+  padding: 0.1rem 0.5rem;
+  border: 1.5px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.mall-department-text {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.mall-department-action {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  margin-top: var(--space-1);
+  color: var(--red);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mall-department-action svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.mall-department:hover .mall-department-action svg,
+.mall-department:focus-visible .mall-department-action svg {
+  transform: translateX(3px);
+}
+
+/* Staples shelf: live prices for the foods that decide the month. */
+
+.staple-strip-head {
+  margin: 0;
 }
 
 .staple-strip-head h2 {
@@ -2347,64 +2507,149 @@ main {
   font-size: clamp(1.5rem, 3vw, 2rem);
 }
 
-.staple-grid {
+.mall-shelf {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.staple-card {
+/* One tile, one link, straight to the retailer page the price was read from. */
+.deal-tile {
   display: grid;
-  gap: 0.3rem;
-  align-content: start;
-  padding: 1rem 1.1rem;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  overflow: hidden;
   border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink);
   background: var(--surface);
   box-shadow: var(--shadow-soft);
+  text-decoration: none;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.staple-retailer {
-  margin: 0;
+.deal-tile:hover,
+.deal-tile:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+}
+
+.deal-tile:active {
+  transform: translateY(0);
+}
+
+.deal-tile-media {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-bottom: 2px solid var(--line-soft);
+  color: var(--faint);
+  background: var(--bg);
+}
+
+.deal-tile-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.deal-tile-body {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.deal-tile-retailer {
   color: var(--red);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
-.staple-card a {
-  color: var(--ink);
-  font-weight: 700;
-  text-decoration-color: var(--line-soft);
+.deal-tile-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
-.staple-card a:hover {
-  text-decoration-color: var(--red);
-}
-
-.staple-price {
+.deal-tile-price {
   display: flex;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   align-items: baseline;
-  margin: 0.15rem 0 0;
+  margin-top: var(--space-1);
 }
 
-.staple-price strong {
+.deal-tile-price strong {
   font-family: var(--display);
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 400;
+  letter-spacing: 0.01em;
   color: var(--red);
 }
 
-.staple-price span {
+.deal-tile-price s {
   color: var(--faint);
   font-size: 0.88rem;
-  text-decoration: line-through;
   text-decoration-color: var(--red-bright);
   text-decoration-thickness: 2px;
+}
+
+.deal-tile-saving {
+  color: var(--green);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.deal-tile-cue {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px dashed var(--line-soft);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.deal-tile:hover .deal-tile-cue,
+.deal-tile:focus-visible .deal-tile-cue {
+  color: var(--ink);
+  background: var(--yellow);
+}
+
+:root[data-theme="dark"] .deal-tile:hover .deal-tile-cue,
+:root[data-theme="dark"] .deal-tile:focus-visible .deal-tile-cue {
+  color: #1c1710;
+}
+
+/* Shelf skeleton: keeps the grid at its final height so nothing jumps in. */
+.deal-tile.is-loading {
+  display: block;
+  min-height: 17rem;
+  border-style: dashed;
+  background:
+    linear-gradient(90deg, var(--surface) 25%, var(--surface-soft) 50%, var(--surface) 75%)
+    0 0 / 220% 100%;
+  animation: deal-tile-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes deal-tile-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .staple-checking {
@@ -2412,55 +2657,181 @@ main {
   color: var(--muted);
 }
 
-.home-paths {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1.1rem;
+/* Live figures on dimensional plinths. Real CSS 3D: the number plate is lifted
+   off its base in Z, so perspective gives every plinth genuine thickness and
+   the row reads like objects on a counter rather than flat boxes. */
+
+.mall-figures {
+  align-items: center;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
 }
 
-.home-path-card {
+.mall-figures-copy h2 {
+  margin: 0.2rem 0 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.mall-figure-stack {
   display: grid;
-  gap: 0.6rem;
-  align-content: start;
-  padding: 1.3rem;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-5);
+  margin: 0;
+  padding: var(--space-2) 0 var(--space-5);
+  list-style: none;
+  perspective: 1200px;
+  perspective-origin: 50% 20%;
+}
+
+.mall-figure {
+  --plinth-depth: 18px;
+  position: relative;
+  transform: rotateX(13deg) rotateY(-15deg);
+  transform-style: preserve-3d;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* The base of the plinth. The face sits above it in Z, so the gap between the
+   two planes is the visible thickness. */
+.mall-figure::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   border: 2px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow-hard);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--ink) 16%, var(--surface));
 }
 
-.home-path-card > svg {
+.mall-figure-face {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  transform: translateZ(var(--plinth-depth));
+}
+
+.mall-figure:nth-child(2n) {
+  --plinth-depth: 24px;
+}
+
+.mall-figure-face strong {
+  font-family: var(--display);
+  font-size: clamp(2rem, 4vw, 2.9rem);
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
   color: var(--red);
 }
 
-.home-path-card h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.home-path-card p {
-  margin: 0;
+.mall-figure-face span {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-.home-path-card .ghost-button {
-  justify-self: start;
-  margin-top: 0.4rem;
+.mall-figure:hover {
+  transform: rotateX(4deg) rotateY(-5deg);
+}
+
+/* Get the app: the phone build is the fuller experience, so it gets a real
+   invitation rather than a footer link. */
+
+.mall-app {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(1.2rem, 3vw, 1.9rem);
+  border: 2px solid var(--line);
+  border-left: 0.6rem solid var(--red);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--yellow) 16%, transparent) 0, transparent 46%),
+    var(--surface);
   box-shadow: var(--shadow-soft);
 }
+
+.mall-app-copy {
+  max-width: 38rem;
+}
+
+.mall-app-copy h2 {
+  margin: 0.2rem 0 0.4rem;
+  font-size: clamp(1.35rem, 2.6vw, 1.8rem);
+}
+
+.mall-app-copy p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Google Play badge: the official badge proportions, clear space and colours,
+   built from the Play mark so it costs no extra request. */
+.play-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.65rem;
+  align-items: center;
+  min-height: 3.25rem;
+  padding: 0.5rem 1.15rem;
+  border: 1px solid #a6a6a6;
+  border-radius: 0.6rem;
+  color: #fff;
+  background: #000;
+  text-decoration: none;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.play-badge:hover,
+.play-badge:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+}
+
+.play-badge-copy {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.play-badge-lead {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.play-badge-word {
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1.1;
+}
+
+/* Promises: quiet, legible, and never louder than the prices. */
 
 .home-promises {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.1rem;
+  gap: var(--space-4);
 }
 
 .home-promise {
   display: flex;
-  gap: 0.7rem;
-  padding: 1rem 1.1rem;
-  border: 2px dashed var(--line);
-  background: transparent;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-top: 3px solid var(--green);
+  border-radius: var(--radius-card);
+  background: var(--surface);
 }
 
 .home-promise svg {
@@ -2476,7 +2847,81 @@ main {
 }
 
 .home-promise strong {
+  display: block;
   color: var(--ink);
+  font-size: 0.95rem;
+}
+
+@media (max-width: 1120px) {
+  .mall-departments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mall-departments > li:first-child {
+    grid-row: span 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .mall-departments,
+  .mall-departments > li:first-child {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Phones drop out of 3D entirely: the tilt would push the row past a small
+     viewport, and a flat cut-paper edge costs a cheap GPU nothing. */
+  .mall-figure-stack {
+    gap: var(--space-4);
+    perspective: none;
+  }
+
+  .mall-figure,
+  .mall-figure:hover {
+    transform: none;
+    transform-style: flat;
+  }
+
+  .mall-figure::after {
+    display: none;
+  }
+
+  .mall-figure-face {
+    transform: none;
+    box-shadow: 0.35rem 0.35rem 0 var(--line-soft), var(--shadow-soft);
+  }
+
+  .play-badge {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-tile.is-loading {
+    animation: none;
+  }
+
+  .mall-department,
+  .deal-tile,
+  .mall-figure,
+  .play-badge {
+    transition: none;
+  }
+
+  .mall-department:hover,
+  .deal-tile:hover,
+  .play-badge:hover {
+    transform: none;
+  }
+
+  /* The plinths keep their static dimensional composition, they just stop
+     responding to the pointer. */
+  .mall-figure:hover {
+    transform: rotateX(13deg) rotateY(-15deg);
+  }
 }
 
 /* ---------------------------------------------------------------
@@ -2553,7 +2998,7 @@ main {
 
 .search-field button {
   color: var(--red);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.82rem;
   text-transform: uppercase;
 }
@@ -2572,7 +3017,7 @@ main {
   margin-right: 0.4rem;
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -2644,7 +3089,7 @@ main {
   padding: 0.18rem 0.55rem;
   border: 1.5px solid var(--line);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -2687,7 +3132,7 @@ main {
   padding: 0.2rem 0.6rem;
   border: 2px solid var(--line);
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -2829,7 +3274,7 @@ main {
   background: var(--specials-red, #c9271b);
   color: #fff;
   font-size: 0.65rem;
-  font-weight: 900;
+  font-weight: 700;
   border-radius: 999px;
   border: 1.5px solid var(--line);
 }
@@ -2887,7 +3332,7 @@ main {
 
 .watch-row-heading mark {
   font-size: 0.65rem;
-  font-weight: 900;
+  font-weight: 700;
   padding: 0.1rem 0.35rem;
 }
 
@@ -2970,7 +3415,7 @@ main {
 }
 
 .near-me-history-label {
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.85rem;
 }
 
@@ -3002,7 +3447,7 @@ main {
   border: 2px solid var(--line);
   background: var(--marker-yellow, #ffd42e);
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.85rem;
   padding: 0.5rem 0.7rem;
   margin: 0.5rem 0;
@@ -3074,7 +3519,7 @@ main {
   border: 2px solid #fff;
   color: #fff;
   font-size: 0.6rem;
-  font-weight: 900;
+  font-weight: 700;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
 }
 
@@ -3134,7 +3579,7 @@ main {
 
 .compare-head,
 .compare-totals-label {
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.85rem;
   text-transform: uppercase;
   color: var(--muted);
@@ -3144,7 +3589,7 @@ main {
 .compare-shop-name {
   border: 2px solid var(--line);
   background: var(--surface);
-  font-weight: 800;
+  font-weight: 700;
   padding: 0.4rem 0.5rem;
   text-align: center;
 }
@@ -3179,7 +3624,7 @@ main {
 .compare-price.is-cheapest {
   border-color: var(--trust-green, #0d6b3d);
   background: color-mix(in srgb, var(--trust-green, #0d6b3d) 12%, transparent);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .compare-total {
@@ -3187,7 +3632,7 @@ main {
   background: var(--surface-soft, #ece4cd);
   padding: 0.5rem;
   text-align: center;
-  font-weight: 900;
+  font-weight: 700;
   display: grid;
   align-content: center;
 }
@@ -3229,7 +3674,7 @@ main {
   border-bottom: none;
   background: var(--surface-soft, #ece4cd);
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.9rem;
   padding: 0.55rem 1.1rem;
   cursor: pointer;
@@ -3416,7 +3861,7 @@ main {
   border: 2px solid var(--line);
   background: var(--surface);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-decoration: none;
   text-transform: uppercase;
@@ -3621,7 +4066,7 @@ main {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .rules-grid {
@@ -3730,7 +4175,7 @@ main {
   background: var(--yellow);
   color: #1c1710;
   font-size: 0.75rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -3873,7 +4318,7 @@ main {
   background: var(--yellow);
   color: #1c1710;
   font-size: 0.7rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -3987,7 +4432,7 @@ main {
 .dash-ring-value {
   fill: var(--green);
   font-size: 1.3rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .dash-ring-unit {
@@ -3998,7 +4443,7 @@ main {
 .dash-section-label {
   margin: 0.4rem 0 -0.5rem;
   font-size: 1.05rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .dash-actions {
@@ -4080,7 +4525,7 @@ main {
   overflow: hidden;
   color: var(--red);
   font-size: 0.7rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -4368,7 +4813,7 @@ main {
 .basket-total-card span {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -4440,7 +4885,7 @@ main {
 .quantity-control span {
   min-width: 2.2rem;
   text-align: center;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .basket-line-total {
@@ -4465,7 +4910,7 @@ main {
   padding: 0.45rem 0.9rem;
   color: var(--muted);
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -4524,7 +4969,7 @@ main {
   padding: 0.1rem 0.45rem;
   background: color-mix(in srgb, var(--green, #1a7f4b) 16%, transparent);
   color: var(--green, #1a7f4b);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.74rem;
 }
 
@@ -4569,7 +5014,7 @@ main {
   padding: 0.2rem 0.6rem;
   border: 1.5px solid var(--line);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -4676,7 +5121,7 @@ main {
 .profile-row span {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -4729,7 +5174,7 @@ main {
   color: var(--ink);
   font: inherit;
   font-size: 0.85rem;
-  font-weight: 850;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -4800,7 +5245,7 @@ main {
   background: var(--yellow);
   color: #1c1710;
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 /* ---------------------------------------------------------------
@@ -4823,10 +5268,12 @@ main {
 }
 
 @media (max-width: 1120px) {
-  .home-paths,
-  .staple-grid,
   .about-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mall-figures {
+    grid-template-columns: 1fr;
   }
 
   .source-grid,
@@ -4911,8 +5358,6 @@ main {
   }
 
   .plan-usage-grid,
-  .staple-grid,
-  .home-paths,
   .about-steps,
   .home-promises,
   .source-grid,
@@ -5081,7 +5526,7 @@ main {
 
 .auto-compare-stores legend {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -5143,7 +5588,7 @@ main {
 }
 
 .auto-compare-store-name {
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .auto-compare-title {
@@ -5162,7 +5607,7 @@ a.auto-compare-title:hover {
 }
 
 .auto-compare-price {
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .auto-compare-missing {
@@ -5190,46 +5635,94 @@ a.auto-compare-title:hover {
 
 .site-foot {
   border-top: 3px solid var(--line);
-  padding: 20px 16px;
+  padding: var(--space-6) clamp(1rem, 4vw, 2.5rem) var(--space-5);
   text-align: center;
   font-size: 13px;
   font-weight: 700;
   color: var(--muted);
 }
 
-.site-foot a {
+/* The directory you get on the way out: departments first, company second. */
+.foot-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+}
+
+.foot-brand {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 26rem;
+}
+
+.foot-brand p {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.foot-column {
+  display: grid;
+  gap: 0.15rem;
+  align-content: start;
+  justify-items: start;
+}
+
+.foot-column h2 {
+  margin: 0 0 var(--space-2);
+  color: var(--faint);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 760px) {
+  .foot-board {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
+  }
+}
+
+/* Scoped to the colophon line: the directory columns keep the quieter link
+   colour so the footer reads as navigation, not a wall of red. */
+.site-foot p a {
   color: var(--red);
-  font-weight: 900;
+  font-weight: 700;
   text-decoration: underline;
 }
 
-.site-foot a:hover {
+.site-foot p a:hover {
   color: var(--red-bright);
 }
 
-/* Footer legal + support links */
-.foot-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px 18px;
-  margin-bottom: 12px;
-}
-
+/* Footer links: kept at a 44px press target for thumbs. */
 .foot-link {
   display: inline-flex;
   min-width: 2.75rem;
   min-height: 2.75rem;
   align-items: center;
-  justify-content: center;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--muted);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.9rem;
+  font-weight: 600;
   text-decoration: none;
   padding: 2px 0;
+}
+
+.foot-link:hover {
+  color: var(--red);
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .site-foot p a {
@@ -5249,7 +5742,7 @@ a.auto-compare-title:hover {
   border: none;
   padding: 0;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--red);
   text-decoration: underline;
   cursor: pointer;
@@ -5386,7 +5879,7 @@ a.auto-compare-title:hover {
   border-radius: 999px;
   background: var(--paper-faint);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -5442,7 +5935,7 @@ a.auto-compare-title:hover {
   border: 2px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.75rem;
   padding: 0.25rem 0.6rem;
   cursor: pointer;
@@ -5484,7 +5977,7 @@ a.auto-compare-title:hover {
   border: 0;
   background: var(--surface);
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
   padding: 0.5rem 1.4rem;
   cursor: pointer;
 }
@@ -5529,7 +6022,7 @@ a.auto-compare-title:hover {
 .properties-field > span:not(.sr-only) {
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -5539,7 +6032,7 @@ a.auto-compare-title:hover {
   border: 2px solid var(--line);
   background: var(--red);
   color: #fff;
-  font-weight: 900;
+  font-weight: 700;
   padding: 0.55rem 1.6rem;
   cursor: pointer;
   box-shadow: var(--shadow-soft);
@@ -5561,7 +6054,7 @@ a.auto-compare-title:hover {
   border: 2px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
   padding: 0.55rem 1rem;
   cursor: pointer;
   white-space: nowrap;
@@ -5657,7 +6150,7 @@ a.auto-compare-title:hover {
   background: rgba(28, 23, 16, 0.82);
   color: #fff;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0.15rem 0.5rem;
@@ -5672,7 +6165,7 @@ a.auto-compare-title:hover {
 
 .property-card-price {
   font-size: 1.15rem;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--ink);
 }
 
@@ -5702,7 +6195,7 @@ a.auto-compare-title:hover {
   gap: 0.35rem 0.85rem;
   color: var(--muted);
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .property-card-feature {
@@ -5719,7 +6212,7 @@ a.auto-compare-title:hover {
 .property-card-view {
   margin-top: 0.5rem;
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--red);
   text-decoration: none;
 }
@@ -5822,7 +6315,7 @@ a.auto-compare-title:hover {
   background: rgba(28, 23, 16, 0.7);
   color: #fff;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
 }
@@ -5852,7 +6345,7 @@ a.auto-compare-title:hover {
   top: 0.5rem;
   left: 0.5rem;
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0.15rem 0.5rem;
@@ -5921,7 +6414,7 @@ a.auto-compare-title:hover {
   border: none;
   background: transparent;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -5941,7 +6434,7 @@ a.auto-compare-title:hover {
   background: var(--red);
   color: #fff;
   font-size: 0.68rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .properties-view-switch button.is-active .properties-badge {
@@ -5961,7 +6454,7 @@ a.auto-compare-title:hover {
   color: var(--surface);
   padding: 0.55rem 1rem;
   border-radius: 999px;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 0.85rem;
   box-shadow: var(--shadow-hard);
   z-index: 60;
@@ -6051,7 +6544,7 @@ a.auto-compare-title:hover {
 .properties-chip-label {
   margin: 0 0 0.5rem;
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--faint);

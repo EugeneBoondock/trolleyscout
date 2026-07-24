@@ -7,18 +7,15 @@
     <link rel="apple-touch-icon" href="/assets/scout-logo.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
-    <title>Trolley Scout: grocery deals, price comparison and properties</title>
+    <title>Trolley Scout: South African grocery specials, with sources</title>
     <meta
       name="description"
-      content="Trolley Scout finds grocery specials, compares products across stores, searches nearby retailers, and gathers property listings from multiple platforms."
-    />
-    <meta
-      name="keywords"
-      content="grocery deals, supermarket specials, unit price calculator, Pick n Pay specials, Checkers specials, Shoprite deals, Woolworths specials, cheapest groceries, price comparison, nearby stores, property search"
+      content="See what is really on special at South African supermarkets this week. Every price links back to the retailer page it was read from, with the date we checked it. Free to use."
     />
     <meta name="author" content="Boondock Labs (Pty) Ltd" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="theme-color" content="#1c1710" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Trolley Scout" />
     <meta name="format-detection" content="telephone=no" />
@@ -27,10 +24,10 @@
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Trolley Scout" />
-    <meta property="og:title" content="Trolley Scout: grocery deals, comparisons and properties" />
+    <meta property="og:title" content="Trolley Scout: South African grocery specials, with sources" />
     <meta
       property="og:description"
-      content="Find grocery specials, compare products across stores, browse catalogues, and search property platforms in one place."
+      content="See what is really on special at South African supermarkets this week. Every price links back to the retailer page it was read from, with the date we checked it."
     />
     <meta property="og:image" content="https://trolleyscout.co.za/assets/og-card.png" />
     <meta property="og:image:secure_url" content="https://trolleyscout.co.za/assets/og-card.png" />
@@ -41,12 +38,12 @@
     <meta property="og:url" content="https://trolleyscout.co.za/" />
     <meta property="og:locale" content="en_ZA" />
 
-    <!-- Twitter -->
+    <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Trolley Scout: grocery deals, comparisons and properties" />
+    <meta name="twitter:title" content="Trolley Scout: South African grocery specials, with sources" />
     <meta
       name="twitter:description"
-      content="Find grocery specials, compare products across stores, browse catalogues, and search property platforms in one place."
+      content="See what is really on special at South African supermarkets this week. Every price links back to the retailer page it was read from, with the date we checked it."
     />
     <meta name="twitter:image" content="https://trolleyscout.co.za/assets/og-card.png" />
     <meta name="twitter:image:alt" content="Trolley Scout grocery deals and price comparison" />
@@ -65,8 +62,9 @@
             "name": "Trolley Scout",
             "url": "https://trolleyscout.co.za/",
             "logo": "https://trolleyscout.co.za/assets/scout-logo.png",
-            "description": "Grocery deals, store comparisons, nearby retailers, and property search.",
+            "description": "Grocery specials, store price comparison, nearby retailers, and property search, each price shown with the source it was read from.",
             "areaServed": { "@type": "Country", "name": "South Africa" },
+            "sameAs": ["https://github.com/EugeneBoondock/trolleyscout"],
             "parentOrganization": {
               "@type": "Organization",
               "name": "Boondock Labs (Pty) Ltd",
@@ -91,11 +89,17 @@
           },
           {
             "@type": "MobileApplication",
+            "@id": "https://trolleyscout.co.za/#android-app",
             "name": "Trolley Scout",
             "operatingSystem": "ANDROID",
             "applicationCategory": "ShoppingApplication",
             "url": "https://trolleyscout.co.za/",
-            "downloadUrl": "https://github.com/EugeneBoondock/trolleyscout/releases/latest",
+            "installUrl": "https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout",
+            "downloadUrl": "https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout",
+            "sameAs": [
+              "https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout",
+              "https://github.com/EugeneBoondock/trolleyscout/releases/latest"
+            ],
             "inLanguage": "en-ZA",
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "ZAR" },
             "publisher": { "@id": "https://trolleyscout.co.za/#organization" }

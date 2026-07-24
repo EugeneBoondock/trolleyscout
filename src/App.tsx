@@ -14,6 +14,7 @@ import {
   CreditCard,
   Eye,
   EyeSlash,
+  GooglePlayLogo,
   HandCoins,
   HouseLine,
   Info,
@@ -152,7 +153,7 @@ import {
 } from './services/dealCategories'
 import { groupDiscoveredStores, type DiscoveredStoreGroup } from './services/storeGroups'
 import type { AboutDestination } from './views/AboutView'
-import { HomeView, type HomeDestination } from './views/HomeView'
+import { HomeView, PLAY_STORE_URL, type HomeDestination } from './views/HomeView'
 import {
   claimVoucher,
   loadVouchers,
@@ -229,8 +230,9 @@ function LazyView({ children, label }: { children: ReactNode; label: string }) {
 
 // Logged-out shoppers see a trimmed public nav: Near me, Tools, and Stores are
 // members-only, so they are left out here and gated on direct navigation.
+// The wordmark is the way home, as it is on every site, so a separate Home
+// item would just be the same destination twice.
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
-  { label: 'Home', value: 'home' },
   { label: 'Deals', value: 'discovery' },
   { label: 'Vouchers', value: 'vouchers' },
   { label: 'Help', value: 'about' },
@@ -264,7 +266,8 @@ const VIEW_PATHS: Record<ActiveView, string> = {
 }
 
 const VIEW_TITLES: Record<ActiveView, string> = {
-  home: 'Trolley Scout: grocery deals, price comparison and properties',
+  // Kept identical to the <title> in index.html so the tab never flips on load.
+  home: 'Trolley Scout: South African grocery specials, with sources',
   discovery: 'Find a deal: this week’s grocery specials | Trolley Scout',
   near: 'Near me: supermarkets and specials around you | Trolley Scout',
   tools: 'Tools: product and store comparison | Trolley Scout',
@@ -1358,10 +1361,15 @@ function App() {
         Skip to content
       </a>
       <header className="topbar">
-        <a className="brand-mark" href="#top" aria-label="Trolley Scout home">
+        <button
+          className="brand-mark brand-button"
+          onClick={() => setActiveView('home')}
+          aria-label="Trolley Scout home"
+          type="button"
+        >
           <ScoutMark motion="scout" />
           <span>Trolley Scout</span>
-        </a>
+        </button>
 
         <nav className="view-switcher" aria-label="App views">
           {viewOptions.map((view) => (
@@ -1412,9 +1420,13 @@ function App() {
         <>
         {activeView === 'home' && (
           <HomeView
+            catalogueCount={discoveryState.data.discovery.leaflets?.length ?? 0}
             country={countryState.data.country}
+            dealCount={discoveryState.data.discovery.deals.length}
             isCheckingStaples={isDiscovering}
             onOpen={(destination: HomeDestination) => setActiveView(destination)}
+            retailerCount={retailerCount}
+            sourceCount={officialSourceCount}
             stapleDeals={pickStapleDeals(discoveryState.data.discovery.deals)}
           />
         )}
@@ -1583,28 +1595,78 @@ function App() {
       </main>
       <ScoutGuide view={activeView} />
       <footer className="site-foot">
-        <nav className="foot-links" aria-label="Legal and support">
-          {([
-            { label: 'Privacy', view: 'privacy' },
-            { label: 'Terms', view: 'terms' },
-            { label: 'Cookies', view: 'cookies' },
-            { label: 'Support', view: 'support' },
-          ] as Array<{ label: string; view: ActiveView }>).map((link) => (
-            // Real hrefs so the pages are crawlable and shareable; the SPA
-            // handles the click without a full reload.
+        <div className="foot-board">
+          <div className="foot-brand">
+            <span className="brand-mark">
+              <ScoutMark />
+              <span>Trolley Scout</span>
+            </span>
+            <p>
+              Real prices from official retailer pages, with the source link and the date we
+              checked it.
+            </p>
             <a
-              className="foot-link"
-              href={VIEW_PATHS[link.view]}
-              key={link.view}
-              onClick={(event) => {
-                event.preventDefault()
-                setActiveView(link.view)
-              }}
+              className="play-badge"
+              href={PLAY_STORE_URL}
+              rel="noopener noreferrer"
+              target="_blank"
             >
-              {link.label}
+              <GooglePlayLogo aria-hidden="true" size={26} weight="fill" />
+              <span className="play-badge-copy">
+                <span className="play-badge-lead">Get it on</span>
+                <span className="play-badge-word">Google Play</span>
+              </span>
             </a>
-          ))}
-        </nav>
+          </div>
+
+          <nav className="foot-column" aria-label="Departments">
+            <h2>Departments</h2>
+            {([
+              { label: 'Grocery deals', view: 'discovery' },
+              { label: 'Stores near me', view: 'near' },
+              { label: 'Store directory', view: 'sources' },
+              { label: 'Vouchers', view: 'vouchers' },
+              { label: 'Price tools', view: 'tools' },
+            ] as Array<{ label: string; view: ActiveView }>).map((link) => (
+              <a
+                className="foot-link"
+                href={VIEW_PATHS[link.view]}
+                key={link.view}
+                onClick={(event) => {
+                  event.preventDefault()
+                  setActiveView(link.view)
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+
+          <nav className="foot-column" aria-label="Legal and support">
+            <h2>Company</h2>
+            {([
+              { label: 'About and help', view: 'about' },
+              { label: 'Support', view: 'support' },
+              { label: 'Privacy', view: 'privacy' },
+              { label: 'Terms', view: 'terms' },
+              { label: 'Cookies', view: 'cookies' },
+            ] as Array<{ label: string; view: ActiveView }>).map((link) => (
+              // Real hrefs so the pages are crawlable and shareable; the SPA
+              // handles the click without a full reload.
+              <a
+                className="foot-link"
+                href={VIEW_PATHS[link.view]}
+                key={link.view}
+                onClick={(event) => {
+                  event.preventDefault()
+                  setActiveView(link.view)
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+        </div>
         <p>
           Trolley Scout is property of{' '}
           <a

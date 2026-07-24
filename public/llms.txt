@@ -2,7 +2,7 @@
 
 > Trolley Scout finds grocery specials across supermarkets, compares store prices, locates nearby retailers, and searches property platforms. The useful shopping tools are free.
 
-Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a native Android app (see the GitHub releases). Deal data is scouted from official retailer sources (Woolworths, Checkers, Shoprite, Pick n Pay, Clicks, Dis-Chem, Boxer, OK Foods, SPAR, Usave, Game, Makro and independent local stores) and refreshed continuously.
+Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a native Android app on Google Play (za.co.trolleyscout.trolley_scout). Deal data is scouted from official retailer sources (Woolworths, Checkers, Shoprite, Pick n Pay, Clicks, Dis-Chem, Boxer, OK Foods, SPAR, Usave, Game, Makro and independent local stores) and refreshed continuously.
 
 ## Docs
 
@@ -30,5 +30,6 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 
 ## Optional
 
+- [Android app on Google Play](https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout): the published Android build
 - [Android app releases](https://github.com/EugeneBoondock/trolleyscout/releases): downloadable APK
 - [Source repository](https://github.com/EugeneBoondock/trolleyscout)

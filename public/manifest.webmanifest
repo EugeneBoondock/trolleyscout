@@ -1,9 +1,14 @@
 {
+  "id": "/",
   "name": "Trolley Scout",
   "short_name": "Trolley Scout",
-  "description": "Find grocery deals, compare store prices, browse catalogues, and search properties.",
+  "description": "See what is really on special at South African supermarkets, with the source link and the date behind every price.",
   "start_url": "/",
+  "scope": "/",
+  "lang": "en-ZA",
+  "dir": "ltr",
   "display": "standalone",
+  "categories": ["shopping", "food", "lifestyle"],
   "background_color": "#f4eedd",
   "theme_color": "#1c1710",
   "icons": [
@@ -13,5 +18,13 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "za.co.trolleyscout.trolley_scout",
+      "url": "https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout"
+    }
+  ],
+  "prefer_related_applications": false
 }

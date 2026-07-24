@@ -39,5 +39,7 @@ See `/.well-known/api-catalog` for the machine-readable catalog and
 
 ## Android app
 
-A native Android app with the same features is available from the
+A native Android app with the same features is published on
+[Google Play](https://play.google.com/store/apps/details?id=za.co.trolleyscout.trolley_scout).
+Signed APKs are also mirrored on the
 [GitHub releases page](https://github.com/EugeneBoondock/trolleyscout/releases).

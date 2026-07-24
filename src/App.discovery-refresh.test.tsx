@@ -50,7 +50,8 @@ it('loads Find Deals once per app session and hides manual refresh from public u
 
   render(<App />)
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Find deals' }))
+  // The home hero's primary action is the public route into the deal aisle.
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
   expect(await screen.findByRole('heading', { name: 'Source-backed specials' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Check now' })).toBeNull()
 
