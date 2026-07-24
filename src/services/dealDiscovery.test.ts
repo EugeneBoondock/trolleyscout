@@ -356,7 +356,8 @@ describe('dealDiscovery', () => {
       retailerId: 'takealot',
       savingText: '22% off',
       title: 'Indomie Mi Goreng Hot and Spicy Noodle 80gr x 40 Units',
-      imageUrl: 'https://media.takealot.com/noodles/s-300.file',
+      // A named size, not a pixel width: the media host 404s "s-300.file".
+      imageUrl: 'https://media.takealot.com/noodles/s-pdpxl.file',
     })
     expect(deals[0].productUrl).toBe(
       'https://www.takealot.com/indomie-mi-goreng-hot-and-spicy-noodle-80gr-x-40-units/PLID70902784',

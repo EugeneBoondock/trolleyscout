@@ -135,6 +135,10 @@ export function extractDealsFromHtml(
   return []
 }
 
+// The only image sizes Takealot's media host serves are named ones; a numeric
+// width returns 404.
+const TAKEALOT_IMAGE_SIZE = 'pdpxl'
+
 export function buildTakealotDealsApiUrl(sourceUrl: string) {
   const apiUrl = new URL(
     'https://api.takealot.com/rest/v-1-17-0/searches/products',
@@ -690,7 +694,9 @@ function takealotImageUrl(view: unknown) {
   }
 
   const image = images.find((value): value is string => typeof value === 'string' && value.startsWith('https://'))
-  return image?.replace('{size}', '300')
+  // Takealot's image host takes a named size, not a pixel width: "s-300.file"
+  // is a 404, so every deal from this lane was carrying a dead image URL.
+  return image?.replace('{size}', TAKEALOT_IMAGE_SIZE)
 }
 
 function balancedJsonObject(value: string, start: number) {
