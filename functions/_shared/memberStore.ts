@@ -136,6 +136,7 @@ interface SavedDealRow {
   source_label: string
   source_url: string
   title: string
+  valid_to: string | null
 }
 
 interface BasketItemRow {
@@ -153,6 +154,7 @@ interface BasketItemRow {
   retailer_id: string
   saved_deal_created_at: string
   saved_deal_id: string
+  valid_to: string | null
   saving_text: string | null
   source_label: string
   source_url: string
@@ -901,22 +903,97 @@ export async function deleteMemberSource(env: TrolleyScoutEnv, accountId: string
   return result.meta.changes > 0
 }
 
-export async function listSavedDeals(env: TrolleyScoutEnv, accountId?: string) {
+export async function listSavedDeals(
+  env: TrolleyScoutEnv,
+  accountId?: string,
+  nowMs = Date.now(),
+) {
   if (!hasMemberStore(env) || !accountId) {
     return []
   }
 
   const result = await env.DB.prepare(
     `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
-      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url,
+      created_at, valid_to
       FROM member_saved_deals
       WHERE account_id = ?
+        AND (valid_to IS NULL OR trim(valid_to) = '' OR date(valid_to) >= date(?))
       ORDER BY created_at DESC`,
   )
-    .bind(accountId)
+    .bind(accountId, savedDealToday(nowMs))
     .all<SavedDealRow>()
 
   return result.results.map(savedDealRowToDeal)
+}
+
+// A saved offer whose last day has passed is gone: the price no longer stands,
+// so showing it would be telling a shopper something untrue. Rows are kept for
+// a short grace period rather than deleted on sight, so a late-running sweep or
+// a clock skew never destroys a save that is still valid.
+const SAVED_DEAL_GRACE_DAYS = 7
+// How far ahead a shopper is warned that a saved offer is about to close.
+export const SAVED_DEAL_EXPIRY_WINDOW_DAYS = 3
+
+function savedDealToday(nowMs = Date.now()): string {
+  // Saved-deal end dates are calendar days in South African time.
+  return new Date(nowMs + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+function savedDealDateIn(days: number, nowMs = Date.now()): string {
+  return savedDealToday(nowMs + days * 24 * 60 * 60 * 1000)
+}
+
+/** Saved offers closing within the warning window, newest end date last. */
+export async function listExpiringSavedDeals(
+  env: TrolleyScoutEnv,
+  accountId: string | undefined,
+  windowDays = SAVED_DEAL_EXPIRY_WINDOW_DAYS,
+  nowMs = Date.now(),
+) {
+  if (!hasMemberStore(env) || !accountId) {
+    return []
+  }
+
+  const result = await env.DB.prepare(
+    `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url,
+      created_at, valid_to
+      FROM member_saved_deals
+      WHERE account_id = ?
+        AND valid_to IS NOT NULL AND trim(valid_to) <> ''
+        AND date(valid_to) >= date(?)
+        AND date(valid_to) <= date(?)
+      ORDER BY date(valid_to) ASC`,
+  )
+    .bind(accountId, savedDealToday(nowMs), savedDealDateIn(windowDays, nowMs))
+    .all<SavedDealRow>()
+
+  return result.results.map(savedDealRowToDeal)
+}
+
+/** Clears saved offers that closed longer ago than the grace period. */
+export async function purgeExpiredSavedDeals(
+  env: TrolleyScoutEnv,
+  nowMs = Date.now(),
+): Promise<number> {
+  if (!hasMemberStore(env)) {
+    return 0
+  }
+
+  try {
+    const result = await env.DB.prepare(
+      `DELETE FROM member_saved_deals
+        WHERE valid_to IS NOT NULL AND trim(valid_to) <> ''
+          AND date(valid_to) < date(?)`,
+    )
+      .bind(savedDealDateIn(-SAVED_DEAL_GRACE_DAYS, nowMs))
+      .run()
+    return result.meta.changes ?? 0
+  } catch {
+    // Retried on the next sweep; the read filter already hides these.
+    return 0
+  }
 }
 
 export async function saveMemberDeal(
@@ -974,8 +1051,9 @@ export async function saveMemberDeal(
   await env.DB.prepare(
     `INSERT INTO member_saved_deals (
       id, account_id, deal_id, retailer_id, source_label, source_url, product_url,
-      title, captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      title, captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url,
+      created_at, valid_to
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id, product_url) DO UPDATE SET
       deal_id = excluded.deal_id,
       source_label = excluded.source_label,
@@ -986,7 +1064,8 @@ export async function saveMemberDeal(
       previous_price_text = excluded.previous_price_text,
       saving_text = excluded.saving_text,
       evidence_text = excluded.evidence_text,
-      image_url = excluded.image_url`,
+      image_url = excluded.image_url,
+      valid_to = excluded.valid_to`,
   )
     .bind(
       id,
@@ -1004,12 +1083,14 @@ export async function saveMemberDeal(
       deal.evidenceText.trim(),
       deal.imageUrl ?? null,
       timestamp,
+      savedDealValidTo(deal),
     )
     .run()
 
   const savedDeal = await env.DB.prepare(
     `SELECT id, deal_id, retailer_id, source_label, source_url, product_url, title,
-      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url, created_at
+      captured_at, price_text, previous_price_text, saving_text, evidence_text, image_url,
+      created_at, valid_to
       FROM member_saved_deals
       WHERE account_id = ? AND product_url = ?`,
   )
@@ -1060,6 +1141,7 @@ export async function getMemberBasket(env: TrolleyScoutEnv, accountId?: string):
       member_saved_deals.saving_text AS saving_text,
       member_saved_deals.evidence_text AS evidence_text,
       member_saved_deals.image_url AS image_url,
+      member_saved_deals.valid_to AS valid_to,
       member_saved_deals.created_at AS saved_deal_created_at
       FROM member_basket_items
       INNER JOIN member_saved_deals ON member_saved_deals.id = member_basket_items.saved_deal_id
@@ -1631,6 +1713,18 @@ function savedSourceRowToSource(row: SavedSourceRow): SavedSource {
   }
 }
 
+// The offer's last valid calendar day. A deal states this either as validTo or
+// as an expiresAt instant; anything else is stored as unknown rather than
+// guessed, so an offer is only ever hidden on evidence it has actually closed.
+function savedDealValidTo(deal: SavedDealDraft): string | null {
+  for (const value of [deal.validTo, deal.expiresAt]) {
+    if (typeof value !== 'string') continue
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim())
+    if (match) return match[1]
+  }
+  return null
+}
+
 function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
   const retailer = retailers.find((candidate) => candidate.id === row.retailer_id)
 
@@ -1649,6 +1743,7 @@ function savedDealRowToDeal(row: SavedDealRow): SavedDeal {
     sourceLabel: row.source_label,
     sourceUrl: row.source_url,
     title: row.title,
+    validTo: row.valid_to ?? undefined,
   }
 }
 
@@ -1668,6 +1763,7 @@ function basketItemRowToItem(row: BasketItemRow): BasketItem {
     source_label: row.source_label,
     source_url: row.source_url,
     title: row.title,
+    valid_to: row.valid_to,
   })
   const unitPriceCents = parseRandCents(deal.priceText)
   const previousUnitPriceCents = parseRandCents(deal.previousPriceText)

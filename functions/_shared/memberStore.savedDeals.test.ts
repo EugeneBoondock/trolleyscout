@@ -13,7 +13,18 @@ const migrationUrls = [
   new NodeUrl('../../migrations/0005_deal_snapshots.sql', import.meta.url),
   new NodeUrl('../../migrations/0019_deal_site_cache.sql', import.meta.url),
   new NodeUrl('../../migrations/0028_saved_deal_images.sql', import.meta.url),
+  new NodeUrl('../../migrations/0029_saved_deal_expiry.sql', import.meta.url),
 ]
+
+// 0029 backfills a saved deal's end date from the live feed. The deal_items
+// migration carries triggers this file's statement splitter cannot parse, so
+// stand in the columns that backfill reads.
+const DEAL_ITEMS_STANDIN = `CREATE TABLE IF NOT EXISTS deal_items (
+  id TEXT PRIMARY KEY,
+  product_url TEXT NOT NULL,
+  captured_at TEXT NOT NULL,
+  valid_to TEXT
+)`
 
 describe('saved discovery deals', () => {
   let miniflare: Miniflare
@@ -28,6 +39,8 @@ describe('saved discovery deals', () => {
     })
     db = await miniflare.getD1Database('DB') as unknown as D1Database
     env = { DB: db }
+
+    await db.prepare(DEAL_ITEMS_STANDIN).run()
 
     for (const migrationUrl of migrationUrls) {
       const migration = (await readFile(migrationUrl, 'utf8'))

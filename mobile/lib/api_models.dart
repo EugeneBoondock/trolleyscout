@@ -1778,6 +1778,8 @@ class DealAlertSummary {
     required this.latestCursor,
     required this.totalNewDealCount,
     this.countCapped = false,
+    this.expiringSavedDealCount = 0,
+    this.expiringSavedDealTitle,
   });
 
   final bool enabled;
@@ -1785,13 +1787,27 @@ class DealAlertSummary {
   final int totalNewDealCount;
   final bool countCapped;
 
-  factory DealAlertSummary.fromJson(Map<String, dynamic> json) =>
-      DealAlertSummary(
-        enabled: json['enabled'] == true,
-        latestCursor: _int(json['latestCursor']),
-        totalNewDealCount: _int(json['totalNewDealCount']),
-        countCapped: json['countCapped'] == true,
-      );
+  /// Saved offers closing within the next few days, so the shopper can be
+  /// told before the price they saved disappears.
+  final int expiringSavedDealCount;
+
+  /// The soonest of those, named so a single-deal warning can be specific.
+  final String? expiringSavedDealTitle;
+
+  factory DealAlertSummary.fromJson(Map<String, dynamic> json) {
+    final expiring = json['expiringSavedDeals'];
+    final first = expiring is List && expiring.isNotEmpty ? expiring.first : null;
+
+    return DealAlertSummary(
+      enabled: json['enabled'] == true,
+      latestCursor: _int(json['latestCursor']),
+      totalNewDealCount: _int(json['totalNewDealCount']),
+      countCapped: json['countCapped'] == true,
+      expiringSavedDealCount: _int(json['expiringSavedDealCount']),
+      expiringSavedDealTitle:
+          first is Map<String, dynamic> ? _string(first['title']) : null,
+    );
+  }
 }
 
 String _string(Object? value, [String fallback = '']) =>

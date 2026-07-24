@@ -9,6 +9,7 @@ import 'notification_prefs_store.dart';
 import 'notifications.dart';
 
 typedef DealAlertNotify = FutureOr<bool> Function(int count);
+typedef ExpiringDealNotify = FutureOr<bool> Function(int count, String? title);
 
 class DealAlertPoller {
   DealAlertPoller({
@@ -16,16 +17,21 @@ class DealAlertPoller {
     NotificationPrefsStore? preferences,
     DealAlertScheduler? scheduler,
     DealAlertNotify? notify,
+    ExpiringDealNotify? notifyExpiring,
   })  : _api = api ?? Api(),
         _preferences = preferences ?? NotificationPrefsStore(),
         _scheduler = scheduler ?? DealAlertScheduler(),
         _notify = notify ??
-            ((count) => DealNotifications.instance.showNewDeals(count));
+            ((count) => DealNotifications.instance.showNewDeals(count)),
+        _notifyExpiring = notifyExpiring ??
+            ((count, title) => DealNotifications.instance
+                .showExpiringSavedDeals(count, firstTitle: title));
 
   final Api _api;
   final NotificationPrefsStore _preferences;
   final DealAlertScheduler _scheduler;
   final DealAlertNotify _notify;
+  final ExpiringDealNotify _notifyExpiring;
 
   Future<bool> run() async {
     if (!await _preferences.loadOptIn()) return true;
@@ -49,6 +55,18 @@ class DealAlertPoller {
         if (!delivered) return false;
         await _preferences.saveLastAlertAt(DateTime.now());
       }
+      // Saved offers close on their own schedule, so this is checked whether or
+      // not new deals landed. It is warned about once a day at most, because a
+      // deal stays "ending soon" for several polls in a row.
+      if (summary.expiringSavedDealCount > 0 && await _expiryWarningIsDue()) {
+        final warned = await _notifyExpiring(
+          summary.expiringSavedDealCount,
+          summary.expiringSavedDealTitle,
+        );
+        if (warned) {
+          await _preferences.saveLastExpiryWarningAt(DateTime.now());
+        }
+      }
       await _preferences.saveDealAlertCursor(summary.latestCursor);
       return true;
     } on ApiException catch (error) {
@@ -62,6 +80,12 @@ class DealAlertPoller {
       debugPrint('Deal alert background check failed: $error');
       return false;
     }
+  }
+
+  Future<bool> _expiryWarningIsDue() async {
+    final last = await _preferences.loadLastExpiryWarningAt();
+    if (last == null) return true;
+    return DateTime.now().difference(last) >= const Duration(hours: 20);
   }
 
   Future<void> _disablePermanentWork() async {

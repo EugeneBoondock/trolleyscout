@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   getMemberSession: vi.fn(),
   getNotificationPreferences: vi.fn(),
+  listExpiringSavedDeals: vi.fn(),
   readDealAlertSummary: vi.fn(),
 }))
 
 vi.mock('../_shared/memberStore', () => ({
   getMemberSession: mocks.getMemberSession,
+  listExpiringSavedDeals: mocks.listExpiringSavedDeals,
 }))
 
 vi.mock('../_shared/notificationStore', () => ({
@@ -25,6 +27,7 @@ describe('/api/deal-alerts', () => {
     vi.resetAllMocks()
     mocks.getMemberSession.mockResolvedValue({ account: account() })
     mocks.getNotificationPreferences.mockResolvedValue({ newDeals: true })
+    mocks.listExpiringSavedDeals.mockResolvedValue([])
     mocks.readDealAlertSummary.mockResolvedValue({
       countCapped: false,
       latestCursor: 14,
@@ -64,6 +67,8 @@ describe('/api/deal-alerts', () => {
       data: {
         countCapped: boolean
         enabled: boolean
+        expiringSavedDealCount: number
+        expiringSavedDeals: unknown[]
         latestCursor: number
         totalNewDealCount: number
       }
@@ -74,10 +79,45 @@ describe('/api/deal-alerts', () => {
     expect(envelope.data).toEqual({
       countCapped: false,
       enabled: true,
+      expiringSavedDealCount: 0,
+      expiringSavedDeals: [],
       latestCursor: 14,
       totalNewDealCount: 0,
     })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('reports saved offers that are about to close, so the app can warn', async () => {
+    mocks.listExpiringSavedDeals.mockResolvedValue([
+      { id: 's1', retailerName: 'Checkers', title: 'Rice 2kg', validTo: '2026-07-26' },
+    ])
+
+    const response = await invoke('https://trolleyscout.co.za/api/deal-alerts?after=1')
+    const envelope = await response.json() as {
+      data: {
+        expiringSavedDealCount: number
+        expiringSavedDeals: Array<{ title: string; validTo: string }>
+      }
+    }
+
+    expect(response.status).toBe(200)
+    expect(envelope.data.expiringSavedDealCount).toBe(1)
+    expect(envelope.data.expiringSavedDeals[0]).toMatchObject({
+      title: 'Rice 2kg',
+      validTo: '2026-07-26',
+    })
+  })
+
+  it('still answers when the saved-offer lookup fails', async () => {
+    mocks.listExpiringSavedDeals.mockRejectedValue(new Error('storage down'))
+
+    const response = await invoke('https://trolleyscout.co.za/api/deal-alerts?after=1')
+    const envelope = await response.json() as {
+      data: { expiringSavedDealCount: number; totalNewDealCount: number }
+    }
+
+    expect(response.status).toBe(200)
+    expect(envelope.data.expiringSavedDealCount).toBe(0)
   })
 
   it('returns the total new deals after a device cursor', async () => {

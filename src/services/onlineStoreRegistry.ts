@@ -90,6 +90,9 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('Cameras', 'GoUAV', 'https://gouav.co.za/'),
     // Daily deals
     store('Deals', 'Hyperli', 'https://hyperli.com/'),
+    store('Deals', 'PerfectDealz', 'https://perfectdealz.co.za/'),
+    store('Deals', 'FomoSA', 'https://fomosa.co.za/'),
+    store('Deals', 'Looters', 'https://looters.co.za/'),
     // Fashion and footwear
     store('Fashion', 'Kheper Activewear', 'https://kheper.co.za/'),
     store('Fashion', 'Koko Active', 'https://kokoactive.co.za/'),
@@ -161,6 +164,7 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('Sport', 'Tackle Cabin SA', 'https://tacklecabin.co.za/'),
     store('Sport', 'Bike and Tackle', 'https://bikeandtackle.co.za/'),
     store('Sport', 'Safari Outdoor', 'https://safarioutdoor.co.za/'),
+    store('Sport', 'Hi-Tec', 'https://hi-tec.co.za/'),
     // Health and supplements
     store('Health', 'Xtreme Nutrition', 'https://xtremenutrition.co.za/'),
     store('Health', 'Feel Healthy', 'https://www.feelhealthy.co.za/'),

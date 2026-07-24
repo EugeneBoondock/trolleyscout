@@ -121,4 +121,50 @@ class DealNotifications {
       return false;
     }
   }
+
+  /// Warns that saved offers are about to close. A saved deal is a promise the
+  /// shopper made to themselves, so this is worth interrupting for — but it
+  /// rides its own channel so it can be silenced separately from new deals.
+  Future<bool> showExpiringSavedDeals(int count, {String? firstTitle}) async {
+    if (count <= 0) return true;
+    if (!await _ensureInit()) return false;
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'expiring_saved_deals',
+        'Saved deals ending',
+        channelDescription: 'Reminds you before a deal you saved runs out.',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('deal_alert'),
+      ),
+      iOS: DarwinNotificationDetails(
+        sound: 'deal_alert.wav',
+        presentSound: true,
+      ),
+    );
+
+    try {
+      final named = firstTitle != null && firstTitle.trim().isNotEmpty
+          ? firstTitle.trim()
+          : null;
+      final body = count == 1
+          ? (named != null
+              ? '$named is ending soon. Open the app before the price goes.'
+              : '1 deal you saved is ending soon. Open the app before the price goes.')
+          : '$count deals you saved are ending soon. Open the app before the prices go.';
+      await _plugin.show(
+        1002,
+        count == 1 ? 'A saved deal is ending' : 'Saved deals are ending',
+        body,
+        details,
+        payload: 'trolleyscout://saved',
+      );
+      return true;
+    } catch (error) {
+      debugPrint('Show notification failed: $error');
+      return false;
+    }
+  }
 }

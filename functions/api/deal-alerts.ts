@@ -1,6 +1,6 @@
 import { readDealAlertSummary } from '../_shared/dealAlertStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
-import { getMemberSession } from '../_shared/memberStore'
+import { getMemberSession, listExpiringSavedDeals } from '../_shared/memberStore'
 import { getNotificationPreferences } from '../_shared/notificationStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
@@ -11,6 +11,7 @@ const privateHeaders = {
 const emptyState = {
   countCapped: false,
   enabled: false,
+  expiringSavedDealCount: 0,
   latestCursor: 0,
   totalNewDealCount: 0,
 }
@@ -47,8 +48,22 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   try {
     const summary = await readDealAlertSummary(env, after)
+    // Answered on the same call the background check already makes, so a
+    // shopper hears their saved offer is closing without the app paying for a
+    // second request while it is asleep.
+    const expiring = await listExpiringSavedDeals(env, account.id).catch(() => [])
     return json(
-      { ...summary, enabled: true },
+      {
+        ...summary,
+        enabled: true,
+        expiringSavedDealCount: expiring.length,
+        expiringSavedDeals: expiring.slice(0, 5).map((deal) => ({
+          id: deal.id,
+          retailerName: deal.retailerName,
+          title: deal.title,
+          validTo: deal.validTo,
+        })),
+      },
       { headers: privateHeaders },
     )
   } catch {

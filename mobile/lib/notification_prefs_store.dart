@@ -8,6 +8,7 @@ class NotificationPrefsStore {
   static const _optInKey = 'notify_new_deals';
   static const _lastAlertKey = 'notify_last_alert_iso';
   static const _dealAlertCursorKey = 'notify_deal_alert_cursor';
+  static const _lastExpiryWarningKey = 'notify_last_expiry_warning_iso';
 
   Future<bool> loadOptIn() async {
     try {
@@ -67,12 +68,38 @@ class NotificationPrefsStore {
     }
   }
 
+  /// When the shopper was last warned that saved offers are closing. A deal
+  /// stays "ending soon" across several polls, so this keeps the warning to
+  /// once a day rather than every check.
+  Future<DateTime?> loadLastExpiryWarningAt() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final raw = preferences.getString(_lastExpiryWarningKey);
+      return raw == null ? null : DateTime.tryParse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLastExpiryWarningAt(DateTime value) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        _lastExpiryWarningKey,
+        value.toUtc().toIso8601String(),
+      );
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
   Future<void> clear() async {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.remove(_optInKey);
       await preferences.remove(_lastAlertKey);
       await preferences.remove(_dealAlertCursorKey);
+      await preferences.remove(_lastExpiryWarningKey);
     } catch (_) {
       // The next session sync retries the cleanup.
     }

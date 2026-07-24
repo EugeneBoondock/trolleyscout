@@ -44,6 +44,7 @@ import clsx from 'clsx'
 import { ScoutGuide, ScoutMascot } from './components/ScoutMascot'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
+import { RetailerPicker } from './components/RetailerPicker'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -4767,8 +4768,15 @@ function DiscoveryPanel({
     savingsOnly,
     sourceLabel,
   })
+  // Retailer picker rows: one entry per store that published a deal, in the
+  // order the feed lists them, carrying how many deals each store has.
+  const retailerDealCounts = new Map<string, number>()
+  for (const deal of allDeals) {
+    retailerDealCounts.set(deal.retailerId, (retailerDealCounts.get(deal.retailerId) ?? 0) + 1)
+  }
   const retailers = Array.from(
-    new Map(allDeals.map((deal) => [deal.retailerId, deal.retailerName])).entries(),
+    new Map(allDeals.map((deal) => [deal.retailerId, deal.retailerName])),
+    ([id, name]) => ({ count: retailerDealCounts.get(id) ?? 0, id, name }),
   )
   const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
   const catalogueRetailerCount = new Set(
@@ -4851,13 +4859,16 @@ function DiscoveryPanel({
         <details className="advanced-deal-filters">
           <summary>Advanced filters</summary>
           <div className="advanced-deal-filter-grid">
-            <label>
-              Retailer
-              <select onChange={(event) => setRetailerId(event.target.value)} value={retailerId}>
-                <option value="all">All retailers</option>
-                {retailers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            </label>
+            <div className="deal-filter-field">
+              <span id="deal-retailer-filter-label">Retailer</span>
+              <RetailerPicker
+                labelId="deal-retailer-filter-label"
+                onChange={setRetailerId}
+                options={retailers}
+                totalCount={allDeals.length}
+                value={retailerId}
+              />
+            </div>
             <label>
               Source
               <select onChange={(event) => setSourceLabel(event.target.value)} value={sourceLabel}>

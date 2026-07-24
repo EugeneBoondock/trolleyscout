@@ -353,7 +353,8 @@
   padding: 0 0.8rem 0.8rem;
 }
 
-.deal-filter-bar label:not(.deal-filter-check) {
+.deal-filter-bar label:not(.deal-filter-check),
+.deal-filter-bar .deal-filter-field {
   display: grid;
   gap: 0.3rem;
   color: var(--muted);
@@ -377,6 +378,165 @@
   align-items: center;
   color: var(--ink);
   font-weight: 700;
+}
+
+/* Retailer picker: the catalogue spans hundreds of stores, so the retailer
+   filter is a searchable popover instead of an endless <select>. */
+.retailer-picker {
+  position: relative;
+}
+
+.retailer-picker-trigger {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--bg);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.retailer-picker-trigger-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.retailer-picker-count,
+.retailer-picker-option-count {
+  flex-shrink: 0;
+  padding: 0.1rem 0.45rem;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.retailer-picker-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+}
+
+/* .search-field is declared later in this file, so the picker's overrides
+   need the extra class to win on specificity rather than source order. */
+.retailer-picker-panel .retailer-picker-search {
+  padding: 0.3rem 0.6rem;
+  border-width: 1px;
+}
+
+.deal-filter-bar .retailer-picker-search input[type="search"] {
+  min-height: 2.2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.retailer-picker-panel .retailer-picker-clear {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.75rem;
+  min-width: auto;
+  height: 1.75rem;
+  color: var(--red);
+}
+
+.retailer-picker-list {
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+.retailer-picker-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  color: var(--faint);
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.retailer-picker-option {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.5rem 0.55rem;
+  border: 2px solid transparent;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.retailer-picker-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.retailer-picker-option.is-active {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+.retailer-picker-option.is-selected {
+  background: var(--yellow);
+  color: #1c1710;
+  font-weight: 800;
+}
+
+.retailer-picker-option.is-selected .retailer-picker-option-count {
+  color: #1c1710;
+}
+
+.retailer-picker-empty {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+  padding: 0.4rem 0.55rem 0.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.retailer-picker-empty p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  /* Narrow screens get a bottom sheet so the list is never clipped by the
+     advanced-filters disclosure. */
+  .retailer-picker-panel {
+    position: fixed;
+    inset: auto 0.6rem 0.6rem;
+    max-height: 72svh;
+  }
+
+  .retailer-picker-list {
+    max-height: 48svh;
+  }
 }
 
 .basket-product-image {

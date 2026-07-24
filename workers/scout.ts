@@ -22,7 +22,10 @@ import {
   applyDuePlanChanges,
   type PlanChangeSweepDependencies,
 } from '../functions/_shared/planChangeSweep'
-import { purgeExpiredSessions } from '../functions/_shared/memberStore'
+import {
+  purgeExpiredSavedDeals,
+  purgeExpiredSessions,
+} from '../functions/_shared/memberStore'
 import { purgeExpired } from '../functions/_shared/locationStore'
 import { readAllStoreCatalogues } from '../functions/_shared/locationStore'
 import { readDueDiscoveredStores } from '../functions/_shared/locationStore'
@@ -458,6 +461,9 @@ export default {
     // Drop saves/comments for deals that have left the live feed so global save
     // counts fall as stores retire deals.
     await pruneWindowSocial(env).catch(() => undefined)
+    // Saved offers whose last day passed are already hidden on read; this
+    // clears them for good once the grace period is up.
+    await purgeExpiredSavedDeals(env).catch(() => undefined)
     // Expired member sessions are only ever removed here; the request path
     // filters on expires_at instead of paying a DELETE per authenticated call.
     await purgeExpiredSessions(env).catch(() => undefined)

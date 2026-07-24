@@ -124,6 +124,74 @@ void main() {
     expect(await preferences.loadDealAlertCursor(), isNull);
     expect(tasks.cancelledNames, [DealAlertScheduler.uniqueTaskName]);
   });
+
+  test('a saved offer that is closing warns the shopper', () async {
+    final preferences = NotificationPrefsStore();
+    await preferences.saveOptIn(true);
+    await preferences.saveDealAlertCursor(3);
+    final warnings = <String>[];
+
+    final completed = await DealAlertPoller(
+      api: _AlertApi(
+        latestCursor: 4,
+        newDealCount: 0,
+        expiringCount: 2,
+        expiringTitle: 'Rice 2kg',
+      ),
+      preferences: preferences,
+      notify: (_) => true,
+      notifyExpiring: (count, title) {
+        warnings.add('$count:$title');
+        return true;
+      },
+    ).run();
+
+    expect(completed, isTrue);
+    expect(warnings, ['2:Rice 2kg']);
+  });
+
+  test('the closing warning is not repeated on the next check that day',
+      () async {
+    final preferences = NotificationPrefsStore();
+    await preferences.saveOptIn(true);
+    await preferences.saveDealAlertCursor(3);
+    final warnings = <int>[];
+
+    DealAlertPoller poller() => DealAlertPoller(
+          api: _AlertApi(latestCursor: 4, newDealCount: 0, expiringCount: 1),
+          preferences: preferences,
+          notify: (_) => true,
+          notifyExpiring: (count, _) {
+            warnings.add(count);
+            return true;
+          },
+        );
+
+    await poller().run();
+    await poller().run();
+
+    expect(warnings, hasLength(1));
+  });
+
+  test('no closing warning is sent when nothing a shopper saved is ending',
+      () async {
+    final preferences = NotificationPrefsStore();
+    await preferences.saveOptIn(true);
+    await preferences.saveDealAlertCursor(3);
+    var warned = false;
+
+    await DealAlertPoller(
+      api: _AlertApi(latestCursor: 4, newDealCount: 1, expiringCount: 0),
+      preferences: preferences,
+      notify: (_) => true,
+      notifyExpiring: (_, __) {
+        warned = true;
+        return true;
+      },
+    ).run();
+
+    expect(warned, isFalse);
+  });
 }
 
 class _AlertApi extends Api {
@@ -132,10 +200,14 @@ class _AlertApi extends Api {
     required this.newDealCount,
     this.fail = false,
     this.failure,
+    this.expiringCount = 0,
+    this.expiringTitle,
   }) : super(baseUrl: 'https://example.test');
 
   final int latestCursor;
   final int newDealCount;
+  final int expiringCount;
+  final String? expiringTitle;
   final bool fail;
   final Object? failure;
   final List<int?> afterCursors = [];
@@ -146,6 +218,8 @@ class _AlertApi extends Api {
     if (failure != null) throw failure!;
     if (fail) throw StateError('offline');
     return DealAlertSummary(
+      expiringSavedDealCount: expiringCount,
+      expiringSavedDealTitle: expiringTitle,
       enabled: true,
       latestCursor: latestCursor,
       totalNewDealCount:

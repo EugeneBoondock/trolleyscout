@@ -18,6 +18,7 @@ import '../ux.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/common.dart' show validUntilInfo;
 import '../widgets/login_gate_card.dart';
+import '../widgets/retailer_picker.dart';
 import '../widgets/scout_mascot.dart';
 import '../widgets/share_card.dart';
 import '../widgets/skeleton.dart';
@@ -369,9 +370,9 @@ class _DealsScreenState extends State<DealsScreen> {
 
   Widget _buildBoard(DiscoveryResult result, {String? staleNote}) {
     final allDeals = _sortByPage([...result.deals, ..._siteDeals]);
-    final retailers = <String, String>{
-      for (final deal in allDeals) deal.retailerId: deal.retailerName,
-    };
+    // The store picker is built from the deals already on screen, so its rows
+    // and counts can never drift from what the list can actually show.
+    final retailers = retailerOptionsFromDeals(allDeals);
     final sources = allDeals
         .map((deal) => deal.sourceLabel)
         .where((source) => source.isNotEmpty)
@@ -394,7 +395,7 @@ class _DealsScreenState extends State<DealsScreen> {
     );
     if (deals.isEmpty) {
       return _dealBoard(result, deals, retailers, sources, const [], 0, 0,
-          staleNote: staleNote);
+          totalDealCount: allDeals.length, staleNote: staleNote);
     }
 
     // Logged-out shoppers see a taste of the list; a gate invites them in for
@@ -402,7 +403,9 @@ class _DealsScreenState extends State<DealsScreen> {
     if (!widget.isAuthenticated) {
       final sample = deals.take(_sampleLimit).toList();
       return _dealBoard(result, deals, retailers, sources, sample, 0, 1,
-          staleNote: staleNote, sampled: deals.length > sample.length);
+          totalDealCount: allDeals.length,
+          staleNote: staleNote,
+          sampled: deals.length > sample.length);
     }
 
     final pageCount = (deals.length / _perPage).ceil();
@@ -410,7 +413,7 @@ class _DealsScreenState extends State<DealsScreen> {
     final slice = deals.skip(page * _perPage).take(_perPage).toList();
 
     return _dealBoard(result, deals, retailers, sources, slice, page, pageCount,
-        staleNote: staleNote);
+        totalDealCount: allDeals.length, staleNote: staleNote);
   }
 
   static String _freshnessLabel(DateTime fetchedAt) {
@@ -426,11 +429,12 @@ class _DealsScreenState extends State<DealsScreen> {
   Widget _dealBoard(
     DiscoveryResult result,
     List<Deal> deals,
-    Map<String, String> retailers,
+    List<RetailerOption> retailers,
     List<String> sources,
     List<Deal> slice,
     int page,
     int pageCount, {
+    required int totalDealCount,
     String? staleNote,
     bool sampled = false,
   }) {
@@ -487,7 +491,7 @@ class _DealsScreenState extends State<DealsScreen> {
             child: TabBarView(
               children: [
                 _dealsTab(deals, retailers, sources, slice, page, pageCount,
-                    sampled: sampled),
+                    totalDealCount: totalDealCount, sampled: sampled),
                 _cataloguesTab(catalogueGroups),
               ],
             ),
@@ -499,11 +503,12 @@ class _DealsScreenState extends State<DealsScreen> {
 
   Widget _dealsTab(
     List<Deal> deals,
-    Map<String, String> retailers,
+    List<RetailerOption> retailers,
     List<String> sources,
     List<Deal> slice,
     int page,
     int pageCount, {
+    required int totalDealCount,
     bool sampled = false,
   }) {
     return RefreshIndicator(
@@ -528,7 +533,7 @@ class _DealsScreenState extends State<DealsScreen> {
             onChanged: _onSearchChanged,
           ),
           const SizedBox(height: 10),
-          _advancedFilters(retailers, sources),
+          _advancedFilters(retailers, sources, totalDealCount),
           const SizedBox(height: 8),
           _categoryChips(),
           if (_category == DealCategory.food) ...[
@@ -681,13 +686,54 @@ class _DealsScreenState extends State<DealsScreen> {
     );
   }
 
-  Widget _advancedFilters(Map<String, String> retailers, List<String> sources) {
+  Widget _advancedFilters(
+    List<RetailerOption> retailers,
+    List<String> sources,
+    int totalDealCount,
+  ) {
     final activeCount = [
       _retailerId != 'all',
       _sourceLabel != 'all',
       _imagesOnly,
       _savingsOnly,
     ].where((active) => active).length;
+    // Two form fields side by side stop fitting once the shopper scales text
+    // up, so they stack instead of squeezing — same rule ScreenHeader uses.
+    final stacked = MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
+        MediaQuery.sizeOf(context).width < 360;
+    final retailerField = RetailerFilterField(
+      options: retailers,
+      // Parity with the old dropdown: an id that no loaded deal carries (a
+      // Near-me store with nothing on special) reads as "All retailers".
+      selectedId: retailers.any((option) => option.id == _retailerId)
+          ? _retailerId
+          : allRetailersId,
+      totalDealCount: totalDealCount,
+      onChanged: (value) => setState(() {
+        _retailerId = value;
+        _page = 0;
+      }),
+    );
+    final sourceField = DropdownButtonFormField<String>(
+      key: ValueKey('source-$_sourceLabel'),
+      initialValue: sources.contains(_sourceLabel) ? _sourceLabel : 'all',
+      decoration: const InputDecoration(labelText: 'Source'),
+      // Source labels are free text ("Food and grocery specials"), so the field
+      // has to ellipsize rather than push its arrow off a half-width column.
+      isExpanded: true,
+      items: [
+        const DropdownMenuItem(value: 'all', child: Text('All sources')),
+        for (final source in sources)
+          DropdownMenuItem(
+            value: source,
+            child: Text(source, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (value) => setState(() {
+        _sourceLabel = value ?? 'all';
+        _page = 0;
+      }),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -711,53 +757,19 @@ class _DealsScreenState extends State<DealsScreen> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Column(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey('retailer-$_retailerId'),
-                          initialValue: retailers.containsKey(_retailerId)
-                              ? _retailerId
-                              : 'all',
-                          decoration:
-                              const InputDecoration(labelText: 'Retailer'),
-                          items: [
-                            const DropdownMenuItem(
-                                value: 'all', child: Text('All retailers')),
-                            for (final entry in retailers.entries)
-                              DropdownMenuItem(
-                                  value: entry.key, child: Text(entry.value)),
-                          ],
-                          onChanged: (value) => setState(() {
-                            _retailerId = value ?? 'all';
-                            _page = 0;
-                          }),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey('source-$_sourceLabel'),
-                          initialValue: sources.contains(_sourceLabel)
-                              ? _sourceLabel
-                              : 'all',
-                          decoration:
-                              const InputDecoration(labelText: 'Source'),
-                          items: [
-                            const DropdownMenuItem(
-                                value: 'all', child: Text('All sources')),
-                            for (final source in sources)
-                              DropdownMenuItem(
-                                  value: source, child: Text(source)),
-                          ],
-                          onChanged: (value) => setState(() {
-                            _sourceLabel = value ?? 'all';
-                            _page = 0;
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
+                  if (stacked) ...[
+                    retailerField,
+                    const SizedBox(height: 8),
+                    sourceField,
+                  ] else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: retailerField),
+                        const SizedBox(width: 8),
+                        Expanded(child: sourceField),
+                      ],
+                    ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
