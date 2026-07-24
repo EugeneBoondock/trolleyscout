@@ -13,6 +13,7 @@ import {
   buildWooCommerceDealsRequest,
   commonCommercePayloadItemCount,
   detectCommonCommercePlatform,
+  detectPageCurrency,
   parseCommonCommerceDeals,
   parseMagentoDeals,
   parseShopifyDeals,
@@ -379,5 +380,29 @@ describe('parser bounds and dispatch', () => {
     })).toBe(1)
     expect(commonCommercePayloadItemCount('vtex', payload)).toBe(1)
     expect(DEFAULT_COMMON_COMMERCE_PAGE_SIZE).toBeGreaterThan(0)
+  })
+
+  it('carries the WooCommerce trading currency onto each deal', () => {
+    const payload = [{
+      name: 'USD tea',
+      prices: { currency_code: 'USD', currency_minor_unit: 2, regular_price: '5000', sale_price: '4000' },
+    }]
+    expect(parseWooCommerceDeals(payload, STORE_ORIGIN)[0]?.currencyCode).toBe('USD')
+  })
+})
+
+describe('detectPageCurrency', () => {
+  it("reads Shopify's active currency (products.json omits it)", () => {
+    expect(detectPageCurrency('var x=1; Shopify.currency = {"active":"USD","rate":"1.0"};')).toBe('USD')
+    expect(detectPageCurrency("Shopify.currency={'active':'EUR'}".replace(/'/g, '"'))).toBe('EUR')
+  })
+
+  it('falls back to JSON-LD and Open Graph currency signals', () => {
+    expect(detectPageCurrency('{"@type":"Offer","priceCurrency":"ZAR","price":"10"}')).toBe('ZAR')
+    expect(detectPageCurrency('<meta property="og:price:currency" content="GBP">')).toBe('GBP')
+  })
+
+  it('returns nothing when no currency is stated', () => {
+    expect(detectPageCurrency('<html><body>No prices here</body></html>')).toBeUndefined()
   })
 })

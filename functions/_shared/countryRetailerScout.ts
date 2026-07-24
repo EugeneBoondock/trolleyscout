@@ -88,6 +88,7 @@ export function buildCountryRetailers(
     url: string
     verifiedBrand?: boolean
   }>,
+  limit = RESULT_LIMIT,
 ): Retailer[] {
   const byBrand = new Map<string, Retailer>()
 
@@ -126,7 +127,7 @@ export function buildCountryRetailers(
       }
       continue
     }
-    if (byBrand.size >= RESULT_LIMIT) break
+    if (byBrand.size >= limit) break
 
     const checked = new Date().toISOString().slice(0, 10)
 
@@ -274,6 +275,11 @@ export function applyCountryRetailerWebsites(
   })
 }
 
+// Curated registry entries are all trusted, so the generic discovery cap that
+// keeps a noisy live search in check must not hide them — a country with a
+// large verified list (Zimbabwe) should surface all of it.
+const REGISTERED_RETAILER_LIMIT = 200
+
 export function buildRegisteredCountryRetailers(country: CountryOption): Retailer[] {
   return buildCountryRetailers(
     country,
@@ -285,6 +291,7 @@ export function buildRegisteredCountryRetailers(country: CountryOption): Retaile
       url: source.url,
       verifiedBrand: true,
     })),
+    REGISTERED_RETAILER_LIMIT,
   )
 }
 

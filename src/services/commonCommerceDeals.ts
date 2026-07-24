@@ -37,6 +37,28 @@ const MAGENTO_SIGNATURE =
 const VTEX_SIGNATURE =
   /\bvtex(?:assets|commercestable|\.store| store framework)\b|\/_v\/public\/assets\/v1\/published\/vtex\./i
 
+// A store's own page usually states its trading currency even when its product
+// API omits it (Shopify's products.json carries no currency, so a USD-priced
+// Zimbabwean shop would otherwise fall back to the country default). Reads the
+// common signals so the deal keeps the price it is actually sold in.
+const PAGE_CURRENCY_PATTERNS = [
+  /Shopify\.currency\s*=\s*\{[^}]*?["']active["']\s*:\s*["']([A-Z]{3})["']/,
+  /["']priceCurrency["']\s*:\s*["']([A-Z]{3})["']/,
+  /property=["']og:price:currency["']\s+content=["']([A-Z]{3})["']/i,
+  /name=["']og:price:currency["']\s+content=["']([A-Z]{3})["']/i,
+  /["']currency(?:_code)?["']\s*:\s*["']([A-Z]{3})["']/,
+]
+
+export function detectPageCurrency(html: string): string | undefined {
+  for (const pattern of PAGE_CURRENCY_PATTERNS) {
+    const code = pattern.exec(html)?.[1]
+    if (code && /^[A-Z]{3}$/.test(code)) {
+      return code
+    }
+  }
+  return undefined
+}
+
 export function detectCommonCommercePlatform(
   html: string,
 ): CommonCommerceDetection | undefined {
@@ -296,6 +318,7 @@ export function parseWooCommerceDeals(
       { current, previous },
       sameOriginUrl(productPath, origin),
       publicUrl(firstImage ? textValue(firstImage.src) : '', origin),
+      currencyText(row.prices.currency_code),
     ))
   }
 
@@ -340,6 +363,7 @@ export function parseMagentoDeals(
       prices,
       sameOriginUrl(magentoProductPath(row), origin),
       publicUrl(image, origin),
+      magentoCurrency(row),
     ))
   }
 
@@ -479,19 +503,34 @@ function magentoDiscount(product: Record<string, unknown>): DiscountPrices | und
     : undefined
 }
 
+function magentoCurrency(product: Record<string, unknown>): string | undefined {
+  const range = isRecord(product.price_range) ? product.price_range : undefined
+  const minimum = range && isRecord(range.minimum_price) ? range.minimum_price : undefined
+  const final = minimum && isRecord(minimum.final_price) ? minimum.final_price : undefined
+  const regular = minimum && isRecord(minimum.regular_price) ? minimum.regular_price : undefined
+  return currencyText(final?.currency ?? regular?.currency)
+}
+
 function dealFromDiscount(
   title: string,
   prices: DiscountPrices,
   productUrl: string | undefined,
   imageUrl: string | undefined,
+  currencyCode?: string,
 ): PlatformDeal {
   return {
+    currencyCode,
     imageUrl,
     previousPriceCents: prices.previous,
     priceCents: prices.current,
     productUrl,
     title,
   }
+}
+
+function currencyText(value: unknown): string | undefined {
+  const code = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  return /^[A-Z]{3}$/.test(code) ? code : undefined
 }
 
 function shopifyImage(product: Record<string, unknown>): string {

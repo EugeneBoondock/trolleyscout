@@ -182,6 +182,7 @@ describe('runScheduledScout', () => {
       'discovery',
       'deal-sites',
       'stores',
+      'stores',
       'catalogue',
       'vouchers',
       'expire-location',
@@ -506,6 +507,7 @@ describe('runScheduledScout', () => {
       'structured',
       'legacy',
       'store',
+      'store',
       'catalogue',
       'vouchers',
       'expire-location',
@@ -513,6 +515,7 @@ describe('runScheduledScout', () => {
     ])
     expect(result).toMatchObject({
       catalogueScoutFailed: true,
+      onlineRetailerScoutFailed: true,
       storeScoutFailed: true,
       structuredScoutFailed: true,
     })

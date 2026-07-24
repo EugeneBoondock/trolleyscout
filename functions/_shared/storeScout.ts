@@ -48,9 +48,15 @@ import {
   buildCommonCommerceDealsRequest,
   commonCommercePayloadItemCount,
   detectCommonCommercePlatform,
+  detectPageCurrency,
   parseCommonCommerceDeals,
   type CommonCommercePlatform,
 } from '../../src/services/commonCommerceDeals'
+import {
+  TMPNP_STORE_HOST,
+  buildTmpnpSectionsUrl,
+  parseTmpnpSectionDeals,
+} from '../../src/services/tmpnpDeals'
 import {
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
@@ -386,6 +392,18 @@ async function scoutStore(
     }
   }
 
+  // A store matched to a custom-API retailer reads its live specials straight
+  // from that API. TM Pick n Pay's Next.js storefront bot-walls datacenter
+  // fetches with a redirect loop, so website scraping never would — but its
+  // api.tmpnponline.co.zw subdomain answers plain JSON.
+  if (safeHost(store.website) === TMPNP_STORE_HOST) {
+    const tmpnp = await scoutTmpnp(store, nowMs)
+    attempts.push(tmpnp)
+    if (tmpnp.promotions.length > 0) {
+      return tmpnp
+    }
+  }
+
   if (store.website) {
     const website = await scoutStoreWebsite(env, store, nowMs)
     attempts.push(website)
@@ -492,6 +510,7 @@ async function searchStoreCatalogue(
       store,
       commonCommerce.platform,
       officialOrigin,
+      detectPageCurrency(page.text),
     )
     if (platform.promotions.length > 0) {
       return { ...platform, resolvedWebsite: officialOrigin }
@@ -574,9 +593,10 @@ function platformDealToPromotion(
   sourceUrl: string,
   scopeLabel?: string,
 ): StorePromotion {
+  const currency = deal.currencyCode
   const savingText = deal.promoLabel ?? (
     deal.previousPriceCents !== undefined && deal.previousPriceCents > deal.priceCents
-      ? `Save ${storeMoneyText(store, deal.previousPriceCents - deal.priceCents)}`
+      ? `Save ${storeMoneyText(store, deal.previousPriceCents - deal.priceCents, currency)}`
       : undefined
   )
   return {
@@ -586,15 +606,17 @@ function platformDealToPromotion(
     placeId: store.placeId,
     previousPriceText:
       deal.previousPriceCents !== undefined
-        ? storeMoneyText(store, deal.previousPriceCents)
+        ? storeMoneyText(store, deal.previousPriceCents, currency)
         : undefined,
-    priceText: storeMoneyText(store, deal.priceCents),
+    priceText: storeMoneyText(store, deal.priceCents, currency),
     productUrl: deal.productUrl ?? sourceUrl,
     retailerId: store.retailerId,
     savingText: [scopeLabel, savingText].filter(Boolean).join(' · ') || undefined,
     sourceUrl: deal.productUrl ?? sourceUrl,
     storeName: store.name,
     title: deal.title,
+    validFrom: deal.validFrom,
+    validTo: deal.validTo,
   }
 }
 
@@ -734,6 +756,7 @@ async function scoutStoreWebsite(
         store,
         commonCommerce.platform,
         origin,
+        detectPageCurrency(page.text),
       )
       if (platform.promotions.length > 0) {
         return platform
@@ -908,6 +931,7 @@ async function scoutCommonCommercePlatform(
   store: NearbyStore,
   platform: CommonCommercePlatform,
   origin: string,
+  currencyHint?: string,
 ): Promise<ScoutOutcome> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -963,10 +987,12 @@ async function scoutCommonCommercePlatform(
         break
       }
     }
-    return deals.length > 0 ? commonCommerceOutcome(store, deals, origin) : outcome('empty')
+    return deals.length > 0
+      ? commonCommerceOutcome(store, deals, origin, currencyHint)
+      : outcome('empty')
   } catch (error) {
     if (deals.length > 0) {
-      return commonCommerceOutcome(store, deals, origin)
+      return commonCommerceOutcome(store, deals, origin, currencyHint)
     }
     return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
   } finally {
@@ -978,15 +1004,64 @@ function commonCommerceOutcome(
   store: NearbyStore,
   deals: PlatformDeal[],
   origin: string,
+  currencyHint?: string,
 ): ScoutOutcome {
   return outcome(
     'success',
-    deals.map((deal) => platformDealToPromotion(store, deal, origin, 'Online catalogue')),
+    deals.map((deal) =>
+      platformDealToPromotion(
+        store,
+        currencyHint && !deal.currencyCode ? { ...deal, currencyCode: currencyHint } : deal,
+        origin,
+        'Online catalogue',
+      ),
+    ),
   )
 }
 
-function storeMoneyText(store: NearbyStore, cents: number): string {
-  const currencyCode = countryFromCode(store.countryCode).currencyCode
+// Reads TM Pick n Pay's live specials from its custom commerce API. fetchText
+// only accepts text/html, so this JSON feed is read with a bounded raw fetch,
+// the same way the Shoprite Group browse-by-store API is.
+async function scoutTmpnp(store: NearbyStore, nowMs: number): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(buildTmpnpSectionsUrl(), {
+      headers: { accept: 'application/json', 'user-agent': BROWSER_UA },
+      signal: controller.signal,
+    })
+    if (
+      response.status === 408 ||
+      response.status === 425 ||
+      response.status === 429 ||
+      response.status >= 500
+    ) {
+      return outcome('transient_failure')
+    }
+    if (!response.ok) {
+      return outcome('permanent_unverified')
+    }
+
+    const payload = JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
+    const deals = parseTmpnpSectionDeals(payload, nowMs).slice(0, MAX_PLATFORM_DEALS)
+    if (deals.length === 0) {
+      return outcome('empty')
+    }
+
+    return outcome(
+      'success',
+      deals.map((deal) => platformDealToPromotion(store, deal, `https://${TMPNP_STORE_HOST}`)),
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function storeMoneyText(store: NearbyStore, cents: number, currencyOverride?: string): string {
+  const currencyCode = currencyOverride ?? countryFromCode(store.countryCode).currencyCode
   return currencyCode === 'ZAR'
     ? `R${(cents / 100).toFixed(2)}`
     : `${currencyCode} ${(cents / 100).toFixed(2)}`

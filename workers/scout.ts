@@ -32,6 +32,7 @@ import {
   type RetailerFeedScoutResult,
 } from '../functions/_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../functions/_shared/storeScout'
+import { buildRegistryOnlineStores } from '../functions/_shared/registryOnlineScout'
 import { runVoucherScout } from '../functions/_shared/voucherScout'
 import { pruneWindowSocial } from '../functions/_shared/windowSocialStore'
 import { refreshDiscoveryCache } from '../functions/api/discovery'
@@ -67,6 +68,11 @@ export interface ScheduledScoutDependencies {
 export interface ScheduledScoutOptions {
   refreshDealSources?: boolean
 }
+
+// How many online-only registry retailers to scout per deal-refresh run. Kept
+// small so a single run stays light; store_scout_log's day-long cooldown spreads
+// the full registry across successive runs.
+const ONLINE_RETAILER_SCOUT_LIMIT = 12
 
 const defaultDependencies: ScheduledScoutDependencies = {
   applyDuePlanChanges,
@@ -135,6 +141,24 @@ export async function runScheduledScout(
       await dependencies.scoutNearbyStores(env, dueStores, nowMs, dueStores.length)
     } catch {
       storeScoutFailed = true
+    }
+  }
+
+  // Online-only registry retailers have no physical branch for the near-me
+  // scout to reach, so scout a paced batch of them straight from the country
+  // registry. store_scout_log cools each one for a day after a visit, so this
+  // rotates through the list across runs instead of re-hitting the same sites.
+  let onlineRetailerScoutFailed = false
+  if (refreshDealSources) {
+    try {
+      await dependencies.scoutNearbyStores(
+        env,
+        buildRegistryOnlineStores(),
+        nowMs,
+        ONLINE_RETAILER_SCOUT_LIMIT,
+      )
+    } catch {
+      onlineRetailerScoutFailed = true
     }
   }
 
@@ -249,6 +273,7 @@ export async function runScheduledScout(
     externalDealCount,
     externalDealRefreshFailed,
     legacyRefreshFailed,
+    onlineRetailerScoutFailed,
     planChangeFailureCount,
     planChangesApplied,
     refreshedDealCount: refreshDealSources ? discovery?.summary.foundDealCount ?? 0 : 0,

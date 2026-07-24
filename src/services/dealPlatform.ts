@@ -38,6 +38,13 @@ export interface PlatformDeal {
   imageUrl?: string
   productUrl?: string
   promoLabel?: string
+  // The store's own currency when the source states it (e.g. a USD-priced
+  // Zimbabwean store). Without it, price text falls back to the country
+  // default, which is wrong wherever a shop prices in a foreign currency.
+  currencyCode?: string
+  // Sale window when the source carries dated promotion data.
+  validFrom?: string
+  validTo?: string
 }
 
 const KLEVU_KEY = /klevu[-_]?apiKey\s*[:=]\s*["'](klevu-[0-9a-z]+)["']/i

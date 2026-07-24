@@ -44,11 +44,19 @@ describe('global country support', () => {
         (retailer) => retailer.name,
       ),
     ).toEqual(['AngoMart', 'Maxi'])
-    expect(
-      buildRegisteredCountryRetailers(countryFromCode('ZW')).map(
-        (retailer) => retailer.name,
-      ),
-    ).toEqual(['SPAR Zimbabwe', 'TM Pick n Pay'])
+    const zimbabweRetailers = buildRegisteredCountryRetailers(countryFromCode('ZW')).map(
+      (retailer) => retailer.name,
+    )
+    // The Zimbabwe registry is the large verified set, so it is asserted by
+    // key members and volume rather than an exhaustive list.
+    expect(zimbabweRetailers).toEqual(expect.arrayContaining([
+      'TM Pick n Pay',
+      'SPAR Zimbabwe',
+      'Sai Mart',
+      'Greens Supermarket',
+      'Nash Furnishers',
+    ]))
+    expect(zimbabweRetailers.length).toBeGreaterThan(50)
   })
 
   it('builds a country retailer directory from likely official results', () => {

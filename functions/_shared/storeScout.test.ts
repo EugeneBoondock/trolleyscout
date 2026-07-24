@@ -530,16 +530,16 @@ describe('scheduled discovered-store scouting', () => {
     const retailers = [{
       accentColor: '#00843d',
       group: 'Supermarket',
-      id: 'country:zw:fresh-basket-co-zw',
-      name: 'Fresh Basket Zimbabwe',
+      id: 'country:zw:fresh-choice-co-zw',
+      name: 'Fresh Choice Zimbabwe',
       program: 'Zimbabwe store',
-      shortName: 'Fresh Basket Zimbabwe',
+      shortName: 'Fresh Choice Zimbabwe',
       sourceNote: 'Official Zimbabwe website.',
       sources: [
         {
           kind: 'store-finder',
           label: 'Official website',
-          url: 'https://fresh-basket.co.zw/',
+          url: 'https://fresh-choice.co.zw/',
         },
       ],
       verifiedOn: '2026-07-23',
@@ -552,8 +552,8 @@ describe('scheduled discovered-store scouting', () => {
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
-      return url.hostname === 'fresh-basket.co.zw'
-        ? htmlResponse(jsonLdDeal('Zimbabwe branch rice 2kg', 'Fresh Basket Zimbabwe'))
+      return url.hostname === 'fresh-choice.co.zw'
+        ? htmlResponse(jsonLdDeal('Zimbabwe branch rice 2kg', 'Fresh Choice Zimbabwe'))
         : htmlResponse('')
     }))
 
@@ -562,7 +562,7 @@ describe('scheduled discovered-store scouting', () => {
       [discoveredStore({
         countryCode: 'ZW',
         countryName: 'Zimbabwe',
-        name: 'Fresh Basket Harare',
+        name: 'Fresh Choice Harare',
       })],
       Date.parse('2026-07-23T10:00:00.000Z'),
       1,
@@ -571,7 +571,7 @@ describe('scheduled discovered-store scouting', () => {
     const row = await db.prepare(
       `SELECT website FROM store_scout_log WHERE place_id = 'market-place'`,
     ).first<{ website: string }>()
-    expect(row?.website).toBe('https://fresh-basket.co.zw/')
+    expect(row?.website).toBe('https://fresh-choice.co.zw/')
   })
 
   it('checks a discovered branch page before generic specials paths', async () => {

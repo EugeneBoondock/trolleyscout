@@ -232,13 +232,122 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       property('Property Zimbabwe', 'https://www.property.co.zw/houses-for-sale', 'https://www.property.co.zw/'),
       property('Propertybook', 'https://www.propertybook.co.zw/'),
     ],
+    // Verified reachable and platform-probed in July 2026 (WooCommerce /
+    // Shopify / Magento storefronts the deal detector can read, plus notable
+    // catalogue storefronts). TM Pick n Pay serves live specials from its
+    // custom commerce API (read by the store scout on host match); the rest
+    // are read by the platform detector when scouted. Choppies exited Zimbabwe
+    // (rebranded Sai Mart), so it is not listed here.
     retailSources: [
-      specials('TM Pick n Pay', 'https://tmpnponline.co.zw/catalog', 'In-store catalogues'),
-      store('TM Pick n Pay', 'https://tmpnponline.co.zw/', 'Online catalogue'),
+      // National chains and grocers (TM serves live specials via its custom API).
+      specials('TM Pick n Pay', 'https://tmpnponline.co.zw/', 'Online specials'),
+      store('TM Pick n Pay', 'https://tmpnponline.co.zw/', 'Online store'),
       specials('SPAR Zimbabwe', 'https://www.spar.co.zw/promos'),
+      store('Sai Mart', 'https://saimartzim.co.zw/', 'Online store'),
+      specials('TV Sales & Home', 'https://www.tvsales.co.zw/', 'On-sale products'),
+      specials('N. Richards Group', 'https://nrichards.co.zw/', 'On-sale products'),
+      store('Halsteds', 'https://www.halsteds.co.zw/', 'Online store'),
+      store('Food Basket', 'https://www.foodbasket.co.zw/', 'Online store'),
+      store('Freshco Market', 'https://freshcomarket.co.zw/', 'Online store'),
+      // Additional Gemini-list storefronts verified reachable.
+      specials('Voltman Hardware', 'https://www.voltmanhardware.co.zw/', 'On-sale products'),
+      store('Electrosales Hardware', 'https://www.electrosales.co.zw/', 'Online store'),
+      store('Mega Save Wholesalers', 'https://www.megasave.co.zw/', 'Online store'),
+      store('TillPoint', 'https://tillpoint.co.zw/', 'Online grocery delivery'),
+      store('ShopAtZim', 'https://shopatzim.co.zw/', 'Online store'),
+      store('Zimall', 'https://www.zimall.co.zw/', 'Online marketplace'),
+      store('Edgars Zimbabwe', 'https://www.edgarsstores.co.zw/', 'Fashion store'),
+      store('Hitech Electronics', 'https://www.hitechelectronics.co.zw/', 'Online store'),
+      store('National Seeds FarmShop', 'https://natseeds.co.zw/farmshop/', 'Farm supplies catalogue'),
+      store('Malaicha', 'https://malaicha.com/', 'Diaspora groceries'),
+      store('Carson Stores', 'https://carsonstores.co.zw/', 'Wholesale store'),
+      store('Platinum Pharmacy', 'https://platinumpharmacy.co.zw/', 'Online pharmacy'),
+      specials('Jet Stores', 'https://jetstores.co.zw/', 'On-sale products'),
+      // Groceries, food & butchers
+      specials('4 Harvests', 'https://4harvests.co.zw/', 'On-sale products'),
+      specials('Budget Meat Shop', 'https://budgetmeatshop.co.zw/', 'On-sale products'),
+      specials('Food World', 'https://www.foodworld.co.zw/', 'On-sale products'),
+      specials('Gateway Stream Shop', 'https://shop.gatewaystream.com/', 'On-sale products'),
+      specials('GetMore', 'https://getmore.co.zw/', 'On-sale products'),
+      specials('Greens Supermarket', 'https://greensonline.co.zw/', 'On-sale products'),
+      specials('Shop2Door', 'https://shop2door.co.zw/', 'On-sale products'),
+      specials('Solide Online', 'https://solide.store/', 'On-sale products'),
+      specials('Tengai Online', 'https://tengaionline.com/', 'On-sale products'),
+      specials('Vegetable Basket', 'https://www.vegetablebasket.co.zw/', 'On-sale products'),
+      specials('Z-Store', 'https://zstore.co.zw/', 'On-sale products'),
+      specials('ZimBasket', 'https://www.zimbasket.co.zw/', 'On-sale products'),
+      // General retail & marketplaces
+      specials('Ownai Marketplace', 'https://ownai.co.zw/marketplace/', 'On-sale products'),
+      specials('Zambezi Cart', 'https://zambezicart.com/', 'On-sale products'),
+      specials('ZikiMall', 'https://shop.zikimall.com/', 'On-sale products'),
+      specials('ZimbabweMall/Post', 'https://zimbabwemall.post/', 'On-sale products'),
+      // Furniture, home & appliances
+      specials('Beta Home Appliance', 'https://betahomeappliance.co.zw/', 'On-sale products'),
+      specials('Checkers Office & Home', 'https://checkers.co.zw/shop/', 'On-sale products'),
+      specials('Fazak Home & Hyper', 'https://fazak.co.zw/product-category/furniture_and_appliances/', 'On-sale products'),
+      specials('Happy Home Zimbabwe', 'https://happyhomezimbabwe.com/', 'On-sale products'),
+      specials('Nash Furnishers', 'https://nashfurnishers.co.zw/', 'On-sale products'),
+      // Electronics, computers & phones
+      specials('Econet Devices', 'https://www.econet.co.zw/devices/', 'On-sale products'),
+      specials('FI Laptops', 'https://www.filaptops.co.zw/', 'On-sale products'),
+      specials('Fozzby Investments', 'https://fozzby.co.zw/', 'On-sale products'),
+      specials('Gadgetszone Zimbabwe', 'https://gadgetszone.co.zw/', 'On-sale products'),
+      specials('Goldtech Electronics', 'https://goldtechelectronics.co.zw/', 'On-sale products'),
+      specials('Innovative Technologies', 'https://innovative.co.zw/', 'On-sale products'),
+      specials('Magnet E-Store', 'https://magnet.co.zw/', 'On-sale products'),
+      specials('Micro Man', 'https://microman.co.zw/', 'On-sale products'),
+      specials('Zelpac', 'https://zelpac.co.zw/', 'On-sale products'),
+      // Hardware, building, pools & solar
+      specials('Ace Hardware Zimbabwe', 'https://acehardware.co.zw/', 'On-sale products'),
+      specials('CTM Zimbabwe', 'https://www.ctm.co.zw/', 'On-sale products'),
+      specials('Eezi Pool', 'https://eezipool.com/shop/', 'On-sale products'),
+      specials('Infinity Solar', 'https://www.infinitysolar.co.zw/', 'On-sale products'),
+      specials('Palmer Construction Shop', 'https://palmer.co.zw/shop/', 'On-sale products'),
+      specials('Shinko Afrika', 'https://shinkoafrika.co.zw/', 'On-sale products'),
+      specials('Solar Flair', 'https://solarflair.co.zw/', 'On-sale products'),
+      specials('Solar Power Shop', 'https://solarpowershop.co.zw/', 'On-sale products'),
+      specials('Solar Shack', 'https://solarshack.co.zw/shop/', 'On-sale products'),
+      specials('Solar Zone', 'https://solar-zone.co.zw/', 'On-sale products'),
+      specials('Sungrow Zimbabwe', 'https://sungrow.co.zw/shop-2/', 'On-sale products'),
+      specials('The Poolman', 'https://thepoolman.co.zw/shop/', 'On-sale products'),
+      specials('World of Sun & Wind Power', 'https://worldofsunandwindpower.co.zw/', 'On-sale products'),
+      specials('Zimbabwe Building Materials Suppliers (ZBMS)', 'https://www.zbms.co.zw/shop/', 'On-sale products'),
+      // Pharmacy, health & medical supplies
+      specials('Bestzone Pharmacies', 'https://bestzonepharmacies.co.zw/', 'On-sale products'),
+      specials('Bumblebee Pharmacy', 'https://bumblebeepharmacy.co.zw/shop-2/', 'On-sale products'),
+      specials('CAPS Pharmaceuticals', 'https://caps.co.zw/products/', 'On-sale products'),
+      specials('Chemayde Pharmacy', 'https://chemaydepharmacy.com/', 'On-sale products'),
+      specials('CJV Medical Supplies', 'https://cjvmedics.co.zw/', 'On-sale products'),
+      specials('Emergency Pharmacy', 'https://emergencypharmacy.co.zw/', 'On-sale products'),
+      specials('Lady Becky Medical', 'https://ladybecky.co.zw/', 'On-sale products'),
+      specials('Pentafam', 'https://pentafam.co.zw/', 'On-sale products'),
+      // Books, stationery, office & school
+      specials('Denmut Bookstore', 'https://denmutbookstore.co.zw/', 'On-sale products'),
+      specials('Macedonia Projects', 'https://macedoniaprojects.co.zw/shop/', 'On-sale products'),
+      specials('Mutare Computers / Liteflush', 'https://liteflush.co.zw/', 'On-sale products'),
+      specials('Peupum Stationers', 'https://peupum.co.zw/', 'On-sale products'),
+      // Fashion, beauty, jewellery & sport
+      specials('Claytess Jewellers', 'https://claytessjewellers.co.zw/', 'On-sale products'),
+      specials('Eileen M Jewellery', 'https://eileenmjewellery.com/', 'On-sale products'),
+      specials('Pfeka', 'https://pfeka.com/collections/sports-apparel/', 'On-sale products'),
+      specials('The Zuri Collection', 'https://thezuricollection.com/', 'On-sale products'),
+      specials('ZIFA Shop', 'https://shop.zifa.co.zw/shop/', 'On-sale products'),
+      // Agriculture, feed & farm equipment
+      specials('AFB', 'https://afb.co.zw/shop/', 'On-sale products'),
+      specials('Seed Co Zimbabwe Online Shop', 'https://www.seedcoonlineshop.com/zw/', 'On-sale products'),
+      // Automotive parts & spares
+      specials('3way Auto Parts', 'https://www.3way.co.zw/', 'On-sale products'),
+      specials('Kopje Spares', 'https://kopjespares.co.zw/', 'On-sale products'),
+      specials('Zim Midas', 'https://www.zimmidas.co.zw/', 'On-sale products'),
+      // Pet supplies
+      specials('Dog Lovers Zimbabwe', 'https://doglovers.co.zw/', 'On-sale products'),
     ],
     retailStatus: 'public-web',
   },
+}
+
+export function getSadcCountryCodes(): string[] {
+  return Object.keys(SADC_MARKET_SOURCES)
 }
 
 export function getSadcRetailSources(countryCode: string): SadcRetailSource[] {
