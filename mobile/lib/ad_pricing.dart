@@ -4,7 +4,7 @@
 // itself is fetched from the API and drives the pickers; this file just prices a
 // choice locally and formats rand.
 
-import 'widgets/common.dart' show formatMoney;
+import 'currency.dart';
 
 class AdRateCard {
   const AdRateCard({
@@ -35,17 +35,11 @@ class AdRateCard {
       AdPlacementOption(id: 'feed', label: 'Deals feed', multiplierPct: 100),
       AdPlacementOption(id: 'near_me', label: 'Near me', multiplierPct: 120),
     ],
-    provinces: [
-      'Eastern Cape',
-      'Free State',
-      'Gauteng',
-      'KwaZulu-Natal',
-      'Limpopo',
-      'Mpumalanga',
-      'North West',
-      'Northern Cape',
-      'Western Cape',
-    ],
+    // No regions offline: only the server knows which regions an advertiser in
+    // this country may target, and offering South African provinces to someone
+    // outside South Africa would be worse than offering none. An empty list
+    // simply leaves country-wide targeting.
+    provinces: [],
   );
 
   int clampReach(int reach) {
@@ -80,10 +74,9 @@ class AdRateCard {
             .map((value) => value.toInt())
             .toList() ??
         fallback.reachOptions;
-    final provinces = (json['provinces'] as List?)
-            ?.whereType<String>()
-            .toList() ??
-        fallback.provinces;
+    final provinces =
+        (json['provinces'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
     return AdRateCard(
       perPersonCents: (json['perPersonCents'] as num?)?.toInt() ?? fallback.perPersonCents,
       minCents: (json['minCents'] as num?)?.toInt() ?? fallback.minCents,
@@ -91,7 +84,7 @@ class AdRateCard {
       maxReach: (json['maxReach'] as num?)?.toInt() ?? fallback.maxReach,
       reachOptions: reachOptions.isEmpty ? fallback.reachOptions : reachOptions,
       placements: placements.isEmpty ? fallback.placements : placements,
-      provinces: provinces.isEmpty ? fallback.provinces : provinces,
+      provinces: provinces,
     );
   }
 }
@@ -114,5 +107,6 @@ class AdPlacementOption {
       );
 }
 
-/// "R2000" for whole rand, "R100.50" when there are cents.
-String formatRandFromCents(int cents) => formatMoney(cents);
+/// "R2 000" for whole rand, "R100.50" when there are cents. Advertising is
+/// charged through PayFast in rand, so this stays rand for every advertiser.
+String formatRandFromCents(int cents) => Currency.rand.formatShort(cents);

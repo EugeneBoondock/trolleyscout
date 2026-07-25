@@ -3,31 +3,20 @@ import 'package:trolley_scout/ad_pricing.dart';
 import 'package:trolley_scout/widgets/common.dart';
 
 void main() {
-  group('formatMoney (canonical whole-vs-decimal formatter)', () {
-    test('drops decimals for a whole rand amount', () {
-      expect(formatMoney(5000), 'R50');
-    });
-
-    test('keeps two decimals when there are cents', () {
-      expect(formatMoney(5050), 'R50.50');
-    });
-
-    test('supports a currency symbol override', () {
-      expect(formatMoney(2500, symbol: r'$'), r'$25');
-      expect(formatMoney(2599, symbol: r'$'), r'$25.99');
-    });
-  });
-
   group('formatRand (always two decimals)', () {
     test('always shows two decimals, even for a whole amount', () {
       expect(formatRand(5000), 'R50.00');
       expect(formatRand(5050), 'R50.50');
     });
+
+    test('stays rand however the app is configured', () {
+      expect(formatRand(123456), 'R1 234.56');
+    });
   });
 
-  group('formatRandFromCents (thin wrapper over formatMoney)', () {
+  group('formatRandFromCents (advertising, billed in rand)', () {
     test('drops decimals for a whole rand amount', () {
-      expect(formatRandFromCents(200000), 'R2000');
+      expect(formatRandFromCents(200000), 'R2 000');
     });
 
     test('keeps two decimals when there are cents', () {

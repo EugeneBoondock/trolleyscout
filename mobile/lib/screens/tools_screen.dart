@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../currency.dart';
 import '../theme.dart';
 import '../widgets/auto_compare_tool.dart';
 import '../widgets/common.dart';
@@ -24,7 +25,10 @@ class ToolsScreen extends StatelessWidget {
         ),
         if (api != null) AutoCompareTool(api: api!),
         const SizedBox(height: 24),
-        const ShopCompareTool(),
+        // The shopper types their own prices in, so prompt and total them in
+        // their own money. Signed out, there is no country yet: rand, the
+        // platform's home currency, is the honest default.
+        ShopCompareTool(currency: Currency.of(api?.effectiveCurrencyCode)),
         const SizedBox(height: 12),
         Text(
           'Prices are checked against available store results. Open a source result to confirm availability before travelling.',

@@ -110,13 +110,15 @@ int? _cheapestIndex(List<int?> prices) {
   return tie ? null : bestIndex;
 }
 
+/// Reads a price the shopper typed. The field is prompted in their own money,
+/// so whatever currency symbol they type is dropped rather than assumed to be a
+/// rand: "R24,99", r"$24.99" and "24.99" all land on the same cents.
 int? parsePriceInput(String text) {
-  final cleaned = text.replaceAll(RegExp(r'[rR\s]'), '').replaceAll(',', '.').trim();
+  final cleaned =
+      text.replaceAll(RegExp(r'[^\d.,]'), '').replaceAll(',', '.').trim();
   if (cleaned.isEmpty || !RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(cleaned)) {
     return null;
   }
-  final rands = double.tryParse(cleaned);
-  return rands != null && rands > 0 ? (rands * 100).round() : null;
+  final amount = double.tryParse(cleaned);
+  return amount != null && amount > 0 ? (amount * 100).round() : null;
 }
-
-String formatCents(int cents) => 'R${(cents / 100).toStringAsFixed(2)}';

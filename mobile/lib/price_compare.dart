@@ -59,13 +59,17 @@ class AutoComparison {
   final int missingCount;
 }
 
-/// Pulls the first rand amount out of free text: "R24.99", "R 24,99 each",
-/// "Now R19" all yield cents. Returns null when there is no price.
+/// Pulls the first money amount out of free text: "R24.99", "R 24,99 each",
+/// "Now R19", "$4.99" all yield cents. Deal text carries whichever symbol the
+/// store priced in, so the symbol is read, not assumed. Returns null when there
+/// is no price.
 int? extractPriceCents(String? text) {
   if (text == null || text.isEmpty) return null;
 
-  final match = RegExp(r'R\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false).firstMatch(text) ??
-      RegExp(r'(\d+[.,]\d{2})').firstMatch(text);
+  final match =
+      RegExp(r'[R$€£]\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
+              .firstMatch(text) ??
+          RegExp(r'(\d+[.,]\d{2})').firstMatch(text);
   if (match == null) return null;
 
   final rands = double.tryParse(match.group(1)!.replaceAll(',', '.'));
@@ -176,5 +180,3 @@ AutoComparison autoComparePrices(
     savingsCents: dearestCents - cheapestCents,
   );
 }
-
-String formatCents(int cents) => 'R${(cents / 100).toStringAsFixed(2)}';

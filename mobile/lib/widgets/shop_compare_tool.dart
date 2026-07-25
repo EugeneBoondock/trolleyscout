@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../currency.dart';
 import '../shop_compare.dart';
 import '../theme.dart';
 import '../ux.dart';
@@ -8,7 +9,11 @@ import '../ux.dart';
 /// and Trolley Scout totals each shop, flags the cheapest per item, and names
 /// the cheapest shop overall. Ephemeral: nothing is saved.
 class ShopCompareTool extends StatefulWidget {
-  const ShopCompareTool({super.key});
+  const ShopCompareTool({super.key, required this.currency});
+
+  /// The shopper's own money — what their typed prices are prompted and
+  /// totalled in.
+  final Currency currency;
 
   @override
   State<ShopCompareTool> createState() => _ShopCompareToolState();
@@ -185,7 +190,9 @@ class _ShopCompareToolState extends State<ShopCompareTool> {
                       ? TS.greenOf(context)
                       : TS.surfaceOf(context),
                   child: Text(
-                    shop.totalCents > 0 ? formatCents(shop.totalCents) : '·',
+                    shop.totalCents > 0
+                        ? widget.currency.format(shop.totalCents)
+                        : '·',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
@@ -227,7 +234,7 @@ class _ShopCompareToolState extends State<ShopCompareTool> {
             ),
             child: Text(
               '${_shops[comparison.cheapestShopIndex!].text} is cheapest for this list, '
-              'saving you ${formatCents(comparison.savingsCents)}'
+              'saving you ${widget.currency.format(comparison.savingsCents)}'
               '${comparison.hasCompleteShop ? '' : ' (some items are not priced everywhere)'}.',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
@@ -285,7 +292,7 @@ class _ShopCompareToolState extends State<ShopCompareTool> {
                   },
                   decoration: InputDecoration(
                     isDense: true,
-                    hintText: 'R0',
+                    hintText: widget.currency.formatShort(0),
                     filled: pricedIndex >= 0 &&
                         comparison.cheapestShopByItem.length > pricedIndex &&
                         comparison.cheapestShopByItem[pricedIndex] == i,

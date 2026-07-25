@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trolley_scout/currency.dart';
 import 'package:trolley_scout/unit_price.dart';
 
 void main() {
@@ -9,6 +10,10 @@ void main() {
 
     test('parses a plain decimal amount', () {
       expect(parseRandsToCents('12.50'), 1250);
+    });
+
+    test('parses a price typed with the symbol of another country', () {
+      expect(parseRandsToCents(r'$24.99'), 2499);
     });
 
     test('returns null for non-numeric input', () {
@@ -66,9 +71,15 @@ void main() {
 
   group('formatUnitPrice', () {
     test('formats per-kg, per-litre and each', () {
-      expect(formatUnitPrice(3000, BaseUnit.kg), 'R30.00 / kg');
-      expect(formatUnitPrice(1550, BaseUnit.litre), 'R15.50 / L');
-      expect(formatUnitPrice(999, BaseUnit.each), 'R9.99 each');
+      expect(formatUnitPrice(3000, BaseUnit.kg, Currency.rand), 'R30.00 / kg');
+      expect(
+          formatUnitPrice(1550, BaseUnit.litre, Currency.rand), 'R15.50 / L');
+      expect(formatUnitPrice(999, BaseUnit.each, Currency.rand), 'R9.99 each');
+    });
+
+    test('uses the currency the shopper actually spends', () {
+      expect(formatUnitPrice(3000, BaseUnit.kg, Currency.of('USD')),
+          r'$30.00 / kg');
     });
   });
 }

@@ -38,13 +38,26 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
 
   String _placement = 'feed';
   late int _reach = _rateCard.reachOptions.first;
-  String? _province; // null = all South Africa
+  String? _region; // null = the advertiser's whole country
   String? _payingId;
+  CountryPricing? _country;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadCountry();
+  }
+
+  /// Names the advertiser's own country in the targeting picker, so a shopper
+  /// outside South Africa is not offered "All of South Africa".
+  Future<void> _loadCountry() async {
+    try {
+      final country = await widget.api.country();
+      if (mounted) setState(() => _country = country);
+    } catch (_) {
+      // The picker falls back to a neutral country-wide label.
+    }
   }
 
   @override
@@ -96,7 +109,7 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
         imageUrl: _imageUrl.text.trim().isEmpty ? null : _imageUrl.text.trim(),
         placement: _placement,
         reach: _reach,
-        province: _province,
+        province: _region,
       ));
       if (!mounted) return;
       _title.clear();
@@ -160,7 +173,7 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
           eyebrow: 'Advertise',
           title: 'Reach money-savvy shoppers',
           description:
-              'Put your store or product in front of South Africans hunting for '
+              'Put your store or product in front of shoppers hunting for '
               'deals. Submit an ad, we review it, then you pay only for the reach '
               'you choose. Ads show as clearly-labelled Sponsored cards.',
         ),
@@ -298,15 +311,20 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
             Text('WHERE (OPTIONAL)', style: TS.eyebrowOf(context)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String?>(
-              initialValue: _province,
-              decoration: const InputDecoration(labelText: 'Target province'),
+              initialValue: _region,
+              decoration: const InputDecoration(labelText: 'Target region'),
               items: [
-                const DropdownMenuItem(
-                    value: null, child: Text('All of South Africa')),
-                for (final province in _rateCard.provinces)
-                  DropdownMenuItem(value: province, child: Text(province)),
+                DropdownMenuItem(
+                    value: null,
+                    child: Text(_country == null
+                        ? 'Everywhere we reach'
+                        : 'All of ${_country!.name}')),
+                // Whichever regions the rate card offers for this advertiser;
+                // none means country-wide is the only choice.
+                for (final region in _rateCard.provinces)
+                  DropdownMenuItem(value: region, child: Text(region)),
               ],
-              onChanged: (value) => setState(() => _province = value),
+              onChanged: (value) => setState(() => _region = value),
             ),
             const SizedBox(height: 16),
             Container(

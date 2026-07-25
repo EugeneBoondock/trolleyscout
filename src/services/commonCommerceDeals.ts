@@ -6,7 +6,11 @@ export type { PlatformDeal } from './dealPlatform'
 // prove that a price or stock level applies to a nearby physical branch.
 export const COMMON_COMMERCE_DEAL_SCOPE = 'online-catalogue' as const
 export const MAX_COMMON_COMMERCE_PAGE_SIZE = 100
-export const MAX_COMMON_COMMERCE_DEALS = 40
+// How many discounts to keep from one shop. The pages are fetched either way —
+// six pages of fifty is three hundred products scanned — so a low ceiling threw
+// away work already paid for and left a shop running a hundred markdowns
+// represented by forty.
+export const MAX_COMMON_COMMERCE_DEALS = 150
 // A large catalogue can carry its discounts well past the first pages (a ZW
 // Shopify store was seen with its first discount only after product 100).
 // Paging deeper costs nothing for a store with plenty of deals — the scout

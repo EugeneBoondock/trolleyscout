@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../api.dart';
+import '../currency.dart';
 import '../discovery_cache.dart';
 import '../price_display.dart';
 import '../theme.dart';
@@ -151,6 +152,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 14),
               _SavingsHero(
                 summary: data.basket.summary,
+                // The money kept is the shopper's own money, in their own
+                // currency — never rand at someone who does not spend rand.
+                currency: Currency.of(widget.api.effectiveCurrencyCode),
                 onOpenBasket: () => widget.onNavigate(AppDestination.basket),
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
               ),
@@ -363,11 +367,13 @@ class _PlanPill extends StatelessWidget {
 class _SavingsHero extends StatelessWidget {
   const _SavingsHero({
     required this.summary,
+    required this.currency,
     required this.onOpenBasket,
     required this.onFindDeals,
   });
 
   final BasketSummary summary;
+  final Currency currency;
   final VoidCallback onOpenBasket;
   final VoidCallback onFindDeals;
 
@@ -399,14 +405,15 @@ class _SavingsHero extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _CountUpRand(
+                        _CountUpMoney(
                           cents: summary.savingsCents,
+                          currency: currency,
                           animate: !reduceMotion,
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'off a basket that would have cost '
-                          '${formatRand(fullPrice)}.',
+                          '${currency.format(fullPrice)}.',
                           style: TextStyle(
                             color: TS.mutedOf(context),
                             fontSize: 13.5,
@@ -429,7 +436,7 @@ class _SavingsHero extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
-                      'in your basket · you pay ${formatRand(summary.totalCents)}',
+                      'in your basket · you pay ${currency.format(summary.totalCents)}',
                       style:
                           TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
                     ),
@@ -595,10 +602,15 @@ class _RingPainter extends CustomPainter {
 
 /// Counts up to the amount on load. A number that lands rather than appears is
 /// the cheapest possible way to make a figure feel earned.
-class _CountUpRand extends StatelessWidget {
-  const _CountUpRand({required this.cents, required this.animate});
+class _CountUpMoney extends StatelessWidget {
+  const _CountUpMoney({
+    required this.cents,
+    required this.currency,
+    required this.animate,
+  });
 
   final int cents;
+  final Currency currency;
   final bool animate;
 
   @override
@@ -610,7 +622,7 @@ class _CountUpRand extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
-            formatRand(value.round()),
+            currency.format(value.round()),
             style: TextStyle(
               fontWeight: FontWeight.w900,
               fontSize: 38,

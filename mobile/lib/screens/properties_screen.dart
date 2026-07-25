@@ -393,11 +393,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       // recall) plus a few popular metros to tap.
       return _StartSuggestions(
         recent: _recent,
-        popular: _country.code == 'ZA'
-            ? kPopularPropertyLocations
-            : _country.capital == null
-                ? const []
-                : [_country.capital!],
+        popular:
+            popularPropertyLocations(_country.code, capital: _country.capital),
         countryName: _country.name,
         onPick: _runSuggestion,
       );

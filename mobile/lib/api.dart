@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ad_pricing.dart';
 import 'api_models.dart';
+import 'currency.dart';
 import 'platform_http_client.dart';
 import 'session_cookie_store.dart';
 import 'voucher_models.dart';
@@ -130,10 +131,19 @@ class Api {
   static const _adminCountryPreferenceKey = 'ts_admin_country_override_v1';
   String? _adminCountryCode;
   String? _memberCountryCode;
+  String? _memberCurrencyCode;
+  String? _lookedUpCurrencyCode;
   bool _adminCountryLoaded = false;
 
   String get effectiveCountryCode =>
       _adminCountryCode ?? _memberCountryCode ?? 'ZA';
+
+  /// The currency the shopper's country prices in — what shopping money is
+  /// shown in. Membership and advertising stay in rand whoever is looking.
+  /// A [country] lookup wins because it honours an admin country override;
+  /// otherwise the signed-in member's own currency, then rand.
+  String get effectiveCurrencyCode =>
+      _lookedUpCurrencyCode ?? _memberCurrencyCode ?? kBillingCurrencyCode;
   bool get isAdminCountryOverrideActive =>
       _adminCountryCode != null && _adminCountryCode!.isNotEmpty;
 
@@ -142,6 +152,7 @@ class Api {
       final data = await _request('GET', '/api/member-session');
       final session = MemberSession.fromJson(_map(data['session']));
       _memberCountryCode = session.account?.countryCode;
+      _memberCurrencyCode = session.account?.currencyCode;
       await _cacheSession(session);
       return session;
     } on ApiException catch (error) {
@@ -150,6 +161,7 @@ class Api {
       final cached = canUseSnapshot ? await _readCachedSession() : null;
       if (cached != null) {
         _memberCountryCode = cached.account?.countryCode;
+        _memberCurrencyCode = cached.account?.currencyCode;
         return MemberSession(
           isAuthenticated: true,
           account: cached.account,
@@ -165,6 +177,7 @@ class Api {
         await _request('POST', '/api/member-session', body: draft.toJson());
     final session = MemberSession.fromJson(_map(data['session']));
     _memberCountryCode = session.account?.countryCode;
+    _memberCurrencyCode = session.account?.currencyCode;
     await _cacheSession(session);
     return session;
   }
@@ -188,6 +201,8 @@ class Api {
     await _cookieStore.clear();
     _adminCountryCode = null;
     _memberCountryCode = null;
+    _memberCurrencyCode = null;
+    _lookedUpCurrencyCode = null;
     _adminCountryLoaded = true;
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -410,8 +425,12 @@ class Api {
   Future<CountryPricing> country() async {
     final data = await _request('GET', '/api/country');
     final country = data['country'];
-    return CountryPricing.fromJson(
+    final pricing = CountryPricing.fromJson(
         country is Map<String, dynamic> ? country : const {});
+    // Remembered so every screen shows shopping money in the same currency,
+    // including under an admin country override.
+    _lookedUpCurrencyCode = pricing.currencyCode;
+    return pricing;
   }
 
   Future<SubscriptionCheckout> checkout(
@@ -487,6 +506,7 @@ class Api {
     );
     final account = MemberAccount.fromJson(_map(data['account']));
     _memberCountryCode = account.countryCode;
+    _memberCurrencyCode = account.currencyCode;
     await _cacheSession(
       MemberSession(isAuthenticated: true, account: account),
     );
@@ -518,6 +538,9 @@ class Api {
     });
     _adminCountryCode = code;
     _adminCountryLoaded = true;
+    // The remembered currency belonged to the previous country; the next
+    // country lookup fills it in for the one now being tested.
+    _lookedUpCurrencyCode = null;
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_adminCountryPreferenceKey, code);

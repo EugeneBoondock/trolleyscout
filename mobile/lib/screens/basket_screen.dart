@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../currency.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
@@ -113,6 +114,8 @@ class _BasketScreenState extends State<BasketScreen> {
   }
 
   Widget _body(Basket basket) {
+    // Basket money is shopping money: it follows the shopper's own country.
+    final currency = Currency.of(widget.api.effectiveCurrencyCode);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -134,11 +137,11 @@ class _BasketScreenState extends State<BasketScreen> {
                 Expanded(
                     child: _Total(
                         label: 'Known total',
-                        value: formatRand(basket.summary.totalCents))),
+                        value: currency.format(basket.summary.totalCents))),
                 Expanded(
                     child: _Total(
                         label: 'Savings',
-                        value: formatRand(basket.summary.savingsCents))),
+                        value: currency.format(basket.summary.savingsCents))),
               ],
             ),
           ),

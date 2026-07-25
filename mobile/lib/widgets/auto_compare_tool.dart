@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
+import '../currency.dart';
 import '../member_state_sync.dart';
 import '../theme.dart';
-import 'common.dart' show formatMoney;
 import 'in_app_browser.dart';
 
 const _maxCompareRetailers = 16;
@@ -643,15 +643,7 @@ class _AutoCompareResult extends StatelessWidget {
   }
 }
 
-String _formatMoney(int cents, CountryOption country) {
-  const symbols = {
-    'EUR': '€',
-    'GBP': '£',
-    'USD': r'$',
-    'ZAR': 'R',
-    'ZWG': 'ZiG ',
-  };
-  final symbol =
-      symbols[country.currencyCode.toUpperCase()] ?? '${country.currencyCode} ';
-  return formatMoney(cents, symbol: symbol);
-}
+/// Store prices come back in the currency of the country they were read in, so
+/// they are shown in that currency — never converted, never re-labelled.
+String _formatMoney(int cents, CountryOption country) =>
+    Currency.of(country.currencyCode).formatShort(cents);

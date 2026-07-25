@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../currency.dart';
 import '../theme.dart';
 import 'skeleton.dart';
 
@@ -255,19 +256,11 @@ class MetricCard extends StatelessWidget {
       );
 }
 
-String formatRand(int cents) => 'R${(cents / 100).toStringAsFixed(2)}';
-
-/// The canonical whole-vs-decimal money formatter: "R50" for a whole amount,
-/// "R50.50" otherwise. [symbol] overrides the currency prefix for non-rand
-/// display. This is the single source of truth other "drop the .00" money
-/// formatters (ad_pricing.dart, auto_compare_tool.dart) delegate to — keep
-/// [formatRand] above separate, since it always shows two decimals and call
-/// sites depend on that.
-String formatMoney(int cents, {String symbol = 'R'}) {
-  final amount = cents / 100;
-  final isWhole = amount == amount.roundToDouble();
-  return '$symbol${isWhole ? amount.toStringAsFixed(0) : amount.toStringAsFixed(2)}';
-}
+/// Rand, always two decimals. Membership and advertising are billed in rand
+/// wherever the shopper is standing, so those screens use this. Shopping money
+/// — prices, baskets, savings — follows the shopper's own country instead, via
+/// [Currency.format].
+String formatRand(int cents) => Currency.rand.format(cents);
 
 /// A catalogue/deal "valid until" label that flags past dates as expired
 /// instead of rendering a stale, future-looking date string.

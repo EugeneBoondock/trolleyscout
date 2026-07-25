@@ -2,6 +2,8 @@
 // A faithful port of the web app's src/services/unitPrice.ts so the mobile
 // "pay less at the shelf" tool behaves identically and works fully offline.
 
+import 'currency.dart';
+
 enum PackUnit { g, kg, ml, l, each }
 
 enum BaseUnit { kg, litre, each }
@@ -72,9 +74,11 @@ const Map<PackUnit, double> _baseUnitFactor = {
 
 final RegExp _numberPattern = RegExp(r'^\d+(\.\d+)?$');
 
-/// Parses a rand amount like "R24,99" or "24.99" into whole cents.
+/// Parses a typed price like "R24,99", r"$24.99" or "24.99" into whole cents.
+/// Whichever currency symbol the shopper types is dropped, not assumed.
 int? parseRandsToCents(String text) {
-  final cleaned = text.replaceAll(RegExp(r'[rR]'), '').replaceAll(RegExp(r'\s'), '').replaceAll(',', '.').trim();
+  final cleaned =
+      text.replaceAll(RegExp(r'[^\d.,]'), '').replaceAll(',', '.').trim();
 
   if (cleaned.isEmpty || !_numberPattern.hasMatch(cleaned)) {
     return null;
@@ -159,8 +163,11 @@ PackComparison compareUnitPrices(List<PackDraft> drafts) {
   return PackComparison(bestId: best.id, hasMixedUnits: false, results: results);
 }
 
-String formatUnitPrice(int unitPriceCents, BaseUnit baseUnit) {
-  final amount = 'R${(unitPriceCents / 100).toStringAsFixed(2)}';
+/// "R30.00 / kg" in the shopper's own money — [currency] is passed in rather
+/// than assumed, because the same shelf tool runs in every country we serve.
+String formatUnitPrice(
+    int unitPriceCents, BaseUnit baseUnit, Currency currency) {
+  final amount = currency.format(unitPriceCents);
   switch (baseUnit) {
     case BaseUnit.each:
       return '$amount each';

@@ -79,7 +79,10 @@ export interface ScheduledScoutOptions {
 // deal feed — which keeps a run comfortably inside a Worker's subrequest
 // budget. store_scout_log's day-long cooldown still stops a shop being
 // revisited, and the round-robin ordering keeps every country moving together.
-const ONLINE_RETAILER_SCOUT_LIMIT = 120
+// Sized against a Worker's thousand-subrequest ceiling: a shop costs its home
+// page plus up to six catalogue pages, so a hundred shops leaves room for the
+// feed, catalogue and discovery lanes in the same run.
+const ONLINE_RETAILER_SCOUT_LIMIT = 100
 
 const defaultDependencies: ScheduledScoutDependencies = {
   applyDuePlanChanges,

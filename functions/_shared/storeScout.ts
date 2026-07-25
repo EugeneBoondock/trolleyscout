@@ -585,7 +585,9 @@ function hashString(value: string): string {
 // Detects a hosted deal platform (Klevu, Constructor.io, Algolia) the big
 // chains use and, if found, queries it for on-promotion products — applied to
 // any store, however small, so "no deals" means every method was tried.
-const MAX_PLATFORM_DEALS = 40
+// Matches the parser's ceiling: a shop with plenty of markdowns should be
+// represented by them, not truncated to a token few.
+const MAX_PLATFORM_DEALS = 150
 
 function platformDealToPromotion(
   store: NearbyStore,

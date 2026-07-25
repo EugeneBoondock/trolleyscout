@@ -30,6 +30,33 @@ void main() {
     expect(find.text('Your change is scheduled for 1 August.'), findsOneWidget);
   });
 
+  testWidgets('bills in rand even when the shopper is in the United States',
+      (tester) async {
+    // PayFast settles in rand: an American card is debited rand, so the charge
+    // must read in rand. Their own currency may only appear as an estimate.
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'household',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+      ),
+      countryPricing: const CountryPricing(
+        code: 'US',
+        name: 'United States',
+        currencyCode: 'USD',
+        rateFromZar: 0.055,
+      ),
+      currencyCode: 'USD',
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('R99.00/mo'), findsOneWidget);
+    expect(find.textContaining(r'$99'), findsNothing);
+    expect(find.textContaining('USD'), findsOneWidget);
+  });
+
   testWidgets('closing payment clearly reports that no plan changed',
       (tester) async {
     final api = _SubscriptionApi(
@@ -62,11 +89,27 @@ Widget _wrap(Widget child) => MaterialApp(
     );
 
 class _SubscriptionApi extends Api {
-  _SubscriptionApi({required this.checkoutResult})
-      : super(baseUrl: 'https://example.test');
+  _SubscriptionApi({
+    required this.checkoutResult,
+    this.countryPricing = const CountryPricing(
+      code: 'ZA',
+      name: 'South Africa',
+      currencyCode: 'ZAR',
+      rateFromZar: 1,
+    ),
+    this.currencyCode = 'ZAR',
+  }) : super(baseUrl: 'https://example.test');
 
   final SubscriptionCheckout checkoutResult;
+  final CountryPricing countryPricing;
+
+  /// The currency this shopper's country prices in — shopping money follows it,
+  /// membership money must not.
+  final String currencyCode;
   int checkoutCalls = 0;
+
+  @override
+  String get effectiveCurrencyCode => currencyCode;
 
   @override
   Future<SubscriptionData> subscription() async => const SubscriptionData(
@@ -76,12 +119,7 @@ class _SubscriptionApi extends Api {
       );
 
   @override
-  Future<CountryPricing> country() async => const CountryPricing(
-        code: 'ZA',
-        name: 'South Africa',
-        currencyCode: 'ZAR',
-        rateFromZar: 1,
-      );
+  Future<CountryPricing> country() async => countryPricing;
 
   @override
   Future<SubscriptionCheckout> checkout(

@@ -53,15 +53,30 @@ class RecentPropertySearchesStore {
   }
 }
 
-/// A short, curated set of popular South African metros shown as starter chips
-/// when there are no recent searches yet — somewhere to begin, not a blank page.
-const List<String> kPopularPropertyLocations = <String>[
-  'Cape Town',
-  'Johannesburg',
-  'Pretoria',
-  'Durban',
-  'Sandton',
-  'Centurion',
-  'Port Elizabeth',
-  'Bloemfontein',
-];
+/// Curated metros for the markets we know well enough to name places in.
+/// Countries are added here only when we actually know their metros — a guessed
+/// list is worse than none.
+const Map<String, List<String>> _popularLocationsByCountry = {
+  'ZA': [
+    'Cape Town',
+    'Johannesburg',
+    'Pretoria',
+    'Durban',
+    'Sandton',
+    'Centurion',
+    'Port Elizabeth',
+    'Bloemfontein',
+  ],
+};
+
+/// Starter chips shown when there are no recent searches yet — somewhere to
+/// begin, not a blank page. Curated metros where we have them, otherwise the
+/// shopper's own capital city, which the server sends with their country. A
+/// shopper in the United States is offered Washington, D.C., never Johannesburg;
+/// with no capital to offer, no chips rather than the wrong country's.
+List<String> popularPropertyLocations(String countryCode, {String? capital}) {
+  final curated = _popularLocationsByCountry[countryCode.trim().toUpperCase()];
+  if (curated != null) return curated;
+  final fallback = capital?.trim() ?? '';
+  return fallback.isEmpty ? const [] : [fallback];
+}
