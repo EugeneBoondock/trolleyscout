@@ -247,6 +247,9 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('General', 'SuperbHyper', 'https://superbhyper.co.za/'),
     store('General', 'FairPrice Online', 'https://www.fairprice.co.za/'),
     store('General', 'OK Furniture', 'https://www.okfurniture.co.za/'),
+    // Verified July 2026, after the first sweep of this list.
+    store('Fashion', 'Legit', 'https://www.legit.co.za/'),
+    store('Fashion', 'Queenspark', 'https://www.queenspark.com/'),
   ],
   // Netherlands. Of 595 hosts probed in July 2026 these answered with a working
   // product feed, and the shape of the result is the opposite of a big-chains
@@ -650,6 +653,13 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store("Tech", "Wyze", "https://www.wyze.com/"),
     // Toys
     store("Toys", "Melissa & Doug", "https://www.melissaanddoug.com/"),
+    // Verified July 2026, after the first sweep of this list.
+    store("Beauty", "Tatcha", "https://www.tatcha.com/"),
+    store("Fashion", "Alo Yoga", "https://www.aloyoga.com/"),
+    store("Fashion", "Chubbies", "https://www.chubbiesshorts.com/"),
+    store("Fashion", "Gymshark", "https://www.gymshark.com/"),
+    store("Home", "Brooklinen", "https://www.brooklinen.com/"),
+    store("Home", "Thuma", "https://www.thuma.co/"),
   ],
   ZW: [
     // OK Zimbabwe serves a live WooCommerce catalogue with real grocery
