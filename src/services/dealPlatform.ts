@@ -45,6 +45,10 @@ export interface PlatformDeal {
   // Sale window when the source carries dated promotion data.
   validFrom?: string
   validTo?: string
+  // True only when the source says every way of buying this is gone. Left
+  // undefined when the source says nothing, because "we do not know" and "you
+  // cannot have it" are different things to tell a shopper.
+  soldOut?: boolean
 }
 
 const KLEVU_KEY = /klevu[-_]?apiKey\s*[:=]\s*["'](klevu-[0-9a-z]+)["']/i

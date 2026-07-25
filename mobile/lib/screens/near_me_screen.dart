@@ -34,7 +34,7 @@ class NearMeScreen extends StatefulWidget {
   final Api api;
   final NearbyHistoryStore? historyStore;
   final SavedAddressesStore? addressStore;
-  // Called when a shopper taps a store card to see its deals in Find deals.
+  // Called when a shopper taps a store card to see its deals in the marketplace.
   final void Function(String? retailerId, String storeName)? onViewStoreDeals;
   final bool isAuthenticated;
   final VoidCallback? onWantsAuth;
@@ -1061,7 +1061,7 @@ class _NearStoreDetailScreen extends StatelessWidget {
                   shape: const RoundedRectangleBorder(),
                 ),
                 icon: const Icon(Icons.local_offer, size: 16),
-                label: Text('See ${store.name}’s deals in Find deals'),
+                label: Text('See ${store.name}’s deals'),
               ),
             ),
           ],

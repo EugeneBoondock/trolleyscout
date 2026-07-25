@@ -33,10 +33,12 @@ void main() {
     expect(api.savedPreferences, [true]);
     expect(tasks.scheduledNames, [DealAlertScheduler.uniqueTaskName]);
 
-    tester.widget<Switch>(find.byType(Switch)).onChanged!(false);
-    await tester.pumpAndSettle();
-    expect(api.savedPreferences, [true, false]);
-    expect(tasks.cancelledNames, [DealAlertScheduler.uniqueTaskName]);
+    // The invitation comes off the page once it has been accepted. Turning
+    // alerts back off happens in notification settings, where every other
+    // alert already lives, rather than in a row that follows the shopper
+    // around the marketplace for ever.
+    expect(find.byType(Switch), findsNothing);
+    expect(find.text('Alert me about new deals'), findsNothing);
   });
 
   testWidgets('denied device permission leaves alerts off', (tester) async {

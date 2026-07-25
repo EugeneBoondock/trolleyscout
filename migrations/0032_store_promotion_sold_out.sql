@@ -1,0 +1,12 @@
+-- Migration number: 0032 	 2026-07-25T22:30:00.000Z
+-- Whether a promoted product can still be bought.
+--
+-- Shopify keeps a sold-out variant in its feed with `available: false`, so a
+-- shop tells us plainly when nothing is left — we simply were not carrying the
+-- answer through. A shopper opening a deal to find the thing gone has been
+-- sent out for nothing, and the card should have said so before they tapped.
+--
+-- Nullable on purpose. NULL means the shop said nothing about availability,
+-- which is not the same as saying the item is in stock, and only a definite 1
+-- ever puts a sold-out badge on a card.
+ALTER TABLE store_promotions ADD COLUMN sold_out INTEGER;

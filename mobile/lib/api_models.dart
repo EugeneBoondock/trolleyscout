@@ -450,6 +450,7 @@ class Deal {
     this.imageUrl,
     this.pageNumber,
     this.personalizationReason,
+    this.soldOut = false,
   });
 
   final String id;
@@ -467,6 +468,11 @@ class Deal {
   final String? validTo;
   final String? productUrl;
   final String? imageUrl;
+
+  /// True only when the shop said every way of buying this is gone. A shop that
+  /// says nothing leaves this false, because a wrong sold-out badge sends a
+  /// shopper away from something they could have had.
+  final bool soldOut;
   final int? pageNumber;
   final String? personalizationReason;
 
@@ -488,6 +494,7 @@ class Deal {
         imageUrl: _optionalString(json['imageUrl']),
         pageNumber: _intOrNull(json['pageNumber']),
         personalizationReason: _optionalString(json['personalizationReason']),
+        soldOut: json['soldOut'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -508,6 +515,7 @@ class Deal {
         'imageUrl': imageUrl,
         'pageNumber': pageNumber,
         'personalizationReason': personalizationReason,
+        'soldOut': soldOut,
       };
 }
 

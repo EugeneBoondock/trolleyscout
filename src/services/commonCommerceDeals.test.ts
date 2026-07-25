@@ -406,3 +406,51 @@ describe('detectPageCurrency', () => {
     expect(detectPageCurrency('<html><body>No prices here</body></html>')).toBeUndefined()
   })
 })
+
+describe('sold-out products', () => {
+  const origin = 'https://shop.test'
+
+  function shopify(variants: Record<string, unknown>[]) {
+    return {
+      products: [{
+        handle: 'thing',
+        title: 'A thing',
+        variants,
+      }],
+    }
+  }
+
+  // Shopify keeps a sold-out variant in the feed with available:false. A
+  // shopper who taps through to find it gone was sent out for nothing.
+  it('marks a product sold out only when every way of buying it is gone', () => {
+    const [deal] = parseShopifyDeals(
+      shopify([{ available: false, compare_at_price: '20.00', price: '10.00' }]),
+      origin,
+    )
+
+    expect(deal).toMatchObject({ priceCents: 1_000, soldOut: true })
+  })
+
+  it('leaves a product alone while one variant can still be bought', () => {
+    const [deal] = parseShopifyDeals(
+      shopify([
+        { available: false, compare_at_price: '20.00', price: '10.00' },
+        { available: true, compare_at_price: '20.00', price: '10.00' },
+      ]),
+      origin,
+    )
+
+    expect(deal.soldOut).toBeUndefined()
+  })
+
+  // "We do not know" and "you cannot have it" are different things to put in
+  // front of a shopper, so a feed that never mentions stock says nothing.
+  it('says nothing when the shop says nothing about stock', () => {
+    const [deal] = parseShopifyDeals(
+      shopify([{ compare_at_price: '20.00', price: '10.00' }]),
+      origin,
+    )
+
+    expect(deal.soldOut).toBeUndefined()
+  })
+})

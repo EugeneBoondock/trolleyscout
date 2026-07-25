@@ -634,6 +634,7 @@ function platformDealToPromotion(
     productUrl: deal.productUrl ?? sourceUrl,
     retailerId: store.retailerId,
     savingText: [scopeLabel, savingText].filter(Boolean).join(' · ') || undefined,
+    soldOut: deal.soldOut,
     sourceUrl: deal.productUrl ?? sourceUrl,
     storeName: store.name,
     title: deal.title,

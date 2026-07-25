@@ -44,7 +44,7 @@ class AboutScreen extends StatelessWidget {
           title: 'Find real specials',
           text:
               'Search live prices and current store catalogues, then save a deal or add it straight to your basket.',
-          action: 'Find deals',
+          action: 'Marketplace',
           onTap: () => onNavigate(AppDestination.deals),
         ),
         _Step(

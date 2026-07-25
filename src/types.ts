@@ -141,6 +141,10 @@ export interface DiscoveredDeal {
   priceText?: string
   previousPriceText?: string
   savingText?: string
+  // True only when the shop states every way of buying this is gone. Absent
+  // when the shop says nothing, since a wrong sold-out badge sends a shopper
+  // away from something they could have had.
+  soldOut?: boolean
   evidenceText: string
   imageUrl?: string
   imageCrop?: ImageCrop

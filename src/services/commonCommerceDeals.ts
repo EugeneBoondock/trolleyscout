@@ -434,6 +434,7 @@ export function parseVtexDeals(
 interface DiscountPrices {
   current: number
   previous: number
+  soldOut?: boolean
 }
 
 function bestVtexOffer(items: Record<string, unknown>[]): DiscountPrices | undefined {
@@ -482,6 +483,15 @@ function shopifyDiscount(product: Record<string, unknown>): DiscountPrices | und
   const variants = Array.isArray(product.variants) ? product.variants : []
   const candidates = variants.length > 0 ? variants : [product]
 
+  // Shopify keeps a sold-out variant in the feed with `available: false`, so a
+  // product is only gone when every one of them says so. A feed that never
+  // mentions availability leaves this undefined rather than guessing.
+  const statedAvailability = candidates.filter(
+    (candidate) => isRecord(candidate) && typeof candidate.available === 'boolean',
+  )
+  const soldOut = statedAvailability.length > 0 &&
+    statedAvailability.every((candidate) => (candidate as Record<string, unknown>).available === false)
+
   for (const candidate of candidates) {
     if (!isRecord(candidate)) {
       continue
@@ -493,7 +503,7 @@ function shopifyDiscount(product: Record<string, unknown>): DiscountPrices | und
       nonEmptyValue(candidate.compare_at_price) ?? candidate.regular_price,
     )
     if (current !== undefined && previous !== undefined && previous > current) {
-      return { current, previous }
+      return { current, previous, ...(soldOut ? { soldOut } : {}) }
     }
   }
 
@@ -541,6 +551,7 @@ function dealFromDiscount(
     priceCents: prices.current,
     productUrl,
     title,
+    ...(prices.soldOut ? { soldOut: true } : {}),
   }
 }
 

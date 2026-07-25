@@ -230,7 +230,7 @@ class _RootShellState extends State<RootShell> {
     super.dispose();
   }
 
-  // Near-me store card → open Find deals pre-filtered to that store's deals.
+  // Near-me store card → open the marketplace pre-filtered to that store.
   void _viewStoreDeals(String? retailerId, String storeName) {
     setState(() {
       _dealsRetailerId = retailerId?.isNotEmpty == true ? retailerId : null;
@@ -239,11 +239,13 @@ class _RootShellState extends State<RootShell> {
     _selectDestination(AppDestination.deals);
   }
 
+  // The marketplace sits directly after the dashboard. It is the thing the app
+  // is for, and it was fourth along behind two ways of browsing shops.
   static const _primaryDestinations = [
     AppDestination.dashboard,
+    AppDestination.deals,
     AppDestination.stores,
     AppDestination.near,
-    AppDestination.deals,
     AppDestination.scroll,
   ];
 
@@ -454,27 +456,14 @@ class _RootShellState extends State<RootShell> {
                 ),
               ),
               titleSpacing: 4,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const AnimatedScoutMark(
-                    key: ValueKey('navbar-scout-mark'),
-                    motion: ScoutMarkMotion.scout,
-                    size: 36,
-                  ),
-                  if (!compact) ...[
-                    const SizedBox(width: 8),
-                    const Flexible(
-                      child: Text(
-                        'TROLLEY SCOUT',
-                        overflow: TextOverflow.fade,
-                        softWrap: false,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                      ),
-                    ),
-                  ],
-                ],
+              // The mark alone. The wordmark beside it only appeared on wider
+              // phones, where it promptly ran out of room and rendered as
+              // "TROLLEY SC" — so the app was named differently depending on
+              // the handset, and named wrongly on half of them.
+              title: const AnimatedScoutMark(
+                key: ValueKey('navbar-scout-mark'),
+                motion: ScoutMarkMotion.scout,
+                size: 36,
               ),
               actions: [
                 IconButton(
@@ -697,6 +686,11 @@ class _RootShellState extends State<RootShell> {
                               label: 'Home',
                             ),
                             NavigationDestination(
+                              icon: Icon(Icons.local_offer_outlined),
+                              selectedIcon: Icon(Icons.local_offer),
+                              label: 'Marketplace',
+                            ),
+                            NavigationDestination(
                               icon: Icon(Icons.storefront_outlined),
                               selectedIcon: Icon(Icons.storefront),
                               label: 'Stores',
@@ -705,11 +699,6 @@ class _RootShellState extends State<RootShell> {
                               icon: Icon(Icons.near_me_outlined),
                               selectedIcon: Icon(Icons.near_me),
                               label: 'Near me',
-                            ),
-                            NavigationDestination(
-                              icon: Icon(Icons.local_offer_outlined),
-                              selectedIcon: Icon(Icons.local_offer),
-                              label: 'Deals',
                             ),
                             NavigationDestination(
                               icon: Icon(Icons.window_outlined),

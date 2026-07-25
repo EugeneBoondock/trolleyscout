@@ -203,6 +203,51 @@ void main() {
     expect(find.byKey(const Key('share-card-image')), findsOneWidget);
     expect(find.byKey(const Key('share-card-link')), findsOneWidget);
   });
+
+  // A shared card outlives the moment it was made and reaches people who never
+  // opened the app, so it has to carry the bad news as well as the good.
+  testWidgets('a sold-out deal says so on the card it shares', (tester) async {
+    final data = ShareCardData.fromDeal(const Deal(
+      title: 'Non-Stick Frypan 28cm',
+      retailerName: 'PEP',
+      priceText: 'R199.99',
+      previousPriceText: 'R249.99',
+      savingText: '20% off',
+      soldOut: true,
+    ));
+
+    expect(data.soldOut, isTrue);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(body: DealShareCard(data: data)),
+    ));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('share-card-sold-out')), findsOneWidget);
+    expect(find.text('SOLD OUT'), findsOneWidget);
+    // The saving gives up its slot: a discount on something nobody can buy is
+    // not the news.
+    expect(find.text('20% off'), findsNothing);
+  });
+
+  testWidgets('an in-stock deal keeps its saving badge', (tester) async {
+    final data = ShareCardData.fromDeal(const Deal(
+      title: 'Non-Stick Frypan 28cm',
+      retailerName: 'PEP',
+      priceText: 'R199.99',
+      savingText: '20% off',
+    ));
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(body: DealShareCard(data: data)),
+    ));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('share-card-sold-out')), findsNothing);
+    expect(find.text('20% off'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpCard(
@@ -215,4 +260,6 @@ Future<void> _pumpCard(
     home: Scaffold(body: Center(child: DealShareCard(data: data))),
   ));
   await tester.pumpAndSettle();
+
+
 }

@@ -40,6 +40,7 @@ class ShareCardData {
     this.fallbackIcon = Icons.local_offer_outlined,
     this.sourcePreposition = 'at',
     this.noun = 'deal',
+    this.soldOut = false,
   });
 
   /// A grocery special or discovery find. [imageUrl] overrides the deal's own
@@ -56,6 +57,10 @@ class ShareCardData {
         badgeText: deal.savingText,
         imageUrl: _trimToNull(imageUrl ?? deal.imageUrl),
         link: _safeLink(deal.productUrl ?? deal.sourceUrl),
+        // A shared card outlives the moment it was made and reaches people who
+        // never opened the app. If the thing is gone, the picture has to say so
+        // too, or the share sends someone else out for nothing.
+        soldOut: deal.soldOut,
       );
 
   /// A Window Shopping find — the reel keeps its gallery separate from the
@@ -95,6 +100,9 @@ class ShareCardData {
 
   /// The accent chip beside the price: a saving for deals, bed/bath for homes.
   final String? badgeText;
+
+  /// Whether the shop said this can no longer be bought.
+  final bool soldOut;
 
   /// A quiet second line under the title — a suburb, an area.
   final String? subtitle;
@@ -643,7 +651,29 @@ class _CardPriceRow extends StatelessWidget {
             ],
           ),
         ),
-        if (badge != null) ...[
+        // Sold out takes the badge slot when it applies. A saving on something
+        // nobody can buy is not the news; that it is gone is.
+        if (data.soldOut) ...[
+          const SizedBox(width: 8),
+          Container(
+            key: const ValueKey('share-card-sold-out'),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: TS.ink,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'SOLD OUT',
+              maxLines: 1,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ] else if (badge != null) ...[
           const SizedBox(width: 8),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 128),

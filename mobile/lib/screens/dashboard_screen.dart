@@ -666,7 +666,7 @@ class _QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const actions = <(PhosphorIconData, String, AppDestination)>[
-      (PhosphorIconsFill.tag, 'Find deals', AppDestination.deals),
+      (PhosphorIconsFill.tag, 'Marketplace', AppDestination.deals),
       (PhosphorIconsFill.mapPin, 'Near me', AppDestination.near),
       (PhosphorIconsFill.basket, 'Basket', AppDestination.basket),
       (PhosphorIconsFill.storefront, 'Stores', AppDestination.stores),
@@ -732,7 +732,7 @@ class _QuickActionTile extends StatelessWidget {
 /// the tub of margarine they saved long before they parse "7 saved deals".
 /// The biggest live markdowns from the on-device deals cache — real product
 /// pictures with real rand savings, the strongest possible pull into the
-/// Find deals screen.
+/// Marketplace screen.
 class _TopSavingsStrip extends StatelessWidget {
   const _TopSavingsStrip({required this.deals, required this.onBrowse});
 

@@ -127,7 +127,9 @@ void main() {
       tester
           .widgetList<NavigationDestination>(find.byType(NavigationDestination))
           .map((destination) => destination.label),
-      ['Home', 'Stores', 'Near me', 'Deals', 'Window'],
+      // The marketplace sits directly after the dashboard: it is what the
+      // app is for, and it used to be fourth behind two ways of browsing.
+      ['Home', 'Marketplace', 'Stores', 'Near me', 'Window'],
     );
     expect(find.text('Money'), findsNothing);
 
@@ -225,7 +227,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        1);
+        2);
 
     await tester.binding.handlePopRoute();
     await tester.pump(const Duration(milliseconds: 300));

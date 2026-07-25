@@ -10,7 +10,7 @@ class SavedDealsScreen extends StatefulWidget {
 
   final Api api;
 
-  /// Empty-state CTA: jump to Find deals so a new member isn't stranded.
+  /// Empty-state CTA: jump to the marketplace so a new member isn't stranded.
   final VoidCallback? onFindDeals;
 
   @override
@@ -108,7 +108,7 @@ class _SavedDealsScreenState extends State<SavedDealsScreen> {
                     ? null
                     : FilledButton(
                         onPressed: widget.onFindDeals,
-                        child: const Text('Find deals'),
+                        child: const Text('Browse the marketplace'),
                       ),
               )
             else

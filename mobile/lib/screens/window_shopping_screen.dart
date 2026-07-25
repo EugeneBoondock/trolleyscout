@@ -25,23 +25,32 @@ import '../window_seen_store.dart';
 /// licensed under Creative Commons: By Attribution 4.0 — credited on screen
 /// while the music plays.
 class _Track {
-  const _Track(this.asset, this.title);
+  const _Track(this.asset, this.title, this.artistUrl);
 
   final String asset;
   final String title;
+
+  /// Where the track came from. The credit is tappable, so a shopper who likes
+  /// what is playing can go and find the person who made it — which is the
+  /// point of attribution rather than a line of small print.
+  final String artistUrl;
 }
+
+const String _musicArtist = 'Kevin MacLeod';
+const String _musicArtistUrl = 'https://incompetech.com/music/royalty-free/';
+const String _musicLicenceUrl = 'https://creativecommons.org/licenses/by/4.0/';
 
 // A wider, groovier crate so the shop never loops back too soon — funk, soul,
 // bossa, ska and lounge, all Kevin MacLeod, all CC BY 4.0.
 const List<_Track> _playlist = [
-  _Track('music/groove_funk.mp3', 'Funkorama'),
-  _Track('music/groove_deuces.mp3', 'Deuces'),
-  _Track('music/groove_bossa.mp3', 'Bossa Antigua'),
-  _Track('music/groove_chunk.mp3', 'Funky Chunk'),
-  _Track('music/groove_cool.mp3', 'Cool Vibes'),
-  _Track('music/groove_riley.mp3', 'Life of Riley'),
-  _Track('music/groove_shade.mp3', 'Sidewalk Shade'),
-  _Track('music/groove_vibe.mp3', 'Vibe Ace'),
+  _Track('music/groove_funk.mp3', 'Funkorama', _musicArtistUrl),
+  _Track('music/groove_deuces.mp3', 'Deuces', _musicArtistUrl),
+  _Track('music/groove_bossa.mp3', 'Bossa Antigua', _musicArtistUrl),
+  _Track('music/groove_chunk.mp3', 'Funky Chunk', _musicArtistUrl),
+  _Track('music/groove_cool.mp3', 'Cool Vibes', _musicArtistUrl),
+  _Track('music/groove_riley.mp3', 'Life of Riley', _musicArtistUrl),
+  _Track('music/groove_shade.mp3', 'Sidewalk Shade', _musicArtistUrl),
+  _Track('music/groove_vibe.mp3', 'Vibe Ace', _musicArtistUrl),
 ];
 
 /// Window Shopping — the calm, endless browse. One deal per swipe with real
@@ -683,6 +692,62 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   }
 
   /// Opens the comment thread for a deal. Comments live with the deal.
+  // A comment the shopper just wrote is one they can see, so the count beside
+  // the card has to move with it. The sheet keeps its own list, and without
+  // this the card went on reading the number it was handed on load — so
+  // commenting appeared to do nothing until the whole reel was reloaded.
+  void _bumpCommentCount(String dealId) {
+    if (!mounted || dealId.isEmpty) return;
+    final current = _saveStats[dealId];
+    setState(() {
+      _saveStats[dealId] = (current ?? const SaveStat(count: 0, saved: false))
+          .withCommentCount((current?.commentCount ?? 0) + 1);
+    });
+  }
+
+  void _openMusicCredit() {
+    HapticFeedback.selectionClick();
+    final track = _tracks[_trackIndex];
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: TS.bgOf(context),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: Icon(Icons.music_note, color: TS.redOf(context)),
+              title: Text(track.title,
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              subtitle: Text('$_musicArtist · Creative Commons BY 4.0',
+                  style: TextStyle(color: TS.mutedOf(context))),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text('More music by $_musicArtist'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                showInAppBrowser(context, track.artistUrl, title: _musicArtist);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Read the licence'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                showInAppBrowser(context, _musicLicenceUrl,
+                    title: 'Creative Commons BY 4.0');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openComments(ScrollDeal deal) {
     HapticFeedback.selectionClick();
     showModalBottomSheet<void>(
@@ -696,7 +761,11 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         ),
         side: BorderSide(color: TS.lineOf(context), width: 2),
       ),
-      builder: (context) => _CommentsSheet(api: widget.api, deal: deal),
+      builder: (context) => _CommentsSheet(
+        api: widget.api,
+        deal: deal,
+        onPosted: () => _bumpCommentCount(deal.id),
+      ),
     );
   }
 
@@ -916,19 +985,29 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                 if (!_musicMuted)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.35),
+                    child: Semantics(
+                      button: true,
+                      label: 'Now playing ${_tracks[_trackIndex].title} by '
+                          '$_musicArtist. Opens the artist’s page.',
+                      child: InkWell(
+                        key: const ValueKey('window-now-playing'),
                         borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '♪ ${_tracks[_trackIndex].title} · Kevin MacLeod (CC BY)',
-                        style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600),
+                        onTap: _openMusicCredit,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '♪ ${_tracks[_trackIndex].title} · $_musicArtist (CC BY)',
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1794,10 +1873,18 @@ class _StoreChip extends StatelessWidget {
 /// Comment thread for one deal. Comments are stored against the deal id, so they
 /// disappear once the deal leaves the feed.
 class _CommentsSheet extends StatefulWidget {
-  const _CommentsSheet({required this.api, required this.deal});
+  const _CommentsSheet({
+    required this.api,
+    required this.deal,
+    required this.onPosted,
+  });
 
   final Api api;
   final ScrollDeal deal;
+
+  /// Told once for each comment the shopper posts, so the reel behind the
+  /// sheet can move the count on the card.
+  final VoidCallback onPosted;
 
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
@@ -1847,6 +1934,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           _controller.clear();
           _posting = false;
         });
+        widget.onPosted();
       }
     } catch (_) {
       if (mounted) {

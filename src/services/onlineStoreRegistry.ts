@@ -311,6 +311,24 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store("Tech", "Naldo", "https://www.naldo.com.ar/"),
     store("Tech", "On City", "https://www.oncity.com/"),
   ],
+  // Paraguay. Probing for a named platform found nothing here — these shops
+  // are not Shopify, WooCommerce, Magento or VTEX — but the sites are live and
+  // server-rendered, with prices and struck-through was-prices in the page.
+  // That is what the generic storefront scout reads, so they are registered for
+  // it to detect rather than pinned to a platform they do not run.
+  //
+  // Superseis, Stock and Biggie are the supermarkets a shopper there actually
+  // uses. Casa Pio and Punto Farma do not resolve at all and are left out.
+  PY: [
+    // Groceries
+    store('Groceries', 'Superseis', 'https://www.superseis.com.py/'),
+    store('Groceries', 'Stock', 'https://www.stock.com.py/'),
+    store('Groceries', 'Biggie', 'https://www.biggie.com.py/'),
+    // Health
+    store('Health', 'Farmacenter', 'https://www.farmacenter.com.py/'),
+    // Tech
+    store('Tech', 'Electroban', 'https://www.electroban.com.py/'),
+  ],
   NL: [
     // Baby
     store("Baby", "Babywinkel.nl", "https://www.babywinkel.nl/"),

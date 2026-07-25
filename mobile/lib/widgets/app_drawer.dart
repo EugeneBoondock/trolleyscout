@@ -7,7 +7,7 @@ import 'in_app_browser.dart';
 
 enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
-  deals('Find deals', Icons.local_offer_outlined, false),
+  deals('Marketplace', Icons.local_offer_outlined, false),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
   tools('Price comparisons', Icons.calculate_outlined, false),

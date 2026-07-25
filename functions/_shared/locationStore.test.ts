@@ -107,7 +107,8 @@ describe("discovered store scout timing", () => {
         price_text TEXT, previous_price_text TEXT, saving_text TEXT, source_url TEXT NOT NULL,
         product_url TEXT, image_url TEXT, valid_from TEXT, valid_to TEXT,
         captured_at TEXT NOT NULL, expires_at TEXT NOT NULL,
-        country_code TEXT NOT NULL DEFAULT 'ZA'
+        country_code TEXT NOT NULL DEFAULT 'ZA',
+        sold_out INTEGER
       )`,
       )
       .run();

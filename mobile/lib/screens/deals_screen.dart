@@ -670,6 +670,11 @@ class _DealsScreenState extends State<DealsScreen> {
   }
 
   Widget _notifyToggle() {
+    // An invitation already accepted is just furniture. Once alerts are on,
+    // this row comes off the page; it is turned back off from notification
+    // settings, where every other alert already lives.
+    if (_notifyNewDeals) return const SizedBox.shrink();
+
     return Container(
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
@@ -1184,6 +1189,30 @@ class _DealRow extends StatelessWidget {
                   ),
               ],
             ),
+            // Said before the shopper taps, not after they reach the shop and
+            // find it gone. Only shown when the shop itself said so.
+            if (deal.soldOut)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Container(
+                  key: Key('deal-sold-out-${deal.id}'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: TS.mutedOf(context).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'SOLD OUT',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ),
             if (deal.savingText != null)
               Padding(
                 padding: const EdgeInsets.only(top: 2),

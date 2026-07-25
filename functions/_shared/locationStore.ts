@@ -23,6 +23,10 @@ export interface StorePromotion {
   imageUrl?: string;
   validFrom?: string;
   validTo?: string;
+  /// True only when the shop says every way of buying this is gone. Undefined
+  /// when the shop says nothing: "we do not know" and "you cannot have it" are
+  /// different things to put in front of a shopper.
+  soldOut?: boolean;
 }
 
 export interface DiscoveredStore extends NearbyStore {
@@ -351,7 +355,7 @@ export async function readAllStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at, country_code
+        valid_from, valid_to, captured_at, country_code, sold_out
         FROM store_promotions
         WHERE expires_at >= ? ${countryCode ? "AND country_code = ?" : ""}
         ORDER BY captured_at DESC
@@ -501,7 +505,7 @@ export async function readAllStoreCatalogues(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at, country_code
+        valid_from, valid_to, captured_at, country_code, sold_out
         FROM store_promotions
         WHERE kind = 'catalogue' AND expires_at >= ?
           ${countryCode ? "AND country_code = ?" : ""}
@@ -581,7 +585,7 @@ export async function readStorePromotions(
     const result = await env.DB.prepare(
       `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at, country_code
+        valid_from, valid_to, captured_at, country_code, sold_out
         FROM store_promotions
         WHERE place_id IN (${placeholders}) AND expires_at >= ?
           ${countryCode ? "AND country_code = ?" : ""}
@@ -616,12 +620,13 @@ export async function saveStorePromotions(
       `INSERT INTO store_promotions (
         id, place_id, store_name, retailer_id, kind, title, price_text,
         previous_price_text, saving_text, source_url, product_url, image_url,
-        valid_from, valid_to, captured_at, expires_at, country_code
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        valid_from, valid_to, captured_at, expires_at, country_code, sold_out
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         price_text = excluded.price_text,
         previous_price_text = excluded.previous_price_text,
         saving_text = excluded.saving_text,
+        sold_out = excluded.sold_out,
         valid_from = excluded.valid_from,
         valid_to = excluded.valid_to,
         captured_at = excluded.captured_at,
@@ -650,6 +655,9 @@ export async function saveStorePromotions(
           capturedAt,
           promotionExpiryIso(promotion.validTo, nowMs),
           promotion.countryCode ?? "ZA",
+          // Left NULL when the shop said nothing. Only a definite "gone" ever
+          // reaches a shopper as a sold-out badge.
+          promotion.soldOut === undefined ? null : promotion.soldOut ? 1 : 0,
         ),
       ),
     );
@@ -961,6 +969,7 @@ interface StorePromotionRow {
   valid_from: string | null;
   valid_to: string | null;
   country_code?: string | null;
+  sold_out?: number | null;
 }
 
 function rowToPromotion(row: StorePromotionRow): StorePromotion {
@@ -976,6 +985,10 @@ function rowToPromotion(row: StorePromotionRow): StorePromotion {
     productUrl: row.product_url ?? undefined,
     retailerId: row.retailer_id ?? undefined,
     savingText: row.saving_text ?? undefined,
+    // NULL means the shop never said, which must not read as "in stock".
+    soldOut: row.sold_out === null || row.sold_out === undefined
+      ? undefined
+      : row.sold_out === 1,
     sourceUrl: row.source_url,
     storeName: row.store_name,
     title: row.title,
