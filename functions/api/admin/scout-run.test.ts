@@ -151,7 +151,7 @@ describe('/api/admin/scout-run', () => {
     const [, stores, nowMs, limit] = mocks.scoutNearbyStores.mock.calls[0]
     expect(stores).toEqual(registryStores)
     expect(typeof nowMs).toBe('number')
-    expect(limit).toBe(8)
+    expect(limit).toBe(24)
 
     expect(await response.json()).toMatchObject({
       data: {
@@ -161,7 +161,7 @@ describe('/api/admin/scout-run', () => {
         stores: {
           failed: false,
           ran: true,
-          storeLimit: 8,
+          storeLimit: 24,
           storePromotionCount: 18,
           storesOffered: 2,
           storesScouted: 2,
@@ -179,7 +179,7 @@ describe('/api/admin/scout-run', () => {
     expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
     expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
     expect(mocks.runStructuredRetailerFeedScout.mock.calls[0][1].requestCap).toBe(6)
-    expect(mocks.scoutNearbyStores.mock.calls[0][3]).toBe(4)
+    expect(mocks.scoutNearbyStores.mock.calls[0][3]).toBe(10)
     expect(await response.json()).toMatchObject({
       data: {
         lane: 'all',

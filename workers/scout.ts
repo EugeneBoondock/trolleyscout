@@ -73,10 +73,13 @@ export interface ScheduledScoutOptions {
 }
 
 // How many online-only registry retailers to scout per deal-refresh run. The
-// registry runs to a few hundred storefronts, so this paces a steady sweep:
-// store_scout_log's day-long cooldown stops a shop being revisited, and the
-// round-robin ordering keeps every country moving forward together.
-const ONLINE_RETAILER_SCOUT_LIMIT = 40
+// registry now runs past five hundred storefronts across seventeen countries,
+// so a small figure here left a newly added country waiting days for its first
+// pass. A shop costs two to four requests — its home page, then its platform's
+// deal feed — which keeps a run comfortably inside a Worker's subrequest
+// budget. store_scout_log's day-long cooldown still stops a shop being
+// revisited, and the round-robin ordering keeps every country moving together.
+const ONLINE_RETAILER_SCOUT_LIMIT = 120
 
 const defaultDependencies: ScheduledScoutDependencies = {
   applyDuePlanChanges,

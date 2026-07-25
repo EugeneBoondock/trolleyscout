@@ -40,9 +40,9 @@ interface LaneBounds {
 // single press has to answer inside the edge request window. A lane run on its
 // own gets the larger slice; "all" splits the budget across both.
 const LANE_BOUNDS: Record<ScoutLane, LaneBounds> = {
-  all: { feedRequestCap: 6, storeLimit: 4 },
+  all: { feedRequestCap: 6, storeLimit: 10 },
   feeds: { feedRequestCap: 10, storeLimit: 0 },
-  stores: { feedRequestCap: 0, storeLimit: 8 },
+  stores: { feedRequestCap: 0, storeLimit: 24 },
 }
 
 // Shorter than the scout's own 12s default so one stalled source cannot eat the
