@@ -5,20 +5,26 @@ export type { PlatformDeal } from './dealPlatform'
 // These public endpoints describe a retailer’s online catalogue. They do not
 // prove that a price or stock level applies to a nearby physical branch.
 export const COMMON_COMMERCE_DEAL_SCOPE = 'online-catalogue' as const
-export const MAX_COMMON_COMMERCE_PAGE_SIZE = 100
-// How many discounts to keep from one shop. The pages are fetched either way —
-// six pages of fifty is three hundred products scanned — so a low ceiling threw
-// away work already paid for and left a shop running a hundred markdowns
-// represented by forty.
-export const MAX_COMMON_COMMERCE_DEALS = 150
-// A large catalogue can carry its discounts well past the first pages (a ZW
-// Shopify store was seen with its first discount only after product 100).
-// Paging deeper costs nothing for a store with plenty of deals — the scout
-// stops as soon as it has MAX_COMMON_COMMERCE_DEALS — and only spends extra
-// requests on sparse catalogues. Page size stays modest so each response body
-// stays well inside the scout's read limit.
+// Shopify serves 250 products per page and so do most of the platforms behind
+// it, so asking for fewer buys nothing and costs reach.
+export const MAX_COMMON_COMMERCE_PAGE_SIZE = 250
+// How many discounts to keep from one shop. The pages are fetched either way,
+// so a low ceiling throws away work already paid for — and shoppers noticed:
+// store after store reported exactly 150 deals, which is a ceiling talking,
+// not a catalogue.
+export const MAX_COMMON_COMMERCE_DEALS = 300
+// A large catalogue scatters its discounts right through itself rather than
+// gathering them at the front. New World is the case that proved it: page one
+// holds 4 markdowns, page two holds 44, and page ten holds 26. Reading fifty
+// products a page for six pages saw only the first three hundred of them, so
+// the shop showed five deals while running well over a hundred.
+//
+// Full pages cost the same one request as small ones, and the scout still
+// stops as soon as it has MAX_COMMON_COMMERCE_DEALS, so a shop with its
+// discounts up front is no more expensive than before. Six full pages reach
+// fifteen hundred products instead of three hundred.
 export const MAX_COMMON_COMMERCE_PAGES = 6
-export const DEFAULT_COMMON_COMMERCE_PAGE_SIZE = 50
+export const DEFAULT_COMMON_COMMERCE_PAGE_SIZE = 250
 
 export type CommonCommercePlatform = 'shopify' | 'woocommerce' | 'magento' | 'vtex'
 

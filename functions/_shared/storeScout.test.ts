@@ -2,6 +2,7 @@
 
 import { Miniflare } from 'miniflare'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_COMMON_COMMERCE_PAGE_SIZE } from '../../src/services/commonCommerceDeals'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from './env'
 import {
@@ -837,7 +838,7 @@ describe('scheduled discovered-store scouting', () => {
 
     expect(requestedPaths).toEqual([
       '/specials',
-      '/products.json?limit=50&page=1',
+      `/products.json?limit=${DEFAULT_COMMON_COMMERCE_PAGE_SIZE}&page=1`,
     ])
     const rows = await db.prepare(
       `SELECT title, price_text, previous_price_text, saving_text, product_url
@@ -873,12 +874,18 @@ describe('scheduled discovered-store scouting', () => {
       if (url.pathname === '/products.json') {
         requestedPages.push(url.searchParams.get('page') ?? '')
         if (url.searchParams.get('page') === '1') {
+          // A full page with nothing discounted on it. Short of a full page
+          // the scout knows the catalogue ended and stops, so this is what
+          // makes it go looking on the next one.
           return jsonResponse({
-            products: Array.from({ length: 50 }, (_, index) => ({
-              handle: `regular-${index}`,
-              title: `Regular item ${index}`,
-              variants: [{ compare_at_price: '10.00', price: '10.00' }],
-            })),
+            products: Array.from(
+              { length: DEFAULT_COMMON_COMMERCE_PAGE_SIZE },
+              (_, index) => ({
+                handle: `regular-${index}`,
+                title: `Regular item ${index}`,
+                variants: [{ compare_at_price: '10.00', price: '10.00' }],
+              }),
+            ),
           })
         }
         return jsonResponse({

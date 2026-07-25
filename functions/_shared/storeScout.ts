@@ -99,7 +99,11 @@ const SPECIALS_PATHS = [
 // and only those with a website that we have not scouted recently.
 const MAX_STORES_PER_RUN = 3
 const MAX_PATHS_PER_STORE = 4
-const MAX_BODY_BYTES = 1_500_000
+// A Shopify catalogue page of 250 products runs to about 3.3MB, and reading a
+// truncated one leaves unparseable JSON, so the limit has to clear a whole page
+// with room to spare. It bounds one response at a time and each is released
+// before the next shop, so this costs headroom rather than accumulating.
+const MAX_BODY_BYTES = 5_000_000
 const MAX_EMBEDDED_SCRIPT_BYTES = 500_000
 const MAX_EMBEDDED_ATTRIBUTE_BYTES = 1_250_000
 const MAX_EMBEDDED_TOTAL_BYTES = 1_400_000
@@ -601,7 +605,9 @@ function hashString(value: string): string {
 // any store, however small, so "no deals" means every method was tried.
 // Matches the parser's ceiling: a shop with plenty of markdowns should be
 // represented by them, not truncated to a token few.
-const MAX_PLATFORM_DEALS = 150
+// Kept in step with MAX_COMMON_COMMERCE_DEALS: a shop that is worth scanning
+// deeply is worth keeping the results of.
+const MAX_PLATFORM_DEALS = 300
 
 function platformDealToPromotion(
   store: NearbyStore,
