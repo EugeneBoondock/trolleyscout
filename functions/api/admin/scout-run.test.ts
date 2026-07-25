@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   buildRegistryOnlineStores: vi.fn(),
   getMemberSession: vi.fn(),
-  getStructuredRetailerSources: vi.fn((): Array<{ key: string }> => []),
+  getStructuredRetailerSources: vi.fn(
+    (): Array<{ countryCode?: string; key: string }> => [],
+  ),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
 }))
@@ -52,6 +54,15 @@ describe('/api/admin/scout-run', () => {
     mocks.runStructuredRetailerFeedScout.mockResolvedValue(feedResult)
     mocks.scoutNearbyStores.mockResolvedValue(undefined)
     mocks.buildRegistryOnlineStores.mockReturnValue(registryStores)
+    // The registry really does carry sources for more than one country now, and
+    // the feed lane picks by country, so an empty list here would have every
+    // press report that there is nothing to fetch.
+    mocks.getStructuredRetailerSources.mockReturnValue([
+      { key: 'woolworths::all-savings' },
+      { key: 'takealot::promotion-campaigns-0' },
+      { countryCode: 'US', key: 'flipp::walmart' },
+      { countryCode: 'US', key: 'flipp::costco' },
+    ])
   })
 
   it('keeps a signed-out visitor from starting a scout run', async () => {
@@ -236,9 +247,10 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({ data: { country: 'NL' } })
   })
 
-  // Every structured feed is a South African retailer, so running that lane
-  // for the Netherlands would burn the budget fetching nothing Dutch.
-  it('skips the retailer feeds outside South Africa and says why', async () => {
+  // Not because the lane is South African — it is not, any more — but because
+  // no feed has been built for the Netherlands yet, so the whole budget is
+  // better spent on the shops that do serve it.
+  it('skips the retailer feeds for a country that has none, and says why', async () => {
     signedInAs('admin-1', 'admin', 'NL')
 
     const response = await invoke(run())
@@ -246,7 +258,7 @@ describe('/api/admin/scout-run', () => {
 
     expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
     expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
-    expect(body.data.message).toContain('Netherlands swept shops only')
+    expect(body.data.message).toContain('No retailer feed covers Netherlands yet')
   })
 
   it('still runs the feeds for a South African admin', async () => {
@@ -256,6 +268,36 @@ describe('/api/admin/scout-run', () => {
 
     expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
     expect(mocks.buildRegistryOnlineStores).toHaveBeenCalledWith(['ZA'])
+  })
+
+  // The point of the country switch once the feeds stopped being South
+  // African: an admin working in the United States gets the American chains,
+  // and none of their budget goes on Woolworths.
+  it('sweeps the American chains for an admin working in the United States', async () => {
+    signedInAs('admin-1', 'admin', 'US')
+
+    const response = await invoke(run({ lane: 'feeds' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
+
+    const [, options] = mocks.runStructuredRetailerFeedScout.mock.calls[0]
+    expect(options.sources.map((source: { key: string }) => source.key)).toEqual([
+      'flipp::walmart',
+      'flipp::costco',
+    ])
+  })
+
+  it('gives a South African press only the South African feeds', async () => {
+    signedInAs('admin-1', 'admin', 'ZA')
+
+    await invoke(run({ lane: 'feeds' }))
+
+    const [, options] = mocks.runStructuredRetailerFeedScout.mock.calls[0]
+    expect(options.sources.map((source: { key: string }) => source.key)).toEqual([
+      'woolworths::all-savings',
+      'takealot::promotion-campaigns-0',
+    ])
   })
 
   it('sweeps every country when asked for all', async () => {

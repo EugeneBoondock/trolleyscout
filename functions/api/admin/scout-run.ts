@@ -149,10 +149,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const country = readCountry(body.country, request.url, session.account.countryCode)
   const wholeWorld = country === ALL_COUNTRIES
 
-  // Every structured feed we have is a South African retailer, so outside South
-  // Africa that lane has nothing to fetch and its whole budget is better spent
-  // on the shops that do serve the country being swept.
-  const feedsApply = wholeWorld || country === 'ZA'
+  // This lane used to be South-Africa-only, on the grounds that every
+  // structured feed was a South African retailer. The American chains ended
+  // that, and the old rule then had it exactly backwards: pressing this while
+  // looking at the United States skipped the only nineteen sources that serve
+  // it. A press now runs whatever feeds belong to the country being swept.
+  const feedSources = wholeWorld
+    ? getStructuredRetailerSources()
+    : sourcesForCountry(country)
+  const feedsApply = feedSources.length > 0
   const bounds = feedsApply
     ? LANE_BOUNDS[lane]
     : { feedRequestCap: 0, storeLimit: LANE_BOUNDS[lane].storeLimit || LANE_BOUNDS.stores.storeLimit }
@@ -163,7 +168,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   // Sequential, not parallel: the two lanes share the same subrequest budget,
   // and the store sweep counts its own work from the scout log afterwards.
   const feeds = bounds.feedRequestCap > 0
-    ? await runFeedLane(env, bounds.feedRequestCap)
+    ? await runFeedLane(env, bounds.feedRequestCap, feedSources)
     : skippedFeedLane()
   const stores = bounds.storeLimit > 0
     ? await runStoreLane(
@@ -228,10 +233,18 @@ function readLane(value: unknown, url: string): ScoutLane | undefined {
 // never reached however many times the button was pressed. Ordering by how
 // long a source has gone unread makes each press advance whatever is most
 // overdue, so pressing repeatedly walks the whole list.
+/// A source says nothing about its country when it is South African, which is
+/// what every source was before the American chains arrived.
+function sourcesForCountry(countryCode: string): readonly RetailerFeedSource[] {
+  return getStructuredRetailerSources().filter(
+    (source) => (source.countryCode ?? 'ZA') === countryCode,
+  )
+}
+
 async function leastRecentlyRunFirst(
   env: TrolleyScoutEnv,
+  sources: readonly RetailerFeedSource[],
 ): Promise<readonly RetailerFeedSource[]> {
-  const sources = getStructuredRetailerSources()
   if (!env.DB) {
     return sources
   }
@@ -257,11 +270,12 @@ async function leastRecentlyRunFirst(
 async function runFeedLane(
   env: TrolleyScoutEnv,
   requestCap: number,
+  sources: readonly RetailerFeedSource[],
 ): Promise<FeedLaneSummary> {
   try {
     const result = await runStructuredRetailerFeedScout(env, {
       requestCap,
-      sources: await leastRecentlyRunFirst(env),
+      sources: await leastRecentlyRunFirst(env, sources),
       timeoutMs: FEED_TIMEOUT_MS,
     })
 
@@ -462,10 +476,11 @@ function summaryMessage(
     ? `${summary} ${sentence(problems.join(' and '))}.`
     : summary
 
-  // Said plainly rather than left as a suspiciously small number: every
-  // structured feed is a South African retailer.
+  // Said plainly rather than left as a suspiciously small number. It no longer
+  // reads "feeds are South African", because they are not — it names the
+  // country that has none, which is a thing that can be fixed by building one.
   return countryWithoutFeeds
-    ? `${withProblems} Retailer feeds are South African, so ${countryFromCode(countryWithoutFeeds).name} swept shops only.`
+    ? `${withProblems} No retailer feed covers ${countryFromCode(countryWithoutFeeds).name} yet, so it swept shops only.`
     : withProblems
 }
 
