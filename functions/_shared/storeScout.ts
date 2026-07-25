@@ -652,6 +652,9 @@ async function scoutStoreWebsite(
   let nextPath = start
   let sawTransientFailure = false
   let linkedDetailBudget = 2
+  // Leaflets found along the way. They are worth storing, but they must never
+  // end the search on their own — see below.
+  let heldLeaflets: StorePromotion[] = []
 
   for (const path of paths) {
     const pageUrl = `${origin}${path}`
@@ -684,8 +687,16 @@ async function scoutStoreWebsite(
     const leaflets = extractOfficialLeaflets(store, page.text, finalUrl, origin, nowMs)
     const deals = extractPublicStoreDeals(store, page.text, finalUrl, nowMs)
 
-    if (leaflets.length > 0 || deals.length > 0) {
+    // Priced products are what a shopper came for, so they end the search.
+    // A leaflet alone must not: a shop running a commerce platform keeps its
+    // real markdowns behind that platform's API, and one promotional image on
+    // the home page would otherwise be everything we ever stored. That is why
+    // a shop with forty live discounts was recorded with a single row.
+    if (deals.length > 0) {
       return outcome('success', [...deals, ...leaflets])
+    }
+    if (leaflets.length > 0 && heldLeaflets.length === 0) {
+      heldLeaflets = leaflets
     }
 
     if (linkedDetailBudget > 0) {
@@ -743,7 +754,7 @@ async function scoutStoreWebsite(
             ? await scoutConstructorPlatform(store, detection, origin)
             : await scoutAlgoliaPlatform(store, detection, origin)
       if (platform.promotions.length > 0) {
-        return platform
+        return outcome('success', [...platform.promotions, ...heldLeaflets])
       }
       if (platform.status === 'transient_failure') {
         sawTransientFailure = true
@@ -759,12 +770,17 @@ async function scoutStoreWebsite(
         detectPageCurrency(page.text),
       )
       if (platform.promotions.length > 0) {
-        return platform
+        return outcome('success', [...platform.promotions, ...heldLeaflets])
       }
       if (platform.status === 'transient_failure') {
         sawTransientFailure = true
       }
     }
+  }
+
+  // No platform answered, so a leaflet is the best this shop has today.
+  if (heldLeaflets.length > 0) {
+    return outcome('success', heldLeaflets)
   }
 
   return outcome(sawTransientFailure ? 'transient_failure' : 'empty')

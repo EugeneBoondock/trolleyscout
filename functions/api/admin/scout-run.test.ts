@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   buildRegistryOnlineStores: vi.fn(),
   getMemberSession: vi.fn(),
-  getStructuredRetailerSources: vi.fn(() => []),
+  getStructuredRetailerSources: vi.fn((): Array<{ key: string }> => []),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
 }))
