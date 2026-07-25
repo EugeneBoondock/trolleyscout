@@ -416,10 +416,12 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
   }
 
   await env.DB.prepare(
+    // A new account's country comes from where the person actually signed up,
+    // so it is confirmed on the spot and never re-detected afterwards.
     `INSERT INTO member_accounts (
       id, email, email_lookup, display_name, plan_id, plan_status, role, password_hash,
-      country_code, country_name, currency_code, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      country_code, country_name, currency_code, country_confirmed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       `member-${crypto.randomUUID()}`,
@@ -433,6 +435,7 @@ export async function signUpMember(env: TrolleyScoutEnv, input: MemberSignUpInpu
       input.country.code,
       input.country.name,
       input.country.currencyCode,
+      timestamp,
       timestamp,
       timestamp,
     )
@@ -474,16 +477,22 @@ export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput)
   }
 
   // Keep the owner's admin role correct even if the row predates roles.
-  // Country is only backfilled when the account has none: overwriting it on
-  // every login flipped travellers and VPN users to the wrong catalogue and
-  // currency each time they signed in.
+  //
+  // Country is settled once and then left alone. Overwriting it on every login
+  // flipped travellers and VPN users to the wrong catalogue and currency each
+  // time they signed in; never writing it at all left everyone whose row
+  // predates the country column stamped with its 'ZA' default, reading South
+  // African prices from another continent. So it is written while
+  // country_confirmed_at is NULL — nobody has established it yet — and that
+  // stamp closes the question for good.
   const timestamp = new Date().toISOString()
   await env.DB.prepare(
     `UPDATE member_accounts SET
       email = ?, email_lookup = ?, role = ?,
-      country_code = COALESCE(country_code, ?),
-      country_name = COALESCE(country_name, ?),
-      currency_code = COALESCE(currency_code, ?),
+      country_code = CASE WHEN country_confirmed_at IS NULL THEN ? ELSE country_code END,
+      country_name = CASE WHEN country_confirmed_at IS NULL THEN ? ELSE country_name END,
+      currency_code = CASE WHEN country_confirmed_at IS NULL THEN ? ELSE currency_code END,
+      country_confirmed_at = COALESCE(country_confirmed_at, ?),
       updated_at = ? WHERE id = ?`,
   )
     .bind(
@@ -493,6 +502,7 @@ export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput)
       input.country.code,
       input.country.name,
       input.country.currencyCode,
+      timestamp,
       timestamp,
       row.id,
     )
