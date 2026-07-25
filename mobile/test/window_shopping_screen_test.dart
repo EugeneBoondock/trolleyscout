@@ -147,7 +147,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('product galleries swipe horizontally and expose arrows and dots',
+  testWidgets('product galleries swipe horizontally and show dots, not arrows',
       (tester) async {
     final api = _WindowApi(initialDeals: const [_galleryDeal]);
 
@@ -159,11 +159,18 @@ void main() {
           widget is PageView && widget.scrollDirection == Axis.horizontal,
     );
     expect(horizontalPager, findsOneWidget);
-    expect(find.byTooltip('Previous image'), findsOneWidget);
-    expect(find.byTooltip('Next image'), findsOneWidget);
+
+    // The dots say how many pictures there are and which one is showing.
     expect(find.byKey(const ValueKey('window-image-dot-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('window-image-dot-1')), findsOneWidget);
     expect(find.bySemanticsLabel('Product image 1 of 2'), findsOneWidget);
+
+    // No chevrons over the product. Swiping is how anyone moves through a
+    // full-bleed feed, and arrows only cover the thing being looked at.
+    expect(find.byTooltip('Previous image'), findsNothing);
+    expect(find.byTooltip('Next image'), findsNothing);
+    expect(find.byIcon(Icons.chevron_left), findsNothing);
+
     expect(
       tester.widgetList<Image>(find.byType(Image)).every(
             (image) => image.fit == BoxFit.contain,
@@ -171,18 +178,8 @@ void main() {
       isTrue,
     );
 
-    final nextImage = find.descendant(
-      of: find.byTooltip('Next image'),
-      matching: find.byIcon(Icons.chevron_right),
-    );
-    expect(nextImage.hitTestable(), findsOneWidget);
-    final nextButtonFinder = find.ancestor(
-      of: find.byTooltip('Next image'),
-      matching: find.byType(IconButton),
-    );
-    final nextButton = tester.widget<IconButton>(nextButtonFinder);
-    expect(nextButton.onPressed, isNotNull);
-    await tester.tap(nextButtonFinder);
+    // Swiping still moves through the gallery, and back again.
+    await tester.drag(horizontalPager, const Offset(-500, 0));
     await tester.pumpAndSettle();
     expect(
       tester.widget<PageView>(horizontalPager).controller?.page,

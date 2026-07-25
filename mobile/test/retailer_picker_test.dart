@@ -260,6 +260,37 @@ void main() {
     expect(find.text('3 matching deals'), findsOneWidget);
     expect(find.text('Checkers'), findsOneWidget);
   });
+
+  // A shop that happens to be running no promotion used to vanish from the
+  // picker entirely, which reads as "not covered" rather than "nothing on
+  // today". Mr Price prices its markdowns without ever recording a previous
+  // price, so it would never once have appeared.
+  test('lists a shop we scout even when it has nothing on today', () {
+    final options = retailerOptionsFromDeals(
+      [_deal('p1', 'pep', 'PEP')],
+      catalog: [_retailer('mr-price', 'Mr Price'), _retailer('pep', 'PEP')],
+    );
+
+    expect(options.map((option) => option.id), containsAll(['mr-price', 'pep']));
+
+    final quiet = options.firstWhere((option) => option.id == 'mr-price');
+    expect(quiet.dealCount, 0);
+    expect(quiet.dealCountLabel, '0 deals');
+
+    // The shop with deals still reports the real number.
+    expect(options.firstWhere((option) => option.id == 'pep').dealCount, 1);
+  });
+
+  // The name on the card and the name in the picker have to agree, so the one
+  // the deal carries wins.
+  test('prefers the name the deal itself carries', () {
+    final options = retailerOptionsFromDeals(
+      [_deal('p1', 'pep', 'PEP')],
+      catalog: [_retailer('pep', 'Pep Stores')],
+    );
+
+    expect(options.single.name, 'PEP');
+  });
 }
 
 Future<void> _useTallViewport(WidgetTester tester) async {
@@ -342,3 +373,15 @@ class _PickerApi extends Api {
   Future<NotificationPreferences> notificationPreferences() async =>
       const NotificationPreferences.off();
 }
+
+Retailer _retailer(String id, String name) => Retailer(
+      id: id,
+      name: name,
+      shortName: name,
+      group: 'Supermarket',
+      program: '$name specials',
+      sourceNote: 'Official pages.',
+      verifiedOn: '2026-07-23',
+      accentColor: '#000000',
+      sources: const [],
+    );

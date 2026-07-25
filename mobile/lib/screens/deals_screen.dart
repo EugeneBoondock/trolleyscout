@@ -78,6 +78,10 @@ class _DealsScreenState extends State<DealsScreen> {
   static const _sampleLimit = 6;
   List<PublicAd> _ads = const [];
   List<Deal> _siteDeals = const [];
+
+  // Every shop we scout, so the picker can list one that happens to have
+  // nothing on today rather than dropping it and reading as "not covered".
+  List<Retailer> _catalog = const [];
   final _notifPrefs = NotificationPrefsStore();
   late final DealAlertScheduler _alertScheduler;
   bool _notifyNewDeals = false;
@@ -97,6 +101,7 @@ class _DealsScreenState extends State<DealsScreen> {
     _load();
     _loadAds();
     _loadSiteDeals();
+    _loadCatalog();
     _restoreNotifyPref();
     _restoreTaste();
   }
@@ -119,6 +124,18 @@ class _DealsScreenState extends State<DealsScreen> {
       if (mounted) setState(() => _ads = ads);
     } catch (_) {
       // Sponsored slot simply stays empty if the feed is unreachable.
+    }
+  }
+
+  // The shops we scout, whether or not they are running anything today. Loaded
+  // beside the deals rather than blocking them: a picker missing a quiet shop
+  // is a smaller problem than a list that will not open.
+  Future<void> _loadCatalog() async {
+    try {
+      final catalog = await widget.api.retailers();
+      if (mounted) setState(() => _catalog = catalog.retailers);
+    } catch (_) {
+      // The picker falls back to the shops present in the deals themselves.
     }
   }
 
@@ -370,9 +387,9 @@ class _DealsScreenState extends State<DealsScreen> {
 
   Widget _buildBoard(DiscoveryResult result, {String? staleNote}) {
     final allDeals = _sortByPage([...result.deals, ..._siteDeals]);
-    // The store picker is built from the deals already on screen, so its rows
-    // and counts can never drift from what the list can actually show.
-    final retailers = retailerOptionsFromDeals(allDeals);
+    // The picker lists the shops in these deals plus every shop we scout, so a
+    // shop with nothing on today still appears, saying so.
+    final retailers = retailerOptionsFromDeals(allDeals, catalog: _catalog);
     final sources = allDeals
         .map((deal) => deal.sourceLabel)
         .where((source) => source.isNotEmpty)
@@ -515,6 +532,7 @@ class _DealsScreenState extends State<DealsScreen> {
       color: TS.redOf(context),
       onRefresh: () async {
         _loadSiteDeals();
+        _loadCatalog();
         _loadAds();
         setState(() {
           _page = 0;

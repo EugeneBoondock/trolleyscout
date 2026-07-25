@@ -34,23 +34,43 @@ class RetailerOption {
 
 String _dealCountLabel(int count) => '$count deal${count == 1 ? '' : 's'}';
 
-/// Builds the picker's store list from the deals already on screen — the very
-/// list the old dropdown was built from, plus a per-store count. Sorted by the
-/// folded name so the A–Z sections come out in order.
-List<RetailerOption> retailerOptionsFromDeals(Iterable<Deal> deals) {
+/// Builds the picker's store list from the deals already on screen, plus every
+/// shop we scout, whether or not it has anything on today.
+///
+/// Built from the deals alone, a shop that happens to be running no promotion
+/// vanished from the list entirely, which reads as "not covered" rather than
+/// "nothing on today" — Mr Price prices its markdowns without ever recording a
+/// previous price, so it would never once have appeared. A shop with nothing on
+/// says so, and its count keeps the list honest either way.
+///
+/// Sorted by the folded name so the A–Z sections come out in order.
+List<RetailerOption> retailerOptionsFromDeals(
+  Iterable<Deal> deals, {
+  Iterable<Retailer> catalog = const [],
+}) {
   final names = <String, String>{};
   final counts = <String, int>{};
+
   for (final deal in deals) {
     if (deal.retailerName.trim().isEmpty) continue;
     names[deal.retailerId] = deal.retailerName;
     counts[deal.retailerId] = (counts[deal.retailerId] ?? 0) + 1;
   }
+
+  // The name a deal carries wins: it is what the shopper will read on the card
+  // beside it, so the two must agree.
+  for (final retailer in catalog) {
+    if (retailer.name.trim().isEmpty) continue;
+    names.putIfAbsent(retailer.id, () => retailer.name);
+    counts.putIfAbsent(retailer.id, () => 0);
+  }
+
   return [
     for (final entry in names.entries)
       RetailerOption(
         id: entry.key,
         name: entry.value,
-        dealCount: counts[entry.key]!,
+        dealCount: counts[entry.key] ?? 0,
       ),
   ]..sort((a, b) => a.searchKey.compareTo(b.searchKey));
 }

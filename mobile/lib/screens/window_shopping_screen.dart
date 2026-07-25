@@ -2172,19 +2172,6 @@ class _WindowImageGalleryState extends State<_WindowImageGallery> {
     super.dispose();
   }
 
-  void _show(int index) {
-    if (index < 0 || index >= widget.images.length) return;
-    HapticFeedback.selectionClick();
-    if (MediaQuery.of(context).disableAnimations) {
-      _controller.jumpToPage(index);
-    } else {
-      _controller.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
 
   List<int> get _dotIndexes {
     const visibleDotLimit = 9;
@@ -2233,33 +2220,10 @@ class _WindowImageGalleryState extends State<_WindowImageGallery> {
               ),
             ),
           ),
-          Positioned(
-            left: 8,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: _GalleryArrow(
-                tooltip: 'Previous image',
-                icon: Icons.chevron_left,
-                onPressed: _index > 0 ? () => _show(_index - 1) : null,
-              ),
-            ),
-          ),
-          Positioned(
-            // Leave the far-right action rail clear on shorter phones.
-            right: 68,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: _GalleryArrow(
-                tooltip: 'Next image',
-                icon: Icons.chevron_right,
-                onPressed: _index < widget.images.length - 1
-                    ? () => _show(_index + 1)
-                    : null,
-              ),
-            ),
-          ),
+          // No arrows over the picture. The dots already say how many images
+          // there are and which one is showing, and swiping is how anyone
+          // moves through a full-bleed feed — a pair of chevrons sitting on
+          // the product only covers the thing the shopper came to look at.
           Positioned(
             left: 60,
             right: 60,
@@ -2291,33 +2255,6 @@ class _WindowImageGalleryState extends State<_WindowImageGallery> {
   }
 }
 
-class _GalleryArrow extends StatelessWidget {
-  const _GalleryArrow({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.52),
-      shape: const CircleBorder(),
-      child: IconButton(
-        tooltip: tooltip,
-        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-        color: Colors.white,
-        disabledColor: Colors.white30,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 30),
-      ),
-    );
-  }
-}
 
 class WindowProductImage extends StatefulWidget {
   const WindowProductImage({
