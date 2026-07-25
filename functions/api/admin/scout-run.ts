@@ -16,7 +16,11 @@ import { getMemberSession } from '../../_shared/memberStore'
 import { buildRegistryOnlineStores } from '../../_shared/registryOnlineScout'
 import { hasTrustedMutationOrigin, readJsonObjectBody } from '../../_shared/requestGuards'
 import { json, methodNotAllowed } from '../../_shared/respond'
-import { runStructuredRetailerFeedScout } from '../../_shared/retailerFeedScout'
+import {
+  getStructuredRetailerSources,
+  runStructuredRetailerFeedScout,
+  type RetailerFeedSource,
+} from '../../_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../../_shared/storeScout'
 
 const privateHeaders = {
@@ -165,6 +169,38 @@ function readLane(value: unknown, url: string): ScoutLane | undefined {
   return SCOUT_LANES.find((lane) => lane === requested)
 }
 
+// A bounded run walks the source list from the front, so with the cap this
+// endpoint has to keep, it could only ever reach the first handful of sources
+// — the ones registered last, Takealot's campaign shards among them, were
+// never reached however many times the button was pressed. Ordering by how
+// long a source has gone unread makes each press advance whatever is most
+// overdue, so pressing repeatedly walks the whole list.
+async function leastRecentlyRunFirst(
+  env: TrolleyScoutEnv,
+): Promise<readonly RetailerFeedSource[]> {
+  const sources = getStructuredRetailerSources()
+  if (!env.DB) {
+    return sources
+  }
+
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT source_key, MAX(finished_at) AS last_run
+        FROM deal_source_runs GROUP BY source_key`,
+    ).all<{ source_key: string; last_run: string | null }>()
+    const lastRun = new Map(rows.results.map((row) => [row.source_key, row.last_run ?? '']))
+
+    // A source that has never run sorts first; ties keep registration order.
+    return [...sources]
+      .map((source, index) => ({ index, key: lastRun.get(source.key) ?? '', source }))
+      .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index)
+      .map((entry) => entry.source)
+  } catch {
+    // Without the audit table the registration order is still a valid pass.
+    return sources
+  }
+}
+
 async function runFeedLane(
   env: TrolleyScoutEnv,
   requestCap: number,
@@ -172,6 +208,7 @@ async function runFeedLane(
   try {
     const result = await runStructuredRetailerFeedScout(env, {
       requestCap,
+      sources: await leastRecentlyRunFirst(env),
       timeoutMs: FEED_TIMEOUT_MS,
     })
 

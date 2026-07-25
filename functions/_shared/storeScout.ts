@@ -497,7 +497,7 @@ async function searchStoreCatalogue(
 
   const pageUrl = page.finalUrl ?? source.url
   const deals = extractPublicStoreDeals(store, page.text, pageUrl, nowMs)
-  const leaflets = officialLeaflets(store, page.text, pageUrl, officialOrigin, nowMs)
+  const leaflets = extractOfficialLeaflets(store, page.text, pageUrl, officialOrigin, nowMs)
   let commonCommerceTransient = false
 
   if (deals.length > 0 || leaflets.length > 0) {
@@ -681,7 +681,7 @@ async function scoutStoreWebsite(
       continue
     }
 
-    const leaflets = officialLeaflets(store, page.text, finalUrl, origin, nowMs)
+    const leaflets = extractOfficialLeaflets(store, page.text, finalUrl, origin, nowMs)
     const deals = extractPublicStoreDeals(store, page.text, finalUrl, nowMs)
 
     if (leaflets.length > 0 || deals.length > 0) {
@@ -712,7 +712,7 @@ async function scoutStoreWebsite(
         ) {
           continue
         }
-        const detailLeaflets = officialLeaflets(
+        const detailLeaflets = extractOfficialLeaflets(
           store,
           detail.text,
           resolvedDetailUrl,
@@ -2116,35 +2116,238 @@ function leafletToPromotion(store: NearbyStore, leaflet: StoreLeaflet): StorePro
   }
 }
 
-function officialLeaflets(
+// A catalogue has to look like a catalogue. A PDF (or a trusted flipbook host)
+// is a strong signal by shape and only has to belong to this store. A bare page
+// image is a weak one: every scouted page also carries the shop's logo, social
+// graphics and decorative photos, and those were being stored — and titled from
+// their filename — as if a shopper could shop from them.
+const MAX_OFFICIAL_LEAFLETS = 8
+// Judge more candidates than we keep. Junk images used to fill the extractor's
+// fixed budget and crowd out a real leaflet before it was ever looked at.
+const OFFICIAL_LEAFLET_SCAN_LIMIT = 24
+const MAX_SCANNED_IMAGE_TAGS = 400
+const MAX_SCANNED_HEADINGS = 40
+// A catalogue page is a big image. A declared 60x60 or 300x300 box is a tile,
+// a badge or a thumbnail.
+const MIN_CATALOGUE_IMAGE_EDGE = 400
+
+const IMAGE_DOCUMENT_PATTERN = /\.(?:avif|gif|jpe?g|png|svg|webp)(?:$|\?)/i
+
+// Brand marks, page chrome and UI furniture: never a shopper catalogue.
+const NON_CATALOGUE_IMAGE_PATTERN =
+  /(?:^|[^a-z])(?:logos?|brand(?:mark)?|icons?|favicon|header|footer|banner[-_]?sprite|sprites?|placeholder|spinner|loader|avatar|profile|watermark|badge|thumb(?:nail)?)(?:[^a-z]|$)/i
+
+// Image-CDN artefacts: mod_pagespeed rewrites, and the -300x300 / _768x770 size
+// suffix a CMS appends to a DERIVED thumbnail — never to an original catalogue
+// page. Their presence is proof the file is a resized copy of something else.
+const DERIVED_IMAGE_PATTERN = /\.pagespeed\.|[-_.]\d{2,4}x\d{2,4}(?=[-_.]|$)/i
+
+// Filename noise to ignore when asking "is this file just the shop's name?",
+// so WordPress's "cropped-cropped-saimart.png" is still recognised as the logo.
+const IMAGE_FILENAME_BOILERPLATE = new Set([
+  'copy',
+  'cropped',
+  'default',
+  'edited',
+  'final',
+  'image',
+  'img',
+  'large',
+  'medium',
+  'min',
+  'mobile',
+  'new',
+  'opt',
+  'optimised',
+  'optimized',
+  'photo',
+  'resized',
+  'retina',
+  'scaled',
+  'site',
+  'small',
+  'web',
+])
+
+// A filename is not a name. "Things to do camping jpg.webp.pagespeed.ce...webp"
+// is what a shopper was shown; a plain truthful label is always better.
+const FILE_EXTENSION_TITLE_PATTERN = /\.(?:avif|bmp|gif|jpe?g|pdf|png|svg|tiff?|webp)\b/i
+
+interface PageImageMeta {
+  alt: string
+  height?: number
+  width?: number
+}
+
+export function extractOfficialLeaflets(
   store: NearbyStore,
   html: string,
   pageUrl: string,
   officialOrigin: string,
   nowMs: number,
 ): StorePromotion[] {
+  const images = pageImageMeta(html, pageUrl)
+  const promotionalPage = isGenuinelyPromotionalPage(pageUrl, html)
+
   return extractRetailerLeafletsFromHtml(
     { retailerId: 'independent' as never, retailerName: store.name, sourceUrl: pageUrl },
     html,
     new Date(nowMs).toISOString(),
+    OFFICIAL_LEAFLET_SCAN_LIMIT,
   )
     .filter((leaflet) => {
       const documentUrl = leaflet.documentUrl ?? leaflet.url
-      const isPromotionImage = leaflet.imageUrl === documentUrl
-      return (
-        sameOrigin(documentUrl, officialOrigin) ||
-        isTrustedCatalogueUrl(documentUrl) ||
-        isPromotionImage
-      ) && !isAggregatorHost(safeHost(documentUrl) ?? '')
+
+      if (isAggregatorHost(safeHost(documentUrl) ?? '')) {
+        return false
+      }
+      if (!IMAGE_DOCUMENT_PATTERN.test(safePathname(documentUrl))) {
+        return sameOrigin(documentUrl, officialOrigin) || isTrustedCatalogueUrl(documentUrl)
+      }
+      return isCatalogueImage(
+        store.name,
+        documentUrl,
+        images.get(documentUrl),
+        promotionalPage,
+      )
     })
+    .slice(0, MAX_OFFICIAL_LEAFLETS)
     .map((leaflet) => {
       const documentUrl = leaflet.documentUrl ?? leaflet.url
       const safeLeaflet = leaflet.imageUrl === documentUrl &&
         !sameOrigin(documentUrl, officialOrigin)
         ? { ...leaflet, documentUrl: pageUrl }
         : leaflet
-      return leafletToPromotion(store, safeLeaflet)
+      return leafletToPromotion(store, {
+        ...safeLeaflet,
+        name: shopperFacingTitle(store.name, safeLeaflet.name),
+      })
     })
+}
+
+// A bare image only counts as a catalogue when the page it sits on is genuinely
+// promotional AND the image says so itself, through its own path or alt text.
+// The former rule read 1.2KB of surrounding markup, so one "Specials" link in a
+// site's nav made every image on the page a catalogue — the logo included.
+function isCatalogueImage(
+  storeName: string,
+  documentUrl: string,
+  image: PageImageMeta | undefined,
+  promotionalPage: boolean,
+): boolean {
+  if (!promotionalPage) {
+    return false
+  }
+
+  const pathname = safePathname(documentUrl)
+  const filename = decodeUrlText(pathname.split('/').at(-1) ?? '')
+
+  if (
+    !filename ||
+    NON_CATALOGUE_IMAGE_PATTERN.test(filename) ||
+    DERIVED_IMAGE_PATTERN.test(filename) ||
+    looksLikeStoreBrandMark(filename, storeName) ||
+    !hasPlausibleCatalogueDimensions(image)
+  ) {
+    return false
+  }
+
+  return looksLikePromotionSignal(decodeUrlText(pathname)) ||
+    looksLikePromotionSignal(image?.alt ?? '')
+}
+
+// "cropped-cropped-saimart.png" on Sai Mart's own site is the shop's logo, not
+// its catalogue: once boilerplate is dropped, the filename is only the brand.
+function looksLikeStoreBrandMark(filename: string, storeName: string): boolean {
+  const brand = normalizeWords(storeName).replace(/ /g, '')
+  if (brand.length < 4) {
+    return false
+  }
+
+  const tokens = normalizeWords(filename.replace(/\.[a-z0-9]+$/i, ''))
+    .split(' ')
+    .filter((token) => token.length >= 3 && !IMAGE_FILENAME_BOILERPLATE.has(token))
+
+  return tokens.length > 0 &&
+    tokens.every((token) => brand.includes(token) || token.includes(brand))
+}
+
+function hasPlausibleCatalogueDimensions(image: PageImageMeta | undefined): boolean {
+  // Most sites omit width/height, so their absence cannot be held against a
+  // candidate — but a declared thumbnail-sized box rules a catalogue out.
+  if (!image?.width || !image?.height) {
+    return true
+  }
+  return Math.min(image.width, image.height) >= MIN_CATALOGUE_IMAGE_EDGE
+}
+
+// Promotional intent stated by the page itself: its path, or its own headings.
+// Deliberately NOT the whole body, which is where nav chrome lives.
+function isGenuinelyPromotionalPage(pageUrl: string, html: string): boolean {
+  if (isPromotionPath(pageUrl)) {
+    return true
+  }
+
+  return Array.from(
+    html.matchAll(/<(?:h[1-3]|title)\b[^>]*>([\s\S]{0,400}?)<\/(?:h[1-3]|title)>/gi),
+  )
+    .slice(0, MAX_SCANNED_HEADINGS)
+    .some((heading) => looksLikePromotionSignal(cleanText(heading[1] ?? '')))
+}
+
+function pageImageMeta(html: string, pageUrl: string): Map<string, PageImageMeta> {
+  const meta = new Map<string, PageImageMeta>()
+  const pattern = /<img\b([^>]{0,2000})>/gi
+  let match: RegExpExecArray | null
+  let scanned = 0
+
+  while ((match = pattern.exec(html)) !== null && scanned < MAX_SCANNED_IMAGE_TAGS) {
+    scanned += 1
+    const attributes = match[1] ?? ''
+    const url = absoluteUrl(
+      decodeHtml(attributeValue(attributes, ['src', 'data-src']) ?? ''),
+      pageUrl,
+    )
+
+    if (!url || meta.has(url)) {
+      continue
+    }
+
+    meta.set(url, {
+      alt: cleanText(attributeValue(attributes, ['alt']) ?? ''),
+      height: pixelValue(attributeValue(attributes, ['height'])),
+      width: pixelValue(attributeValue(attributes, ['width'])),
+    })
+  }
+
+  return meta
+}
+
+function pixelValue(value: string | undefined): number | undefined {
+  return value && /^\d+$/.test(value) ? Number(value) : undefined
+}
+
+function shopperFacingTitle(storeName: string, title: string | undefined): string {
+  const cleaned = (title ?? '').replace(/\s+/g, ' ').trim()
+  return cleaned && !FILE_EXTENSION_TITLE_PATTERN.test(cleaned)
+    ? cleaned
+    : `${storeName} specials`
+}
+
+function safePathname(value: string): string {
+  try {
+    return new URL(value).pathname
+  } catch {
+    return value
+  }
+}
+
+function decodeUrlText(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
@@ -2162,7 +2365,7 @@ function cataloguePromotion(store: NearbyStore, url: string, title?: string): St
     retailerId: store.retailerId,
     sourceUrl: url,
     storeName: store.name,
-    title: title?.trim() || `${store.name} specials`,
+    title: shopperFacingTitle(store.name, title),
   }
 }
 

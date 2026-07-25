@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from './env'
 import {
+  extractOfficialLeaflets,
   extractPromotionDetailUrls,
   extractPublicStoreDeals,
   scoutNearbyStores,
@@ -502,6 +503,125 @@ describe('extractPublicStoreDeals', () => {
         title: 'Red Bull Watermelon 250ml',
       }),
     ])
+  })
+})
+
+// Fixtures below are the real shapes that reached shoppers as "catalogues":
+// every one was stored from a Zimbabwean store page with no price on it.
+describe('extractOfficialLeaflets', () => {
+  const FILE_EXTENSION = /\.(?:avif|bmp|gif|jpe?g|pdf|png|svg|tiff?|webp)\b/i
+
+  function leaflets(store: NearbyStore, html: string, pageUrl: string) {
+    return extractOfficialLeaflets(
+      store,
+      html,
+      pageUrl,
+      new URL(pageUrl).origin,
+      Date.parse('2026-07-24T00:00:00.000Z'),
+    )
+  }
+
+  function storeFixture(name: string, placeId: string): NearbyStore {
+    return { lat: -17.82, lon: 31.05, name, placeId }
+  }
+
+  it('rejects the shop own logo, however promotional the page around it', () => {
+    const saiMart = storeFixture('Sai Mart', 'sai-mart')
+    const html = `
+      <h1>Sai Mart weekly specials</h1>
+      <img src="/wp-content/uploads/2026/03/cropped-cropped-saimart.png" alt="Sai Mart">
+      <img src="/img/specials/cropped-cropped-saimart.png" alt="Sai Mart">
+      <img src="/assets/logo-saimart-header.png" alt="Sai Mart specials">`
+
+    expect(leaflets(saiMart, html, 'https://saimart.co.zw/specials')).toEqual([])
+  })
+
+  it('rejects social graphics and CMS-derived thumbnails on a specials page', () => {
+    const tvsh = storeFixture('TV Sales & Home', 'tv-sales-home')
+    const freshco = storeFixture('Freshco Market', 'freshco-market')
+    const tvshHtml = `
+      <h1>Promotions</h1>
+      <img src="/wp-content/uploads/2026/06/TVSH-Hisense-World-Cup-Promotion-Generic-FB-Post-WM-02-768x770.png"
+        alt="Hisense World Cup Promotion">`
+    const freshcoHtml = `
+      <h1>Managers Specials</h1>
+      <img src="/wp-content/uploads/2026/07/Managers-Special-1-1024x1024.jpg" alt="Managers Special 1">
+      <img src="/wp-content/uploads/2026/07/Managers-Special-2-1024x1024.jpg" alt="Managers Special 2">
+      <img src="/wp-content/uploads/2026/07/IG-Freshco-Winter-Promo-300x300.png" alt="Winter Promo">`
+
+    expect(leaflets(tvsh, tvshHtml, 'https://tvsales.co.zw/promotions')).toEqual([])
+    expect(leaflets(freshco, freshcoHtml, 'https://freshcomarket.co.zw/specials')).toEqual([])
+  })
+
+  it('rejects image-CDN artefacts and decorative page photos', () => {
+    const voltman = storeFixture('Voltman Hardware', 'voltman-hardware')
+    const html = `
+      <h1>Voltman specials</h1>
+      <img src="/images/xThings-to-do-camping.jpg.webp.pagespeed.ce.xJ1LofBGc9.webp"
+        alt="Things to do camping">
+      <img src="/images/store-front-photo.jpg" alt="Our Borrowdale branch">`
+
+    expect(leaflets(voltman, html, 'https://voltman.co.zw/specials')).toEqual([])
+  })
+
+  it('rejects a promotional-looking image when only the site nav mentions specials', () => {
+    // The bug: 1.2KB of surrounding markup was searched for promo wording, so a
+    // single nav link made every image on an ordinary page a "catalogue".
+    const voltman = storeFixture('Voltman Hardware', 'voltman-hardware')
+    const html = `
+      <nav><a href="/specials">Specials</a><a href="/deals">Weekly deals</a></nav>
+      <h1>About us</h1>
+      <img src="/images/team.jpg" alt="Our team">`
+
+    expect(leaflets(voltman, html, 'https://voltman.co.zw/about-us')).toEqual([])
+  })
+
+  it('still accepts a real dated retailer leaflet PDF', () => {
+    const shoprite = storeFixture('Shoprite Parkview', 'shoprite-parkview')
+    const html = `
+      <h2>Shoprite weekly specials</h2>
+      <a href="/medias/ZA-Shoprite-Weekly-Specials-14-July-2026.pdf">Weekly Specials 14 July 2026</a>`
+
+    const found = leaflets(shoprite, html, 'https://www.shoprite.co.za/specials')
+
+    expect(found).toEqual([
+      expect.objectContaining({
+        kind: 'catalogue',
+        productUrl: 'https://www.shoprite.co.za/medias/ZA-Shoprite-Weekly-Specials-14-July-2026.pdf',
+        title: 'Weekly Specials 14 July 2026',
+      }),
+    ])
+  })
+
+  it('still accepts a genuine promotional catalogue image', () => {
+    const freshco = storeFixture('Freshco Market', 'freshco-market')
+    const html = `
+      <h1>June weekly specials catalogue</h1>
+      <img src="/media/catalogue/june-weekly-specials-page-1.jpg"
+        alt="June weekly specials catalogue" width="827" height="1169">`
+
+    const found = leaflets(freshco, html, 'https://freshcomarket.co.zw/specials')
+
+    expect(found).toEqual([
+      expect.objectContaining({
+        kind: 'catalogue',
+        productUrl: 'https://freshcomarket.co.zw/media/catalogue/june-weekly-specials-page-1.jpg',
+        title: 'June weekly specials catalogue',
+      }),
+    ])
+  })
+
+  it('never titles a promotion from a filename', () => {
+    const freshco = storeFixture('Freshco Market', 'freshco-market')
+    // No heading and no alt text: the only name left is the filename, which a
+    // shopper must never see. A plain truthful label is used instead.
+    const html = '<div><img src="/media/june-weekly-specials-catalogue.jpg"></div>'
+
+    const found = leaflets(freshco, html, 'https://freshcomarket.co.zw/specials')
+
+    expect(found).toHaveLength(1)
+    expect(found[0].title).toBe('Freshco Market specials')
+    expect(found.every((promotion) => !FILE_EXTENSION.test(promotion.title))).toBe(true)
   })
 })
 

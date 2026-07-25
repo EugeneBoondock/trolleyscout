@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   buildRegistryOnlineStores: vi.fn(),
   getMemberSession: vi.fn(),
+  getStructuredRetailerSources: vi.fn(() => []),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
 }))
@@ -12,6 +13,7 @@ vi.mock('../../_shared/memberStore', () => ({
 }))
 
 vi.mock('../../_shared/retailerFeedScout', () => ({
+  getStructuredRetailerSources: mocks.getStructuredRetailerSources,
   runStructuredRetailerFeedScout: mocks.runStructuredRetailerFeedScout,
 }))
 
@@ -184,6 +186,40 @@ describe('/api/admin/scout-run', () => {
         message: '10 sources checked, 240 deals added, 2 stores swept.',
       },
     })
+  })
+
+  it('reaches the sources that have gone longest unread, not just the first few', async () => {
+    // A bounded run walks the list from the front and stops at the cap, so the
+    // sources registered last — Takealot's campaign shards among them — were
+    // never reached however many times the button was pressed.
+    signedInAs('admin-1', 'admin')
+    mocks.getStructuredRetailerSources.mockReturnValue([
+      { key: 'woolworths::all-savings' },
+      { key: 'clicks::promotion-products' },
+      { key: 'takealot::promotion-campaigns-0' },
+    ])
+
+    const response = await invoke(
+      new Request(`${ENDPOINT}?lane=feeds`, { method: 'POST' }),
+      {
+        prepare: () => ({
+          all: async () => ({
+            results: [
+              { last_run: '2026-07-25T00:33:41.000Z', source_key: 'woolworths::all-savings' },
+              { last_run: '2026-07-25T00:33:47.000Z', source_key: 'clicks::promotion-products' },
+              // Longest unread, so it must be scouted first.
+              { last_run: '2026-07-25T00:18:00.000Z', source_key: 'takealot::promotion-campaigns-0' },
+            ],
+          }),
+        }),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const passed = mocks.runStructuredRetailerFeedScout.mock.calls[0][1].sources as Array<{
+      key: string
+    }>
+    expect(passed[0].key).toBe('takealot::promotion-campaigns-0')
   })
 
   it('accepts the lane from the query string too', async () => {
