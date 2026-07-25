@@ -122,7 +122,7 @@ export function getMemberPlan(planId: MemberPlanId) {
 export function getPlanBillingOption(
   planId: MemberPlanId,
   billingCycle: BillingCycle,
-  pricing?: { currencyCode?: string; rateFromZar?: number },
+  pricing?: { countryCode?: string; currencyCode?: string; rateFromZar?: number },
 ) {
   const plan = getMemberPlan(planId)
 
@@ -150,6 +150,7 @@ export function getPlanBillingOption(
 /// The plan table as one shopper sees it: quoted in their currency, with the
 /// rand that will actually leave their account alongside it.
 export function getLocalisedMemberPlans(pricing?: {
+  countryCode?: string
   currencyCode?: string
   rateFromZar?: number
 }): MemberPlan[] {

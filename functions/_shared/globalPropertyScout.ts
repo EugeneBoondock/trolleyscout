@@ -6,6 +6,7 @@ import type {
   PropertySearchResult,
 } from '../../src/types'
 import { filterAndSortListings, type PropertySort } from '../../src/services/propertyPortals'
+import { getPropertySources } from '../../src/services/propertySourceRegistry'
 import { getSadcPropertySources } from '../../src/services/sadcSourceRegistry'
 import type { TrolleyScoutEnv } from './env'
 import { reverseGeocodePlace } from './reverseGeocode'
@@ -15,6 +16,11 @@ const SEARCH_TTL_MS = 3 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 9_000
 const MAX_BODY_BYTES = 2_000_000
 const MAX_RESULTS_TO_FETCH = 8
+const MAX_PAGES_TO_FETCH = 14
+const MAX_REDIRECT_HOPS = 3
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const HTTP_ACCEPTED = 202
+const TRAILING_PRICE_WINDOW = 600
 const MAX_PROPERTY_STATE_BYTES = 750_000
 const MAX_PROPERTY_STATE_OBJECTS = 12_000
 const PROPERTY_CACHE_VERSION = 'v3'
@@ -80,10 +86,10 @@ export async function searchGlobalProperties(
         env.JINA_API_KEY,
       ),
     ])
-    const registeredResults: GlobalPropertyResult[] = getSadcPropertySources(
-      country.code,
-      params.listingType,
-    ).map((source) => ({
+    const registeredResults: GlobalPropertyResult[] = [
+      ...getSadcPropertySources(country.code, params.listingType),
+      ...getPropertySources(country.code, params.listingType),
+    ].map((source) => ({
       label: source.label,
       title: `${source.label} ${country.name} property listings`,
       trusted: true,
@@ -92,13 +98,19 @@ export async function searchGlobalProperties(
         locationText,
         params.listingType,
       ),
-    }))
+    })).filter((result) => !hasUnfilledLocation(result.url))
     const results = dedupeSearchResults([...registeredResults, ...resultGroups.flat()])
     const relevantResults = results.filter((result) =>
       result.trusted || isLikelyPropertySearchResult(result, country, locationText),
     )
+    // A country with many registered portals must not crowd out the discovered
+    // ones: the registered set is fetched on top of the discovery budget.
+    const fetchBudget = Math.min(
+      MAX_PAGES_TO_FETCH,
+      MAX_RESULTS_TO_FETCH + registeredResults.length,
+    )
     const fetched = await Promise.all(
-      relevantResults.slice(0, MAX_RESULTS_TO_FETCH).map(async (result) => {
+      relevantResults.slice(0, fetchBudget).map(async (result) => {
         const html = await fetchPropertyPage(env, result.url)
         const parsed = html
           ? parseGenericPropertyListings(html, result.url, params.listingType, country.currencyCode)
@@ -156,11 +168,16 @@ export function propertySourceUrlForLocation(
   locationText: string,
   listingType: PropertyListingType,
 ): string {
-  const source = safeHttpUrl(sourceUrl)
-  if (!source) return sourceUrl
+  const locationSlug = slug(locationText)
+  const templated = locationSlug
+    ? sourceUrl
+      .replaceAll('{location}', locationSlug)
+      .replaceAll('{Location}', titleCase(locationSlug))
+    : sourceUrl
+  const source = safeHttpUrl(templated)
+  if (!source) return templated
 
   const host = normalizeSourceHost(source.hostname)
-  const locationSlug = slug(locationText)
   if (host === 'property.co.zw') {
     return `${source.origin}/property-${listingType === 'rent' ? 'for-rent' : 'for-sale'}/${locationSlug}`
   }
@@ -168,7 +185,15 @@ export function propertySourceUrlForLocation(
     return `${source.origin}/${listingType === 'rent' ? 'to-rent' : 'for-sale'}/${locationSlug}`
   }
 
-  return sourceUrl
+  return templated
+}
+
+function hasUnfilledLocation(url: string): boolean {
+  return url.includes('{location}') || url.includes('{Location}')
+}
+
+function titleCase(value: string): string {
+  return value.replace(/(?:^|-)[a-z]/g, (letter) => letter.toUpperCase())
 }
 
 export function parseGenericPropertyListings(
@@ -199,6 +224,7 @@ export function parseGenericPropertyListings(
   const sourceHost = normalizeSourceHost(source.hostname)
   const portalName = labelFromHost(sourceHost)
   const portal = `web:${slug(sourceHost)}`
+  const priceIndex = buildPriceIndex(objects, source)
   const structuredListings = objects
     .filter(isPropertyObject)
     .map((object) => objectToListing(object, {
@@ -206,6 +232,7 @@ export function parseGenericPropertyListings(
       listingType,
       portal,
       portalName,
+      priceIndex,
       source,
     }))
     .filter((listing): listing is PropertyListing => Boolean(listing))
@@ -241,13 +268,18 @@ function parseVisiblePropertyCards(
   ) {
     inspected += 1
     const href = htmlAttribute(match[1] ?? '', ['href'])
-    const body = match[2] ?? ''
+    const body = stripAttributeSpill(match[2] ?? '')
     const listingUrl = href ? safeHttpUrl(decodeHtml(href), source) : undefined
     if (!listingUrl || !looksLikePropertyDetail(listingUrl, body)) continue
 
     const text = cleanHtmlText(body)
-    const price = propertyPrice(text, defaultCurrency)
-    const title = propertyCardTitle(body)
+    const headingWrapped = isHeadingWrapped(html, match.index)
+    const price =
+      propertyPrice(text, defaultCurrency) ??
+      (headingWrapped
+        ? trailingCardPrice(html, anchorPattern.lastIndex, defaultCurrency)
+        : undefined)
+    const title = propertyCardTitle(body, headingWrapped)
     if (!title || (!price && !propertyCardHasDetail(text))) continue
 
     const imageUrl = propertyCardImage(body, source)
@@ -274,27 +306,70 @@ function parseVisiblePropertyCards(
   return listings
 }
 
+const CARD_PRICE_ELEMENT = /class=["'][^"']*\bprice\b/i
+const CARD_TITLE_ELEMENT =
+  /<([a-z0-9]+)\b[^>]*\bclass=["'][^"']*\b(?:title|street|address)\b[^"']*["'][^>]*>([\s\S]{0,600}?)<\/\1>/i
+
 function looksLikePropertyDetail(url: URL, body: string): boolean {
   const searchable = `${url.pathname} ${cleanHtmlText(body).slice(0, 500)}`
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-  return /(?:bedroom|house|apartment|flat|home|villa|property|listing|for-sale|to-rent|vivenda|apartamento|moradia|imovel|immobilier|maison|terrain)/.test(searchable)
+  if (/(?:bedroom|room|house|apartment|appartement|flat|home|villa|property|listing|for-sale|for-rent|to-rent|woning|huur|koop|kamer|studio|vivenda|apartamento|moradia|imovel|immobilier|maison|terrain)/.test(searchable)) {
+    return true
+  }
+  // Craigslist names neither the property nor the deal in its URL, but its
+  // cards carry a titled row and a priced row, which is listing markup.
+  return CARD_PRICE_ELEMENT.test(body) && CARD_TITLE_ELEMENT.test(body)
 }
 
 function propertyCardHasDetail(text: string): boolean {
-  return /\b(?:bed|bedroom|bath|bathroom|house|apartment|flat|villa|vivenda|apartamento|maison|terrain)\b/i.test(text)
+  return /\b(?:bed|bedroom|bath|bathroom|house|apartment|appartement|flat|villa|woning|kamer|vivenda|apartamento|maison|terrain)\b/i.test(text)
 }
 
-function propertyCardTitle(body: string): string | undefined {
+// A card names the property in one of four ways: a heading inside the link, a
+// row the page itself labels as the title or street, the image alt, or, when
+// the heading wraps the link instead of sitting inside it, the link's own text.
+function propertyCardTitle(body: string, headingWrapped: boolean): string | undefined {
   const heading = /<h[1-6]\b[^>]*>([\s\S]{1,1000}?)<\/h[1-6]>/i.exec(body)?.[1]
+  const labelled = CARD_TITLE_ELEMENT.exec(body)?.[2]
   const image = /<img\b([^>]*)>/i.exec(body)?.[1]
-  const candidate = heading
-    ? cleanHtmlText(heading)
-    : image
-      ? decodeHtml(htmlAttribute(image, ['alt', 'title']) ?? '').trim()
-      : ''
+  const candidate = [
+    heading ? cleanHtmlText(heading) : '',
+    labelled ? cleanHtmlText(labelled) : '',
+    image ? decodeHtml(htmlAttribute(image, ['alt', 'title']) ?? '').trim() : '',
+    headingWrapped ? cleanHtmlText(body) : '',
+  ].find((value) => value.length >= 4) ?? ''
   return candidate.length >= 4 ? candidate.slice(0, 180) : undefined
+}
+
+// An attribute holding a bare ">" (data-action="click->open") ends the opening
+// tag early, so the rest of the attributes arrive as if they were card text.
+// Dropping that run keeps attribute noise out of titles and prices.
+function stripAttributeSpill(body: string): string {
+  const firstTag = body.indexOf('<')
+  const head = firstTag === -1 ? body : body.slice(0, firstTag)
+  if (!/=["']/.test(head)) return body
+  return firstTag === -1 ? '' : body.slice(firstTag)
+}
+
+function isHeadingWrapped(html: string, anchorStart: number): boolean {
+  return /<h[1-6]\b[^>]*>\s*$/i.test(html.slice(Math.max(0, anchorStart - 200), anchorStart))
+}
+
+// Some portals print the price as a sibling of the card heading rather than
+// inside the link. Only the run of markup between this link and the next one
+// is read, so a price is never borrowed from the card below, and only a link
+// the page itself made the card heading is trusted this way: markup after a
+// carousel or badge link is as likely to hold "$88 Lower" as a real rent.
+function trailingCardPrice(
+  html: string,
+  anchorEnd: number,
+  defaultCurrency: string,
+): { currencyCode: string; value: number } | undefined {
+  const window = html.slice(anchorEnd, anchorEnd + TRAILING_PRICE_WINDOW)
+  const sameCard = window.split(/<a\b/i)[0] ?? ''
+  return propertyPrice(cleanHtmlText(sameCard), defaultCurrency)
 }
 
 function propertyCardImage(body: string, source: URL): string | undefined {
@@ -317,22 +392,68 @@ function propertyCardType(title: string): string | undefined {
     .exec(title)?.[1]
 }
 
+// Symbols that mean one thing wherever they are read.
+const UNAMBIGUOUS_PRICE_SYMBOLS = '€|US\\$|N\\$|TSh|\\$'
+// Short symbols that are also ordinary letters: P for pula, E for emalangeni,
+// M for maloti, MT for metical. Read everywhere, they turn the "m" of
+// "Amsterdam 65 m2" into a price, so each one is only live on a page whose own
+// currency uses it.
+const AMBIGUOUS_PRICE_SYMBOLS: Readonly<Record<string, string>> = {
+  AOA: 'Kz|AKZ',
+  BWP: 'P',
+  CDF: 'FC',
+  KMF: 'CF',
+  LSL: 'M',
+  MGA: 'Ar',
+  MUR: 'Rs',
+  MWK: 'MK|K',
+  MZN: 'MT',
+  SCR: 'SR',
+  SZL: 'E',
+  ZMW: 'K',
+}
+const PRICE_CURRENCY_CODES =
+  'AOA|AKZ|BWP|EUR|GBP|KMF|CDF|USD|SZL|LSL|MGA|MWK|MUR|MZN|NAD|SCR|TZS|ZMW|ZWG'
+const PRICE_AMOUNT =
+  '(\\d{1,3}(?:[\\s\\u00a0\\u202f\'’.,]\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)'
+const pricePatterns = new Map<string, RegExp>()
+
+function pricePattern(defaultCurrency: string): RegExp {
+  const currency = defaultCurrency.toUpperCase()
+  const cached = pricePatterns.get(currency)
+  if (cached) return cached
+  const local = AMBIGUOUS_PRICE_SYMBOLS[currency]
+  const pattern = new RegExp(
+    `(?:\\b(?:${PRICE_CURRENCY_CODES})\\b|${UNAMBIGUOUS_PRICE_SYMBOLS}` +
+    `${local ? `|\\b(?:${local})` : ''})\\s*${PRICE_AMOUNT}`,
+    'i',
+  )
+  pricePatterns.set(currency, pattern)
+  return pattern
+}
+
 function propertyPrice(
   text: string,
   defaultCurrency: string,
 ): { currencyCode: string; value: number } | undefined {
-  const match = /(?:\b(AOA|AKZ|BWP|KMF|CDF|USD|SZL|LSL|MGA|MWK|MUR|MZN|NAD|SCR|TZS|ZMW|ZWG)\b|US\$|N\$|TSh|Kz|AKZ|BWP|CF|Ar|MK|Rs|MT|SR|[PEMK]|\$)\s*(\d{1,3}(?:[\s\u00a0\u202f'’.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)/i.exec(text)
+  const match = pricePattern(defaultCurrency).exec(text)
   if (!match) return undefined
-  const value = localizedPositiveNumber(match[2])
+  const amount = match[1] ?? ''
+  const value = localizedPositiveNumber(amount)
   if (!value) return undefined
+  // "$686+" is the cheapest unit in a block, not the price of this home.
+  // A number that is only a floor is worse than no number at all.
+  if (text.charAt(match.index + match[0].length) === '+') return undefined
+  const symbol = match[0].slice(0, match[0].length - amount.length)
   return {
-    currencyCode: propertyCurrencyCode(match[1] ?? match[0], defaultCurrency),
+    currencyCode: propertyCurrencyCode(symbol, defaultCurrency),
     value,
   }
 }
 
 function propertyCurrencyCode(value: string, fallback: string): string {
   const normalized = value.toUpperCase().replace(/\s/g, '')
+  if (normalized.includes('€') || normalized.includes('EUR')) return 'EUR'
   if (normalized.includes('US$') || normalized === '$' || normalized.includes('USD')) return 'USD'
   if (normalized.includes('N$') || normalized.includes('NAD')) return 'NAD'
   if (normalized.includes('TSH') || normalized.includes('TZS')) return 'TZS'
@@ -395,6 +516,8 @@ function cleanHtmlText(value: string): string {
 function decodeHtml(value: string): string {
   return value
     .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&euro;|&#8364;|&#x20ac;/gi, '€')
+    .replace(/&pound;|&#163;/gi, '£')
     .replace(/&amp;/gi, '&')
     .replace(/&quot;|&#34;/gi, '"')
     .replace(/&#39;|&apos;/gi, '’')
@@ -415,25 +538,51 @@ async function fetchPropertyPage(env: TrolleyScoutEnv, url: string): Promise<str
   if (!safe) return undefined
   const direct = await timedFetch(safe.toString())
   if (direct) return direct
-  return timedFetch(`https://r.jina.ai/${safe.toString()}`, env.JINA_API_KEY)
+  // The reader is what gets past a Cloudflare challenge on portals such as
+  // Pararius. It answers in markdown unless asked for HTML, and the HTML mode
+  // header works without an API key, so it is always sent.
+  return timedFetch(`https://r.jina.ai/${safe.toString()}`, {
+    apiKey: env.JINA_API_KEY,
+    readerMode: true,
+  })
 }
 
-async function timedFetch(url: string, apiKey?: string): Promise<string | undefined> {
-  const target = safeHttpUrl(url)
-  if (!target) return undefined
+async function timedFetch(
+  url: string,
+  reader?: { apiKey?: string; readerMode: boolean },
+): Promise<string | undefined> {
+  const first = safeHttpUrl(url)
+  if (!first) return undefined
+  let target: URL = first
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const response = await fetch(target.toString(), {
-      headers: {
-        accept: 'text/html, application/xhtml+xml',
-        ...(apiKey ? { authorization: `Bearer ${apiKey}`, 'x-return-format': 'html' } : {}),
-      },
-      redirect: 'manual',
-      signal: controller.signal,
-    })
-    if (!response.ok) return undefined
-    return readLimitedText(response, MAX_BODY_BYTES)
+    for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
+      const response: Response = await fetch(target.toString(), {
+        headers: {
+          accept: 'text/html, application/xhtml+xml',
+          ...(reader?.readerMode ? { 'x-return-format': 'html' } : {}),
+          ...(reader?.apiKey ? { authorization: `Bearer ${reader.apiKey}` } : {}),
+        },
+        redirect: 'manual',
+        signal: controller.signal,
+      })
+      // A portal that moved its search URL answers 301, which is a redirect to
+      // real listings rather than a failure. Every hop is re-checked so a
+      // redirect cannot walk the fetch onto a private address.
+      if (REDIRECT_STATUSES.has(response.status)) {
+        const location = response.headers.get('location')
+        const next: URL | undefined = location ? safeHttpUrl(location, target) : undefined
+        if (!next || next.toString() === target.toString()) return undefined
+        target = next
+        continue
+      }
+      // AWS WAF token pages answer 202 with no listings at all, so a 202 is
+      // never a readable page however successful the status code looks.
+      if (!response.ok || response.status === HTTP_ACCEPTED) return undefined
+      return readLimitedText(response, MAX_BODY_BYTES)
+    }
+    return undefined
   } catch {
     return undefined
   } finally {
@@ -473,6 +622,37 @@ function isPropertyObject(object: Record<string, unknown>): boolean {
   return typed || hasListingShape
 }
 
+// Portals split one listing across sibling objects: RE/MAX hangs the address
+// off offers.itemOffered, and Redfin keeps the residence in one block and the
+// price in a Product block that shares only the listing URL. Both halves are
+// read here so a fully priced listing is never dropped for want of a name.
+function buildPriceIndex(
+  objects: Record<string, unknown>[],
+  source: URL,
+): Map<string, { currencyCode?: string; value: number }> {
+  const index = new Map<string, { currencyCode?: string; value: number }>()
+  for (const object of objects) {
+    if (!isPriceCarrier(object)) continue
+    const offer = firstObject(object.offers)
+    const value = positiveNumber(offer?.price ?? offer?.lowPrice ?? object.price)
+    const rawUrl = listingUrlValue(object)
+    const url = rawUrl ? safeHttpUrl(rawUrl, source) : undefined
+    if (!value || !url || index.has(url.toString())) continue
+    index.set(url.toString(), {
+      currencyCode: stringValue(offer?.priceCurrency) ?? stringValue(object.priceCurrency),
+      value,
+    })
+  }
+  return index
+}
+
+function isPriceCarrier(object: Record<string, unknown>): boolean {
+  const types = Array.isArray(object['@type']) ? object['@type'] : [object['@type']]
+  return types.some((type) =>
+    typeof type === 'string' &&
+    /^(?:product|offer|realestate|residence|accommodation|apartment|house|single)/i.test(type))
+}
+
 function objectToListing(
   object: Record<string, unknown>,
   context: {
@@ -480,33 +660,41 @@ function objectToListing(
     listingType: PropertyListingType
     portal: string
     portalName: string
+    priceIndex: Map<string, { currencyCode?: string; value: number }>
     source: URL
   },
 ): PropertyListing | undefined {
   const offer = firstObject(object.offers)
+  const offered = firstObject(offer?.itemOffered)
   const rawUrl = listingUrlValue(object)
   const listingUrl = rawUrl ? safeHttpUrl(rawUrl, context.source) : undefined
+  const address = firstObject(object.address) ?? firstObject(offered?.address)
   const title =
     stringValue(object.name) ??
     stringValue(object.headline) ??
     stringValue(object.title) ??
-    stringValue(object.displayName)
+    stringValue(object.displayName) ??
+    addressTitle(address)
   if (!listingUrl || !title) return undefined
 
-  const priceValue = positiveNumber(
+  const ownPrice = positiveNumber(
     offer?.price ??
     offer?.lowPrice ??
     object.price ??
     object.priceValue ??
     object.listingPrice,
   )
+  const sibling = ownPrice === undefined
+    ? context.priceIndex.get(listingUrl.toString())
+    : undefined
+  const priceValue = ownPrice ?? sibling?.value
   const currencyCode =
     stringValue(offer?.priceCurrency) ??
     stringValue(object.priceCurrency) ??
     stringValue(object.currencyCode) ??
     stringValue(object.currency) ??
+    sibling?.currencyCode ??
     context.defaultCurrency
-  const address = firstObject(object.address)
   const structuredLocation = [
     stringValue(address?.streetAddress),
     stringValue(address?.addressLocality),
@@ -526,13 +714,17 @@ function objectToListing(
       object.numberOfBathroomsTotal ??
       object.numberOfBathrooms ??
       object.bathrooms ??
-      object.baths,
+      object.baths ??
+      offered?.numberOfBathroomsTotal ??
+      offered?.numberOfBathrooms,
     ),
     bedrooms: positiveNumber(
       object.numberOfBedrooms ??
       object.numberOfRooms ??
       object.bedrooms ??
-      object.beds,
+      object.beds ??
+      offered?.numberOfBedrooms ??
+      offered?.numberOfRooms,
     ),
     currencyCode,
     id: `${context.portal}:${hash(listingUrl.toString())}`,
@@ -546,12 +738,22 @@ function objectToListing(
     priceText: priceValue ? formatMoney(priceValue, currencyCode) : undefined,
     priceValue,
     propertyType:
-      typeName(object['@type']) ??
       stringValue(object.propertyType) ??
-      stringValue(object.homeType),
+      stringValue(object.homeType) ??
+      typeName(offered?.['@type']) ??
+      typeName(object['@type']),
     province: stringValue(address?.addressRegion),
     title,
   }
+}
+
+function addressTitle(address: Record<string, unknown> | undefined): string | undefined {
+  const parts = [
+    stringValue(address?.streetAddress),
+    stringValue(address?.addressLocality),
+    stringValue(address?.addressRegion),
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(', ') : undefined
 }
 
 function isPropertyStateScript(attributes: string): boolean {
@@ -659,8 +861,27 @@ function mergeSources(sources: PropertyPortalSourceMeta[]): PropertyPortalSource
   return [...merged.values()]
 }
 
+// One home is often linked twice on a page: once from its photo and once from
+// its heading, and only one of the two carries the price. Keeping the first
+// and discarding the second used to throw the price away.
 function dedupeListings(listings: PropertyListing[]): PropertyListing[] {
-  return [...new Map(listings.map((listing) => [listing.listingUrl, listing])).values()]
+  const merged = new Map<string, PropertyListing>()
+  for (const listing of listings) {
+    const current = merged.get(listing.listingUrl)
+    merged.set(listing.listingUrl, current ? mergeListing(current, listing) : listing)
+  }
+  return [...merged.values()]
+}
+
+function mergeListing(current: PropertyListing, next: PropertyListing): PropertyListing {
+  const preferNext = current.priceValue === undefined && next.priceValue !== undefined
+  const base = preferNext ? next : current
+  const fallback = preferNext ? current : next
+  const output: Record<string, unknown> = { ...fallback }
+  for (const [key, value] of Object.entries(base)) {
+    if (value !== undefined) output[key] = value
+  }
+  return output as unknown as PropertyListing
 }
 
 async function readCache(env: TrolleyScoutEnv, key: string): Promise<PropertyCacheRow | undefined> {

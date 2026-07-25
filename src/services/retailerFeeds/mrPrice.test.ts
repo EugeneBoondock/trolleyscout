@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildMrPriceProductsQuery, parseMrPriceFeed } from './mrPrice'
+import {
+  buildMrPriceCategoriesQuery,
+  buildMrPriceProductsQuery,
+  decodeMrPriceCursor,
+  encodeMrPriceCursor,
+  parseMrPriceCategories,
+  parseMrPriceFeed,
+} from './mrPrice'
 
 const capturedAt = '2026-07-25T09:00:00.000Z'
 const context = { capturedAt, sourceUrl: 'https://www.mrp.com/en_za/' }
@@ -94,19 +101,62 @@ describe('parseMrPriceFeed', () => {
 })
 
 describe('buildMrPriceProductsQuery', () => {
-  it('asks for both prices and the discount in one query', () => {
-    const query = buildMrPriceProductsQuery()
+  it('asks one markdown aisle for both prices and the discount', () => {
+    const query = buildMrPriceProductsQuery('MTc3')
 
-    expect(query).toContain('search:"dress"')
+    expect(query).toContain('category_uid:{eq:"MTc3"}')
     expect(query).toContain('pageSize:100')
     expect(query).toContain('regular_price { value }')
     expect(query).toContain('final_price { value }')
     expect(query).toContain('percent_off')
   })
 
-  it('escapes the search term and bounds the page size', () => {
-    expect(buildMrPriceProductsQuery('a"b')).toContain('search:"a\\"b"')
-    expect(buildMrPriceProductsQuery('shoes', 5000)).toContain('pageSize:100')
-    expect(buildMrPriceProductsQuery('shoes', 0)).toContain('pageSize:1')
+  it('escapes the category and bounds the page size', () => {
+    expect(buildMrPriceProductsQuery('a"b')).toContain('eq:"a\\"b"')
+    expect(buildMrPriceProductsQuery('MTc3', 5000)).toContain('pageSize:100')
+    expect(buildMrPriceProductsQuery('MTc3', 0)).toContain('pageSize:1')
+  })
+})
+
+describe('buildMrPriceCategoriesQuery', () => {
+  // Looked up by url key each run: a stored id would silently stop the sweep
+  // the day Mr Price rebuilds its category tree.
+  it('asks for the markdown aisle by its url key', () => {
+    expect(buildMrPriceCategoriesQuery()).toContain('url_key:{eq:"priced-to-go"}')
+    expect(buildMrPriceCategoriesQuery('a"b')).toContain('eq:"a\\"b"')
+  })
+})
+
+describe('parseMrPriceCategories', () => {
+  it('collects one aisle per department, without repeats', () => {
+    expect(
+      parseMrPriceCategories({
+        data: {
+          categoryList: [
+            { uid: 'MTc3', name: 'Priced To Go', url_path: 'ladies/priced-to-go' },
+            { uid: 'MjAx', name: 'Priced To Go', url_path: 'mens/priced-to-go' },
+            { uid: 'MTc3', name: 'Priced To Go', url_path: 'ladies/priced-to-go' },
+          ],
+        },
+      }),
+    ).toEqual(['MTc3', 'MjAx'])
+  })
+
+  it('rejects a payload that carries no category list', () => {
+    expect(() => parseMrPriceCategories({ data: {} })).toThrow(TypeError)
+    expect(() => parseMrPriceCategories(null)).toThrow(TypeError)
+  })
+})
+
+describe('mr price cursor', () => {
+  it('walks the aisles it was given, round trip', () => {
+    expect(decodeMrPriceCursor(encodeMrPriceCursor({ index: 1, uids: ['MTc3', 'MjAx'] })))
+      .toEqual({ index: 1, uids: ['MTc3', 'MjAx'] })
+  })
+
+  it('refuses a cursor it cannot read', () => {
+    expect(decodeMrPriceCursor('category-list')).toBeUndefined()
+    expect(decodeMrPriceCursor(JSON.stringify({ i: 0, uids: [] }))).toBeUndefined()
+    expect(decodeMrPriceCursor(JSON.stringify({ i: -1, uids: ['MTc3'] }))).toBeUndefined()
   })
 })

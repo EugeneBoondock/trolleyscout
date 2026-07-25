@@ -775,6 +775,23 @@ export const retailers: Retailer[] = [
     ],
   },
   {
+    id: 'pep',
+    name: 'PEP',
+    shortName: 'PEP',
+    group: 'Fashion',
+    program: 'PEP promotions',
+    sourceNote: 'Official PEP South Africa online store promotions.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#0d3b8c',
+    sources: [
+      {
+        label: 'Promotions',
+        url: 'https://www.pepstores.com/',
+        kind: 'specials',
+      },
+    ],
+  },
+  {
     id: 'truworths',
     name: 'Truworths',
     shortName: 'Truworths',

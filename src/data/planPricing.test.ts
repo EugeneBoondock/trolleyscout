@@ -3,6 +3,7 @@ import { memberPlans } from './memberPlans'
 import {
   FALLBACK_CURRENCY,
   getLocalPlanPrice,
+  listOverriddenCountries,
   listPricedCurrencies,
   resolveBillingCurrency,
   resolvePlanPrice,
@@ -121,6 +122,48 @@ describe('resolvePlanPrice', () => {
       currencyCode: 'ZAR',
       localAmount: 29,
     })
+  })
+
+  // Zimbabwe's shops price in dollars, but a Zimbabwean does not earn like an
+  // American. Charging them the American price would shut out exactly the
+  // shoppers this is meant to help.
+  it('prices Zimbabwe below the United States, in the dollars it can be billed', () => {
+    const zw = resolvePlanPrice('scout', 'monthly', {
+      countryCode: 'ZW',
+      currencyCode: 'ZWG',
+      rateFromZar: USD_PER_ZAR,
+    })
+    const us = resolvePlanPrice('scout', 'monthly', {
+      countryCode: 'US',
+      currencyCode: 'USD',
+      rateFromZar: USD_PER_ZAR,
+    })
+
+    expect(zw).toMatchObject({ currencyCode: 'USD', localAmount: 2 })
+    expect(us).toMatchObject({ currencyCode: 'USD', localAmount: 5 })
+    expect(zw!.amountCents).toBeLessThan(us!.amountCents)
+
+    for (const planId of ['scout', 'household', 'organization'] as const) {
+      expect(
+        getLocalPlanPrice(planId, 'monthly', 'USD', 'ZW')!,
+        planId,
+      ).toBeLessThan(getLocalPlanPrice(planId, 'monthly', 'USD')!)
+    }
+  })
+
+  it('keeps every overridden country on a currency it can be billed in', () => {
+    for (const countryCode of listOverriddenCountries()) {
+      const currencyCode = resolveBillingCurrency(undefined, countryCode)
+
+      expect(listPricedCurrencies(), countryCode).toContain(currencyCode)
+
+      for (const planId of ['scout', 'household', 'organization'] as const) {
+        const price = getLocalPlanPrice(planId, 'monthly', currencyCode, countryCode)
+
+        expect(Number.isInteger(price), `${countryCode} ${planId}`).toBe(true)
+        expect(price).toBeGreaterThan(0)
+      }
+    }
   })
 
   it('quotes dollars for a country with no price list of its own', () => {

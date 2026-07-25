@@ -39,9 +39,22 @@ import {
   MR_PRICE_GRAPHQL_URL,
   MR_PRICE_ORIGIN,
   MR_PRICE_STORE_HEADER,
+  buildMrPriceCategoriesQuery,
   buildMrPriceProductsQuery,
+  decodeMrPriceCursor,
+  encodeMrPriceCursor,
+  parseMrPriceCategories,
   parseMrPriceFeed,
 } from '../../src/services/retailerFeeds/mrPrice'
+import {
+  PEP_COLLECTIONS_URL,
+  PEP_ORIGIN,
+  buildPepCollectionProductsUrl,
+  decodePepCursor,
+  encodePepCursor,
+  parsePepCollections,
+  parsePepFeed,
+} from '../../src/services/retailerFeeds/pep'
 import {
   TAKEALOT_PROMOTIONS_URL,
   buildTakealotPromotionProductsUrl,
@@ -296,6 +309,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   wootwareSource(),
   bobshopSource(),
   mrPriceSource(),
+  pepSource(),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
@@ -981,16 +995,81 @@ function bobshopSource(): RetailerFeedSource {
   }
 }
 
-// The `store` header is mandatory: without it the endpoint answers 404. Mr
-// Price publishes no markdowns at present, so this source is expected to
-// accept nothing until they run one.
+// PEP's discounts are named in its collection titles rather than priced into
+// its products, so the sweep reads the collection list first and then walks
+// each promotion it found.
+function pepSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const plan = cursor.kind === 'token' ? decodePepCursor(cursor.token) : undefined
+      const promotion = plan?.promotions[plan.index]
+
+      return {
+        init: { headers: { ...STOREFRONT_HEADERS, accept: 'application/json' } },
+        url: promotion === undefined
+          ? PEP_COLLECTIONS_URL
+          : buildPepCollectionProductsUrl(promotion.handle),
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'PEP'),
+    initialCursor: { kind: 'token', token: 'collection-list' },
+    key: 'pep::promotions',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const plan = cursor.kind === 'token' ? decodePepCursor(cursor.token) : undefined
+
+      if (!plan) {
+        const promotions = parsePepCollections(payload)
+        return {
+          candidates: [],
+          catalogues: [],
+          nextCursor: promotions.length > 0
+            ? { kind: 'token', token: encodePepCursor({ index: 0, promotions }) }
+            : undefined,
+        }
+      }
+
+      const promotion = plan.promotions[plan.index]
+      const page = promotion
+        ? parsePepFeed(payload, { capturedAt, sourceUrl }, promotion)
+        : { candidates: [], catalogues: [] }
+      const nextIndex = plan.index + 1
+
+      return {
+        ...page,
+        // Undefined resets the source, so the next run reads a fresh
+        // collection list and picks up a promotion that started since.
+        nextCursor: nextIndex < plan.promotions.length
+          ? { kind: 'token', token: encodePepCursor({ index: nextIndex, promotions: plan.promotions }) }
+          : undefined,
+      }
+    },
+    retailerId: retailerSlug('pep'),
+    retailerName: 'PEP',
+    sourceLabel: 'Promotions',
+    sourceUrl: PEP_ORIGIN,
+  }
+}
+
+// The `store` header is mandatory: without it the endpoint answers 404.
+//
+// Mr Price re-prices rather than marks down: `regular_price` equals
+// `final_price` and `percent_off` is 0 for every product, including inside
+// their own "Priced To Go" markdown aisles. So this source sweeps those
+// aisles — the place a sale would actually appear — and accepts nothing until
+// one does. Publishing the regular price as a was-price would invent a
+// discount that does not exist.
 function mrPriceSource(): RetailerFeedSource {
   return {
     buildRequest(cursor) {
-      requireCursor(cursor, 'page')
+      const plan = cursor.kind === 'token' ? decodeMrPriceCursor(cursor.token) : undefined
+      const categoryUid = plan?.uids[plan.index]
       return {
         init: {
-          body: JSON.stringify({ query: buildMrPriceProductsQuery() }),
+          body: JSON.stringify({
+            query: categoryUid === undefined
+              ? buildMrPriceCategoriesQuery()
+              : buildMrPriceProductsQuery(categoryUid),
+          }),
           headers: {
             ...STOREFRONT_HEADERS,
             accept: 'application/json',
@@ -1003,10 +1082,32 @@ function mrPriceSource(): RetailerFeedSource {
       }
     },
     decode: (body) => parseJsonObject(body, 'Mr Price'),
-    initialCursor: { kind: 'page', page: 0 },
+    initialCursor: { kind: 'token', token: 'category-list' },
     key: 'mr-price::markdowns',
-    parse({ capturedAt, payload, sourceUrl }) {
-      return parseMrPriceFeed(payload, { capturedAt, sourceUrl })
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const plan = cursor.kind === 'token' ? decodeMrPriceCursor(cursor.token) : undefined
+
+      if (!plan) {
+        const uids = parseMrPriceCategories(payload)
+        return {
+          candidates: [],
+          catalogues: [],
+          nextCursor: uids.length > 0
+            ? { kind: 'token', token: encodeMrPriceCursor({ index: 0, uids }) }
+            : undefined,
+        }
+      }
+
+      const page = parseMrPriceFeed(payload, { capturedAt, sourceUrl })
+      const nextIndex = plan.index + 1
+
+      return {
+        ...page,
+        // Undefined resets the source, so each run looks the aisles up afresh.
+        nextCursor: nextIndex < plan.uids.length
+          ? { kind: 'token', token: encodeMrPriceCursor({ index: nextIndex, uids: plan.uids }) }
+          : undefined,
+      }
     },
     retailerId: retailerSlug('mr-price'),
     retailerName: 'Mr Price',

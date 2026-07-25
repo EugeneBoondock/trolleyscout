@@ -229,17 +229,18 @@ export async function getPlanCheckoutPrice(
 /// PayFast settles. Both the plan table and the checkout price go through here
 /// so a shopper is never charged an amount they were not shown.
 async function resolveMemberPricing(env: TrolleyScoutEnv, countryCode: string) {
-  const currencyCode = resolveBillingCurrency(countryFromCode(countryCode).currencyCode)
+  const country = countryFromCode(countryCode)
+  const currencyCode = resolveBillingCurrency(country.currencyCode, country.code)
 
   if (currencyCode === SETTLEMENT_CURRENCY) {
-    return { currencyCode, rateFromZar: 1 }
+    return { countryCode: country.code, currencyCode, rateFromZar: 1 }
   }
 
   // The rate has to be for the currency we quote in, which is not always the
   // currency of the shopper's own country: Zimbabwe is quoted in dollars.
   const rate = await getRateFromZar(env, currencyCode)
 
-  return { currencyCode, rateFromZar: rate?.rate }
+  return { countryCode: country.code, currencyCode, rateFromZar: rate?.rate }
 }
 
 export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {

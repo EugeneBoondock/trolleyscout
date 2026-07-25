@@ -72,6 +72,7 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
+      'pep::promotions',
       // Takealot's campaign sweep is sharded so the whole catalogue is walked
       // in about a day rather than over a week.
       'takealot::promotion-campaigns-0',
@@ -190,6 +191,7 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
+      'pep::promotions',
     ]
 
     for (const key of onlineKeys) {
@@ -230,8 +232,11 @@ describe('structured retailer source decoders', () => {
     expect(find('bobshop::featured-listings').buildRequest({ kind: 'page', page: 0 }).url)
       .toBe('https://www.bobshop.co.za/')
 
-    // Mr Price's GraphQL endpoint answers 404 without the store header.
-    const mrPrice = find('mr-price::markdowns').buildRequest({ kind: 'page', page: 0 })
+    // Mr Price's GraphQL endpoint answers 404 without the store header. Its
+    // sweep opens by finding the markdown aisles, then asks each one for
+    // prices, so both requests are checked.
+    const mrPriceSource = find('mr-price::markdowns')
+    const mrPrice = mrPriceSource.buildRequest(mrPriceSource.initialCursor)
     expect(mrPrice.url).toBe('https://apiprd.omni.mrpg.com/graphql')
     expect(mrPrice.init).toMatchObject({
       headers: expect.objectContaining({
@@ -240,7 +245,25 @@ describe('structured retailer source decoders', () => {
       }),
       method: 'POST',
     })
-    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('final_price { value }')
+    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('url_key:{eq:"priced-to-go"}')
+
+    const mrPriceAisle = mrPriceSource.buildRequest({
+      kind: 'token',
+      token: JSON.stringify({ i: 0, uids: ['MTc3'] }),
+    })
+    expect(JSON.parse(String(mrPriceAisle.init?.body)).query).toContain('final_price { value }')
+
+    // PEP reads its collection list first, because its discounts are named in
+    // collection titles rather than priced into products.
+    const pep = find('pep::promotions')
+    expect(pep.buildRequest(pep.initialCursor).url)
+      .toBe('https://www.pepstores.com/collections.json?limit=250')
+    expect(
+      pep.buildRequest({
+        kind: 'token',
+        token: JSON.stringify({ i: 0, p: [['get-20-off-all-cookware', 'Get 20% off Cookware']] }),
+      }).url,
+    ).toBe('https://www.pepstores.com/collections/get-20-off-all-cookware/products.json?limit=250')
   })
 })
 

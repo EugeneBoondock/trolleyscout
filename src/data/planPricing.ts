@@ -42,6 +42,23 @@ const PRICE_LISTS: Record<string, Record<PaidPlanId, LocalPlanPrice>> = {
   },
 }
 
+// Some countries spend a currency whose home market is far richer than they
+// are. Zimbabwe prices its shops in US dollars, but a Zimbabwean shopper earns
+// nothing like an American one, and charging them the American price would put
+// this out of reach of exactly the people it is meant to help. So a country may
+// override the list its currency would otherwise get, keeping the currency it
+// can actually be billed in.
+const COUNTRY_PRICE_LISTS: Record<string, { currencyCode: string; plans: Record<PaidPlanId, LocalPlanPrice> }> = {
+  ZW: {
+    currencyCode: 'USD',
+    plans: {
+      household: { annual: 40, monthly: 4 },
+      organization: { annual: 290, monthly: 29 },
+      scout: { annual: 20, monthly: 2 },
+    },
+  },
+}
+
 // What PayFast settles in. Rand needs no rate and can never fail to convert,
 // which makes it the safe last resort as well as the home price.
 export const SETTLEMENT_CURRENCY = 'ZAR'
@@ -56,7 +73,22 @@ export function listPricedCurrencies(): string[] {
   return Object.keys(PRICE_LISTS).sort()
 }
 
-export function resolveBillingCurrency(currencyCode: string | undefined): string {
+export function listOverriddenCountries(): string[] {
+  return Object.keys(COUNTRY_PRICE_LISTS).sort()
+}
+
+/// The currency a shopper is quoted and billed in. A country override still has
+/// to name a currency we can settle, so this answers for both.
+export function resolveBillingCurrency(
+  currencyCode: string | undefined,
+  countryCode?: string,
+): string {
+  const override = COUNTRY_PRICE_LISTS[countryCode?.trim().toUpperCase() ?? '']
+
+  if (override) {
+    return override.currencyCode
+  }
+
   const code = currencyCode?.trim().toUpperCase()
   return code && PRICE_LISTS[code] ? code : FALLBACK_CURRENCY
 }
@@ -65,8 +97,12 @@ export function getLocalPlanPrice(
   planId: MemberPlanId,
   billingCycle: BillingCycle,
   currencyCode: string,
+  countryCode?: string,
 ): number | undefined {
-  return PRICE_LISTS[resolveBillingCurrency(currencyCode)][planId as PaidPlanId]?.[billingCycle]
+  const override = COUNTRY_PRICE_LISTS[countryCode?.trim().toUpperCase() ?? '']
+  const plans = override?.plans ?? PRICE_LISTS[resolveBillingCurrency(currencyCode)]
+
+  return plans[planId as PaidPlanId]?.[billingCycle]
 }
 
 /// Converts a local price to the rand cents PayFast will charge. `rateFromZar`
@@ -110,10 +146,10 @@ export interface ResolvedPlanPrice {
 export function resolvePlanPrice(
   planId: MemberPlanId,
   billingCycle: BillingCycle,
-  pricing?: { currencyCode?: string; rateFromZar?: number },
+  pricing?: { countryCode?: string; currencyCode?: string; rateFromZar?: number },
 ): ResolvedPlanPrice | undefined {
-  const currencyCode = resolveBillingCurrency(pricing?.currencyCode)
-  const localAmount = getLocalPlanPrice(planId, billingCycle, currencyCode)
+  const currencyCode = resolveBillingCurrency(pricing?.currencyCode, pricing?.countryCode)
+  const localAmount = getLocalPlanPrice(planId, billingCycle, currencyCode, pricing?.countryCode)
 
   if (localAmount !== undefined) {
     const amountCents = toSettlementCents(localAmount, currencyCode, pricing?.rateFromZar)
