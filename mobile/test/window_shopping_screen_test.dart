@@ -67,13 +67,8 @@ void main() {
 
     expect(find.text('Seen deal'), findsNothing);
     expect(find.text('Unseen deal'), findsOneWidget);
-    expect(
-        tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
-        isA<SliverChildBuilderDelegate>().having(
-          (delegate) => delegate.childCount,
-          'unseen child count',
-          1,
-        ));
+    expect(tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
+        _reelDealCount(1));
   });
 
   testWidgets('records each displayed deal and does not wrap the reel',
@@ -88,22 +83,23 @@ void main() {
 
     expect(api.seenStore.ids, containsAll(<String>['deal-1', 'deal-2']));
     expect(find.byType(PageView), findsOneWidget);
-    expect(
-        tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
-        isA<SliverChildBuilderDelegate>().having(
-          (delegate) => delegate.childCount,
-          'finite child count',
-          2,
-        ));
+    expect(tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
+        _reelDealCount(2));
+
+    // Swiping past the last deal lands on the end-of-window card rather than
+    // wrapping back to the first deal.
     await tester.drag(find.byType(PageView), const Offset(0, -500));
     await tester.pumpAndSettle();
     expect(
       tester.widget<PageView>(find.byType(PageView)).controller?.page,
-      closeTo(1, 0.01),
+      closeTo(2, 0.01),
     );
+    expect(find.text('That’s the whole window'), findsOneWidget);
+    expect(
+        find.text('You’ve seen all 2 deals in this window.'), findsOneWidget);
   });
 
-  testWidgets('pulling down on the first deal re-reads the stored deal feed',
+  testWidgets('pulling down on the first deal asks the server for what is live',
       (tester) async {
     final api = _WindowApi(
       initialDeals: const [_deal1],
@@ -117,12 +113,14 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(0, 600));
     await tester.pumpAndSettle();
 
-    expect(api.dealSiteForceLiveCalls, [false, false]);
-    expect(api.discoveryForceLiveCalls, [false, false]);
+    // A pull to refresh is the shopper asking for what is there now, so the
+    // second read bypasses both the stored copy and the server's cache.
+    expect(api.dealSiteForceLiveCalls, [false, true]);
+    expect(api.discoveryForceLiveCalls, [false, true]);
     expect(find.text('Unseen deal'), findsOneWidget);
   });
 
-  testWidgets('overlapping refresh gestures share one stored-feed request',
+  testWidgets('overlapping refresh gestures share one live request',
       (tester) async {
     final api = _WindowApi(
       initialDeals: const [_deal1],
@@ -140,7 +138,9 @@ void main() {
     unawaited(secondRefresh.then((_) => secondCompleted = true));
     await tester.pump();
 
-    expect(api.dealSiteForceLiveCalls, [false, false]);
+    // The point here is deduplication: the second gesture must join the
+    // in-flight refresh rather than firing its own request.
+    expect(api.dealSiteForceLiveCalls, [false, true]);
     expect(secondCompleted, isFalse);
     api.completeForcedDealSites();
     await Future.wait([firstRefresh, secondRefresh]);
@@ -323,7 +323,9 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, 600));
     await tester.pumpAndSettle();
-    expect(api.dealSiteForceLiveCalls, [false, false, false]);
+    // First read is the stored feed; both pull-to-refresh gestures ask the
+    // server for what is live.
+    expect(api.dealSiteForceLiveCalls, [false, true, true]);
   });
 
   testWidgets('a long app background refreshes and skips the displayed card',
@@ -335,7 +337,7 @@ void main() {
 
     await tester.pumpWidget(_wrap(_window(api, now: () => now)));
     await tester.pumpAndSettle();
-    final firstTitle = _currentDealTitle();
+    final firstTitle = _currentDealTitle(tester);
     await tester.drag(find.byType(PageView), const Offset(0, -500));
     await tester.pumpAndSettle();
     expect(
@@ -367,10 +369,10 @@ void main() {
 
     await tester.pumpWidget(_wrap(_window(api, now: () => now)));
     await tester.pumpAndSettle();
-    final firstTitle = _currentDealTitle();
+    final firstTitle = _currentDealTitle(tester);
     await tester.drag(find.byType(PageView), const Offset(0, -500));
     await tester.pumpAndSettle();
-    final secondTitle = _currentDealTitle();
+    final secondTitle = _currentDealTitle(tester);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     now = now.add(const Duration(hours: 3));
@@ -379,13 +381,8 @@ void main() {
 
     expect(find.text(firstTitle), findsNothing);
     expect(find.text(secondTitle), findsNothing);
-    expect(
-        tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
-        isA<SliverChildBuilderDelegate>().having(
-          (delegate) => delegate.childCount,
-          'remaining unseen child count',
-          2,
-        ));
+    expect(tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
+        _reelDealCount(2));
     expect(
       tester.widget<PageView>(find.byType(PageView)).controller?.page,
       closeTo(0, 0.01),
@@ -405,13 +402,8 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(0, 600));
     await tester.pumpAndSettle();
 
-    expect(
-        tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
-        isA<SliverChildBuilderDelegate>().having(
-          (delegate) => delegate.childCount,
-          'preserved unseen child count',
-          2,
-        ));
+    expect(tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
+        _reelDealCount(2));
   });
 
   testWidgets('caught-up state stays pull-to-refreshable in light mode',
@@ -445,14 +437,30 @@ WindowShoppingScreen _window(
   );
 }
 
-String _currentDealTitle() {
+/// Matches the reel's page count. The reel always builds one page past the
+/// last deal — the end-of-window card that offers somewhere to go next — so the
+/// number of deal cards is one less than the child count.
+Matcher _reelDealCount(int deals) => isA<SliverChildBuilderDelegate>().having(
+      (delegate) => delegate.childCount,
+      'deal cards plus the end-of-window card',
+      deals + 1,
+    );
+
+/// The title on the card currently filling the reel. Neighbouring pages are
+/// pre-built so a swipe never waits on a decode, which means several cards sit
+/// in the tree at once — only the current one is actually on screen.
+String _currentDealTitle(WidgetTester tester) {
+  final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
   for (final title in const [
     'Seen deal',
     'Unseen deal',
     'Third deal',
     'Fourth deal',
   ]) {
-    if (find.text(title).evaluate().isNotEmpty) return title;
+    final finder = find.text(title);
+    if (finder.evaluate().isEmpty) continue;
+    final dy = tester.getCenter(finder).dy;
+    if (dy >= 0 && dy <= height) return title;
   }
   throw StateError('No deal card is visible.');
 }

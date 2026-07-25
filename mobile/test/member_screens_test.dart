@@ -255,7 +255,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.dealRefreshCalls, 1);
-    expect(find.text('Deal sources refreshed.'), findsOneWidget);
+    expect(api.scoutRunLanes, ['all']);
+    // The console reports what the run actually did, not a generic "done".
+    expect(
+      find.text('12 sources checked, 240 deals added, 4 stores swept.'),
+      findsWidgets,
+    );
   });
 }
 
@@ -268,6 +273,7 @@ class _FeatureApi extends Api {
   int savedSourceCalls = 0;
   int deletedDealCalls = 0;
   int dealRefreshCalls = 0;
+  final scoutRunLanes = <String>[];
   int deletedBasketCalls = 0;
   int restoredBasketCalls = 0;
   int passwordChangeCalls = 0;
@@ -403,6 +409,21 @@ class _FeatureApi extends Api {
   @override
   Future<void> refreshDealSources() async {
     dealRefreshCalls += 1;
+  }
+
+  @override
+  Future<ScoutRunSummary> runScoutLanes({String lane = 'all'}) async {
+    scoutRunLanes.add(lane);
+    return const ScoutRunSummary(
+      acceptedDealCount: 240,
+      checkedSourceCount: 12,
+      failedSourceCount: 0,
+      feedsFailed: false,
+      lane: 'all',
+      message: '12 sources checked, 240 deals added, 4 stores swept.',
+      storesFailed: false,
+      storesScouted: 4,
+    );
   }
 }
 

@@ -11,10 +11,13 @@ import '../price_display.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
-import '../widgets/scout_mark.dart';
 import '../widgets/scout_mascot.dart';
 import '../widgets/share_card.dart';
 import '../widgets/in_app_browser.dart';
+import '../widgets/window_ends_pill.dart';
+import '../widgets/window_next_stop_card.dart';
+import '../widgets/window_reel_skeleton.dart';
+import '../widgets/window_save_burst.dart';
 import '../window_saved_store.dart';
 import '../window_seen_store.dart';
 
@@ -258,18 +261,24 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     _markFirstVisibleAfterFrame();
   }
 
-  /// Warms the image cache for the next couple of windows so a swipe lands on
-  /// a sharp, already-decoded picture instead of a fallback flash.
+  /// How many windows ahead to fetch and decode. Three covers a fast flick
+  /// without holding more full-screen bitmaps than a budget phone can spare.
+  static const _precacheAhead = 3;
+
+  /// Warms the image cache for the next few windows so a swipe lands on a
+  /// sharp, already-decoded picture instead of a fallback flash. Perceived
+  /// speed is what makes the reel worth staying in, and a blank frame is the
+  /// one thing that reliably ends a browse.
   void _precacheAround(int index) {
     final deals = _visible;
     if (deals.isEmpty || index < 0 || index >= deals.length) return;
     for (var next = index + 1;
-        next < deals.length && next <= index + 2;
+        next < deals.length && next <= index + _precacheAhead;
         next++) {
       final deal = deals[next];
       if (deal.hasImage) {
         precacheImage(
-          NetworkImage(upgradeImageUrl(deal.gallery.first)),
+          windowImageProvider(context, deal.gallery.first),
           context,
           onError: (_, __) {},
         );
@@ -287,7 +296,12 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final deals = _visible;
-      if (deals.isNotEmpty) _markDealSeen(deals.first);
+      if (deals.isEmpty) return;
+      _markDealSeen(deals.first);
+      // Warm the cards behind the first one straight away. Without this the
+      // very first swipe — the one that decides whether anyone takes a second —
+      // is the only swipe that waits on the network.
+      _precacheAround(0);
     });
   }
 
@@ -386,22 +400,28 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   // the reuse window renders instantly from disk instead of repeating a
   // server read; a stale or missing cache falls through to a live fetch,
   // which then refreshes the cache for next time.
-  Future<DiscoveryResult> _loadStoredDiscovery() async {
+  // A pull to refresh is the shopper asking for what is there NOW, so it skips
+  // both the on-disk reuse window and the server's cached copy. Without that a
+  // refresh could return a reel up to the reuse window old, and the only way to
+  // see new deals was to kill the app and reopen it.
+  Future<DiscoveryResult> _loadStoredDiscovery({bool forceLive = false}) async {
     final countryCode = widget.api.effectiveCountryCode;
-    final cached = await _discoveryCache.load(countryCode);
-    if (cached != null) {
-      final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
-      if (!age.isNegative && age < _discoveryCacheReuse) {
-        return cached.result;
+    if (!forceLive) {
+      final cached = await _discoveryCache.load(countryCode);
+      if (cached != null) {
+        final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
+        if (!age.isNegative && age < _discoveryCacheReuse) {
+          return cached.result;
+        }
       }
     }
-    final result = await widget.api.discovery(forceLive: false);
+    final result = await widget.api.discovery(forceLive: forceLive);
     unawaited(_discoveryCache.save(result, DateTime.now(), countryCode));
     return result;
   }
 
-  Future<List<ScrollDeal>> _discoveryDeals() async {
-    final result = await _loadStoredDiscovery();
+  Future<List<ScrollDeal>> _discoveryDeals({bool forceLive = false}) async {
+    final result = await _loadStoredDiscovery(forceLive: forceLive);
     return result.deals
         .where((d) => d.imageUrl != null)
         .map(ScrollDeal.fromDeal)
@@ -423,12 +443,12 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       var discoveryFailed = false;
       final results = await Future.wait<List<ScrollDeal>>([
         widget.api.effectiveCountryCode == 'ZA'
-            ? widget.api.dealSites(forceLive: false).catchError((_) {
+            ? widget.api.dealSites(forceLive: isRefresh).catchError((_) {
                 dealSitesFailed = true;
                 return <ScrollDeal>[];
               })
             : Future.value(<ScrollDeal>[]),
-        _discoveryDeals().catchError((_) {
+        _discoveryDeals(forceLive: isRefresh).catchError((_) {
           discoveryFailed = true;
           return <ScrollDeal>[];
         }),
@@ -481,20 +501,24 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       } else {
         unseen.shuffle();
       }
+      // Both orderings bunch shops together — taste because a favourite store
+      // scores well across its whole range, chance because it does. Spread them
+      // so the next window is worth swiping to.
+      final varied = varyWindowOrder(unseen);
 
       if (!mounted) return;
       if (_pageController.hasClients && _pageController.page != 0) {
         _pageController.jumpToPage(0);
       }
       setState(() {
-        _deals = unseen;
+        _deals = varied;
         _currentPage = 0;
         _loading = false;
-        _caughtUp = unique.isNotEmpty && unseen.isEmpty;
+        _caughtUp = unique.isNotEmpty && varied.isEmpty;
         _error =
             unique.isEmpty ? 'No deals to browse yet. Check back soon.' : null;
       });
-      if (unseen.isNotEmpty) {
+      if (varied.isNotEmpty) {
         _markFirstVisibleAfterFrame();
         unawaited(_loadCountsFor(0));
       }
@@ -665,6 +689,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         api: widget.api,
         storeName: deal.retailerName,
         sourceLabel: deal.sourceLabel,
+        now: _now,
         deals: storeDeals.isEmpty ? [deal] : storeDeals,
         initialSaved: Set<String>.of(_saved),
         initialStats: Map<String, SaveStat>.of(_saveStats),
@@ -686,13 +711,53 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     ));
   }
 
+  /// The card past the last deal. Every count on it is counted from what is
+  /// already on screen — the length of this reel and the saves this account
+  /// actually holds. Nothing is projected, and no money figure is claimed:
+  /// keeping a deal is not the same as having spent or saved rands, and saying
+  /// otherwise to a household counting cents would be a lie.
+  Widget _buildNextStop(List<ScrollDeal> visible) {
+    final lastStore = visible.isEmpty ? null : visible.last;
+    final savedCount = _saved.length;
+    return WindowNextStopCard(
+      title: 'That’s the whole window',
+      message: _query.isEmpty
+          ? 'You’ve seen all ${visible.length} deals in this window.'
+          : 'You’ve seen all ${visible.length} matches for “$_query”.',
+      footnote: savedCount == 0
+          ? null
+          : '$savedCount deal${savedCount == 1 ? '' : 's'} kept so far',
+      actions: [
+        WindowNextStop(
+          label: 'Check for new deals',
+          icon: Icons.refresh,
+          primary: true,
+          onTap: _refresh,
+        ),
+        if (_query.isNotEmpty)
+          WindowNextStop(
+            label: 'Back to the whole window',
+            icon: Icons.grid_view,
+            onTap: _toggleSearch,
+          ),
+        if (lastStore != null)
+          WindowNextStop(
+            label: 'More from ${lastStore.retailerName}',
+            icon: Icons.storefront,
+            onTap: () => _openStoreProfile(lastStore),
+          ),
+        WindowNextStop(
+          label: 'Saved deals',
+          icon: Icons.bookmark_outline,
+          onTap: _openSaved,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(
-        child: AnimatedScoutMark(motion: ScoutMarkMotion.spin, size: 44),
-      );
-    }
+    if (_loading) return const WindowReelSkeleton();
     if (_deals.isEmpty) {
       if (_caughtUp) {
         return _CaughtUpState(
@@ -701,7 +766,10 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         );
       }
       return _EmptyState(
-          message: _error ?? 'Nothing to browse yet.', onRetry: _load);
+        message: _error ?? 'Nothing to browse yet.',
+        onRetry: _load,
+        onOpenSaved: _openSaved,
+      );
     }
 
     final visible = _visible;
@@ -719,10 +787,17 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
             child: PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
+              // Builds the neighbouring windows before they are swiped to, so
+              // the next photo is already decoding while the current one is
+              // still being read. It also gives screen readers implicit
+              // scrolling through the reel.
+              allowImplicitScrolling: true,
               physics: const PageScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
               ),
-              itemCount: visible.length,
+              // One past the last deal: the reel ends on a way onward rather
+              // than on a wall.
+              itemCount: visible.length + 1,
               onPageChanged: (index) {
                 setState(() => _currentPage = index);
                 HapticFeedback.selectionClick();
@@ -733,10 +808,15 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                 unawaited(_loadCountsFor(index));
               },
               itemBuilder: (context, index) {
+                if (index == visible.length) {
+                  return _buildNextStop(visible);
+                }
                 final deal = visible[index];
                 return _WindowCard(
+                  key: ValueKey('window-card-state-${deal.id}'),
                   active: index == _currentPage,
                   deal: deal,
+                  now: _now,
                   saved: _saved.contains(deal.id),
                   saveCount: _saveStats[deal.id]?.count ?? 0,
                   commentCount: _saveStats[deal.id]?.commentCount ?? 0,
@@ -943,6 +1023,98 @@ String upgradeImageUrl(String? url) {
   return url;
 }
 
+/// One provider per picture, shared by the warm-up in `_precacheAround` and by
+/// the card that finally paints it. They must agree: two providers built with
+/// different settings are two cache keys, so every photo would be fetched and
+/// decoded twice and the swipe would still land on a blank.
+///
+/// Decoding is capped near the device's own width. The feed hands out 1600px
+/// sources, and decoding those at full size is the single most expensive thing
+/// this screen does on the cheap phones it is built for.
+ImageProvider<Object> windowImageProvider(BuildContext context, String url) {
+  final media = MediaQuery.maybeOf(context);
+  final logicalWidth = media?.size.width ?? 420;
+  final ratio = media?.devicePixelRatio ?? 1;
+  final width = (logicalWidth * ratio).round().clamp(320, 1440).toInt();
+  return ResizeImage(
+    NetworkImage(upgradeImageUrl(url)),
+    width: width,
+    allowUpscaling: false,
+  );
+}
+
+/// Re-orders a loaded reel so consecutive windows do not show the same shop, or
+/// the same aisle, twice over.
+///
+/// Wandering a mall is enjoyable because the next window is a surprise; five
+/// Checkers cards in a row is a spreadsheet. This only shuffles what has
+/// already been fetched — it is a permutation, so nothing is invented,
+/// duplicated or dropped, and the highest-ranked deal still leads. Where the
+/// tail of the feed leaves no choice (one shop's stock is all that is left) it
+/// relaxes rather than reordering dishonestly.
+///
+/// The scan is quadratic in the worst case, which is fine for a reel of a few
+/// hundred cards and runs once per load, off the swipe path.
+@visibleForTesting
+List<ScrollDeal> varyWindowOrder(List<ScrollDeal> deals) {
+  // How many cards back a shop (or an aisle) has to stay clear of.
+  const retailerGap = 2;
+  const categoryGap = 1;
+  if (deals.length < 3) return List<ScrollDeal>.of(deals);
+
+  final remaining = List<ScrollDeal>.of(deals);
+  final ordered = <ScrollDeal>[];
+  final recentRetailers = <String>[];
+  final recentCategories = <String?>[];
+
+  int? firstMatch(bool Function(ScrollDeal) test) {
+    for (var index = 0; index < remaining.length; index++) {
+      if (test(remaining[index])) return index;
+    }
+    return null;
+  }
+
+  while (remaining.isNotEmpty) {
+    // Relax one rung at a time rather than giving up: a different shop and a
+    // different aisle; then just a different shop; then, when one shop is all
+    // that is left, at least a different aisle; then at least not the shop on
+    // the card the shopper is looking at right now. Only when none of that is
+    // possible does rank decide, so the reel never stalls or repeats itself
+    // more than the stock forces it to.
+    final index = firstMatch((deal) =>
+            !recentRetailers.contains(_retailerKey(deal)) &&
+            !_repeatsCategory(recentCategories, deal)) ??
+        firstMatch((deal) => !recentRetailers.contains(_retailerKey(deal))) ??
+        firstMatch((deal) => !_repeatsCategory(recentCategories, deal)) ??
+        firstMatch((deal) =>
+            recentRetailers.isEmpty ||
+            _retailerKey(deal) != recentRetailers.last) ??
+        0;
+    final deal = remaining.removeAt(index);
+    ordered.add(deal);
+
+    recentRetailers.add(_retailerKey(deal));
+    if (recentRetailers.length > retailerGap) recentRetailers.removeAt(0);
+    recentCategories.add(_categoryKey(deal));
+    if (recentCategories.length > categoryGap) recentCategories.removeAt(0);
+  }
+  return ordered;
+}
+
+String _retailerKey(ScrollDeal deal) => deal.retailerName.trim().toLowerCase();
+
+String? _categoryKey(ScrollDeal deal) {
+  final category = deal.category?.trim().toLowerCase();
+  return (category == null || category.isEmpty) ? null : category;
+}
+
+/// Uncategorised deals never block each other — "no category" is missing data,
+/// not an aisle two cards can share.
+bool _repeatsCategory(List<String?> recent, ScrollDeal deal) {
+  final category = _categoryKey(deal);
+  return category != null && recent.contains(category);
+}
+
 /// Plays a quiet one-shot only when global sounds are on — Window Shopping keeps
 /// its own feedback almost silent so the ambience leads.
 @visibleForTesting
@@ -1035,10 +1207,12 @@ class _RoundIcon extends StatelessWidget {
   }
 }
 
-class _WindowCard extends StatelessWidget {
+class _WindowCard extends StatefulWidget {
   const _WindowCard({
+    super.key,
     this.active = true,
     required this.deal,
+    required this.now,
     required this.saved,
     required this.saveCount,
     this.commentCount = 0,
@@ -1051,6 +1225,7 @@ class _WindowCard extends StatelessWidget {
 
   final bool active;
   final ScrollDeal deal;
+  final DateTime Function() now;
   final bool saved;
   final int saveCount;
   final int commentCount;
@@ -1067,7 +1242,28 @@ class _WindowCard extends StatelessWidget {
   }
 
   @override
+  State<_WindowCard> createState() => _WindowCardState();
+}
+
+class _WindowCardState extends State<_WindowCard> {
+  int _saveBurst = 0;
+
+  /// Double-tapping the picture keeps the deal — the shortest path to the one
+  /// action that actually puts money back in a pocket. It only ever saves: a
+  /// stray second tap must never quietly drop something the shopper meant to
+  /// keep. The bloom confirms a save that really was recorded.
+  void _handleDoubleTapSave() {
+    if (widget.saved) return;
+    setState(() => _saveBurst++);
+    widget.onSave();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final deal = widget.deal;
+    final saved = widget.saved;
+    final wasPrice = meaningfulWasPrice(deal.previousPriceText, deal.priceText);
+    final endsLabel = windowEndsLabel(deal.expiresAt, now: widget.now());
     return Container(
       key: ValueKey('window-card-${deal.id}'),
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1082,9 +1278,9 @@ class _WindowCard extends StatelessWidget {
           if (deal.hasImage)
             _WindowImageGallery(
               key: ValueKey(deal.id),
-              active: active,
+              active: widget.active,
               images: deal.gallery,
-              onDoubleTap: saved ? null : onSave,
+              onDoubleTap: saved ? null : _handleDoubleTapSave,
             )
           else
             const _ImageFallback(),
@@ -1105,6 +1301,9 @@ class _WindowCard extends StatelessWidget {
               ),
             ),
           ),
+          // The save confirmation blooms over the middle of the picture, clear
+          // of both the rail and the details.
+          WindowSaveBurst(trigger: _saveBurst),
           Positioned(
             right: 10,
             bottom: 190,
@@ -1113,10 +1312,13 @@ class _WindowCard extends StatelessWidget {
                 _RailButton(
                   icon: saved ? Icons.bookmark : Icons.bookmark_border,
                   color: saved ? TS.yellow : Colors.white,
-                  label: saveCount > 0
-                      ? formatCount(saveCount)
+                  label: widget.saveCount > 0
+                      ? _WindowCard.formatCount(widget.saveCount)
                       : (saved ? 'Saved' : 'Save'),
-                  onTap: onSave,
+                  semanticsLabel: saved
+                      ? 'Saved. Double tap to remove from saved deals'
+                      : 'Save this deal',
+                  onTap: widget.onSave,
                 ),
                 const SizedBox(height: 18),
                 _RailButton(
@@ -1124,17 +1326,21 @@ class _WindowCard extends StatelessWidget {
                   color: Colors.white,
                   // Show how busy the thread is before it is opened, so nobody
                   // taps through only to find it empty.
-                  label: commentCount > 0
-                      ? formatCount(commentCount)
+                  label: widget.commentCount > 0
+                      ? _WindowCard.formatCount(widget.commentCount)
                       : 'Comment',
-                  onTap: onComment,
+                  semanticsLabel: widget.commentCount > 0
+                      ? '${widget.commentCount} comments'
+                      : 'Comments',
+                  onTap: widget.onComment,
                 ),
                 const SizedBox(height: 18),
                 _RailButton(
                   icon: Icons.share,
                   color: Colors.white,
                   label: 'Share',
-                  onTap: onShare,
+                  semanticsLabel: 'Share this deal',
+                  onTap: widget.onShare,
                 ),
               ],
             ),
@@ -1148,20 +1354,25 @@ class _WindowCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     // Tapping the store opens its profile (all its promos).
-                    GestureDetector(
-                      onTap: onOpenStore,
-                      child: _StoreChip(name: deal.retailerName),
+                    Semantics(
+                      button: true,
+                      label: 'More from ${deal.retailerName}',
+                      child: GestureDetector(
+                        onTap: widget.onOpenStore,
+                        child: _StoreChip(name: deal.retailerName),
+                      ),
                     ),
-                    if (deal.category != null) ...[
-                      const SizedBox(width: 6),
+                    if (deal.category != null)
                       _Badge(
                           text: deal.category!.toUpperCase(),
                           color: Colors.white24,
                           textColor: Colors.white),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1176,49 +1387,56 @@ class _WindowCard extends StatelessWidget {
                       height: 1.1),
                 ),
                 const SizedBox(height: 8),
+                // Flexible so a large text scale ellipsises the prices rather
+                // than overflowing the card.
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     if (deal.priceText != null)
-                      Text(deal.priceText!,
-                          style: const TextStyle(
-                              color: TS.yellow,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900)),
-                    const SizedBox(width: 10),
-                    if (meaningfulWasPrice(
-                            deal.previousPriceText, deal.priceText) !=
-                        null)
-                      Text(
-                          meaningfulWasPrice(
-                              deal.previousPriceText, deal.priceText)!,
-                          style: const TextStyle(
-                              color: Colors.white70,
-                              decoration: TextDecoration.lineThrough,
-                              fontSize: 16)),
+                      Flexible(
+                        child: Text(deal.priceText!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: TS.yellow,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w900)),
+                      ),
+                    if (wasPrice != null) ...[
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(wasPrice,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                decoration: TextDecoration.lineThrough,
+                                fontSize: 16)),
+                      ),
+                    ],
                   ],
                 ),
-                Row(
-                  children: [
-                    if (deal.savingText != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, right: 8),
-                        child: _Badge(
-                            text: deal.savingText!,
-                            color: TS.red,
-                            textColor: Colors.white),
-                      ),
-                    if (_expiryLabel(deal.expiresAt) != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: _Badge(
-                            text: _expiryLabel(deal.expiresAt)!,
-                            color: Colors.white,
-                            textColor: TS.ink),
-                      ),
-                  ],
-                ),
+                if (deal.savingText != null || endsLabel != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (deal.savingText != null)
+                          _Badge(
+                              text: deal.savingText!,
+                              color: TS.red,
+                              textColor: Colors.white),
+                        // Only ever present when the feed carried a real end
+                        // date that has not passed.
+                        WindowEndsPill(
+                            expiresAt: deal.expiresAt, now: widget.now()),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -1231,7 +1449,7 @@ class _WindowCard extends StatelessWidget {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: onOpen,
+                    onPressed: widget.onOpen,
                     icon: const Icon(Icons.open_in_new, size: 18),
                     label: Text('View at ${deal.retailerName}',
                         maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1243,19 +1461,6 @@ class _WindowCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static String? _expiryLabel(String? expiresAt) {
-    if (expiresAt == null) return null;
-    final end = DateTime.tryParse(expiresAt);
-    if (end == null) return null;
-    final now = DateTime.now();
-    final diff = end.difference(now);
-    if (diff.isNegative) return null;
-    if (diff.inHours < 24 && end.day == now.day) return 'ENDS TODAY';
-    if (diff.inHours < 48) return 'ENDS SOON';
-    if (diff.inDays < 7) return '${diff.inDays} DAYS LEFT';
-    return null;
   }
 }
 
@@ -1470,6 +1675,7 @@ class _RailButton extends StatelessWidget {
     required this.color,
     required this.label,
     required this.onTap,
+    this.semanticsLabel,
   });
 
   final IconData icon;
@@ -1477,28 +1683,37 @@ class _RailButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
+  /// What a screen reader should say. The visible label is often a bare count
+  /// ("128"), which reads as nonsense on its own.
+  final String? semanticsLabel;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
-              shape: BoxShape.circle,
+    return Semantics(
+      button: true,
+      label: semanticsLabel ?? label,
+      excludeSemantics: semanticsLabel != null,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 26),
             ),
-            child: Icon(icon, color: color, size: 26),
-          ),
-          const SizedBox(height: 3),
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
-        ],
+            const SizedBox(height: 3),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700)),
+          ],
+        ),
       ),
     );
   }
@@ -1737,6 +1952,7 @@ class _StoreProfileScreen extends StatefulWidget {
     required this.api,
     required this.storeName,
     required this.sourceLabel,
+    required this.now,
     required this.deals,
     required this.initialSaved,
     required this.initialStats,
@@ -1749,6 +1965,7 @@ class _StoreProfileScreen extends StatefulWidget {
   final Api api;
   final String storeName;
   final String sourceLabel;
+  final DateTime Function() now;
   final List<ScrollDeal> deals;
   final Set<String> initialSaved;
   final Map<String, SaveStat> initialStats;
@@ -1859,13 +2076,33 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
       body: PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        itemCount: widget.deals.length,
+        allowImplicitScrolling: true,
+        // Plus the way back to the mixed window, so this reel ends somewhere
+        // too.
+        itemCount: widget.deals.length + 1,
         onPageChanged: (index) => setState(() => _currentPage = index),
         itemBuilder: (context, index) {
+          if (index == widget.deals.length) {
+            return WindowNextStopCard(
+              title: 'That’s everything from ${widget.storeName}',
+              message: 'All ${widget.deals.length} promo'
+                  '${widget.deals.length == 1 ? '' : 's'} in this window.',
+              actions: [
+                WindowNextStop(
+                  label: 'Back to the whole window',
+                  icon: Icons.grid_view,
+                  primary: true,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+              ],
+            );
+          }
           final deal = widget.deals[index];
           return _WindowCard(
+            key: ValueKey('store-card-state-${deal.id}'),
             active: index == _currentPage,
             deal: deal,
+            now: widget.now,
             saved: _saved.contains(deal.id),
             saveCount: _saveStats[deal.id]?.count ?? 0,
             commentCount: _saveStats[deal.id]?.commentCount ?? 0,
@@ -2154,7 +2391,7 @@ class _WindowProductImageState extends State<WindowProductImage>
   @override
   Widget build(BuildContext context) {
     final image = Image(
-      image: widget.imageProvider ?? NetworkImage(upgradeImageUrl(widget.url)),
+      image: widget.imageProvider ?? windowImageProvider(context, widget.url),
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       gaplessPlayback: true,
@@ -2278,34 +2515,57 @@ class _CaughtUpState extends StatelessWidget {
   }
 }
 
+/// The empty and error state. Both offer a retry and a door out to the saved
+/// deals, so a shopper who arrives on a bad connection is never left holding a
+/// sentence and no way forward.
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.message, required this.onRetry});
+  const _EmptyState({
+    required this.message,
+    required this.onRetry,
+    required this.onOpenSaved,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback onOpenSaved;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.window_outlined, size: 48, color: TS.mutedOf(context)),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(message,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.window_outlined, size: 48, color: TS.mutedOf(context)),
+            const SizedBox(height: 12),
+            Text(message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context))),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: TS.yellow, foregroundColor: TS.ink),
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
-        ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: TS.yellow,
+                foregroundColor: TS.ink,
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: TS.inkOf(context),
+                side: BorderSide(color: TS.lineOf(context)),
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: onOpenSaved,
+              icon: const Icon(Icons.bookmark_outline, size: 18),
+              label: const Text('Saved deals'),
+            ),
+          ],
+        ),
       ),
     );
   }
