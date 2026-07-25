@@ -13,6 +13,10 @@ import {
 } from '../../src/services/scoutSources'
 import type { CataloguePage, StoreLeaflet } from '../../src/types'
 import {
+  keepTrustworthyCatalogueDeals,
+  segmentCatalogueMarkdown,
+} from './catalogueQuality'
+import {
   type DealSnapshot,
 } from './dealSnapshotStore'
 import {
@@ -657,7 +661,7 @@ async function scanResumableCatalogue(
     throw new TypeError('Catalogue vision returned malformed JSON')
   }
   const pageDeepLink = cataloguePageDeepLink(leaflet.url, nextPage)
-  const deals = extractVisionCatalogueDeals({
+  const deals = keepTrustworthyCatalogueDeals(extractVisionCatalogueDeals({
     capturedAt: scanStartedAt,
     documentFingerprint,
     imageUrl: downloaded.imageUrl,
@@ -667,7 +671,7 @@ async function scanResumableCatalogue(
     retailerId: leaflet.retailerId,
     retailerName: leaflet.retailerName,
     sourceUrl: leaflet.documentUrl ?? leaflet.url,
-  })
+  }), 'vision')
   const candidates = await catalogueDealsToCandidates(
     deals,
     leaflet,
@@ -805,7 +809,7 @@ async function scanSingleImageCatalogue(
   if (!hasValidVisionEnvelope(vision)) {
     throw new TypeError('Catalogue vision returned malformed JSON')
   }
-  const deals = extractVisionCatalogueDeals({
+  const deals = keepTrustworthyCatalogueDeals(extractVisionCatalogueDeals({
     capturedAt: scanStartedAt,
     documentFingerprint,
     imageUrl: downloaded.imageUrl,
@@ -815,7 +819,7 @@ async function scanSingleImageCatalogue(
     retailerId: leaflet.retailerId,
     retailerName: leaflet.retailerName,
     sourceUrl: catalogueEntryUrl(leaflet) ?? leaflet.url,
-  })
+  }), 'vision')
   const candidates = await catalogueDealsToCandidates(
     deals,
     leaflet,
@@ -911,14 +915,23 @@ async function persistPdfCatalogue(
     copyArrayBuffer(bytes),
     catalogueFileName(documentUrl),
   )
-  const deals = extractCatalogueDeals({
+  // The converter flattens a designed page into one run of text, welding
+  // separate products and their prices together. Segment it back into one
+  // product per line before reading deals out of it.
+  const extracted = extractCatalogueDeals({
     capturedAt: scanStartedAt,
     documentFingerprint,
     imageUrl: leaflet.imageUrl,
-    markdown,
+    markdown: segmentCatalogueMarkdown(markdown),
     retailerId: leaflet.retailerId,
     retailerName: leaflet.retailerName,
     sourceUrl: documentUrl,
+  })
+  const deals = keepTrustworthyCatalogueDeals(extracted, 'pdf-text')
+  debugCatalogue(env.SCOUT_DEBUG === 'true', leaflet, {
+    droppedCandidates: extracted.length - deals.length,
+    eventStage: 'pdf_text_quality',
+    keptCandidates: deals.length,
   })
   const candidates = await catalogueDealsToCandidates(
     deals,

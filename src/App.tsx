@@ -3617,12 +3617,43 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
   return 'Active'
 }
 
+// The lanes the on-demand scout endpoint understands. "feeds" is the structured
+// retailer feed sweep, "stores" the online-storefront sweep over the country
+// registries — the two lanes the legacy deal refresh never reached.
+type ScoutLane = 'all' | 'feeds' | 'stores'
+
+// Admin-only: run one bounded slice of those lanes now instead of waiting for
+// the 3-hourly cron. The server enforces the admin role and answers with what
+// the run actually did, so the console reports that line verbatim.
+async function runScoutLane(lane: ScoutLane): Promise<{ message: string; ok: boolean }> {
+  try {
+    const response = await fetch('/api/admin/scout-run', {
+      body: JSON.stringify({ lane }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { issues?: string[]; message?: string }
+    }
+    const reported = envelope.data?.message ?? envelope.data?.issues?.[0]
+
+    return {
+      message:
+        reported ?? (response.ok ? 'The scout run finished.' : 'The scout run could not start.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'The scout run could not be reached.', ok: false }
+  }
+}
+
 // Admin-only operations view. The API enforces the role server-side; this
 // component only renders what that endpoint returns.
 function AdminConsole() {
   const [overview, setOverview] = useState<AdminOverview | undefined>()
   const [message, setMessage] = useState('Loading admin data.')
   const [pendingId, setPendingId] = useState<string | undefined>()
+  const [scoutNotice, setScoutNotice] = useState<string>()
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>()
 
   useEffect(() => {
@@ -3721,6 +3752,23 @@ function AdminConsole() {
       )
     } else {
       setMessage(result.message)
+    }
+  }
+
+  async function onRunScoutLane(lane: ScoutLane) {
+    setPendingId(`scout-${lane}`)
+    setScoutNotice('Scouting now. One press does a bounded slice.')
+
+    const result = await runScoutLane(lane)
+    setScoutNotice(result.message)
+    setPendingId(undefined)
+
+    if (result.ok) {
+      // Stored deal, store, and leaflet counts move as the lanes land rows.
+      const refreshed = await loadAdminOverview(undefined, activeCountryCode)
+      if (refreshed.data) {
+        setOverview(refreshed.data)
+      }
     }
   }
 
@@ -3843,6 +3891,35 @@ function AdminConsole() {
               <ShieldCheck size={18} />
               {pendingId === 'email-protection' ? 'Protecting' : 'Protect legacy emails'}
             </button>
+          </div>
+
+          <div className="admin-security-card">
+            <div>
+              <p className="eyebrow">Scout run</p>
+              <h2>Run the scout now</h2>
+              <p>
+                {scoutNotice ??
+                  'Retailer feeds and the online-store sweep otherwise only run on the 3-hourly cron. Each press does a bounded slice and continues where the last one stopped.'}
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {([
+                ['all', 'Both lanes'],
+                ['feeds', 'Retailer feeds'],
+                ['stores', 'Online stores'],
+              ] as Array<[ScoutLane, string]>).map(([lane, label]) => (
+                <button
+                  className="ghost-button"
+                  disabled={pendingId?.startsWith('scout-')}
+                  key={lane}
+                  onClick={() => void onRunScoutLane(lane)}
+                  type="button"
+                >
+                  <ArrowClockwise size={18} className={clsx(pendingId === `scout-${lane}` && 'is-spinning')} />
+                  {pendingId === `scout-${lane}` ? 'Scouting' : label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="admin-plans">

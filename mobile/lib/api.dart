@@ -53,6 +53,55 @@ class AdDraft {
       };
 }
 
+/// What one on-demand scout run actually did, so the admin console can report
+/// real numbers instead of a generic "done". Mirrors /api/admin/scout-run,
+/// which runs a bounded slice of each lane and resumes from its stored cursors
+/// the next time it is pressed.
+class ScoutRunSummary {
+  const ScoutRunSummary({
+    required this.acceptedDealCount,
+    required this.checkedSourceCount,
+    required this.failedSourceCount,
+    required this.feedsFailed,
+    required this.lane,
+    required this.message,
+    required this.storesFailed,
+    required this.storesScouted,
+  });
+
+  factory ScoutRunSummary.fromJson(Map<String, dynamic> data) {
+    final feeds = _map(data['feeds']);
+    final stores = _map(data['stores']);
+    final message = data['message'];
+    final lane = data['lane'];
+
+    return ScoutRunSummary(
+      acceptedDealCount: _count(feeds['acceptedDealCount']),
+      checkedSourceCount: _count(feeds['checkedSourceCount']),
+      failedSourceCount: _count(feeds['failedSourceCount']),
+      feedsFailed: feeds['failed'] == true,
+      lane: lane is String && lane.isNotEmpty ? lane : 'all',
+      message: message is String && message.isNotEmpty
+          ? message
+          : 'The scout run finished.',
+      storesFailed: stores['failed'] == true,
+      storesScouted: _count(stores['storesScouted']),
+    );
+  }
+
+  final int acceptedDealCount;
+  final int checkedSourceCount;
+  final int failedSourceCount;
+  final bool feedsFailed;
+  final String lane;
+
+  /// Server-written line such as "10 sources checked, 240 deals added, 4 stores
+  /// swept." Shown as-is so web and mobile report the same run.
+  final String message;
+  final bool storesFailed;
+  final int storesScouted;
+}
+
 class Api {
   Api({
     http.Client? client,
@@ -678,6 +727,21 @@ class Api {
     return addBasketItem(saved.id);
   }
 
+  /// Runs the scout lanes the legacy refresh never reached: the structured
+  /// retailer feeds and the online-storefront sweep, which otherwise only run
+  /// on the 3-hourly cron. Admin only — the server refuses anyone else. One
+  /// call takes a bounded slice; press again to carry the sweep forward from
+  /// the cursors it left behind.
+  Future<ScoutRunSummary> runScoutLanes({String lane = 'all'}) async {
+    final data = await _request(
+      'POST',
+      '/api/admin/scout-run',
+      body: {'lane': lane},
+      timeout: slowRequestTimeout,
+    );
+    return ScoutRunSummary.fromJson(data);
+  }
+
   /// Runs the two protected upstream deal scouts. The server accepts these
   /// requests only for an authenticated admin account.
   Future<void> refreshDealSources() async {
@@ -917,6 +981,14 @@ class ApiException implements Exception {
 
 Map<String, dynamic> _map(Object? value) =>
     value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+/// A count from an API payload. Anything that is not a number reads as 0 so a
+/// missing field is reported as "none", never as a crash.
+int _count(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  return 0;
+}
 
 List<Map<String, dynamic>> _maps(Object? value) => value is List
     ? value

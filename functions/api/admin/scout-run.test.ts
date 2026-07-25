@@ -1,0 +1,320 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  buildRegistryOnlineStores: vi.fn(),
+  getMemberSession: vi.fn(),
+  runStructuredRetailerFeedScout: vi.fn(),
+  scoutNearbyStores: vi.fn(),
+}))
+
+vi.mock('../../_shared/memberStore', () => ({
+  getMemberSession: mocks.getMemberSession,
+}))
+
+vi.mock('../../_shared/retailerFeedScout', () => ({
+  runStructuredRetailerFeedScout: mocks.runStructuredRetailerFeedScout,
+}))
+
+vi.mock('../../_shared/storeScout', () => ({
+  scoutNearbyStores: mocks.scoutNearbyStores,
+}))
+
+vi.mock('../../_shared/registryOnlineScout', () => ({
+  buildRegistryOnlineStores: mocks.buildRegistryOnlineStores,
+}))
+
+import { onRequest } from './scout-run'
+
+const ENDPOINT = 'https://trolleyscout.co.za/api/admin/scout-run'
+
+const feedResult = {
+  acceptedDealCount: 240,
+  catalogueCount: 3,
+  catalogues: [],
+  checkedSourceCount: 10,
+  databaseAvailable: true,
+  failedSourceCount: 0,
+  physicalRequestCount: 4,
+  sources: [{ acceptedDealCount: 240, catalogueCount: 3, key: 'takealot', status: 'success' }],
+}
+
+const registryStores = [
+  { countryCode: 'ZA', name: 'Faithful To Nature', placeId: 'online:za:faithful-to-nature.co.za' },
+  { countryCode: 'ZW', name: 'Gain Cash & Carry', placeId: 'online:zw:gaincash.co.zw' },
+]
+
+describe('/api/admin/scout-run', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+    mocks.runStructuredRetailerFeedScout.mockResolvedValue(feedResult)
+    mocks.scoutNearbyStores.mockResolvedValue(undefined)
+    mocks.buildRegistryOnlineStores.mockReturnValue(registryStores)
+  })
+
+  it('keeps a signed-out visitor from starting a scout run', async () => {
+    const response = await invoke(run())
+
+    expect(response.status).toBe(403)
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('does not let a member start a scout run', async () => {
+    signedInAs('member-1', 'member')
+
+    const response = await invoke(run({ lane: 'all' }))
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ data: { message: 'Admin access is required.' } })
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('refuses a GET without even reading the session', async () => {
+    const response = await invoke(new Request(ENDPOINT))
+
+    expect(response.status).toBe(405)
+    expect(response.headers.get('allow')).toBe('POST')
+    expect(mocks.getMemberSession).not.toHaveBeenCalled()
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+  })
+
+  it('refuses a cross-site scout run', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(new Request(ENDPOINT, {
+      body: JSON.stringify({ lane: 'all' }),
+      headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+      method: 'POST',
+    }))
+
+    expect(response.status).toBe(403)
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('refuses a lane it does not know', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(run({ lane: 'everything' }))
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({
+      data: { issues: ['Provide a lane of all, feeds, or stores.'] },
+    })
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('runs only the structured retailer feeds for the feeds lane, with a bounded request cap', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(run({ lane: 'feeds' }))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+    expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
+
+    const [, options] = mocks.runStructuredRetailerFeedScout.mock.calls[0]
+    expect(options.requestCap).toBe(10)
+    expect(options.timeoutMs).toBeLessThanOrEqual(12_000)
+
+    expect(await response.json()).toMatchObject({
+      data: {
+        feeds: {
+          acceptedDealCount: 240,
+          checkedSourceCount: 10,
+          failed: false,
+          ran: true,
+          requestCap: 10,
+        },
+        lane: 'feeds',
+        message: '10 sources checked, 240 deals added.',
+        stores: { ran: false },
+      },
+    })
+  })
+
+  it('sweeps the online storefront registry for the stores lane, with a bounded store limit', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(run({ lane: 'stores' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
+
+    const [, stores, nowMs, limit] = mocks.scoutNearbyStores.mock.calls[0]
+    expect(stores).toEqual(registryStores)
+    expect(typeof nowMs).toBe('number')
+    expect(limit).toBe(8)
+
+    expect(await response.json()).toMatchObject({
+      data: {
+        feeds: { ran: false },
+        lane: 'stores',
+        message: '2 stores swept.',
+        stores: {
+          failed: false,
+          ran: true,
+          storeLimit: 8,
+          storePromotionCount: 18,
+          storesOffered: 2,
+          storesScouted: 2,
+        },
+      },
+    })
+  })
+
+  it('runs both lanes with smaller bounds when no lane is asked for', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(new Request(ENDPOINT, { method: 'POST' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
+    expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
+    expect(mocks.runStructuredRetailerFeedScout.mock.calls[0][1].requestCap).toBe(6)
+    expect(mocks.scoutNearbyStores.mock.calls[0][3]).toBe(4)
+    expect(await response.json()).toMatchObject({
+      data: {
+        lane: 'all',
+        message: '10 sources checked, 240 deals added, 2 stores swept.',
+      },
+    })
+  })
+
+  it('accepts the lane from the query string too', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(new Request(`${ENDPOINT}?lane=feeds`, { method: 'POST' }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { lane: 'feeds' } })
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('reports a failing feed lane instead of throwing, and still sweeps stores', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.runStructuredRetailerFeedScout.mockRejectedValue(new Error('Takealot refused the request.'))
+
+    const response = await invoke(run({ lane: 'all' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
+    expect(await response.json()).toMatchObject({
+      data: {
+        feeds: { failed: true, message: 'Takealot refused the request.', ran: true },
+        message: '0 sources checked, 0 deals added, 2 stores swept. The retailer feeds could not run.',
+        stores: { failed: false, ran: true },
+      },
+    })
+  })
+
+  it('reports a failing store sweep instead of throwing', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.scoutNearbyStores.mockRejectedValue(new Error('The store log is unavailable.'))
+
+    const response = await invoke(run({ lane: 'stores' }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        message: '0 stores swept. The store sweep could not run.',
+        stores: {
+          failed: true,
+          message: 'The store log is unavailable.',
+          ran: true,
+          storesOffered: 2,
+          storesScouted: 0,
+        },
+      },
+    })
+  })
+
+  it('names the sources that failed inside a lane that otherwise succeeded', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.runStructuredRetailerFeedScout.mockResolvedValue({
+      ...feedResult,
+      acceptedDealCount: 12,
+      checkedSourceCount: 4,
+      failedSourceCount: 1,
+      sources: [
+        { acceptedDealCount: 12, catalogueCount: 0, key: 'clicks', status: 'success' },
+        { acceptedDealCount: 0, catalogueCount: 0, errorText: 'HTTP 503', key: 'makro', status: 'failed' },
+      ],
+    })
+
+    const response = await invoke(run({ lane: 'feeds' }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        feeds: {
+          failed: false,
+          failedSourceCount: 1,
+          failures: [{ key: 'makro', message: 'HTTP 503' }],
+        },
+        message: '4 sources checked, 12 deals added. 1 source failed.',
+      },
+    })
+  })
+
+  it('says plainly that nothing ran when no scout database is connected', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(run({ lane: 'all' }), null)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        databaseAvailable: false,
+        message: 'No scout database is connected, so nothing could be refreshed.',
+      },
+    })
+  })
+
+  it('refuses a body that is not valid JSON before any lane runs', async () => {
+    signedInAs('admin-1', 'admin')
+
+    const response = await invoke(new Request(ENDPOINT, {
+      body: 'lane=feeds',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    }))
+
+    expect(response.status).toBe(400)
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+})
+
+function signedInAs(id: string, role: 'admin' | 'member') {
+  mocks.getMemberSession.mockResolvedValue({ account: { id, role }, isAuthenticated: true })
+}
+
+function run(body: Record<string, unknown> = {}) {
+  return new Request(ENDPOINT, {
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+}
+
+// Counts the stores the sweep stamped in store_scout_log, which is how the
+// endpoint reports what it actually swept.
+function scoutLogDatabase() {
+  return {
+    prepare: () => ({
+      bind: () => ({
+        first: async () => ({ promotions: 18, stores: 2 }),
+      }),
+    }),
+  }
+}
+
+function invoke(request: Request, db: unknown = scoutLogDatabase()) {
+  return onRequest({ env: { DB: db }, request } as never)
+}

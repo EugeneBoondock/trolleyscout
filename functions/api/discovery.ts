@@ -73,6 +73,7 @@ import {
   extractPublicStoreDeals,
   scoutNearbyStores,
 } from '../_shared/storeScout'
+import { buildRegistryOnlineStores } from '../_shared/registryOnlineScout'
 
 // Public, cookieless data — allow any origin so the mobile app can read it.
 const privateHeaders = {
@@ -380,16 +381,27 @@ async function refreshInternationalStoreSources(
     undefined,
     false,
   )
-  if (stores.length === 0) {
+
+  // Discovered stores are branches that someone's near-me search happened to
+  // find, so a country nobody has searched in yet has none of them — which
+  // left shoppers there looking at an empty page until the next scheduled
+  // sweep. The country's registered online storefronts are known up front, so
+  // fold them in: they need no branch to have been discovered first.
+  const registered = buildRegistryOnlineStores([countryCode])
+  const seen = new Set(stores.map((store) => store.placeId))
+  const candidates = [
+    ...stores.map((store) => ({ ...store, nextScoutAt: nowIso })),
+    ...registered.filter((store) => !seen.has(store.placeId)),
+  ]
+
+  if (candidates.length === 0) {
     return
   }
 
-  await scoutNearbyStores(
-    env,
-    stores.map((store) => ({ ...store, nextScoutAt: nowIso })),
-    nowMs,
-    stores.length,
-  )
+  // Still bounded per request. store_scout_log cools each shop for a day after
+  // a visit, so successive requests walk further down the list rather than
+  // re-reading the same few shops.
+  await scoutNearbyStores(env, candidates, nowMs, INTERNATIONAL_REFRESH_STORE_LIMIT)
 }
 
 // Internal scheduled-worker entry point. It bypasses request authorization

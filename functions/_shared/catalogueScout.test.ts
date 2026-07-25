@@ -426,6 +426,41 @@ describe('resumable catalogue scanning', () => {
     })
   })
 
+  it('stores nothing from a flattened Walmart PDF page instead of junk rows', async () => {
+    // Real shape from the 21 July 2026 Walmart SA catalogue: the converter emits
+    // a page marker, welds every design run of the page into one line, and drops
+    // the font sizes that told the rands apart from the superscript cents.
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const pdfUrl = 'https://www.massmart.test/walmart-catalogue/20260721-Walmart-catalogue.pdf'
+    const fetcher = vi.fn(async () => new Response(pdfDocument(), {
+      headers: { 'content-type': 'application/pdf' },
+    })) as typeof fetch
+    const toMarkdown = vi.fn(async () => [
+      'Page 5',
+      '75”QLED/4KUSBX 2HDMIX 3eachR10999R9999190 cm (75”) QLED Google TV• Model: 75Q6600 (850033761)152 cm (60”) QLED Smart TV• Model: 60Q6600H (850033690)eachR6499',
+      'Apples1.5 kgR2995eachSTARKINGORANGESFamily PocketR3995eachCLOVER',
+      'location. Photographic images used in advertising may not accurately represent the actual colour of the product due to printing limitations.',
+    ].join('\n'))
+    const upsert = vi.fn(async (_env, options) => ({
+      processed: options.candidates.length,
+      rowIds: [],
+      runId: 'walmart-pdf',
+    }))
+
+    const result = await runCatalogueScout({ DB: {} as D1Database }, [leaflet({
+      documentUrl: pdfUrl,
+      id: 'walmart-catalogue',
+      retailerId: 'walmart',
+      retailerName: 'Walmart',
+      url: pdfUrl,
+    })], catalogueDependencies({ cursors, fetcher, toMarkdown, upsert }))
+
+    expect(result.scannedDocumentCount).toBe(1)
+    expect(toMarkdown).toHaveBeenCalledTimes(1)
+    expect(upsert.mock.calls[0][1].candidates).toEqual([])
+    expect(documentCursorCount(cursors)).toBe(1)
+  })
+
   it('resolves a same-origin FlippingBook viewer from an HTML catalogue page', async () => {
     const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
     const detailUrl = 'https://www.boxer.test/specials/weekly'

@@ -18,6 +18,7 @@ class _AdminScreenState extends State<AdminScreen> {
   late Future<AdminOverview> _future = widget.api.adminOverview();
   bool _changingCountry = false;
   bool _refreshingDeals = false;
+  String? _lastRefreshSummary;
 
   void _reload() => setState(() {
         _future = widget.api.adminOverview();
@@ -26,33 +27,44 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _refreshDeals() async {
     if (_refreshingDeals) return;
     setState(() => _refreshingDeals = true);
+    uxTap();
+
+    // Two separate server routes: the older discovery/deal-site refresh, and
+    // the scout lanes (structured retailer feeds plus the online-storefront
+    // sweep) that used to be reachable only from the 3-hourly cron. A failure
+    // in the older lane must not stop the newer one, so it is reported beside
+    // the run summary rather than thrown.
+    String? legacyIssue;
     try {
-      uxTap();
       await widget.api.refreshDealSources();
+    } on ApiException catch (error) {
+      legacyIssue = error.message;
+    } catch (_) {
+      legacyIssue = 'The discovery refresh could not run.';
+    }
+
+    try {
+      final summary = await widget.api.runScoutLanes();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('Deal sources refreshed.')),
-        );
+      _reportRefresh(legacyIssue == null
+          ? summary.message
+          : '${summary.message} Discovery refresh: $legacyIssue');
       _reload();
     } on ApiException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(error.message)));
-      }
+      if (mounted) _reportRefresh(error.message);
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('Deal refresh could not start.')),
-          );
-      }
+      if (mounted) _reportRefresh('The scout run could not finish.');
     } finally {
+      // Always released, so a failed call can never leave the button spinning.
       if (mounted) setState(() => _refreshingDeals = false);
     }
+  }
+
+  void _reportRefresh(String message) {
+    setState(() => _lastRefreshSummary = message);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _changeTestCountry(String? countryCode) async {
@@ -191,7 +203,9 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Fetch current store and daily-deal rows now.',
+                          _lastRefreshSummary ??
+                              'Runs discovery, the retailer feeds, and a slice '
+                                  'of the online-store sweep now.',
                           style: TextStyle(
                             color: TS.mutedOf(context),
                             fontSize: 12,
