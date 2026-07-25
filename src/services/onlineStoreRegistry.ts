@@ -248,6 +248,150 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('General', 'FairPrice Online', 'https://www.fairprice.co.za/'),
     store('General', 'OK Furniture', 'https://www.okfurniture.co.za/'),
   ],
+  // Netherlands. Of 595 hosts probed in July 2026 these answered with a working
+  // product feed, and the shape of the result is the opposite of a big-chains
+  // strategy: not one top-20 Dutch retailer is reachable except Lidl. bol.com,
+  // Coolblue, Albert Heijn, Jumbo, Zalando and Picnic all sit behind
+  // Cloudflare, Akamai or Imperva — Akamai blocks even the well-known
+  // anonymous Albert Heijn and Jumbo mobile APIs — so each would need its own
+  // adapter and, for several, an issued partner key.
+  //
+  // What does work is the long tail: Shopify, Magento GraphQL, WooCommerce and
+  // Lightspeed shops. Every Lightspeed shop probed converted, which makes that
+  // platform the cheapest way to grow Dutch coverage from here.
+  //
+  // Amounts are euros except two shops whose Shopify primary market is not the
+  // Netherlands, and the same presentment-currency caution as the United
+  // States applies: a discount reads the same in any currency, but the amount
+  // is only euros when the request comes from Europe.
+  NL: [
+    // Baby
+    store("Baby", "Babywinkel.nl", "https://www.babywinkel.nl/"),
+    store("Baby", "Prenatal", "https://www.prenatal.nl/"),
+    // Books & toys
+    store("Books & toys", "De Speelgoedwinkel", "https://www.despeelgoedwinkel.nl/"),
+    store("Books & toys", "Houtenspeelgoed.nl", "https://houtenspeelgoed.nl/"),
+    // DIY
+    store("DIY", "Pronto Wonen", "https://www.prontowonen.nl/"),
+    store("DIY", "Hubo", "https://www.hubo.nl/"),
+    store("DIY", "Bouwmaat", "https://www.bouwmaat.nl/"),
+    // Fashion
+    store("Fashion", "Mos Mosh", "https://mosmosh.com/"),
+    store("Fashion", "Daily Paper", "https://dailypaperclothing.com/"),
+    store("Fashion", "Snurk", "https://snurkamsterdam.com/"),
+    store("Fashion", "Sapph", "https://www.sapph.com/"),
+    store("Fashion", "Quotrell", "https://www.quotrell.com/"),
+    store("Fashion", "Fabienne Chapot", "https://www.fabiennechapot.com/"),
+    store("Fashion", "Black Bananas", "https://www.blackbananas.nl/"),
+    store("Fashion", "Aaiko", "https://aaiko.com/"),
+    store("Fashion", "Pockies", "https://www.pockies.com/"),
+    store("Fashion", "Marlies Dekkers", "https://www.marliesdekkers.com/"),
+    store("Fashion", "Purdey", "https://www.purdey.nl/"),
+    store("Fashion", "Ballin Amsterdam", "https://www.ballinamsterdam.com/"),
+    store("Fashion", "Oger", "https://oger.nl/"),
+    store("Fashion", "MUD Jeans", "https://mudjeans.com/"),
+    store("Fashion", "Dstrezzed", "https://www.dstrezzed.com/"),
+    store("Fashion", "Brandfield", "https://www.brandfield.nl/"),
+    store("Fashion", "Wolky", "https://www.wolky.nl/"),
+    store("Fashion", "Filling Pieces", "https://www.fillingpieces.com/"),
+    store("Fashion", "Malelions", "https://www.malelions.com/"),
+    store("Fashion", "Catwalk Junkie", "https://www.catwalkjunkie.com/"),
+    store("Fashion", "Olaf Hussein", "https://www.olafhussein.com/"),
+    store("Fashion", "Hip voor de Heb", "https://hipvoordeheb.nl/"),
+    store("Fashion", "LongLady", "https://www.longlady.nl/"),
+    store("Fashion", "Otrium", "https://www.otrium.nl/"),
+    store("Fashion", "Tenue de Nimes", "https://tenuedenimes.com/"),
+    store("Fashion", "Kuyichi", "https://kuyichi.com/"),
+    store("Fashion", "Terstal", "https://www.terstal.nl/"),
+    store("Fashion", "Patta", "https://patta.nl/"),
+    store("Fashion", "PME Legend", "https://www.pme-legend.com/"),
+    store("Fashion", "Vanguard", "https://vanguard.pme-legend.com/"),
+    store("Fashion", "Scotch & Soda", "https://scotchandsoda.com/"),
+    store("Fashion", "Durlinger", "https://www.durlinger.com/"),
+    store("Fashion", "Jollein", "https://jollein.com/"),
+    store("Fashion", "Travelbags", "https://www.travelbags.nl/"),
+    store("Fashion", "Vingino", "https://www.vingino.com/"),
+    store("Fashion", "Zinzi", "https://www.zinzi.nl/"),
+    // Food & drink
+    store("Food & drink", "Whiskysite", "https://www.whiskysite.nl/"),
+    store("Food & drink", "Koffiestore", "https://koffiestore.nl/"),
+    store("Food & drink", "Theeshop.nl", "https://www.theeshop.nl/"),
+    store("Food & drink", "Pit&Pit", "https://nl.pit-pit.com/"),
+    store("Food & drink", "De Notenshop", "https://www.denotenshop.nl/"),
+    store("Food & drink", "Espressoshop", "https://espressoshop.nl/"),
+    store("Food & drink", "Noten.nl", "https://noten.nl/"),
+    store("Food & drink", "Koffiecentrale", "https://www.koffiecentrale.nl/"),
+    store("Food & drink", "Grandcru Wijnen", "https://www.grandcruwijnen.nl/"),
+    store("Food & drink", "Beerwulf", "https://eu.beerwulf.com/"),
+    store("Food & drink", "Kaasgilde", "https://www.kaasgilde.nl/"),
+    store("Food & drink", "Notenbar", "https://notenbar.nl/"),
+    store("Food & drink", "Tony's Chocolonely", "https://tonyschocolonely.com/"),
+    // General
+    store("General", "Feestbazaar", "https://www.feestbazaar.nl/"),
+    store("General", "Dekbed-Discounter", "https://www.dekbed-discounter.nl/"),
+    store("General", "Voordeelvanger", "https://www.voordeelvanger.nl/"),
+    store("General", "Dealdonkey", "https://www.dealdonkey.com/"),
+    store("General", "Dille & Kamille", "https://www.dille-kamille.nl/"),
+    store("General", "Giftcampaign NL", "https://www.giftcampaign.nl/"),
+    // Grocery
+    store("Grocery", "Lidl NL", "https://www.lidl.nl/"),
+    // Health & beauty
+    store("Health & beauty", "Kappersgroothandel", "https://kappersgroothandel.nl/"),
+    store("Health & beauty", "Parfumswinkel", "https://www.parfumswinkel.nl/"),
+    store("Health & beauty", "Huidproducten.nl", "https://huidproducten.nl/"),
+    store("Health & beauty", "Body & Fit", "https://www.bodyandfit.com/"),
+    store("Health & beauty", "Haarspullen.nl", "https://www.haarspullen.nl/"),
+    store("Health & beauty", "Beautyplaza", "https://www.beautyplaza.com/"),
+    store("Health & beauty", "Lucovitaal", "https://www.lucovitaal.nl/"),
+    // Hobby
+    store("Hobby", "Partywinkel", "https://www.partywinkel.nl/"),
+    store("Hobby", "Feestwinkel", "https://www.feestwinkel.nl/"),
+    store("Hobby", "Wolplein", "https://www.wolplein.nl/"),
+    store("Hobby", "Pipoos", "https://pipoos.com/"),
+    store("Hobby", "Velvet Music", "https://www.velvetmusic.nl/"),
+    // Home
+    store("Home", "Directlampen", "https://www.directlampen.nl/"),
+    store("Home", "Vloerenwinkel", "https://vloerenwinkel.nl/"),
+    store("Home", "Cookinglife", "https://www.cookinglife.nl/"),
+    store("Home", "Fonteyn", "https://fonteyn.nl/"),
+    store("Home", "Bakker (Bakker Hillegom)", "https://nl-nl.bakker.com/"),
+    store("Home", "Tuinmeubelshop", "https://www.tuinmeubelshop.nl/"),
+    store("Home", "Bohemian Living", "https://www.bohemian-living.nl/"),
+    store("Home", "Flying Tiger NL", "https://flyingtiger.com/"),
+    store("Home", "Lampencompleet", "https://lampencompleet.nl/"),
+    store("Home", "De Kokswinkel", "https://kokswinkel.nl/"),
+    store("Home", "Sanitairkamer", "https://sanitairkamer.nl/"),
+    store("Home", "Beddinghouse", "https://www.beddinghouse.com/"),
+    store("Home", "Eijerkamp", "https://www.eijerkamp.nl/"),
+    store("Home", "Riviera Maison", "https://rivieramaison.com/"),
+    // Pets
+    store("Pets", "Horze NL", "https://horze.nl/"),
+    store("Pets", "DRD Knaagdierwinkel", "https://www.drdknaagdierwinkel.nl/"),
+    store("Pets", "Petsonline", "https://www.petsonline.nl/"),
+    store("Pets", "DierenwinkelXL", "https://dierenwinkelxl.nl/"),
+    // Sport
+    store("Sport", "Soccerfanshop", "https://www.soccerfanshop.nl/"),
+    store("Sport", "Fietsdirect", "https://www.fietsdirect.nl/"),
+    store("Sport", "Bikester NL", "https://www.bikester.nl/"),
+    store("Sport", "Fitwinkel", "https://fitwinkel.nl/"),
+    store("Sport", "Divoza Horseworld", "https://divoza.com/"),
+    store("Sport", "Rogelli", "https://rogelli.com/"),
+    store("Sport", "Yogashop", "https://www.yogashop.nl/"),
+    store("Sport", "Telstar Surf", "https://www.telstarsurf.com/"),
+    store("Sport", "Intersport NL", "https://intersport.nl/"),
+    store("Sport", "Batavus", "https://batavus.com/"),
+    store("Sport", "Gazelle", "https://www.gazelle.nl/"),
+    // Tech
+    store("Tech", "Sound Gallery", "https://www.soundgallery.nl/"),
+    store("Tech", "Hobbyelectronica", "https://www.hobbyelectronica.nl/"),
+    store("Tech", "Leapp", "https://leapp.nl/"),
+    store("Tech", "Ledwinkel", "https://ledwinkel-online.nl/"),
+    store("Tech", "Otronic", "https://www.otronic.nl/"),
+    store("Tech", "Antratek", "https://www.antratek.nl/"),
+    store("Tech", "Elektramat", "https://www.elektramat.nl/"),
+    // Tools & auto
+    store("Tools & auto", "Toolnation", "https://www.toolnation.nl/"),
+  ],
   // United States. Of 544 sites probed in July 2026 these answered with a
   // working discount feed, and almost every one is Shopify. The large national
   // chains — Walmart, Target, Kroger, Costco, CVS, Home Depot — are all behind

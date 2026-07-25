@@ -60,6 +60,17 @@ describe('buildRegistryOnlineStores', () => {
     expect(us.map((store) => store.placeId)).toContain('online:us:allbirds.com')
   })
 
+  it('sweeps Dutch storefronts, priced in euros', () => {
+    const nl = buildRegistryOnlineStores(['NL'])
+
+    expect(nl.length).toBeGreaterThan(100)
+    expect(nl.every((store) => store.countryCode === 'NL')).toBe(true)
+    expect(nl.every((store) => store.countryName === 'Netherlands')).toBe(true)
+    // Lidl is the one large Dutch chain with a reachable feed; the rest of the
+    // country's top twenty sit behind bot management.
+    expect(nl.map((store) => store.placeId)).toContain('online:nl:lidl.nl')
+  })
+
   it('merges the country directory and the online registry without repeating a host', () => {
     const zw = buildRegistryOnlineStores(['ZW'])
     const hosts = zw.map((store) => store.placeId)
