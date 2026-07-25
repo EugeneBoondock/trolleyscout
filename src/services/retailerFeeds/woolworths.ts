@@ -146,7 +146,15 @@ function readPriceLists(data: Record<string, unknown> | undefined): RetailerFeed
       continue
     }
 
-    const previousPriceCents = moneyToCents(data[`${listId}_wp`])
+    // Woolworths writes "no previous price" as 0, not as a missing field, and
+    // every one of its multibuy lines is priced that way — "buy any 3 for R55"
+    // marks nothing down, the saving arrives at the till. Carried through, that
+    // zero became a was-price of R0.00 on every Woolworths deal on record.
+    const wasPriceCents = moneyToCents(data[`${listId}_wp`])
+    const previousPriceCents = wasPriceCents !== undefined && wasPriceCents > priceCents
+      ? wasPriceCents
+      : undefined
+
     prices.push({
       listId,
       priceCents,

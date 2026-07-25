@@ -266,3 +266,72 @@ function woolworthsResult(id: string, overrides: Record<string, unknown> = {}) {
     },
   }
 }
+
+describe('woolworths prices with no markdown', () => {
+  // Woolworths writes "no previous price" as 0 rather than leaving the field
+  // out, and every multibuy line is priced that way: "buy any 3 for R55" marks
+  // nothing down, the saving arrives at the till. Read literally, that zero
+  // became a was-price of R0.00 on all 1,765 Woolworths deals on record.
+  const multibuy = {
+    response: {
+      num_results: 1,
+      total_num_results: 1,
+      results: [
+        {
+          data: {
+            description: 'Penne Pasta 500 g',
+            id: '6009189404924',
+            image_url: 'https://images.woolworthsstatic.co.za/penne.jpg',
+            p10: 22.99,
+            p10_wp: 0,
+            promo: ['Buy any 3 for R55 Everyday Pasta'],
+            url: 'prod/Food/Penne-Pasta-500-g/_/A-6009189404924',
+          },
+          value: 'Penne Pasta 500 g',
+        },
+      ],
+    },
+  }
+
+  it('publishes a multibuy with its offer and no invented was-price', () => {
+    const page = parseWoolworthsFeed(multibuy, {
+      capturedAt: '2026-07-25T10:00:00.000Z',
+      offset: 0,
+      pageSize: 100,
+      sourceUrl: 'https://www.woolworths.co.za/cat/Food/_/N-1z13sk5',
+    })
+
+    expect(page.candidates).toHaveLength(1)
+    expect(page.candidates[0]).toMatchObject({
+      priceCents: 2299,
+      savingText: 'Buy any 3 for R55 Everyday Pasta',
+    })
+    expect(page.candidates[0].previousPriceCents).toBeUndefined()
+    expect(page.candidates[0].prices?.[0].previousPriceCents).toBeUndefined()
+  })
+
+  it('still reads a real markdown when Woolworths sets one', () => {
+    const page = parseWoolworthsFeed(
+      {
+        response: {
+          num_results: 1,
+          total_num_results: 1,
+          results: [
+            {
+              data: { ...multibuy.response.results[0].data, p10_wp: 29.99 },
+              value: 'Penne Pasta 500 g',
+            },
+          ],
+        },
+      },
+      {
+        capturedAt: '2026-07-25T10:00:00.000Z',
+        offset: 0,
+        pageSize: 100,
+        sourceUrl: 'https://www.woolworths.co.za/cat/Food/_/N-1z13sk5',
+      },
+    )
+
+    expect(page.candidates[0]).toMatchObject({ previousPriceCents: 2999, priceCents: 2299 })
+  })
+})
