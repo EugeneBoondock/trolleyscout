@@ -10,6 +10,7 @@ import {
   readDiscoveredStoreByPlaceId,
   readDiscoveredStoreSummary,
   readPromotionCountsByPlace,
+  readRetailerDealCounts,
   readStorePromotions,
   type DiscoveredStore,
   type StorePromotion,
@@ -34,6 +35,7 @@ export function attachPromotionDetails(
   stores: DiscoveredStore[],
   promotionCounts: Map<string, number>,
   promotions: StorePromotion[],
+  retailerDealCounts: Map<string, number> = new Map(),
 ) {
   const promotionsByPlace = new Map<string, StorePromotion[]>();
 
@@ -45,17 +47,29 @@ export function attachPromotionDetails(
 
   return stores.map((store) => {
     const promotionCount = promotionCounts.get(store.placeId) ?? 0;
+    // A branch of a known chain also carries whatever that chain published
+    // through its own feed. Those deals belong to the retailer, not to any one
+    // shop, so counting only what was scouted at this address told a shopper a
+    // Shoprite had nothing on the day Shoprite had hundreds.
+    const retailerDealCount = store.retailerId
+      ? retailerDealCounts.get(store.retailerId) ?? 0
+      : 0;
+    const dealCount = promotionCount + retailerDealCount;
 
     return {
       ...store,
       deals: [],
-      hasPromotions: promotionCount > 0,
+      hasPromotions: dealCount > 0,
       leaflets: [],
       logoUrl: nearbyStoreLogoUrl(store),
-      promotionCount,
+      promotionCount: dealCount,
       promotions: prioritizePromotionDetails(
         promotionsByPlace.get(store.placeId) ?? [],
       ),
+      // Kept apart so the card can say where a number came from: what was
+      // found at this branch, and what the chain published for everyone.
+      retailerDealCount,
+      storePromotionCount: promotionCount,
     };
   });
 }
@@ -233,7 +247,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({
   const detailsStoreOffset = detailsPaginated ? pageOffset : 0;
   const detailsPromotionLimit = detailsPaginated ? pageLimit : 3000;
 
-  const [{ stores, tileCount }, promotionCounts, promotions] =
+  const [{ stores, tileCount }, promotionCounts, promotions, retailerDealCounts] =
     await Promise.all([
       readAllDiscoveredStores(
         env,
@@ -249,9 +263,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({
         detailsPromotionLimit,
         country.code,
       ),
+      readRetailerDealCounts(env, nowIso),
     ]);
 
-  const enriched = attachPromotionDetails(stores, promotionCounts, promotions);
+  const enriched = attachPromotionDetails(
+    stores,
+    promotionCounts,
+    promotions,
+    retailerDealCounts,
+  );
 
   const response = json(
     {

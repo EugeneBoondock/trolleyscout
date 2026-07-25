@@ -951,3 +951,42 @@ function rowToPromotion(row: StorePromotionRow): StorePromotion {
     validTo: row.valid_to ?? undefined,
   };
 }
+
+/// Deals a chain published through its own retailer feed, counted per retailer
+/// rather than per branch.
+///
+/// A chain's feed covers the whole chain — one Shoprite catalogue is every
+/// Shoprite — so those deals are stored against the retailer and never against
+/// a place. The stores directory counted only per-branch promotions, which is
+/// why a Shoprite branch could read "no deals" on the same day the deals page
+/// showed 843 of them for Shoprite. Counting both is what makes the two pages
+/// agree.
+export async function readRetailerDealCounts(
+  env: TrolleyScoutEnv,
+  nowIso: string,
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+
+  if (!hasDb(env)) {
+    return counts;
+  }
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT retailer_id, COUNT(*) AS deal_count
+        FROM deal_items
+        WHERE expires_at >= ?
+        GROUP BY retailer_id`,
+    )
+      .bind(nowIso)
+      .all<{ deal_count: number; retailer_id: string }>();
+
+    for (const row of result.results) {
+      counts.set(row.retailer_id, Number(row.deal_count));
+    }
+  } catch {
+    // The directory still renders on per-branch counts alone.
+  }
+
+  return counts;
+}

@@ -32,6 +32,42 @@ describe('attachPromotionDetails', () => {
     expect(result[1].promotions.map((item) => item.id)).toEqual(['b-1'])
   })
 
+  // A chain's feed covers the whole chain, so its deals are held against the
+  // retailer and never against one address. Counting only what was scouted at
+  // a branch had a Shoprite reading "no deals" on the same day the deals page
+  // showed hundreds for Shoprite.
+  it('credits a branch with what its chain published', () => {
+    const [shoprite, independent] = attachPromotionDetails(
+      [
+        { firstSeenAt: '2026-07-01', lastSeenAt: '2026-07-16', lat: -26, lon: 28, name: 'Shoprite Strand', nextScoutAt: '2026-07-17', placeId: 'store-a', retailerId: 'shoprite' },
+        { firstSeenAt: '2026-07-01', lastSeenAt: '2026-07-16', lat: -26, lon: 28, name: 'Corner Cafe', nextScoutAt: '2026-07-17', placeId: 'store-b' },
+      ],
+      new Map([['store-a', 2]]),
+      [promotion({ id: 'a-1', placeId: 'store-a' })],
+      new Map([['shoprite', 843]]),
+    )
+
+    expect(shoprite).toMatchObject({
+      hasPromotions: true,
+      promotionCount: 845,
+      retailerDealCount: 843,
+      storePromotionCount: 2,
+    })
+    // A shop belonging to no chain is unaffected and still counts its own.
+    expect(independent).toMatchObject({ hasPromotions: false, promotionCount: 0 })
+  })
+
+  it('shows a chain branch as stocked even when nothing was scouted at it', () => {
+    const [store] = attachPromotionDetails(
+      [{ firstSeenAt: '2026-07-01', lastSeenAt: '2026-07-16', lat: -26, lon: 28, name: 'Shoprite', nextScoutAt: '2026-07-17', placeId: 'store-a', retailerId: 'shoprite' }],
+      new Map(),
+      [],
+      new Map([['shoprite', 843]]),
+    )
+
+    expect(store).toMatchObject({ hasPromotions: true, promotionCount: 843 })
+  })
+
   it('bounds detailed promotions per branch without changing the accurate count', () => {
     const promotions = [
       ...Array.from({ length: 40 }, (_, index) => promotion({ id: `item-${index}` })),
