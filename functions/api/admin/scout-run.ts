@@ -13,6 +13,7 @@
 
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from '../../_shared/env'
 import { getMemberSession } from '../../_shared/memberStore'
+import { countryFromCode } from '../../_shared/countryContext'
 import { buildRegistryOnlineStores } from '../../_shared/registryOnlineScout'
 import { hasTrustedMutationOrigin, readJsonObjectBody } from '../../_shared/requestGuards'
 import { json, methodNotAllowed } from '../../_shared/respond'
@@ -28,6 +29,9 @@ const privateHeaders = {
 }
 
 const SCOUT_LANES = ['all', 'feeds', 'stores'] as const
+
+// Opts a press out of country scoping and back into every registered country.
+const ALL_COUNTRIES = 'ALL'
 
 export type ScoutLane = (typeof SCOUT_LANES)[number]
 
@@ -128,7 +132,20 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  const bounds = LANE_BOUNDS[lane]
+  // The country the admin is currently working in, which the session already
+  // reflects through their country switch. A press sweeps that country's shops
+  // and nobody else's, so an admin looking at the Netherlands is not spending
+  // their run on South African ones. "all" opts back into every country.
+  const country = readCountry(body.country, request.url, session.account.countryCode)
+  const wholeWorld = country === ALL_COUNTRIES
+
+  // Every structured feed we have is a South African retailer, so outside South
+  // Africa that lane has nothing to fetch and its whole budget is better spent
+  // on the shops that do serve the country being swept.
+  const feedsApply = wholeWorld || country === 'ZA'
+  const bounds = feedsApply
+    ? LANE_BOUNDS[lane]
+    : { feedRequestCap: 0, storeLimit: LANE_BOUNDS[lane].storeLimit || LANE_BOUNDS.stores.storeLimit }
   const startedAtMs = Date.now()
   const startedAt = new Date(startedAtMs).toISOString()
   const databaseAvailable = hasTrolleyScoutDatabase(env)
@@ -139,22 +156,48 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     ? await runFeedLane(env, bounds.feedRequestCap)
     : skippedFeedLane()
   const stores = bounds.storeLimit > 0
-    ? await runStoreLane(env, bounds.storeLimit, startedAtMs, startedAt)
+    ? await runStoreLane(
+      env,
+      bounds.storeLimit,
+      startedAtMs,
+      startedAt,
+      wholeWorld ? undefined : [country],
+    )
     : skippedStoreLane()
 
   return json(
     {
+      country,
       databaseAvailable,
       durationMs: Date.now() - startedAtMs,
       feeds,
       finishedAt: new Date().toISOString(),
       lane,
-      message: summaryMessage(feeds, stores, databaseAvailable),
+      message: summaryMessage(feeds, stores, databaseAvailable, feedsApply ? undefined : country),
       startedAt,
       stores,
     },
     { headers: privateHeaders },
   )
+}
+
+/// The country a press sweeps: what was asked for, else wherever the admin is
+/// working. An unreadable code falls back to their own country rather than
+/// silently sweeping the world on a typo.
+function readCountry(value: unknown, url: string, fallback: string): string {
+  const fromBody = typeof value === 'string' ? value : ''
+  const fromQuery = fromBody ? '' : new URL(url).searchParams.get('country') ?? ''
+  const requested = (fromBody || fromQuery).trim().toUpperCase()
+
+  if (requested === ALL_COUNTRIES) {
+    return ALL_COUNTRIES
+  }
+
+  // countryFromCode answers South Africa for anything it cannot read, so a
+  // requested code is only honoured when it round-trips. Otherwise a typo
+  // would quietly sweep South Africa for an admin working elsewhere.
+  const asked = requested ? countryFromCode(requested) : undefined
+  return asked && asked.code === requested ? asked.code : countryFromCode(fallback).code
 }
 
 function readLane(value: unknown, url: string): ScoutLane | undefined {
@@ -246,6 +289,7 @@ async function runStoreLane(
   storeLimit: number,
   startedAtMs: number,
   startedAt: string,
+  countryCodes?: string[],
 ): Promise<StoreLaneSummary> {
   let storesOffered = 0
 
@@ -253,7 +297,7 @@ async function runStoreLane(
     // Online-only retailers have no branch for the near-me scout to reach, so
     // the whole registry is handed over and scoutNearbyStores paces it: it
     // claims at most storeLimit shops that are off cooldown.
-    const registryStores = buildRegistryOnlineStores()
+    const registryStores = buildRegistryOnlineStores(countryCodes)
     storesOffered = registryStores.length
     await scoutNearbyStores(env, registryStores, startedAtMs, storeLimit)
   } catch (error) {
@@ -335,6 +379,7 @@ function summaryMessage(
   feeds: FeedLaneSummary,
   stores: StoreLaneSummary,
   databaseAvailable: boolean,
+  countryWithoutFeeds?: string,
 ): string {
   if (!databaseAvailable) {
     return 'No scout database is connected, so nothing could be refreshed.'
@@ -364,8 +409,15 @@ function summaryMessage(
   }
 
   const summary = done.length ? `${done.join(', ')}.` : 'Nothing ran.'
+  const withProblems = problems.length
+    ? `${summary} ${sentence(problems.join(' and '))}.`
+    : summary
 
-  return problems.length ? `${summary} ${sentence(problems.join(' and '))}.` : summary
+  // Said plainly rather than left as a suspiciously small number: every
+  // structured feed is a South African retailer.
+  return countryWithoutFeeds
+    ? `${withProblems} Retailer feeds are South African, so ${countryFromCode(countryWithoutFeeds).name} swept shops only.`
+    : withProblems
 }
 
 function count(value: number, noun: string): string {

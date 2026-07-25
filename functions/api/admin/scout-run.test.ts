@@ -222,6 +222,59 @@ describe('/api/admin/scout-run', () => {
     expect(passed[0].key).toBe('takealot::promotion-campaigns-0')
   })
 
+  // An admin who has switched the console to another country is working there,
+  // and a press that spent their whole budget on South African shops would
+  // leave the country they are actually looking at empty.
+  it('sweeps only the country the admin is working in', async () => {
+    signedInAs('admin-1', 'admin', 'NL')
+
+    const response = await invoke(run({ lane: 'stores' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.buildRegistryOnlineStores).toHaveBeenCalledWith(['NL'])
+    expect(await response.json()).toMatchObject({ data: { country: 'NL' } })
+  })
+
+  // Every structured feed is a South African retailer, so running that lane
+  // for the Netherlands would burn the budget fetching nothing Dutch.
+  it('skips the retailer feeds outside South Africa and says why', async () => {
+    signedInAs('admin-1', 'admin', 'NL')
+
+    const response = await invoke(run())
+    const body = await response.json() as { data: { message: string } }
+
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).toHaveBeenCalledTimes(1)
+    expect(body.data.message).toContain('Netherlands swept shops only')
+  })
+
+  it('still runs the feeds for a South African admin', async () => {
+    signedInAs('admin-1', 'admin', 'ZA')
+
+    await invoke(run())
+
+    expect(mocks.runStructuredRetailerFeedScout).toHaveBeenCalledTimes(1)
+    expect(mocks.buildRegistryOnlineStores).toHaveBeenCalledWith(['ZA'])
+  })
+
+  it('sweeps every country when asked for all', async () => {
+    signedInAs('admin-1', 'admin', 'NL')
+
+    const response = await invoke(run({ country: 'all', lane: 'stores' }))
+
+    expect(mocks.buildRegistryOnlineStores).toHaveBeenCalledWith(undefined)
+    expect(await response.json()).toMatchObject({ data: { country: 'ALL' } })
+  })
+
+  // A typo must not quietly widen the sweep to the whole world.
+  it('falls back to the admin country when the code is unreadable', async () => {
+    signedInAs('admin-1', 'admin', 'NL')
+
+    await invoke(run({ country: 'not-a-country', lane: 'stores' }))
+
+    expect(mocks.buildRegistryOnlineStores).toHaveBeenCalledWith(['NL'])
+  })
+
   it('accepts the lane from the query string too', async () => {
     signedInAs('admin-1', 'admin')
 
@@ -327,8 +380,11 @@ describe('/api/admin/scout-run', () => {
   })
 })
 
-function signedInAs(id: string, role: 'admin' | 'member') {
-  mocks.getMemberSession.mockResolvedValue({ account: { id, role }, isAuthenticated: true })
+function signedInAs(id: string, role: 'admin' | 'member', countryCode = 'ZA') {
+  mocks.getMemberSession.mockResolvedValue({
+    account: { countryCode, id, role },
+    isAuthenticated: true,
+  })
 }
 
 function run(body: Record<string, unknown> = {}) {

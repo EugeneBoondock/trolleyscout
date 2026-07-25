@@ -188,37 +188,65 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            // Stacked, not a row: beside a line of text the button ran out of
+            // width on a phone and was pushed off the edge of the card, which
+            // read as there being no way to refresh at all.
             PaperCard(
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.sync, color: TS.redOf(context)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
+                  Row(
+                    children: [
+                      Icon(Icons.sync, color: TS.redOf(context)),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
                           'Deal source refresh',
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _lastRefreshSummary ??
-                              'Runs discovery, the retailer feeds, and a slice '
-                                  'of the online-store sweep now.',
-                          style: TextStyle(
-                            color: TS.mutedOf(context),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  FilledButton(
-                    onPressed: _refreshingDeals ? null : _refreshDeals,
-                    child: Text(
-                      _refreshingDeals ? 'Refreshing' : 'Refresh deal sources',
+                  const SizedBox(height: 6),
+                  Text(
+                    _lastRefreshSummary ??
+                        'Runs discovery, the retailer feeds, and a slice of the '
+                            'online-store sweep for '
+                            '${overview.selectedCountry.name} now.',
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    // A plain FilledButton, not FilledButton.icon: the icon
+                    // constructor builds a private subclass that byType finders
+                    // never match, which puts the control out of reach of the
+                    // tests that guard it.
+                    child: FilledButton(
+                      onPressed: _refreshingDeals ? null : _refreshDeals,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_refreshingDeals)
+                            const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            const Icon(Icons.sync, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              _refreshingDeals
+                                  ? 'Refreshing'
+                                  : 'Fetch ${overview.selectedCountry.name} deals now',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

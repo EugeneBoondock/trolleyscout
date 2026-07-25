@@ -23,7 +23,15 @@ const HTTP_ACCEPTED = 202
 const TRAILING_PRICE_WINDOW = 600
 const MAX_PROPERTY_STATE_BYTES = 750_000
 const MAX_PROPERTY_STATE_OBJECTS = 12_000
-const PROPERTY_CACHE_VERSION = 'v3'
+// How far past a link to look for its photo. A card's markup — badges, a
+// carousel, the picture itself — runs to a couple of thousand characters on
+// the busiest portals, and reaching past that starts borrowing the next card's
+// picture.
+const MAX_CARD_IMAGE_WINDOW = 2_500
+// Bumped whenever parsing changes what a stored result would contain. Cached
+// searches outlive a deploy, so without this a fix reaches nobody who already
+// looked: they keep being served the answer the old parser gave.
+const PROPERTY_CACHE_VERSION = 'v4'
 
 export interface GlobalPropertySearchParams {
   query: string
@@ -225,10 +233,16 @@ export function parseGenericPropertyListings(
   const portalName = labelFromHost(sourceHost)
   const portal = `web:${slug(sourceHost)}`
   const priceIndex = buildPriceIndex(objects, source)
+  // Several portals describe a home in JSON-LD but leave its photo out of that
+  // description, keeping it only in the card markup. Redfin is one: 41
+  // listings, not one `image` key between them, while the page itself carries
+  // a photo for every card.
+  const imageIndex = buildCardImageIndex(html, source)
   const structuredListings = objects
     .filter(isPropertyObject)
     .map((object) => objectToListing(object, {
       defaultCurrency,
+      imageIndex,
       listingType,
       portal,
       portalName,
@@ -646,6 +660,51 @@ function buildPriceIndex(
   return index
 }
 
+// Page furniture that sits in an <img> but is never a home: sponsor logos,
+// UI icons, sprites and tracking pixels. Redfin pairs an internet-provider
+// logo with its first card, so this is not hypothetical.
+const NON_PHOTO_IMAGE = /(?:logo|icon|sprite|badge|placeholder|avatar|pixel|banner|\.svg(?:$|[?#]))/i
+
+/// Maps each listing link on the page to the photo shown with it, so a listing
+/// described without one can still be given its own picture. Keyed by resolved
+/// URL, exactly as the price index is.
+function buildCardImageIndex(html: string, source: URL): Map<string, string> {
+  const index = new Map<string, string>()
+  const anchorPattern = /<a(\s[^>]*)>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = anchorPattern.exec(html)) !== null) {
+    const href = htmlAttribute(match[1] ?? '', ['href'])
+    if (!href) continue
+
+    const url = safeHttpUrl(decodeHtml(href), source)
+    if (!url || index.has(url.toString())) continue
+
+    // The photo of a card sits inside its own link, so only the markup that
+    // immediately follows the anchor can speak for it.
+    const window = html.slice(match.index, match.index + MAX_CARD_IMAGE_WINDOW)
+    const image = firstCardPhoto(window, source)
+    if (image) index.set(url.toString(), image)
+  }
+
+  return index
+}
+
+function firstCardPhoto(window: string, source: URL): string | undefined {
+  const imagePattern = /<img(\s[^>]*)>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = imagePattern.exec(window)) !== null) {
+    const value = htmlAttribute(match[1] ?? '', ['src', 'data-src', 'data-lazy-src'])
+    if (!value || NON_PHOTO_IMAGE.test(value)) continue
+
+    const resolved = safeHttpUrl(decodeHtml(value), source)
+    if (resolved) return resolved.toString()
+  }
+
+  return undefined
+}
+
 function isPriceCarrier(object: Record<string, unknown>): boolean {
   const types = Array.isArray(object['@type']) ? object['@type'] : [object['@type']]
   return types.some((type) =>
@@ -660,6 +719,7 @@ function objectToListing(
     listingType: PropertyListingType
     portal: string
     portalName: string
+    imageIndex: Map<string, string>
     priceIndex: Map<string, { currencyCode?: string; value: number }>
     source: URL
   },
@@ -707,7 +767,7 @@ function objectToListing(
   const imageUrl = imageFrom(
     object.image ?? object.imageUrl ?? object.thumbnailUrl ?? object.coverImage,
     context.source,
-  )
+  ) ?? context.imageIndex.get(listingUrl.toString())
 
   return {
     bathrooms: positiveNumber(

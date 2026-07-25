@@ -110,6 +110,80 @@ describe('registered property portals outside southern Africa', () => {
 })
 
 // Markup below is copied from pages fetched from each portal in July 2026.
+describe('photos for homes described without one', () => {
+  // Redfin's shape: it describes each home in JSON-LD but puts no image there,
+  // keeping the photo only in the card. Read from the description alone, forty
+  // homes arrive without a picture between them.
+  const redfin = `
+    <a class="link-and-anchor" href="/TX/Austin/1300-Pleasant-Valley-78741/home/31624265">
+      <div class="bp-Homecard__PhotoWrapper">
+        <picture>
+          <img class="bp-Homecard__Photo--image" alt=""
+            src="https://ssl.cdn-redfin.com/photo/rent/9dbd14a4/islphoto/genIsl.0_5.webp"/>
+        </picture>
+      </div>
+    </a>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Accommodation","name":"1300 Pleasant Valley",
+       "url":"https://www.redfin.com/TX/Austin/1300-Pleasant-Valley-78741/home/31624265",
+       "address":{"@type":"PostalAddress","streetAddress":"1300 S Pleasant Valley Rd",
+                  "addressLocality":"Austin"},
+       "numberOfRooms":2}
+    </script>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"1300 Pleasant Valley",
+       "url":"https://www.redfin.com/TX/Austin/1300-Pleasant-Valley-78741/home/31624265",
+       "offers":{"@type":"Offer","price":1650,"priceCurrency":"USD"}}
+    </script>
+  `
+
+  it('gives a home the photo shown on its own card', () => {
+    const listings = parseGenericPropertyListings(
+      redfin,
+      'https://www.redfin.com/city/30818/TX/Austin/apartments-for-rent',
+      'rent',
+      'USD',
+    )
+
+    expect(listings).toHaveLength(1)
+    expect(listings[0]).toMatchObject({
+      imageUrl: 'https://ssl.cdn-redfin.com/photo/rent/9dbd14a4/islphoto/genIsl.0_5.webp',
+      priceValue: 1650,
+    })
+  })
+
+  // Redfin pairs an internet-provider logo with one of its cards, so a naive
+  // "first image after the link" would hand a shopper a sponsor badge.
+  it('passes over page furniture to reach the actual photo', () => {
+    const withLogo = redfin.replace(
+      '<picture>',
+      '<picture><img src="https://ssl.cdn-redfin.com/vLATEST/images/logos/att_fiber.png"/>',
+    )
+    const listings = parseGenericPropertyListings(
+      withLogo,
+      'https://www.redfin.com/city/30818/TX/Austin/apartments-for-rent',
+      'rent',
+      'USD',
+    )
+
+    expect(listings[0]?.imageUrl).toBe(
+      'https://ssl.cdn-redfin.com/photo/rent/9dbd14a4/islphoto/genIsl.0_5.webp',
+    )
+  })
+
+  it('leaves a home without a picture rather than borrowing the next one', () => {
+    const noPhoto = redfin.replace(/<picture>[\s\S]*?<\/picture>/, '')
+    const listings = parseGenericPropertyListings(
+      noPhoto,
+      'https://www.redfin.com/city/30818/TX/Austin/apartments-for-rent',
+      'rent',
+      'USD',
+    )
+
+    expect(listings[0]?.imageUrl).toBeUndefined()
+  })
+})
+
 describe('property listing pages from the United States and the Netherlands', () => {
   it('reads a euro price with Dutch thousands and decimal separators', () => {
     const html = `

@@ -251,7 +251,18 @@ void main() {
     await tester.pumpWidget(_wrap(AdminScreen(api: api)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Refresh deal sources'));
+    // The control names the country it will sweep, so an admin who has
+    // switched the console knows what a press is about to fetch.
+    final button = find.widgetWithText(FilledButton, 'Fetch South Africa deals now');
+    expect(button, findsOneWidget);
+
+    // It must span the card: beside a line of text it was pushed off the edge
+    // of a phone screen and could not be pressed at all.
+    final buttonWidth = tester.getSize(button).width;
+    final cardWidth = tester.getSize(find.byType(AdminScreen)).width;
+    expect(buttonWidth, greaterThan(cardWidth / 2));
+
+    await tester.tap(button);
     await tester.pumpAndSettle();
 
     expect(api.dealRefreshCalls, 1);
