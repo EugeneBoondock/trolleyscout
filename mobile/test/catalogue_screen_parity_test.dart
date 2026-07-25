@@ -346,6 +346,8 @@ class _CatalogueApi extends Api {
     String query = '',
     bool includeDetails = true,
     String? placeId,
+    double? lat,
+    double? lon,
   }) async {
     if (placeId != null) {
       detailCalls += 1;

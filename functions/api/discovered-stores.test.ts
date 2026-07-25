@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { StorePromotion } from '../_shared/locationStore'
-import { attachPromotionDetails } from './discovered-stores'
+import { attachPromotionDetails, keepStoresNear } from './discovered-stores'
 
 const promotion = (overrides: Partial<StorePromotion>): StorePromotion => ({
   id: 'promotion-1',
@@ -82,5 +82,38 @@ describe('attachPromotionDetails', () => {
     expect(result.promotionCount).toBe(41)
     expect(result.promotions).toHaveLength(24)
     expect(result.promotions.map((item) => item.id)).toContain('catalogue')
+  })
+})
+
+describe('keepStoresNear', () => {
+  const capeTown = { lat: -33.92, lon: 18.42 }
+  const stores = [
+    { lat: -33.93, lon: 18.46, name: 'Observatory' },
+    { lat: -34.11, lon: 18.86, name: 'Somerset West' },
+    { lat: -23.9, lon: 29.45, name: 'Polokwane' },
+  ]
+
+  // The directory listed every shop in the country, so a shopper in Cape Town
+  // scrolled past shops fifteen hundred kilometres away.
+  it('keeps only the shops a shopper could reach, nearest first', () => {
+    // Observatory is a few kilometres out; Somerset West is about forty-five,
+    // and Polokwane is the better part of fifteen hundred.
+    expect(keepStoresNear(stores, capeTown, 20).map((store) => store.name))
+      .toEqual(['Observatory'])
+    expect(keepStoresNear(stores, capeTown, 60).map((store) => store.name))
+      .toEqual(['Observatory', 'Somerset West'])
+  })
+
+  it('orders by distance and reports it', () => {
+    const near = keepStoresNear(stores, capeTown, 100)
+
+    expect(near.map((store) => store.name)).toEqual(['Observatory', 'Somerset West'])
+    expect(near[0].distanceKm!).toBeLessThan(near[1].distanceKm!)
+  })
+
+  // Somebody who has not told us where they are still gets the directory,
+  // rather than an empty page.
+  it('leaves the list alone when the shopper has no saved place', () => {
+    expect(keepStoresNear(stores, undefined, 60)).toEqual(stores)
   })
 })

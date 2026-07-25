@@ -349,6 +349,8 @@ class _FakeApi extends Api {
     String query = '',
     bool includeDetails = true,
     String? placeId,
+    double? lat,
+    double? lon,
   }) async =>
       const DiscoveredStoresResult(
         stores: [],

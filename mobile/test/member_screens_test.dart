@@ -318,6 +318,8 @@ class _FeatureApi extends Api {
     String query = '',
     bool includeDetails = true,
     String? placeId,
+    double? lat,
+    double? lon,
   }) async =>
       const DiscoveredStoresResult(
         stores: [_discoveredStore],

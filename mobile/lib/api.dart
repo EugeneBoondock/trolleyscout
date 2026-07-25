@@ -236,6 +236,9 @@ class Api {
 
   Future<List<Deal>> deals() async => (await discovery()).deals;
 
+  /// [lat] and [lon] narrow the directory to shops the shopper could reach.
+  /// Without them the whole country comes back, which is what the stores page
+  /// used to show: someone in Cape Town scrolling past shops in Polokwane.
   Future<DiscoveredStoresResult> discoveredStores({
     bool summary = false,
     int? limit,
@@ -243,6 +246,8 @@ class Api {
     String query = '',
     bool includeDetails = true,
     String? placeId,
+    double? lat,
+    double? lon,
   }) async {
     final parameters = <String, String>{};
     if (summary) parameters['summary'] = '1';
@@ -250,6 +255,10 @@ class Api {
     if (offset > 0) parameters['offset'] = '$offset';
     if (query.trim().isNotEmpty) parameters['q'] = query.trim();
     if (!includeDetails) parameters['details'] = '0';
+    if (lat != null && lon != null) {
+      parameters['lat'] = '$lat';
+      parameters['lon'] = '$lon';
+    }
     if (placeId?.trim().isNotEmpty == true) {
       parameters['placeId'] = placeId!.trim();
     }

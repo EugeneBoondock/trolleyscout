@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../saved_addresses_store.dart';
 import '../catalogue_sort.dart';
 import '../store_grouping.dart';
 import '../theme.dart';
@@ -25,9 +26,15 @@ class _StoresScreenState extends State<StoresScreen> {
 
   late Future<_StoresData> _future;
   final _savedUrls = <String>{};
+  final _addressesStore = SavedAddressesStore();
   String _query = '';
   String _kind = 'all';
   bool _loadingMore = false;
+
+  // Where the shopper is, taken from the address they most recently saved on
+  // Near me. Null means they have not told us yet, and the directory stays
+  // national rather than guessing at a location for them.
+  SavedAddress? _origin;
 
   @override
   void initState() {
@@ -36,11 +43,16 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   Future<_StoresData> _load() async {
+    final addresses = await _addressesStore.load();
+    _origin = addresses.isEmpty ? null : addresses.first;
+
     final results = await Future.wait<dynamic>([
       widget.api.retailers(),
       widget.api.discoveredStores(
         limit: _pageSize,
         includeDetails: false,
+        lat: _origin?.lat,
+        lon: _origin?.lon,
       ),
     ]);
     return _StoresData(
@@ -70,6 +82,8 @@ class _StoresScreenState extends State<StoresScreen> {
         limit: _pageSize,
         offset: current.discovered.stores.length,
         includeDetails: false,
+        lat: _origin?.lat,
+        lon: _origin?.lon,
       );
       final byId = <String, NearbyStore>{
         for (final store in current.discovered.stores) store.placeId: store,
@@ -159,6 +173,7 @@ class _StoresScreenState extends State<StoresScreen> {
                       title: 'Source directory',
                       description:
                           'Showing ${allDiscoveredGroups.length} store groups from ${data.discovered.storeCount} locations'
+                          '${_origin == null ? '' : ' near ${_origin!.label}'}'
                           '${country == null ? '' : ' in ${country.name}'}, plus official specials pages and store finders.',
                       action: IconButton(
                           tooltip: 'Refresh stores',
