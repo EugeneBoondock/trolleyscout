@@ -54,6 +54,13 @@ const LANE_BOUNDS: Record<ScoutLane, LaneBounds> = {
 const FEED_TIMEOUT_MS = 6_000
 const MAX_REPORTED_FAILURES = 5
 
+// The store sweep stops here however many shops are left. Shops that never
+// answer cost a full timeout each, and outside South Africa many do, so a run
+// bounded only by shop count kept outlasting the app waiting on it. Well
+// inside the mobile client's budget, which also has to cover the discovery
+// refresh it runs first.
+const STORE_LANE_BUDGET_MS = 20_000
+
 interface LaneFailure {
   key: string
   message: string
@@ -76,6 +83,9 @@ interface StoreLaneSummary {
   message?: string
   ran: boolean
   storeLimit: number
+  // Shops in this country that are off cooldown and waiting for a turn, so the
+  // console can say how much of the sweep is still ahead.
+  storesPending: number
   // Promotions recorded against the shops scouted in this window. A shop whose
   // fetch failed keeps its previous count, so treat this as "promotions on
   // record for what was swept", not "promotions added".
@@ -299,7 +309,13 @@ async function runStoreLane(
     // claims at most storeLimit shops that are off cooldown.
     const registryStores = buildRegistryOnlineStores(countryCodes)
     storesOffered = registryStores.length
-    await scoutNearbyStores(env, registryStores, startedAtMs, storeLimit)
+    await scoutNearbyStores(
+      env,
+      registryStores,
+      startedAtMs,
+      storeLimit,
+      startedAtMs + STORE_LANE_BUDGET_MS,
+    )
   } catch (error) {
     return {
       ...skippedStoreLane(),
@@ -317,6 +333,34 @@ async function runStoreLane(
     ran: true,
     storeLimit,
     storesOffered,
+    storesPending: await countStoresPending(env, storesOffered, countryCodes),
+  }
+}
+
+/// How many of this country's shops are still waiting for a turn: everything
+/// registered, less whatever is currently held by a cooldown.
+async function countStoresPending(
+  env: TrolleyScoutEnv,
+  storesOffered: number,
+  countryCodes?: string[],
+): Promise<number> {
+  // Across every country at once there is no single prefix to count by, so the
+  // figure is only reported for a country-scoped run.
+  if (!hasTrolleyScoutDatabase(env) || countryCodes?.length !== 1) {
+    return 0
+  }
+
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS held FROM store_scout_log
+        WHERE place_id LIKE ? AND next_scout_at > ?`,
+    )
+      .bind(`online:${countryCodes[0].toLowerCase()}:%`, new Date().toISOString())
+      .first<{ held: number }>()
+
+    return Math.max(0, storesOffered - Number(row?.held ?? 0))
+  } catch {
+    return 0
   }
 }
 
@@ -371,6 +415,7 @@ function skippedStoreLane(): StoreLaneSummary {
     storeLimit: 0,
     storePromotionCount: 0,
     storesOffered: 0,
+    storesPending: 0,
     storesScouted: 0,
   }
 }
@@ -394,6 +439,10 @@ function summaryMessage(
 
   if (stores.ran) {
     done.push(`${count(stores.storesScouted, 'store')} swept`)
+
+    if (stores.storesPending > 0) {
+      done.push(`${stores.storesPending} still to sweep`)
+    }
   }
 
   const problems: string[] = []

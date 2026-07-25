@@ -67,6 +67,7 @@ class ScoutRunSummary {
     required this.lane,
     required this.message,
     required this.storesFailed,
+    required this.storesPending,
     required this.storesScouted,
   });
 
@@ -86,6 +87,7 @@ class ScoutRunSummary {
           ? message
           : 'The scout run finished.',
       storesFailed: stores['failed'] == true,
+      storesPending: _count(stores['storesPending']),
       storesScouted: _count(stores['storesScouted']),
     );
   }
@@ -100,6 +102,11 @@ class ScoutRunSummary {
   /// swept." Shown as-is so web and mobile report the same run.
   final String message;
   final bool storesFailed;
+
+  /// Shops in this country still off cooldown and waiting for a turn, so the
+  /// console can say how much of the sweep is left rather than leaving an admin
+  /// to guess whether pressing again would do anything.
+  final int storesPending;
   final int storesScouted;
 }
 

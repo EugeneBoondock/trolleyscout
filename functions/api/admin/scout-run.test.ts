@@ -157,7 +157,8 @@ describe('/api/admin/scout-run', () => {
       data: {
         feeds: { ran: false },
         lane: 'stores',
-        message: '2 stores swept.',
+        // Two registry shops, one still held by a cooldown, so one is left.
+        message: '2 stores swept, 1 still to sweep.',
         stores: {
           failed: false,
           ran: true,
@@ -183,7 +184,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         lane: 'all',
-        message: '10 sources checked, 240 deals added, 2 stores swept.',
+        message: '10 sources checked, 240 deals added, 2 stores swept, 1 still to sweep.',
       },
     })
   })
@@ -296,7 +297,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         feeds: { failed: true, message: 'Takealot refused the request.', ran: true },
-        message: '0 sources checked, 0 deals added, 2 stores swept. The retailer feeds could not run.',
+        message: '0 sources checked, 0 deals added, 2 stores swept, 1 still to sweep. The retailer feeds could not run.',
         stores: { failed: false, ran: true },
       },
     })
@@ -395,13 +396,15 @@ function run(body: Record<string, unknown> = {}) {
   })
 }
 
-// Counts the stores the sweep stamped in store_scout_log, which is how the
-// endpoint reports what it actually swept.
-function scoutLogDatabase() {
+// store_scout_log answers two different questions here: what this run swept,
+// and how many shops are still held by a cooldown. The stub tells them apart by
+// the cooldown column so each is asserted on its own figure.
+function scoutLogDatabase(held = 1) {
   return {
-    prepare: () => ({
+    prepare: (sql: string) => ({
       bind: () => ({
-        first: async () => ({ promotions: 18, stores: 2 }),
+        first: async () =>
+          sql.includes('next_scout_at') ? { held } : { promotions: 18, stores: 2 },
       }),
     }),
   }

@@ -19,6 +19,7 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _changingCountry = false;
   bool _refreshingDeals = false;
   String? _lastRefreshSummary;
+  int? _storesPending;
 
   void _reload() => setState(() {
         _future = widget.api.adminOverview();
@@ -46,6 +47,7 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final summary = await widget.api.runScoutLanes();
       if (!mounted) return;
+      setState(() => _storesPending = summary.storesPending);
       _reportRefresh(legacyIssue == null
           ? summary.message
           : '${summary.message} Discovery refresh: $legacyIssue');
@@ -215,6 +217,23 @@ class _AdminScreenState extends State<AdminScreen> {
                             '${overview.selectedCountry.name} now.',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
                   ),
+                  // One press takes a slice, so the count left is the honest
+                  // answer to "will pressing this again do anything".
+                  if (_storesPending != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _storesPending == 0
+                            ? 'Every ${overview.selectedCountry.name} shop is swept for now.'
+                            : '$_storesPending ${overview.selectedCountry.name} '
+                                'shop${_storesPending == 1 ? '' : 's'} still to sweep.',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,

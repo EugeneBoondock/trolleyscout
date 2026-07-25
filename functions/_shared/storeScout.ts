@@ -144,11 +144,19 @@ interface FetchOutcome {
 // endpoint. This covers both independents AND big chains we do not have a live
 // feed for (SPAR, Woolworths, Food Lover's), giving each a real "this week's
 // specials" link found the way a shopper would search for it.
+/// `deadlineMs` bounds the wall clock rather than the number of shops. A shop
+/// that never answers costs its whole timeout, so a run sized only by count can
+/// outlast the caller waiting for it — which is what made an on-demand fetch of
+/// the United States, where many sites hang on a request from outside the
+/// country, look like a failure. Past the deadline the sweep stops and reports
+/// what it managed; the shops it never reached keep only their ten-minute
+/// claim, so they come round again shortly rather than waiting out a full day.
 export async function scoutNearbyStores(
   env: TrolleyScoutEnv,
   storesNeedingDeals: NearbyStore[],
   nowMs: number,
   maxStores = MAX_STORES_PER_RUN,
+  deadlineMs?: number,
 ): Promise<void> {
   if (!env.DB) {
     return
@@ -199,6 +207,12 @@ export async function scoutNearbyStores(
   const preparedCandidates = await enrichCountryRetailerWebsites(env, candidates)
 
   for (const store of preparedCandidates) {
+    // Checked before each shop rather than after, so the sweep never starts one
+    // more fetch than the caller can wait for.
+    if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+      break
+    }
+
     try {
       const outcome = await scoutStore(env, store, nowMs)
       const resolvedStore = outcome.resolvedWebsite

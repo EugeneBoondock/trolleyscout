@@ -433,6 +433,7 @@ class _FeatureApi extends Api {
       lane: 'all',
       message: '12 sources checked, 240 deals added, 4 stores swept.',
       storesFailed: false,
+      storesPending: 137,
       storesScouted: 4,
     );
   }
