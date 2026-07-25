@@ -1508,6 +1508,7 @@ function storedItemToDiscovery(
     retailerId: item.retailerId,
     retailerName,
     savingText: item.savingText,
+    soldOut: item.soldOut,
     sourceLabel,
     sourceUrl: item.sourceUrl,
     title: item.title,

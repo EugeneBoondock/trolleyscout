@@ -18,7 +18,10 @@ import {
   writeSourceCursor,
 } from './dealItemStore'
 
-const migrationUrl = new NodeUrl('../../migrations/0013_deal_items.sql', import.meta.url)
+const migrationUrls = [
+  new NodeUrl('../../migrations/0013_deal_items.sql', import.meta.url),
+  new NodeUrl('../../migrations/0033_deal_item_sold_out.sql', import.meta.url),
+]
 
 describe('deal item store', () => {
   let miniflare: Miniflare
@@ -33,11 +36,13 @@ describe('deal item store', () => {
     })
     db = await miniflare.getD1Database('DB') as unknown as D1Database
     env = { DB: db }
-    const migration = (await readFile(migrationUrl, 'utf8'))
-      .replace(/^--.*$/gm, '')
-      .trim()
-    for (const statement of splitMigrationStatements(migration)) {
-      await db.prepare(statement).run()
+    for (const url of migrationUrls) {
+      const migration = (await readFile(url, 'utf8'))
+        .replace(/^--.*$/gm, '')
+        .trim()
+      for (const statement of splitMigrationStatements(migration)) {
+        await db.prepare(statement).run()
+      }
     }
   })
 

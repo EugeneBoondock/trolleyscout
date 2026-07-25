@@ -33,6 +33,7 @@ export interface StoredDealItem {
   lastSeenAt: string
   priceCents: number
   previousPriceCents?: number
+  soldOut?: boolean
   productId: string
   productUrl: string
   promotionId: string
@@ -109,6 +110,7 @@ interface NormalizedDealItem {
   imageUrl: string | null
   priceCents: number
   previousPriceCents: number | null
+  soldOut: number | null
   productId: string
   productUrl: string
   promotionId: string
@@ -139,6 +141,7 @@ interface DealItemRow {
   last_seen_at: string
   current_price_cents: number
   previous_price_cents: number | null
+  sold_out: number | null
   source_product_id: string
   product_url: string
   promotion_id: string
@@ -216,14 +219,14 @@ export async function upsertDealItems(
   const upsert = db.prepare(
     `INSERT INTO deal_items (
       id, retailer_id, source_key, last_run_id, source_product_id, promotion_id, title,
-      current_price_cents, previous_price_cents, image_url, saving_text,
+      current_price_cents, previous_price_cents, sold_out, image_url, saving_text,
       terms_text, unit_text, evidence_text, product_url, source_url, source_kind,
       captured_at, valid_from, valid_to, expires_at, scope_type, scope_store_ids,
       scope_region_ids, excluded_store_ids, scope_key, content_fingerprint,
       status, created_at, updated_at, last_seen_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, 'active', ?, ?, ?
+      ?, ?, ?, ?, ?, 'active', ?, ?, ?
     )
     ON CONFLICT (id) DO UPDATE SET
       source_key = excluded.source_key,
@@ -231,6 +234,7 @@ export async function upsertDealItems(
       title = excluded.title,
       current_price_cents = excluded.current_price_cents,
       previous_price_cents = excluded.previous_price_cents,
+      sold_out = excluded.sold_out,
       image_url = excluded.image_url,
       saving_text = excluded.saving_text,
       terms_text = excluded.terms_text,
@@ -288,6 +292,7 @@ export async function upsertDealItems(
     item.title,
     item.priceCents,
     item.previousPriceCents,
+    item.soldOut,
     item.imageUrl,
     item.savingText,
     item.termsText,
@@ -364,7 +369,7 @@ function buildActiveDealItemsStatement(
   return db.prepare(
     `SELECT
       id, retailer_id, source_key, source_product_id, promotion_id, title,
-      current_price_cents, previous_price_cents, image_url, saving_text,
+      current_price_cents, previous_price_cents, sold_out, image_url, saving_text,
       terms_text, unit_text, evidence_text, product_url, source_url, source_kind,
       captured_at, valid_from, valid_to, expires_at, scope_type, scope_store_ids,
       scope_region_ids, excluded_store_ids, content_fingerprint, status,
@@ -556,6 +561,7 @@ async function normalizeDealCandidate(
     imageUrl,
     priceCents: candidate.priceCents,
     previousPriceCents: previousPriceCents ?? null,
+    soldOut: candidate.soldOut === undefined ? null : candidate.soldOut ? 1 : 0,
     productUrl,
     savingText,
     scopeKey,
@@ -582,6 +588,7 @@ async function normalizeDealCandidate(
     imageUrl,
     priceCents: candidate.priceCents,
     previousPriceCents: previousPriceCents ?? null,
+    soldOut: candidate.soldOut === undefined ? null : candidate.soldOut ? 1 : 0,
     productId,
     productUrl,
     promotionId,
@@ -642,6 +649,10 @@ function mapDealItemRow(row: DealItemRow): StoredDealItem {
     lastSeenAt: row.last_seen_at,
     priceCents: row.current_price_cents,
     previousPriceCents: row.previous_price_cents ?? undefined,
+    // NULL means the shop never said, which must not read as "in stock".
+    soldOut: row.sold_out === null || row.sold_out === undefined
+      ? undefined
+      : row.sold_out === 1,
     productId: row.source_product_id,
     productUrl: row.product_url,
     promotionId: row.promotion_id,

@@ -56,6 +56,13 @@ import {
   parseRootsLeaflets,
 } from '../../src/services/retailerFeeds/roots'
 import {
+  MAKRO_DEPARTMENTS,
+  MAKRO_ORIGIN,
+  MAKRO_PAGE_FETCH_URL,
+  buildMakroPageRequest,
+  parseMakroProductFeed,
+} from '../../src/services/retailerFeeds/makroProducts'
+import {
   PEP_COLLECTIONS_URL,
   PEP_ORIGIN,
   PEP_SHARD_COUNT,
@@ -326,6 +333,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   ...Array.from({ length: PEP_SHARD_COUNT }, (_, shard) => pepSource(shard)),
   rootsSource(),
   ...BOXER_PROVINCES.map((province) => boxerSource(province)),
+  ...MAKRO_DEPARTMENTS.map((department) => makroProductSource(department)),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
@@ -1008,6 +1016,33 @@ function bobshopSource(): RetailerFeedSource {
     retailerName: 'Bob Shop',
     sourceLabel: 'Featured listings',
     sourceUrl: BOBSHOP_HOME_URL,
+  }
+}
+
+// Makro's catalogue lives behind one POST that answers 403 without the
+// platform's own client header. One source per department, since each is a
+// single request and the shop was previously represented by its leaflets alone.
+function makroProductSource(department: string): RetailerFeedSource {
+  const sourceUrl = `${MAKRO_ORIGIN}${department}`
+
+  return {
+    buildRequest() {
+      const { body, headers } = buildMakroPageRequest(department)
+      return {
+        init: { body, headers, method: 'POST' },
+        url: MAKRO_PAGE_FETCH_URL,
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Makro'),
+    initialCursor: { kind: 'page', page: 0 },
+    key: `makro::products-${department.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`,
+    parse({ capturedAt, payload }) {
+      return parseMakroProductFeed(payload, { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('makro'),
+    retailerName: 'Makro',
+    sourceLabel: 'Catalogue',
+    sourceUrl,
   }
 }
 

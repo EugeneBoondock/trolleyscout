@@ -1,0 +1,11 @@
+-- Migration number: 0033 	 2026-07-25T22:50:00.000Z
+-- Whether a structured-feed deal can still be bought.
+--
+-- The store-scouted side already carries this (0032). Makro's catalogue states
+-- it outright per product, and a shopper who taps a deal to find the thing gone
+-- has been sent out for nothing — the card should have said so first.
+--
+-- Nullable on purpose: NULL means the shop said nothing about stock, which is
+-- not the same as saying the item is in stock, and only a definite 1 ever puts
+-- a sold-out badge in front of anyone.
+ALTER TABLE deal_items ADD COLUMN sold_out INTEGER;

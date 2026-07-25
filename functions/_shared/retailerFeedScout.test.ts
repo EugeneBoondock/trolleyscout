@@ -89,6 +89,18 @@ describe('structured retailer source decoders', () => {
       'boxer::leaflets-north-west',
       'boxer::leaflets-western-cape',
       'boxer::leaflets-eswatini',
+      'makro::products-weekly-deals-store',
+      'makro::products-more4less-store',
+      'makro::products-load-up-store',
+      'makro::products-pantry-store',
+      'makro::products-liquor-store',
+      'makro::products-televisions-store',
+      'makro::products-laptops-printers-store',
+      'makro::products-fridges-freezers-store',
+      'makro::products-washers-dryers-store',
+      'makro::products-cellular-store',
+      'makro::products-baby-kids-store',
+      'makro::products-best-of-electronics-store',
       // Takealot's campaign sweep is sharded so the whole catalogue is walked
       // in about a day rather than over a week.
       'takealot::promotion-campaigns-0',
