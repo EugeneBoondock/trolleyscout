@@ -427,6 +427,55 @@ describe('deal item store', () => {
       .first<{ total: number }>()
     expect(count?.total).toBe(0)
   })
+
+  // Every shop writes "no previous price" its own way: Woolworths and PEP both
+  // send 0, others repeat the selling price. Fourteen adapters across four
+  // countries feed this table, so the rule lives here rather than in each of
+  // them and whatever is written next.
+  it('keeps a deal but drops a was-price that claims no saving', async () => {
+    await upsertDealItems(env, {
+      candidates: [
+        candidate({ previousPriceCents: 0, productId: 'zero-was' }),
+        candidate({ previousPriceCents: 9_999, productId: 'equal-was' }),
+        candidate({ previousPriceCents: 8_000, productId: 'lower-was' }),
+        candidate({ previousPriceCents: 12_499, productId: 'real-was' }),
+      ],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::promotions',
+    })
+
+    const rows = await db.prepare(
+      'SELECT source_product_id, previous_price_cents FROM deal_items ORDER BY source_product_id',
+    ).all<{ previous_price_cents: number | null; source_product_id: string }>()
+
+    expect(rows.results).toEqual([
+      { previous_price_cents: null, source_product_id: 'equal-was' },
+      { previous_price_cents: null, source_product_id: 'lower-was' },
+      { previous_price_cents: 12_499, source_product_id: 'real-was' },
+      { previous_price_cents: null, source_product_id: 'zero-was' },
+    ])
+  })
+
+  // A catalogue page whose price could not be read arrived as R0.00, which
+  // reaches a shopper as a picture of a product and nothing to compare.
+  it('drops a priceless row without losing the good ones beside it', async () => {
+    const result = await upsertDealItems(env, {
+      candidates: [
+        candidate({ priceCents: 0, productId: 'unreadable-page', sourceKind: 'catalogue' }),
+        candidate({ priceCents: 4_999, productId: 'readable-page', sourceKind: 'catalogue' }),
+      ],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::catalogue',
+    })
+
+    const rows = await db.prepare(
+      'SELECT source_product_id FROM deal_items',
+    ).all<{ source_product_id: string }>()
+
+    expect(rows.results.map((row) => row.source_product_id)).toEqual(['readable-page'])
+    expect(result.processed).toBe(1)
+  })
+
 })
 
 function candidate(overrides: Partial<RetailerDealCandidate> = {}): RetailerDealCandidate {

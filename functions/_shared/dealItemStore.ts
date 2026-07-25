@@ -195,8 +195,17 @@ export async function upsertDealItems(
     ? requiredText(options.run.id, 'run.id', 200)
     : `run_${crypto.randomUUID()}`
 
+  // A deal with no price is not a deal. Catalogue pages whose price could not
+  // be read came through as R0.00, which reaches a shopper as a picture of a
+  // product and nothing to compare — the whole point of the app is the number.
+  // Dropped rather than rejected, so one unreadable page cannot cost the batch
+  // every good row beside it.
+  const pricedCandidates = options.candidates.filter(
+    (candidate) => Number.isFinite(candidate.priceCents) && candidate.priceCents > 0,
+  )
+
   // Validate and normalize the full batch before preparing any write.
-  const normalizedCandidates = await Promise.all(options.candidates.map(async (candidate, index) => {
+  const normalizedCandidates = await Promise.all(pricedCandidates.map(async (candidate, index) => {
     if (candidate.retailerId !== retailerId) {
       throw new TypeError(`candidates[${index}].retailerId does not match retailerId`)
     }
@@ -513,6 +522,23 @@ async function normalizeDealCandidate(
   ) {
     throw new TypeError(`${field('previousPriceCents')} must be a non-negative integer`)
   }
+
+  // A previous price only means something if it is above the price paid.
+  //
+  // Shops write "no previous price" in whatever way suits them: Woolworths and
+  // PEP both send 0, others repeat the selling price. Taken at face value those
+  // become a was-price of R0.00, or a saving of nothing, on a deal that never
+  // had one — 1,765 Woolworths rows were stored that way before this. Every
+  // adapter for every country funnels through here, so the rule is enforced
+  // once rather than trusted to fourteen parsers and the next one written.
+  //
+  // The deal itself is kept: a real price with a real promotion behind it is
+  // still worth showing. Only the claim of a saving is dropped.
+  const previousPriceCents =
+    candidate.previousPriceCents !== undefined &&
+    candidate.previousPriceCents > candidate.priceCents
+      ? candidate.previousPriceCents
+      : undefined
   if (candidate.sourceKind !== 'structured' && candidate.sourceKind !== 'catalogue') {
     throw new TypeError(`${field('sourceKind')} is invalid`)
   }
@@ -529,7 +555,7 @@ async function normalizeDealCandidate(
     evidenceText,
     imageUrl,
     priceCents: candidate.priceCents,
-    previousPriceCents: candidate.previousPriceCents ?? null,
+    previousPriceCents: previousPriceCents ?? null,
     productUrl,
     savingText,
     scopeKey,
@@ -555,7 +581,7 @@ async function normalizeDealCandidate(
     id: `deal_${identityHash}`,
     imageUrl,
     priceCents: candidate.priceCents,
-    previousPriceCents: candidate.previousPriceCents ?? null,
+    previousPriceCents: previousPriceCents ?? null,
     productId,
     productUrl,
     promotionId,

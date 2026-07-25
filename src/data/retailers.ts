@@ -281,6 +281,31 @@ export const retailers: Retailer[] = [
     ],
   },
   {
+    // A butchery chain of 175 stores and 45 grills, publishing one national
+    // month-end leaflet as a PDF. Raised by a shopper who counted it among
+    // their nearest shops and could not find it here at all.
+    id: 'roots-butchery',
+    name: 'Roots Butchery',
+    shortName: 'Roots',
+    group: 'Fresh market',
+    program: 'Roots monthly specials',
+    sourceNote: 'Official Roots Butchery monthly specials and store locator pages.',
+    verifiedOn: sourceVerifiedOn,
+    accentColor: '#8b1a1a',
+    sources: [
+      {
+        label: 'Monthly specials',
+        url: 'https://rootsbutchery.co.za/specials/',
+        kind: 'specials',
+      },
+      {
+        label: 'Store locator',
+        url: 'https://rootsbutchery.co.za/store-locator/',
+        kind: 'store-finder',
+      },
+    ],
+  },
+  {
     id: 'ok-foods',
     name: 'OK Foods',
     shortName: 'OK',

@@ -735,6 +735,20 @@ function storePromotionSourceIdentity(sourceUrl: string): string | undefined {
 
 // Removes every row whose expiry has passed. Returns how many were deleted so
 // the scheduled scout can report it. This is the "expire after the date" rule.
+// Matches the grace period saved deals are held for, so a deal a member saved
+// yesterday can still be resolved and reported as closed rather than vanishing.
+const DEAL_ITEM_GRACE_DAYS = 7;
+
+function expiredBeforeIso(nowIso: string, graceDays: number): string {
+  const now = Date.parse(nowIso);
+
+  // An unreadable clock must not widen the sweep to everything, so it falls
+  // back to deleting nothing rather than deleting live offers.
+  return Number.isFinite(now)
+    ? new Date(now - graceDays * 24 * 60 * 60 * 1000).toISOString()
+    : new Date(0).toISOString();
+}
+
 export async function purgeExpired(
   env: TrolleyScoutEnv,
   nowIso: string,
@@ -756,6 +770,24 @@ export async function purgeExpired(
     } catch {
       // Table may not exist yet; ignore.
     }
+  }
+
+  // Structured feed deals were never swept up at all, so nearly half of what
+  // was on record had already closed — the oldest by more than a week.
+  //
+  // They keep a grace period rather than going the moment they lapse. A saved
+  // deal is verified against this table and warns its owner that an offer is
+  // ending, and that has to keep working for an offer that closed yesterday.
+  // The window matches the one saved deals themselves are held for.
+  try {
+    const result = await env.DB.prepare(
+      "DELETE FROM deal_items WHERE expires_at < ?",
+    )
+      .bind(expiredBeforeIso(nowIso, DEAL_ITEM_GRACE_DAYS))
+      .run();
+    removed += result.meta.changes ?? 0;
+  } catch {
+    // Table may not exist yet; ignore.
   }
 
   return removed;
