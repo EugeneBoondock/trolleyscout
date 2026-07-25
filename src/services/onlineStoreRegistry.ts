@@ -284,11 +284,16 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
   AR: [
     // Beauty
     store("Beauty", "Get The Look", "https://www.getthelook.com.ar/"),
+    // Books
+    store("Books", "Caballo Negro Editora", "https://www.caballonegroeditora.com.ar/"),
+    store("Books", "Loco Rabia", "https://www.locorabia.com.ar/"),
     // Fashion
     store("Fashion", "47 Street", "https://www.47street.com.ar/"),
+    store("Fashion", "Legacy", "https://www.legacy.com.ar/"),
     store("Fashion", "Portsaid", "https://www.portsaid.com.ar/"),
     // Food & drink
     store("Food & drink", "Bonafide", "https://www.bonafide.com.ar/"),
+    store("Food & drink", "Chakana wines", "https://www.chakanawines.com.ar/"),
     // Groceries
     store("Groceries", "Dia", "https://www.diaonline.supermercadosdia.com.ar/"),
     store("Groceries", "Disco", "https://www.disco.com.ar/"),
@@ -297,6 +302,7 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store("Groceries", "Vea", "https://www.vea.com.ar/"),
     // Hardware
     store("Hardware", "Blaisten", "https://www.blaisten.com.ar/"),
+    store("Hardware", "Colorshop", "https://www.colorshop.com.ar/"),
     store("Hardware", "Easy", "https://www.easy.com.ar/"),
     // Health
     store("Health", "Farmacity", "https://www.farmacity.com/"),
@@ -310,6 +316,7 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store("Tech", "Cetrogar", "https://www.cetrogar.com.ar/"),
     store("Tech", "Naldo", "https://www.naldo.com.ar/"),
     store("Tech", "On City", "https://www.oncity.com/"),
+    store("Tech", "Pardo", "https://www.pardo.com.ar/"),
   ],
   // Paraguay. Probing for a named platform found nothing here — these shops
   // are not Shopify, WooCommerce, Magento or VTEX — but the sites are live and
@@ -328,6 +335,15 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('Health', 'Farmacenter', 'https://www.farmacenter.com.py/'),
     // Tech
     store('Tech', 'Electroban', 'https://www.electroban.com.py/'),
+    // Found in a second pass. Wikidata carries almost nothing for Paraguay —
+    // thirty-three companies in the whole country, nearly all of them banks,
+    // universities and government — so these were confirmed one at a time by
+    // asking each site whether it sells anything: a basket, a price, a price
+    // struck through.
+    store('General', 'Shopping China', 'https://www.shoppingchina.com.py/'),
+    store('General', 'Casa Rica', 'https://www.casarica.com.py/'),
+    store('General', 'Areté', 'https://www.arete.com.py/'),
+    store('General', 'González Giménez', 'https://www.gonzalezgimenez.com.py/'),
   ],
   NL: [
     // Baby
