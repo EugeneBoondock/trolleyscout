@@ -4,6 +4,7 @@ import {
   decodePepCursor,
   encodePepCursor,
   parsePepCollections,
+  PEP_SHARD_COUNT,
   parsePepFeed,
   readPepSaving,
   type PepPromotion,
@@ -51,22 +52,37 @@ describe('readPepSaving', () => {
 })
 
 describe('parsePepCollections', () => {
-  it('keeps only the collections whose titles state a discount', () => {
-    const promotions = parsePepCollections({
-      collections: [
-        { handle: 'baby-baby-boys-tops', title: 'Baby Boys (0-24months) - Tops' },
-        { handle: 'get-20-off-all-cookware', title: 'Get 20% off Cookware' },
-        { handle: 'buy-any-comforter-and-save-20', title: 'Buy any comforter and save 20%' },
-      ],
-    })
+  const collections = {
+    collections: [
+      { handle: 'baby-baby-boys-tops', title: 'Baby Boys (0-24months) - Tops' },
+      { handle: 'get-20-off-all-cookware', title: 'Get 20% off Cookware' },
+      { handle: 'buy-any-comforter-and-save-20', title: 'Buy any comforter and save 20%' },
+    ],
+  }
 
-    expect(promotions).toEqual([
+  it('keeps only the collections whose titles state a discount', () => {
+    expect(parsePepCollections(collections, 0)).toEqual([
       { handle: 'get-20-off-all-cookware', savingText: '20% off', title: 'Get 20% off Cookware' },
+    ])
+    expect(parsePepCollections(collections, 1)).toEqual([
       {
         handle: 'buy-any-comforter-and-save-20',
         savingText: '20% off',
         title: 'Buy any comforter and save 20%',
       },
+    ])
+  })
+
+  // Every promotion must land on exactly one shard: one dropped between shards
+  // is a promotion no shopper ever sees.
+  it('deals every promotion to exactly one shard', () => {
+    const dealt = Array.from({ length: PEP_SHARD_COUNT }, (_, shard) =>
+      parsePepCollections(collections, shard),
+    ).flat()
+
+    expect(dealt.map((promotion) => promotion.handle).sort()).toEqual([
+      'buy-any-comforter-and-save-20',
+      'get-20-off-all-cookware',
     ])
   })
 

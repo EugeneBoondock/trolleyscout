@@ -49,6 +49,7 @@ import {
 import {
   PEP_COLLECTIONS_URL,
   PEP_ORIGIN,
+  PEP_SHARD_COUNT,
   buildPepCollectionProductsUrl,
   decodePepCursor,
   encodePepCursor,
@@ -309,7 +310,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   wootwareSource(),
   bobshopSource(),
   mrPriceSource(),
-  pepSource(),
+  ...Array.from({ length: PEP_SHARD_COUNT }, (_, shard) => pepSource(shard)),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
@@ -998,7 +999,7 @@ function bobshopSource(): RetailerFeedSource {
 // PEP's discounts are named in its collection titles rather than priced into
 // its products, so the sweep reads the collection list first and then walks
 // each promotion it found.
-function pepSource(): RetailerFeedSource {
+function pepSource(shardIndex: number): RetailerFeedSource {
   return {
     buildRequest(cursor) {
       const plan = cursor.kind === 'token' ? decodePepCursor(cursor.token) : undefined
@@ -1013,12 +1014,12 @@ function pepSource(): RetailerFeedSource {
     },
     decode: (body) => parseJsonObject(body, 'PEP'),
     initialCursor: { kind: 'token', token: 'collection-list' },
-    key: 'pep::promotions',
+    key: `pep::promotions-${shardIndex}`,
     parse({ capturedAt, cursor, payload, sourceUrl }) {
       const plan = cursor.kind === 'token' ? decodePepCursor(cursor.token) : undefined
 
       if (!plan) {
-        const promotions = parsePepCollections(payload)
+        const promotions = parsePepCollections(payload, shardIndex)
         return {
           candidates: [],
           catalogues: [],

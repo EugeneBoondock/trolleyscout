@@ -29,6 +29,12 @@ export const PEP_ORIGIN = 'https://www.pepstores.com'
 export const PEP_COLLECTIONS_URL = `${PEP_ORIGIN}/collections.json?limit=250`
 export const PEP_MAX_PROMOTIONS = 40
 
+// A source gets one request per sweep, and PEP has around a dozen promotions,
+// so walking them one at a time would take a day and a half to show a shopper
+// the whole shop. Sharding splits the promotions across several sources that
+// sweep side by side, which brings that down to a few hours.
+export const PEP_SHARD_COUNT = 6
+
 const PEP_HOSTS = ['pepstores.com', 'www.pepstores.com']
 const PEP_IMAGE_HOSTS = ['cdn.shopify.com', ...PEP_HOSTS]
 
@@ -65,14 +71,14 @@ export function readPepSaving(title: string): string | undefined {
   return rand ? `Save R${rand[1]}` : undefined
 }
 
-export function parsePepCollections(payload: unknown): PepPromotion[] {
+export function parsePepCollections(payload: unknown, shardIndex = 0): PepPromotion[] {
   const collections = isRecord(payload) ? payload.collections : undefined
 
   if (!Array.isArray(collections)) {
     throw new TypeError('Invalid PEP collections payload')
   }
 
-  const promotions: PepPromotion[] = []
+  const found: PepPromotion[] = []
   const seen = new Set<string>()
 
   for (const collection of collections) {
@@ -85,14 +91,16 @@ export function parsePepCollections(payload: unknown): PepPromotion[] {
     }
 
     seen.add(handle)
-    promotions.push({ handle, savingText, title })
+    found.push({ handle, savingText, title })
 
-    if (promotions.length >= PEP_MAX_PROMOTIONS) {
+    if (found.length >= PEP_MAX_PROMOTIONS) {
       break
     }
   }
 
-  return promotions
+  // Dealt round-robin, so every shard gets a share even when the shop is
+  // running fewer promotions than there are shards.
+  return found.filter((_, index) => index % PEP_SHARD_COUNT === shardIndex)
 }
 
 export function parsePepFeed(

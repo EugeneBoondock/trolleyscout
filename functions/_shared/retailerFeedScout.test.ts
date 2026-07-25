@@ -72,7 +72,12 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
-      'pep::promotions',
+      'pep::promotions-0',
+      'pep::promotions-1',
+      'pep::promotions-2',
+      'pep::promotions-3',
+      'pep::promotions-4',
+      'pep::promotions-5',
       // Takealot's campaign sweep is sharded so the whole catalogue is walked
       // in about a day rather than over a week.
       'takealot::promotion-campaigns-0',
@@ -191,7 +196,7 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
-      'pep::promotions',
+      'pep::promotions-0',
     ]
 
     for (const key of onlineKeys) {
@@ -255,7 +260,7 @@ describe('structured retailer source decoders', () => {
 
     // PEP reads its collection list first, because its discounts are named in
     // collection titles rather than priced into products.
-    const pep = find('pep::promotions')
+    const pep = find('pep::promotions-0')
     expect(pep.buildRequest(pep.initialCursor).url)
       .toBe('https://www.pepstores.com/collections.json?limit=250')
     expect(
