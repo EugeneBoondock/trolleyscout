@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../outbound_link.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../currency.dart';
@@ -283,8 +285,11 @@ ValidUntilInfo? validUntilInfo(String? validTo) {
 }
 
 Future<void> openExternal(String? value) async {
-  if (value == null || value.isEmpty) return;
-  final uri = Uri.tryParse(value);
+  // Same courtesy as the in-app browser: a shop reading its own analytics can
+  // see the visit came from here.
+  final tagged = withReferralSource(value);
+  if (tagged == null || tagged.isEmpty) return;
+  final uri = Uri.tryParse(tagged);
   if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 

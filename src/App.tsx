@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { withReferralSource } from './services/outboundLink'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
@@ -2782,7 +2783,7 @@ function SavedDealsPanel({
                   <p>Saved {deal.savedAt.slice(0, 10)}</p>
                 </div>
                 <div className="offer-actions">
-                  <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                  <a href={withReferralSource(deal.productUrl)} rel="noreferrer" target="_blank">
                     Product
                     <LinkSimple size={14} />
                   </a>
@@ -2933,11 +2934,11 @@ function BasketPanel({
                       {item.linePriceCents === undefined ? 'Price not found' : formatRand(item.linePriceCents)}
                     </strong>
                     <div className="offer-actions">
-                      <a href={item.deal.sourceUrl} rel="noreferrer" target="_blank">
+                      <a href={withReferralSource(item.deal.sourceUrl)} rel="noreferrer" target="_blank">
                         Source
                         <LinkSimple size={14} />
                       </a>
-                      <a href={item.deal.productUrl} rel="noreferrer" target="_blank">
+                      <a href={withReferralSource(item.deal.productUrl)} rel="noreferrer" target="_blank">
                         Product
                         <LinkSimple size={14} />
                       </a>
@@ -3003,7 +3004,7 @@ function SavedSourcesPanel({
                 <p>{source.sourceKind}</p>
               </div>
               <div className="offer-actions">
-                <a href={source.sourceUrl} rel="noreferrer" target="_blank">
+                <a href={withReferralSource(source.sourceUrl)} rel="noreferrer" target="_blank">
                   Source
                   <LinkSimple size={14} />
                 </a>
@@ -4574,7 +4575,7 @@ export function DiscoveredStoreDirectory({
                         Map
                       </button>
                       {branch.website && (
-                        <a href={branch.website} rel="noreferrer" target="_blank">
+                        <a href={withReferralSource(branch.website)} rel="noreferrer" target="_blank">
                           Store website
                           <LinkSimple size={14} />
                         </a>
@@ -4633,7 +4634,7 @@ export function DiscoveredStoreDirectory({
                                   <MagnifyingGlass size={14} />
                                 </button>
                               )}
-                              <a href={promotion.sourceUrl} rel="noreferrer" target="_blank">
+                              <a href={withReferralSource(promotion.sourceUrl)} rel="noreferrer" target="_blank">
                                 Official source
                                 <LinkSimple size={14} />
                               </a>
@@ -4829,7 +4830,7 @@ function SourcePanel({
               <div className="source-links">
                 {retailer.sources.map((source) => (
                   <div className="source-link-group" key={`${retailer.id}-${source.label}`}>
-                    <a href={source.url} rel="noreferrer" target="_blank">
+                    <a href={withReferralSource(source.url)} rel="noreferrer" target="_blank">
                       {source.label}
                       <LinkSimple size={14} />
                     </a>
@@ -5157,7 +5158,7 @@ function DiscoveryPanel({
                 </div>
               </div>
               <div className="offer-actions">
-                <a href={deal.productUrl} rel="noreferrer" target="_blank">
+                <a href={withReferralSource(deal.productUrl)} rel="noreferrer" target="_blank">
                   Product
                   <LinkSimple size={14} />
                 </a>
@@ -5468,7 +5469,7 @@ function OfferList({
             <p>{offer.termsText}</p>
           </div>
           <div className="offer-actions">
-            <a href={offer.sourceUrl} rel="noreferrer" target="_blank">
+            <a href={withReferralSource(offer.sourceUrl)} rel="noreferrer" target="_blank">
               Source
               <LinkSimple size={14} />
             </a>

@@ -12,6 +12,7 @@ import '../top_savings.dart';
 import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
+import '../widgets/in_app_browser.dart';
 import '../widgets/scout_avatar_view.dart';
 
 /// The first screen after sign-in, so it has to do more than report numbers.
@@ -806,9 +807,22 @@ class _TopSavingsStrip extends StatelessWidget {
               return _DashboardDealCard(
                 cardKey: Key('top-saving-card-${deal.id}'),
                 deal: deal,
+                // Opens this deal at the shop. Every card used to run the same
+                // action as "See all deals", so tapping a particular jacket
+                // landed a shopper on the deals list with the jacket nowhere in
+                // sight. A deal with no link of its own still falls back there,
+                // because that is better than a tap that does nothing.
                 onTap: () {
                   uxTap();
-                  onBrowse();
+                  if (deal.productUrl == null || deal.productUrl!.isEmpty) {
+                    onBrowse();
+                    return;
+                  }
+                  showInAppBrowser(
+                    context,
+                    deal.productUrl,
+                    title: deal.retailerName,
+                  );
                 },
               );
             },

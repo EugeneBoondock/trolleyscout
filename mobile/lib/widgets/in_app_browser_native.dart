@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+
+import '../outbound_link.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme.dart';
 
 Uri? safeInAppBrowserUri(String? value) {
-  final uri = value == null ? null : Uri.tryParse(value.trim());
+  // Tagged here rather than at each call site, so every hop out to a shop
+  // carries it and no new screen can forget to.
+  final tagged = withReferralSource(value);
+  final uri = tagged == null ? null : Uri.tryParse(tagged.trim());
   if (uri == null ||
       (uri.scheme != 'https' && uri.scheme != 'http') ||
       uri.host.isEmpty) {
