@@ -1,4 +1,14 @@
 import type { BillingCycle, MemberPlan, MemberPlanId } from '../types'
+import { getLocalPlanPrice, resolvePlanPrice } from './planPricing'
+
+// Rand cents, read from the same price lists every other currency comes from,
+// so the South African price cannot drift away from the one we bill.
+function randPrices(planId: MemberPlanId) {
+  return {
+    annual: (getLocalPlanPrice(planId, 'annual', 'ZAR') ?? 0) * 100,
+    monthly: (getLocalPlanPrice(planId, 'monthly', 'ZAR') ?? 0) * 100,
+  }
+}
 
 // Core shopping tools stay free. Paid plans buy bigger lists for power savers.
 export const memberPlans: MemberPlan[] = [
@@ -42,10 +52,7 @@ export const memberPlans: MemberPlan[] = [
       savedSources: 100,
     },
     name: 'Scout',
-    prices: {
-      annual: 29000,
-      monthly: 2900,
-    },
+    prices: randPrices('scout'),
     statusText: 'Checkout required',
   },
   {
@@ -65,10 +72,7 @@ export const memberPlans: MemberPlan[] = [
       savedSources: 250,
     },
     name: 'Household',
-    prices: {
-      annual: 59000,
-      monthly: 5900,
-    },
+    prices: randPrices('household'),
     statusText: 'Checkout required',
   },
   {
@@ -97,10 +101,7 @@ export const memberPlans: MemberPlan[] = [
       shopProfiles: 1,
     },
     name: 'Organisation',
-    prices: {
-      annual: 499000,
-      monthly: 49900,
-    },
+    prices: randPrices('organization'),
     statusText: 'Coming soon',
   },
 ]
@@ -115,18 +116,66 @@ export function getMemberPlan(planId: MemberPlanId) {
   return memberPlans.find((plan) => plan.id === planId) ?? memberPlans[0]
 }
 
-export function getPlanBillingOption(planId: MemberPlanId, billingCycle: BillingCycle) {
+/// Prices a checkout. `amountCents` is always the rand PayFast debits, because
+/// that is what the payment notification is checked against; `localAmount` is
+/// the whole-number price in the shopper's own currency that we quoted them.
+export function getPlanBillingOption(
+  planId: MemberPlanId,
+  billingCycle: BillingCycle,
+  pricing?: { currencyCode?: string; rateFromZar?: number },
+) {
   const plan = getMemberPlan(planId)
 
   if (!plan.isPaid) {
     return undefined
   }
 
+  const price = resolvePlanPrice(planId, billingCycle, pricing)
+
+  if (!price) {
+    return undefined
+  }
+
   return {
-    amountCents: plan.prices[billingCycle],
+    amountCents: price.amountCents,
     billingCycle,
+    currencyCode: price.currencyCode,
     frequency: billingCycle === 'monthly' ? 3 : 6,
     itemName: `Trolley Scout ${plan.name} ${billingCycle}`,
+    localAmount: price.localAmount,
     planId,
   }
+}
+
+/// The plan table as one shopper sees it: quoted in their currency, with the
+/// rand that will actually leave their account alongside it.
+export function getLocalisedMemberPlans(pricing?: {
+  currencyCode?: string
+  rateFromZar?: number
+}): MemberPlan[] {
+  return memberPlans.map((plan) => {
+    if (!plan.isPaid) {
+      return plan
+    }
+
+    const annual = resolvePlanPrice(plan.id, 'annual', pricing)
+    const monthly = resolvePlanPrice(plan.id, 'monthly', pricing)
+
+    if (!annual || !monthly) {
+      return plan
+    }
+
+    return {
+      ...plan,
+      localPrices: {
+        annual: annual.localAmount,
+        currencyCode: monthly.currencyCode,
+        monthly: monthly.localAmount,
+      },
+      prices: {
+        annual: annual.amountCents,
+        monthly: monthly.amountCents,
+      },
+    }
+  })
 }

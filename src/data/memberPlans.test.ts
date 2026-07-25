@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getMemberPlan, getPlanBillingOption, getPlanMerchantAllowance, memberPlans } from './memberPlans'
+import {
+  getLocalisedMemberPlans,
+  getMemberPlan,
+  getPlanBillingOption,
+  getPlanMerchantAllowance,
+  memberPlans,
+} from './memberPlans'
 
 describe('memberPlans', () => {
   it('publishes the approved monthly and annual prices', () => {
@@ -36,6 +42,41 @@ describe('memberPlans', () => {
 
   it('does not create a paid billing option for the free plan', () => {
     expect(getPlanBillingOption('free', 'monthly')).toBeUndefined()
+  })
+
+  // Roughly R16.69 to the dollar, the live rate on the day this was written.
+  const USD_PER_ZAR = 0.05993
+
+  it('charges an American the rand their five dollars comes to', () => {
+    expect(
+      getPlanBillingOption('scout', 'monthly', {
+        currencyCode: 'USD',
+        rateFromZar: USD_PER_ZAR,
+      }),
+    ).toMatchObject({
+      // R83.43, which is what their statement will say.
+      amountCents: 8343,
+      currencyCode: 'USD',
+      localAmount: 5,
+    })
+  })
+
+  it('quotes the plan table in the shopper’s money and settles it in rand', () => {
+    const plans = getLocalisedMemberPlans({ currencyCode: 'USD', rateFromZar: USD_PER_ZAR })
+    const scout = plans.find((plan) => plan.id === 'scout')!
+
+    expect(scout.localPrices).toEqual({ annual: 50, currencyCode: 'USD', monthly: 5 })
+    expect(scout.prices).toEqual({ annual: 83431, monthly: 8343 })
+    // The free plan has no price to localise, so it is passed through untouched.
+    expect(plans.find((plan) => plan.id === 'free')?.localPrices).toBeUndefined()
+  })
+
+  it('leaves a South African shopper on the rand price, with no rate involved', () => {
+    const plans = getLocalisedMemberPlans({ currencyCode: 'ZAR', rateFromZar: 1 })
+    const scout = plans.find((plan) => plan.id === 'scout')!
+
+    expect(scout.localPrices).toEqual({ annual: 290, currencyCode: 'ZAR', monthly: 29 })
+    expect(scout.prices).toEqual({ annual: 29000, monthly: 2900 })
   })
 
   // The merchant tools it advertises are still being built, so nobody may be

@@ -30,10 +30,11 @@ void main() {
     expect(find.text('Your change is scheduled for 1 August.'), findsOneWidget);
   });
 
-  testWidgets('bills in rand even when the shopper is in the United States',
+  testWidgets('quotes an American in dollars and names the rand charge',
       (tester) async {
-    // PayFast settles in rand: an American card is debited rand, so the charge
-    // must read in rand. Their own currency may only appear as an estimate.
+    // The price is a whole number in the shopper's own money. PayFast still
+    // settles in rand, so the rand their statement will show is named too —
+    // neither number may be hidden from them.
     final api = _SubscriptionApi(
       checkoutResult: const SubscriptionCheckout(
         message: 'Checkout ready.',
@@ -48,13 +49,34 @@ void main() {
         rateFromZar: 0.055,
       ),
       currencyCode: 'USD',
+      plan: _americanHouseholdPlan,
     );
     await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
     await tester.pumpAndSettle();
 
-    expect(find.text('R99.00/mo'), findsOneWidget);
-    expect(find.textContaining(r'$99'), findsNothing);
-    expect(find.textContaining('USD'), findsOneWidget);
+    // A price somebody chose, with no stray cents from a conversion.
+    expect(find.text(r'$10/mo'), findsOneWidget);
+    expect(find.textContaining(r'$9.9'), findsNothing);
+    // R181.82 is what $10 comes to at this rate, and what the card is debited.
+    expect(find.text('Charged R181.82'), findsOneWidget);
+  });
+
+  testWidgets('leaves a South African on the rand price, with no conversion',
+      (tester) async {
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'household',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+      ),
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('R99/mo'), findsOneWidget);
+    // Their price is already in rand, so repeating it as a charge is noise.
+    expect(find.textContaining('Charged'), findsNothing);
   });
 
   testWidgets('closing payment clearly reports that no plan changed',
@@ -98,23 +120,26 @@ class _SubscriptionApi extends Api {
       rateFromZar: 1,
     ),
     this.currencyCode = 'ZAR',
+    this.plan = _householdPlan,
   }) : super(baseUrl: 'https://example.test');
 
   final SubscriptionCheckout checkoutResult;
   final CountryPricing countryPricing;
 
-  /// The currency this shopper's country prices in — shopping money follows it,
-  /// membership money must not.
+  /// The currency this shopper's country prices in.
   final String currencyCode;
+
+  /// The paid plan the server priced for this shopper.
+  final MemberPlan plan;
   int checkoutCalls = 0;
 
   @override
   String get effectiveCurrencyCode => currencyCode;
 
   @override
-  Future<SubscriptionData> subscription() async => const SubscriptionData(
+  Future<SubscriptionData> subscription() async => SubscriptionData(
         billingReady: true,
-        plans: [_freePlan, _householdPlan],
+        plans: [_freePlan, plan],
         account: _paidAccount,
       );
 
@@ -165,4 +190,21 @@ const _householdPlan = MemberPlan(
   features: ['Larger saved lists'],
   monthlyCents: 9900,
   annualCents: 99000,
+);
+
+// The same plan as the server prices it for an American: quoted at a whole $10,
+// settling at the rand that comes to.
+const _americanHouseholdPlan = MemberPlan(
+  id: 'household',
+  name: 'Household',
+  description: 'More room for a household.',
+  badge: 'Paid',
+  isPaid: true,
+  statusText: 'Available',
+  features: ['Larger saved lists'],
+  monthlyCents: 18182,
+  annualCents: 181818,
+  localCurrency: 'USD',
+  localMonthly: 10,
+  localAnnual: 100,
 );

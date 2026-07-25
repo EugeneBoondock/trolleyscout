@@ -17,7 +17,12 @@ import type {
   SubscriptionCheckoutResult,
   CountryOption,
 } from '../../src/types'
-import { memberPlans, getMemberPlan, getPlanBillingOption } from '../../src/data/memberPlans'
+import {
+  memberPlans,
+  getLocalisedMemberPlans,
+  getMemberPlan,
+  getPlanBillingOption,
+} from '../../src/data/memberPlans'
 import { computeLineEconomics, parseMultibuy } from '../../src/services/multibuy'
 import { retailers } from '../../src/data/retailers'
 import type { TrolleyScoutEnv } from './env'
@@ -30,7 +35,8 @@ import {
   createPayFastCheckoutFields,
   requestPayFastOnsitePayment,
 } from './payfastBilling'
-import { countryFromCode, listCountryOptions } from './countryContext'
+import { countryFromCode, getRateFromZar, listCountryOptions } from './countryContext'
+import { resolveBillingCurrency, SETTLEMENT_CURRENCY } from '../../src/data/planPricing'
 import {
   emailLookup,
   hasEmailProtection,
@@ -196,8 +202,44 @@ export function setAdminCountryCookie(countryCode: string) {
   return `${adminCountryCookieName}=${country.code}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}`
 }
 
-export function getSubscriptionPlans() {
-  return memberPlans
+/// Prices the plan table for one shopper's country. Without a country we serve
+/// the rand table, which is what every existing client already expects.
+export async function getSubscriptionPlans(env?: TrolleyScoutEnv, countryCode?: string) {
+  if (!env || !countryCode) {
+    return memberPlans
+  }
+
+  const pricing = await resolveMemberPricing(env, countryCode)
+  return getLocalisedMemberPlans(pricing)
+}
+
+/// What one plan costs one member: the whole-number local price they see, and
+/// the rand PayFast debits for it. The single place any subscription amount is
+/// worked out, so a checkout and a later plan change can never disagree.
+export async function getPlanCheckoutPrice(
+  env: TrolleyScoutEnv,
+  planId: MemberPlanId,
+  billingCycle: BillingCycle,
+  countryCode: string,
+) {
+  return getPlanBillingOption(planId, billingCycle, await resolveMemberPricing(env, countryCode))
+}
+
+/// A shopper's quoting currency and the rate that turns it into the rand
+/// PayFast settles. Both the plan table and the checkout price go through here
+/// so a shopper is never charged an amount they were not shown.
+async function resolveMemberPricing(env: TrolleyScoutEnv, countryCode: string) {
+  const currencyCode = resolveBillingCurrency(countryFromCode(countryCode).currencyCode)
+
+  if (currencyCode === SETTLEMENT_CURRENCY) {
+    return { currencyCode, rateFromZar: 1 }
+  }
+
+  // The rate has to be for the currency we quote in, which is not always the
+  // currency of the shopper's own country: Zimbabwe is quoted in dollars.
+  const rate = await getRateFromZar(env, currencyCode)
+
+  return { currencyCode, rateFromZar: rate?.rate }
 }
 
 export function isBillingReady(env: TrolleyScoutEnv, planId?: MemberPlanId) {
@@ -1320,7 +1362,11 @@ export async function startSubscriptionCheckout(
     return schedulePlanDowngrade(env, { account, billingCycle, planId })
   }
 
-  const billingOption = getPlanBillingOption(planId, billingCycle)
+  const billingOption = getPlanBillingOption(
+    planId,
+    billingCycle,
+    await resolveMemberPricing(env, account.countryCode),
+  )
   const payfast = resolvePayFastConfig(env)
 
   if (!billingOption || !payfast) {

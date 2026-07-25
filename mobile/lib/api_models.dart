@@ -829,6 +829,9 @@ class MemberPlan {
     required this.features,
     required this.monthlyCents,
     required this.annualCents,
+    this.localCurrency,
+    this.localMonthly,
+    this.localAnnual,
   });
 
   final String id;
@@ -838,11 +841,21 @@ class MemberPlan {
   final bool isPaid;
   final String statusText;
   final List<String> features;
+  // Rand cents: what PayFast debits, whatever currency the price was quoted in.
   final int monthlyCents;
   final int annualCents;
+  // The whole-number price the shopper was quoted, in their own money. Null on
+  // the free plan and on any response from an older server.
+  final String? localCurrency;
+  final int? localMonthly;
+  final int? localAnnual;
+
+  bool get isQuotedInRand => localCurrency == null || localCurrency == 'ZAR';
 
   factory MemberPlan.fromJson(Map<String, dynamic> json) {
     final prices = _mapOrEmpty(json['prices']);
+    final localPrices = _mapOrEmpty(json['localPrices']);
+    final localCurrency = _string(localPrices['currencyCode']);
     return MemberPlan(
       id: _string(json['id']),
       name: _string(json['name']),
@@ -853,6 +866,9 @@ class MemberPlan {
       features: _stringList(json['features']),
       monthlyCents: _int(prices['monthly']),
       annualCents: _int(prices['annual']),
+      localCurrency: localCurrency.isEmpty ? null : localCurrency,
+      localMonthly: localCurrency.isEmpty ? null : _int(localPrices['monthly']),
+      localAnnual: localCurrency.isEmpty ? null : _int(localPrices['annual']),
     );
   }
 }

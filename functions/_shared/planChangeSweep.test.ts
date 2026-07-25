@@ -13,6 +13,12 @@ const migrationUrls = [
   new NodeUrl('../../migrations/0025_scheduled_plan_changes.sql', import.meta.url),
 ]
 
+// Migration 0026 adds this column, but it also alters four tables belonging to
+// the store and property caches, none of which this sweep touches. The column
+// is declared here exactly as that migration declares it.
+const COUNTRY_COLUMN = `ALTER TABLE member_accounts
+  ADD COLUMN country_code TEXT NOT NULL DEFAULT 'ZA'`
+
 const PAST = '2026-07-01T00:00:00.000Z'
 const FUTURE = '2026-09-01T00:00:00.000Z'
 const NOW = new Date('2026-07-20T12:00:00.000Z')
@@ -22,6 +28,7 @@ describe('applyDuePlanChanges', () => {
   let db: D1Database
   let adjustCalls: { amountCents: number; token: string }[]
   let cancelCalls: string[]
+  let priceCalls: { billingCycle: string; countryCode: string; planId: string }[]
 
   function dependencies(
     overrides: Partial<PlanChangeSweepDependencies> = {},
@@ -35,11 +42,23 @@ describe('applyDuePlanChanges', () => {
         cancelCalls.push(token)
         return { cancelled: true }
       },
+      // Stands in for the live pricing: rand at home, and a dollar plan
+      // converted at roughly R16.69 to the dollar.
+      priceFor: async (planId, billingCycle, countryCode) => {
+        priceCalls.push({ billingCycle, countryCode, planId })
+        const rand = { household: 5900, organization: 49900, scout: 2900 }[
+          planId as 'household' | 'organization' | 'scout'
+        ]
+        if (rand === undefined) return undefined
+        const months = billingCycle === 'annual' ? 10 : 1
+        return countryCode === 'US' ? Math.round(rand * months * 3.13) : rand * months
+      },
       ...overrides,
     }
   }
 
   async function seed(input: {
+    countryCode?: string
     pendingBillingCycle?: string
     pendingEffectiveAt: string
     pendingPlanId: string
@@ -47,10 +66,10 @@ describe('applyDuePlanChanges', () => {
   }) {
     await db
       .prepare(
-        `INSERT INTO member_accounts (id, email, display_name, plan_id, plan_status)
-          VALUES ('acc-1', 'shopper@example.co.za', 'Thandi', ?, 'active')`,
+        `INSERT INTO member_accounts (id, email, display_name, plan_id, plan_status, country_code)
+          VALUES ('acc-1', 'shopper@example.co.za', 'Thandi', ?, 'active', ?)`,
       )
-      .bind(input.planId)
+      .bind(input.planId, input.countryCode ?? 'ZA')
       .run()
 
     await db
@@ -99,6 +118,7 @@ describe('applyDuePlanChanges', () => {
   beforeEach(async () => {
     adjustCalls = []
     cancelCalls = []
+    priceCalls = []
     miniflare = new Miniflare({
       d1Databases: { DB: 'plan-change-sweep-test' },
       modules: true,
@@ -112,6 +132,8 @@ describe('applyDuePlanChanges', () => {
         await db.prepare(statement).run()
       }
     }
+
+    await db.prepare(COUNTRY_COLUMN).run()
   })
 
   afterEach(async () => {
@@ -134,6 +156,43 @@ describe('applyDuePlanChanges', () => {
       plan_id: 'scout',
       status: 'active',
     })
+  })
+
+  // A member quoted in dollars pays the rand their own price converts to.
+  // Charging them the South African price of the same plan would hand an
+  // American a $5 plan for R29 a month, forever.
+  it('moves a member abroad onto the rand their own price comes to', async () => {
+    await seed({
+      countryCode: 'US',
+      pendingEffectiveAt: PAST,
+      pendingPlanId: 'scout',
+      planId: 'household',
+    })
+
+    const result = await applyDuePlanChanges(db, dependencies(), NOW)
+
+    expect(result).toMatchObject({ applied: 1, failed: 0 })
+    expect(priceCalls).toEqual([
+      { billingCycle: 'monthly', countryCode: 'US', planId: 'scout' },
+    ])
+    expect(adjustCalls).toEqual([{ amountCents: 9077, token: 'token-1' }])
+  })
+
+  // Nothing may be adjusted on a guess: a wrong amount here bills a real card.
+  it('leaves the change queued when no price can be worked out', async () => {
+    await seed({ pendingEffectiveAt: PAST, pendingPlanId: 'scout', planId: 'household' })
+
+    const result = await applyDuePlanChanges(
+      db,
+      dependencies({ priceFor: async () => undefined }),
+      NOW,
+    )
+
+    expect(result.applied).toBe(0)
+    expect(result.failed).toBe(1)
+    expect(adjustCalls).toEqual([])
+    expect(await readAccountPlan()).toBe('household')
+    expect(await readSubscription()).toMatchObject({ pending_plan_id: 'scout' })
   })
 
   it('cancels the subscription and drops to free for a queued cancellation', async () => {

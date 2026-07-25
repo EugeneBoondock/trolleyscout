@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../currency.dart';
 import '../payfast_checkout.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -23,22 +24,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   late Future<SubscriptionData> _future = widget.api.subscription();
   String _billingCycle = 'monthly';
   String? _busyPlan;
-  CountryPricing? _country;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadCountry();
-  }
+  // How the shopper was quoted. The server prices the plan table for their
+  // country, so nothing here has to estimate a conversion.
+  Currency _planCurrency(MemberPlan plan) => Currency.of(plan.localCurrency);
 
-  Future<void> _loadCountry() async {
-    try {
-      final country = await widget.api.country();
-      if (mounted && !country.isRand) setState(() => _country = country);
-    } catch (_) {
-      // Rand-only display is always a safe fallback.
-    }
-  }
+  // Whole units of the quoted currency. An older server sends rand cents only,
+  // and every rand price is a whole rand, so rounding loses nothing.
+  int _monthlyUnits(MemberPlan plan) =>
+      plan.localMonthly ?? (plan.monthlyCents / 100).round();
+
+  int _annualUnits(MemberPlan plan) =>
+      plan.localAnnual ?? (plan.annualCents / 100).round();
+
+  String _planPrice(MemberPlan plan) => _planCurrency(plan).formatShort(
+      (_billingCycle == 'monthly' ? _monthlyUnits(plan) : _annualUnits(plan)) *
+          100);
 
   void _reload() => setState(() {
         _future = widget.api.subscription();
@@ -149,7 +150,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                           children: [
                             Text(
                               plan.isPaid
-                                  ? '${formatRand(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)}/${_billingCycle == 'monthly' ? 'mo' : 'yr'}'
+                                  ? '${_planPrice(plan)}/${_billingCycle == 'monthly' ? 'mo' : 'yr'}'
                                   : 'Free',
                               style: TextStyle(
                                   color: TS.redOf(context),
@@ -160,23 +161,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                             // equivalent, so a year's price reads as "≈ Rx/mo".
                             if (plan.isPaid && _billingCycle == 'annual')
                               Text(
-                                '≈ ${formatRand((plan.annualCents / 12).round())}/mo',
+                                '≈ ${_planCurrency(plan).format((_annualUnits(plan) * 100 / 12).round())}/mo',
                                 style: TextStyle(
                                     color: TS.mutedOf(context),
                                     fontWeight: FontWeight.w700,
                                     fontSize: 11),
                               ),
-                            // Shoppers outside South Africa see their own
-                            // currency; PayFast still settles in rand.
-                            if (plan.isPaid &&
-                                _country?.estimateFromRandCents(
-                                        _billingCycle == 'monthly'
-                                            ? plan.monthlyCents
-                                            : plan.annualCents) !=
-                                    null)
+                            // A price quoted in another currency still leaves
+                            // the account in rand, so say what the statement
+                            // will actually read.
+                            if (plan.isPaid && !plan.isQuotedInRand)
                               Text(
-                                '${_country!.estimateFromRandCents(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)!}'
-                                '/${_billingCycle == 'monthly' ? 'mo' : 'yr'}',
+                                'Charged ${formatRand(_billingCycle == 'monthly' ? plan.monthlyCents : plan.annualCents)}',
                                 style: TextStyle(
                                     color: TS.mutedOf(context),
                                     fontWeight: FontWeight.w700,
@@ -189,14 +185,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     // Honest anchor: the real saving of paying yearly vs monthly.
                     if (plan.isPaid &&
                         _billingCycle == 'annual' &&
-                        plan.monthlyCents * 12 > plan.annualCents) ...[
+                        _monthlyUnits(plan) * 12 > _annualUnits(plan)) ...[
                       const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         color: TS.greenOf(context).withValues(alpha: 0.16),
                         child: Text(
-                          'Save ${formatRand(plan.monthlyCents * 12 - plan.annualCents)} a year vs monthly',
+                          'Save ${_planCurrency(plan).formatShort((_monthlyUnits(plan) * 12 - _annualUnits(plan)) * 100)} a year vs monthly',
                           style: TextStyle(
                               color: TS.greenOf(context),
                               fontWeight: FontWeight.w800,

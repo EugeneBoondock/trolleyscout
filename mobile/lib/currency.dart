@@ -4,9 +4,9 @@
 // amount with the currency it was already quoted in, never re-price it.
 // Mirrors formatCountryMoney in src/views/ToolkitView.tsx on the web.
 
-/// The currency PayFast settles in. Membership and advertising are charged in
-/// rand wherever the shopper is standing, so those screens name this currency
-/// instead of following the shopper's country.
+/// The currency PayFast settles in. A membership is quoted as a whole number in
+/// the shopper's own money, but the rand it converts to is what leaves their
+/// account, so billing screens name this currency alongside the local price.
 const String kBillingCurrencyCode = 'ZAR';
 
 /// A word-like symbol ("ZiG", "TSh", a bare currency code) needs air before the

@@ -7,6 +7,7 @@ import {
   isBillingReady,
   startSubscriptionCheckout,
 } from '../_shared/memberStore'
+import { detectRequestCountry } from '../_shared/countryContext'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
 
@@ -18,11 +19,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const session = await getMemberSession(env, request)
 
   if (request.method === 'GET') {
+    // A signed-in member is priced by the country on their account; a visitor
+    // by where they are browsing from, so the pricing page reads in their own
+    // money before they ever make an account.
+    const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
+
     return json(
       {
         account: session.account,
         billingReady: isBillingReady(env),
-        plans: getSubscriptionPlans(),
+        plans: await getSubscriptionPlans(env, countryCode),
       },
       {
         headers: privateHeaders,

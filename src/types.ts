@@ -325,8 +325,17 @@ export interface MemberPlan {
   features: string[]
   limits: MemberPlanLimits
   merchant?: MemberPlanMerchant
+  // Rand cents: what PayFast debits, whatever currency the shopper was quoted.
   prices: {
     annual: number
+    monthly: number
+  }
+  // Whole units of the shopper's own currency — the price they were quoted.
+  // Absent on the free plan, and on the static table nobody has been priced
+  // against yet. When its currency is rand it simply matches `prices`.
+  localPrices?: {
+    annual: number
+    currencyCode: string
     monthly: number
   }
 }

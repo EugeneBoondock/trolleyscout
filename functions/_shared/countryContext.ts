@@ -55,7 +55,10 @@ export async function getCountryContext(
   }
 }
 
-async function getRateFromZar(
+/// How much of `currencyCode` one rand buys. Exported because pricing needs a
+/// rate for the currency it quotes in, which is not always the currency of the
+/// shopper's own country.
+export async function getRateFromZar(
   env: TrolleyScoutEnv,
   currencyCode: string,
 ): Promise<{ rate: number; updatedAt: string } | undefined> {

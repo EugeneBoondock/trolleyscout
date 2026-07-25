@@ -3073,6 +3073,10 @@ function SubscriptionPanel({
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(planCycle ?? 'annual')
   const pendingPlanId = billingAccount.pendingPlanId
   const pendingEffectiveAt = billingAccount.pendingEffectiveAt
+  // Every paid plan is quoted in the same currency, so the first one that
+  // carries a local price speaks for the panel.
+  const quoteCurrency =
+    subscriptionState.data.plans.find((plan) => plan.localPrices)?.localPrices?.currencyCode ?? 'ZAR'
 
   return (
     <section className="subscription-panel" aria-label="Subscription">
@@ -3081,10 +3085,10 @@ function SubscriptionPanel({
           <p className="eyebrow">Subscription</p>
           <h1>Plan and billing</h1>
           <p className="section-lede">
-            Free covers the core shopping tools. Paid plans add space for power savers. Prices are
-            shown in{' '}
-            {country.rateFromZar ? country.currencyCode : 'ZAR'}. PayFast settles the payment
-            securely in rand.
+            Free covers the core shopping tools. Paid plans add space for power savers.{' '}
+            {quoteCurrency === 'ZAR'
+              ? 'PayFast handles the payment securely.'
+              : `Prices are in ${quoteCurrency}. PayFast settles securely in rand, and the exact rand charge is on every paid plan below.`}
           </p>
         </div>
         <span className="plan-pill">{subscriptionState.data.billingReady ? 'Billing ready' : 'Billing setup needed'}</span>
@@ -3140,6 +3144,10 @@ function SubscriptionPanel({
           const isCurrent = isCurrentPlan && (!plan.isPaid || isCurrentCycle)
           const isCycleSwitch = isCurrentPlan && plan.isPaid && !isCurrentCycle
           const priceCents = plan.prices[billingCycle]
+          // The price the shopper was quoted, in their own money. When it is
+          // not rand, PayFast still settles in rand, so both are shown.
+          const localPrices = plan.localPrices
+          const isForeignQuote = Boolean(localPrices && localPrices.currencyCode !== 'ZAR')
           const needsBilling = plan.isPaid && !subscriptionState.data.billingReady
           // Moving to something cheaper is queued for the end of the period the
           // member already paid for, so the button must not promise a payment.
@@ -3172,7 +3180,15 @@ function SubscriptionPanel({
               <p className="plan-price">
                 {plan.isPaid ? (
                   <>
-                    <strong>{formatMembershipPrice(priceCents, country)}</strong>
+                    <strong>
+                      {localPrices
+                        ? formatPlanPrice(
+                            localPrices[billingCycle],
+                            localPrices.currencyCode,
+                            country.locale,
+                          )
+                        : formatMembershipPrice(priceCents, country)}
+                    </strong>
                     <span>/{billingCycle === 'monthly' ? 'month' : 'year'}</span>
                   </>
                 ) : (
@@ -3181,17 +3197,39 @@ function SubscriptionPanel({
               </p>
               {plan.isPaid && billingCycle === 'annual' && (
                 <p className="plan-price-equiv">
-                  ≈ {formatMembershipPrice(Math.round(plan.prices.annual / 12), country)}/month
-                  {plan.prices.monthly * 12 > plan.prices.annual && (
+                  ≈{' '}
+                  {localPrices
+                    ? formatPlanPrice(
+                        localPrices.annual / 12,
+                        localPrices.currencyCode,
+                        country.locale,
+                        2,
+                      )
+                    : formatMembershipPrice(Math.round(plan.prices.annual / 12), country)}
+                  /month
+                  {(localPrices
+                    ? localPrices.monthly * 12 > localPrices.annual
+                    : plan.prices.monthly * 12 > plan.prices.annual) && (
                     <span className="plan-save-badge">
-                      Save {formatMembershipPrice(plan.prices.monthly * 12 - plan.prices.annual, country)}/year
+                      Save{' '}
+                      {localPrices
+                        ? formatPlanPrice(
+                            localPrices.monthly * 12 - localPrices.annual,
+                            localPrices.currencyCode,
+                            country.locale,
+                          )
+                        : formatMembershipPrice(
+                            plan.prices.monthly * 12 - plan.prices.annual,
+                            country,
+                          )}
+                      /year
                     </span>
                   )}
                 </p>
               )}
-              {plan.isPaid && country.currencyCode !== 'ZAR' && country.rateFromZar && (
+              {plan.isPaid && isForeignQuote && (
                 <p className="plan-settlement-note">
-                  Local amount is an estimate. PayFast charge: {formatRand(priceCents)}.
+                  Charged as {formatRand(priceCents)} by PayFast, at today’s rate.
                 </p>
               )}
               <p>{plan.description}</p>
@@ -4250,6 +4288,17 @@ function formatRand(cents: number) {
     minimumFractionDigits: 2,
     style: 'currency',
   }).format(cents / 100)
+}
+
+/// A localised plan price is a number somebody chose — $5, not $4.83 — so it
+/// is shown without cents. The rand it settles at is shown separately.
+function formatPlanPrice(amount: number, currencyCode: string, locale: string, decimals = 0) {
+  return new Intl.NumberFormat(locale, {
+    currency: currencyCode,
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals,
+    style: 'currency',
+  }).format(amount)
 }
 
 function formatMembershipPrice(cents: number, country: CountryContext) {

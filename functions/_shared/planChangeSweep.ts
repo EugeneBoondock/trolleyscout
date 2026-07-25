@@ -1,5 +1,4 @@
 import type { BillingCycle, MemberPlanId } from '../../src/types'
-import { getMemberPlan } from '../../src/data/memberPlans'
 import { computePeriodEnd } from './planChanges'
 
 // Applies the downgrades that members queued once the period they paid for has
@@ -15,9 +14,18 @@ export type SubscriptionCanceller = (
   token: string,
 ) => Promise<{ cancelled: boolean; issue?: string }>
 
+/// The rand a plan costs a member in a given country. Injected because working
+/// it out needs a live exchange rate, which the sweep itself has no access to.
+export type PlanPriceResolver = (
+  planId: MemberPlanId,
+  billingCycle: BillingCycle,
+  countryCode: string,
+) => Promise<number | undefined>
+
 export interface PlanChangeSweepDependencies {
   adjust: SubscriptionAdjuster
   cancel: SubscriptionCanceller
+  priceFor: PlanPriceResolver
 }
 
 export interface PlanChangeSweepResult {
@@ -28,6 +36,7 @@ export interface PlanChangeSweepResult {
 
 interface DuePlanChangeRow {
   account_id: string
+  country_code: string | null
   pending_billing_cycle: string | null
   pending_effective_at: string
   pending_plan_id: string
@@ -42,13 +51,15 @@ export async function applyDuePlanChanges(
   const timestamp = now.toISOString()
   const due = await db
     .prepare(
-      `SELECT account_id, pending_plan_id, pending_billing_cycle, pending_effective_at, provider_token
-        FROM billing_subscriptions
-        WHERE provider = 'payfast'
-          AND status = 'active'
-          AND pending_plan_id IS NOT NULL
-          AND pending_effective_at IS NOT NULL
-          AND pending_effective_at <= ?`,
+      `SELECT s.account_id, s.pending_plan_id, s.pending_billing_cycle,
+              s.pending_effective_at, s.provider_token, a.country_code
+        FROM billing_subscriptions s
+        LEFT JOIN member_accounts a ON a.id = s.account_id
+        WHERE s.provider = 'payfast'
+          AND s.status = 'active'
+          AND s.pending_plan_id IS NOT NULL
+          AND s.pending_effective_at IS NOT NULL
+          AND s.pending_effective_at <= ?`,
     )
     .bind(timestamp)
     .all<DuePlanChangeRow>()
@@ -115,7 +126,19 @@ async function applyOne(
     return { applied: true }
   }
 
-  const amountCents = getMemberPlan(planId).prices[billingCycle]
+  // Priced against the member's own country: someone quoted in dollars must be
+  // moved onto the rand their new plan comes to, not onto the rand price a
+  // South African would pay for it.
+  const amountCents = await dependencies.priceFor(
+    planId,
+    billingCycle,
+    row.country_code ?? 'ZA',
+  )
+
+  if (!amountCents) {
+    return { applied: false, issue: 'Plan price could not be worked out.' }
+  }
+
   const adjusted = await dependencies.adjust(token, amountCents)
 
   if (!adjusted.adjusted) {

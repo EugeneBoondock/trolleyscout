@@ -21,8 +21,10 @@ import {
 import {
   applyDuePlanChanges,
   type PlanChangeSweepDependencies,
+  type PlanPriceResolver,
 } from '../functions/_shared/planChangeSweep'
 import {
+  getPlanCheckoutPrice,
   purgeExpiredSavedDeals,
   purgeExpiredSessions,
 } from '../functions/_shared/memberStore'
@@ -305,6 +307,8 @@ export async function runScheduledScout(
 
 function createPlanChangeDependencies(env: ScoutEnv): PlanChangeSweepDependencies {
   const payfast = resolvePayFastConfig(env)
+  const priceFor: PlanPriceResolver = async (planId, billingCycle, countryCode) =>
+    (await getPlanCheckoutPrice(env, planId, billingCycle, countryCode))?.amountCents
 
   // With no billing keys there is nothing to move at the provider, so both
   // calls report failure and the change stays queued rather than being applied
@@ -315,6 +319,7 @@ function createPlanChangeDependencies(env: ScoutEnv): PlanChangeSweepDependencie
     return {
       adjust: async () => ({ adjusted: false, issue }),
       cancel: async () => ({ cancelled: false, issue }),
+      priceFor,
     }
   }
 
@@ -327,6 +332,7 @@ function createPlanChangeDependencies(env: ScoutEnv): PlanChangeSweepDependencie
   return {
     adjust: (token, amountCents) => adjustPayFastSubscription(token, { amountCents }, credentials),
     cancel: (token) => cancelPayFastSubscription(token, credentials),
+    priceFor,
   }
 }
 
