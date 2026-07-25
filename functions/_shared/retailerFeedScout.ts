@@ -56,6 +56,18 @@ import {
   parseRootsLeaflets,
 } from '../../src/services/retailerFeeds/roots'
 import {
+  FLIPP_US_CHAINS,
+  FLIPP_WEB_ORIGIN,
+  buildFlippFlyerItemsUrl,
+  buildFlippFlyerListUrl,
+  decodeFlippCursor,
+  encodeFlippCursor,
+  isFlippFlyerListPayload,
+  parseFlippFlyerItems,
+  parseFlippFlyerList,
+  type FlippChain,
+} from '../../src/services/retailerFeeds/flipp'
+import {
   MAKRO_DEPARTMENTS,
   MAKRO_ORIGIN,
   MAKRO_PAGE_FETCH_URL,
@@ -110,8 +122,8 @@ const PAGE_SIZE = 100
 // nothing however many times the sweep ran. A test holds this above the source
 // count, so adding a source that would not fit fails the build rather than
 // quietly starving whatever sits last.
-export const DEFAULT_REQUEST_CAP = 60
-const MAX_REQUEST_CAP = 80
+export const DEFAULT_REQUEST_CAP = 80
+const MAX_REQUEST_CAP = 100
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
 const DEFAULT_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -157,6 +169,11 @@ export interface RetailerFeedParseInput {
 
 export interface RetailerFeedSource {
   buildRequest: (cursor: FeedCursor) => RetailerFeedRequest
+  // Where this shop's deals apply and what its prices are written in. Both
+  // default to South Africa, which is what every source here was until the US
+  // chains arrived, so the existing entries say nothing and stay correct.
+  countryCode?: string
+  currencyCode?: string
   decode: (body: string) => unknown
   initialCursor: FeedCursor
   key: string
@@ -335,6 +352,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   ...BOXER_PROVINCES.map((province) => boxerSource(province)),
   ...MAKRO_DEPARTMENTS.map((department) => makroProductSource(department)),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
+  ...FLIPP_US_CHAINS.map((chain) => flippSource(chain)),
 ]
 
 export function getStructuredRetailerSources(): readonly RetailerFeedSource[] {
@@ -477,6 +495,8 @@ export async function runStructuredRetailerFeedScout(
       )
       const stored = await storage.upsertDealItems(env, {
         candidates,
+        countryCode: source.countryCode,
+        currencyCode: source.currencyCode,
         retailerId: source.retailerId,
         run: {
           finishedAt: now(),
@@ -533,6 +553,8 @@ export async function runStructuredRetailerFeedScout(
       try {
         await storage.upsertDealItems(env, {
           candidates: [],
+          countryCode: source.countryCode,
+          currencyCode: source.currencyCode,
           retailerId: source.retailerId,
           run: {
             errorText,
@@ -1042,6 +1064,103 @@ function makroProductSource(department: string): RetailerFeedSource {
     retailerId: retailerSlug('makro'),
     retailerName: 'Makro',
     sourceLabel: 'Catalogue',
+    sourceUrl,
+  }
+}
+
+// The big American chains have no catalogue of their own to read: each one's
+// site is a store locator around a circular its own browser assembles. Flipp
+// carries all of them, keyed by postal code, because a US weekly ad is a local
+// document — the Kroger ad in Atlanta is not the Kroger ad in Detroit.
+//
+// So each chain walks its metros, and within a metro its flyers, one request
+// per sweep: ask which flyers a chain is running there, then read them one at a
+// time. Running off the end of the last metro wraps back to the first, which is
+// what keeps the prices current once the whole footprint has been read.
+function flippSource(chain: FlippChain): RetailerFeedSource {
+  const sourceUrl = `${FLIPP_WEB_ORIGIN}/en-us/weekly_ads`
+
+  const restartAtNextMetro = (postalIndex: number): FeedCursor => ({
+    kind: 'token',
+    token: encodeFlippCursor({
+      flyerIds: [],
+      flyerIndex: 0,
+      postalIndex: (postalIndex + 1) % chain.postalCodes.length,
+    }),
+  })
+
+  const metroFor = (postalIndex: number) =>
+    chain.postalCodes[postalIndex % chain.postalCodes.length]
+
+  return {
+    buildRequest(cursor) {
+      const plan = cursor.kind === 'token' ? decodeFlippCursor(cursor.token) : undefined
+      const postalCode = metroFor(plan?.postalIndex ?? 0)
+      const flyerId = plan?.flyerIds[plan.flyerIndex]
+
+      return {
+        init: { headers: { ...BROWSER_HEADERS, accept: 'application/json' } },
+        url: flyerId === undefined
+          ? buildFlippFlyerListUrl(postalCode)
+          : buildFlippFlyerItemsUrl(flyerId, postalCode),
+      }
+    },
+    countryCode: 'US',
+    currencyCode: 'USD',
+    decode: (body) => parseJsonObject(body, 'Flipp'),
+    initialCursor: {
+      kind: 'token',
+      token: encodeFlippCursor({ flyerIds: [], flyerIndex: 0, postalIndex: 0 }),
+    },
+    key: `flipp::${chain.retailerId}`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const plan = cursor.kind === 'token' ? decodeFlippCursor(cursor.token) : undefined
+      const postalIndex = plan?.postalIndex ?? 0
+
+      if (isFlippFlyerListPayload(payload)) {
+        const flyerIds = parseFlippFlyerList(payload, chain, capturedAt)
+
+        return {
+          candidates: [],
+          catalogues: [],
+          // A chain that is not trading in this metro this week costs one
+          // request, not a wasted sweep: move straight on to the next one.
+          nextCursor: flyerIds.length > 0
+            ? { kind: 'token', token: encodeFlippCursor({ flyerIds, flyerIndex: 0, postalIndex }) }
+            : restartAtNextMetro(postalIndex),
+        }
+      }
+
+      const flyerId = plan?.flyerIds[plan.flyerIndex]
+
+      if (!plan || flyerId === undefined) {
+        return { candidates: [], catalogues: [], nextCursor: restartAtNextMetro(postalIndex) }
+      }
+
+      const page = parseFlippFlyerItems(
+        payload,
+        { capturedAt, sourceUrl: officialSourceUrl },
+        { chain, flyerId, postalCode: metroFor(postalIndex) },
+      )
+      const nextFlyerIndex = plan.flyerIndex + 1
+
+      return {
+        ...page,
+        nextCursor: nextFlyerIndex < plan.flyerIds.length
+          ? {
+            kind: 'token',
+            token: encodeFlippCursor({
+              flyerIds: plan.flyerIds,
+              flyerIndex: nextFlyerIndex,
+              postalIndex,
+            }),
+          }
+          : restartAtNextMetro(postalIndex),
+      }
+    },
+    retailerId: chain.retailerId,
+    retailerName: chain.name,
+    sourceLabel: 'Weekly ad',
     sourceUrl,
   }
 }

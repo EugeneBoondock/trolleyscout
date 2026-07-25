@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { FLIPP_US_CHAINS } from '../../src/services/retailerFeeds/flipp'
 import { retailerSlug } from '../../src/services/retailerFeeds/types'
 import type {
   FeedCursor,
@@ -119,6 +120,25 @@ describe('structured retailer source decoders', () => {
       'takealot::promotion-campaigns-13',
       'takealot::promotion-campaigns-14',
       'takealot::promotion-campaigns-15',
+      'flipp::walmart',
+      'flipp::target',
+      'flipp::costco',
+      'flipp::sams-club',
+      'flipp::aldi-us',
+      'flipp::kroger',
+      'flipp::publix',
+      'flipp::heb',
+      'flipp::meijer',
+      'flipp::albertsons',
+      'flipp::safeway',
+      'flipp::lidl-us',
+      'flipp::sprouts',
+      'flipp::bjs',
+      'flipp::stop-and-shop',
+      'flipp::fred-meyer',
+      'flipp::hy-vee',
+      'flipp::food-lion',
+      'flipp::winn-dixie',
     ])
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
   })
@@ -629,3 +649,91 @@ function fakeStorage(cursors = new Map<string, FeedCursor>()) {
   }
   return storage satisfies RetailerFeedScoutStorage & { cursors: Map<string, FeedCursor> }
 }
+
+describe('flipp US chain sources', () => {
+  const source = getStructuredRetailerSources().find((entry) => entry.key === 'flipp::kroger')!
+  const capturedAt = '2026-07-25T10:00:00.000Z'
+  const cursorOf = (page: { nextCursor?: FeedCursor }) =>
+    JSON.parse((page.nextCursor as { token: string }).token)
+
+  it('carries the country and currency its prices are written in', () => {
+    expect(source.countryCode).toBe('US')
+    expect(source.currencyCode).toBe('USD')
+  })
+
+  it('asks for the flyer list before it knows any flyers', () => {
+    expect(source.buildRequest(source.initialCursor).url).toContain('/flipp/flyers?')
+  })
+
+  it('walks the flyers it found, one per run', () => {
+    const listPage = source.parse({
+      capturedAt,
+      cursor: source.initialCursor,
+      payload: {
+        flyers: [
+          { id: 11, merchant: 'Kroger', valid_to: '2026-08-30T23:59:59-04:00' },
+          { id: 22, merchant: 'Kroger', valid_to: '2026-08-30T23:59:59-04:00' },
+          { id: 33, merchant: 'Publix', valid_to: '2026-08-30T23:59:59-04:00' },
+        ],
+      },
+      sourceUrl: source.sourceUrl,
+    })
+
+    expect(listPage.candidates).toEqual([])
+    expect(cursorOf(listPage)).toMatchObject({ flyerIds: ['11', '22'], flyerIndex: 0 })
+    expect(source.buildRequest(listPage.nextCursor!).url).toContain('/flipp/flyers/11')
+
+    const firstFlyer = source.parse({
+      capturedAt,
+      cursor: listPage.nextCursor!,
+      payload: { items: [] },
+      sourceUrl: source.sourceUrl,
+    })
+    expect(cursorOf(firstFlyer)).toMatchObject({ flyerIndex: 1 })
+    expect(source.buildRequest(firstFlyer.nextCursor!).url).toContain('/flipp/flyers/22')
+  })
+
+  it('moves to the next metro when a chain is not trading in this one', () => {
+    const page = source.parse({
+      capturedAt,
+      cursor: source.initialCursor,
+      payload: { flyers: [{ id: 9, merchant: 'Aldi', valid_to: '2026-08-30T23:59:59-04:00' }] },
+      sourceUrl: source.sourceUrl,
+    })
+
+    expect(cursorOf(page)).toMatchObject({ flyerIds: [], postalIndex: 1 })
+  })
+
+  it('wraps back to the first metro after the last, so prices keep refreshing', () => {
+    const chain = FLIPP_US_CHAINS.find((entry) => entry.retailerId === 'kroger')!
+    const lastMetro = {
+      kind: 'token' as const,
+      token: JSON.stringify({
+        flyerIds: [],
+        flyerIndex: 0,
+        postalIndex: chain.postalCodes.length - 1,
+      }),
+    }
+
+    const page = source.parse({
+      capturedAt,
+      cursor: lastMetro,
+      payload: { flyers: [] },
+      sourceUrl: source.sourceUrl,
+    })
+
+    expect(cursorOf(page)).toMatchObject({ postalIndex: 0 })
+  })
+
+  it('recovers from an unreadable cursor instead of getting stuck', () => {
+    const page = source.parse({
+      capturedAt,
+      cursor: { kind: 'token', token: 'not json' },
+      payload: { items: [{ id: 1, name: 'x', price: '1.00' }] },
+      sourceUrl: source.sourceUrl,
+    })
+
+    expect(page.candidates).toEqual([])
+    expect(cursorOf(page)).toMatchObject({ postalIndex: 1 })
+  })
+})

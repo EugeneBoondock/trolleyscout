@@ -756,6 +756,8 @@ function storedItem(overrides: Partial<StoredDealItem> = {}): StoredDealItem {
     capturedAt: '2026-07-16T10:00:00.000Z',
     contentFingerprint: 'a'.repeat(64),
     createdAt: '2026-07-16T10:00:00.000Z',
+    countryCode: 'ZA',
+    currencyCode: 'ZAR',
     evidenceText: 'Official source price',
     expiresAt: '2026-07-17T10:00:00.000Z',
     id: 'normalized-1',

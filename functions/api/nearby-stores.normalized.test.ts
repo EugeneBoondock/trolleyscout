@@ -218,6 +218,8 @@ function item(
     capturedAt: '2026-07-16T10:00:00.000Z',
     contentFingerprint: id.padEnd(64, 'a').slice(0, 64),
     createdAt: '2026-07-16T10:00:00.000Z',
+    countryCode: 'ZA',
+    currencyCode: 'ZAR',
     evidenceText: 'Official source.',
     expiresAt: '2026-07-17T10:00:00.000Z',
     id,

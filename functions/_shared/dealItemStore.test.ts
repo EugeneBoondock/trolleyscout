@@ -21,6 +21,7 @@ import {
 const migrationUrls = [
   new NodeUrl('../../migrations/0013_deal_items.sql', import.meta.url),
   new NodeUrl('../../migrations/0033_deal_item_sold_out.sql', import.meta.url),
+  new NodeUrl('../../migrations/0034_deal_item_country.sql', import.meta.url),
 ]
 
 describe('deal item store', () => {
@@ -480,6 +481,84 @@ describe('deal item store', () => {
     expect(rows.results.map((row) => row.source_product_id)).toEqual(['readable-page'])
     expect(result.processed).toBe(1)
   })
+
+  it('files a deal under South Africa in rands when the source says nothing', async () => {
+    await upsertDealItems(env, {
+      candidates: [candidate()],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::all-savings',
+    })
+
+    const [item] = await listActiveDealItems(env, { now: '2026-07-17T10:00:00.000Z' })
+    expect(item.countryCode).toBe('ZA')
+    expect(item.currencyCode).toBe('ZAR')
+  })
+
+  it('keeps an American deal out of a South African feed', async () => {
+    // Without this the table has no idea a Walmart price is dollars, and a
+    // shopper in Cape Town is shown $7.00 as R7.00 beside the Checkers specials.
+    await upsertDealItems(env, {
+      candidates: [candidate()],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::all-savings',
+    })
+    await upsertDealItems(env, {
+      candidates: [candidate({
+        priceCents: 700,
+        productId: 'us-product-1',
+        productUrl: 'https://flipp.com/en-us/item/1-walmart-flyer?postal_code=30301',
+        retailerId: retailerSlug('walmart'),
+        sourceUrl: 'https://flipp.com/en-us/weekly_ads',
+      })],
+      countryCode: 'US',
+      currencyCode: 'USD',
+      retailerId: retailerSlug('walmart'),
+      sourceKey: 'flipp::walmart',
+    })
+
+    const now = '2026-07-17T10:00:00.000Z'
+    const southAfrican = await listActiveDealItems(env, { countryCode: 'ZA', now })
+    const american = await listActiveDealItems(env, { countryCode: 'US', now })
+
+    expect(southAfrican.map((item) => item.retailerId)).toEqual(['woolworths'])
+    expect(american.map((item) => item.retailerId)).toEqual(['walmart'])
+    expect(american[0].currencyCode).toBe('USD')
+  })
+
+  it('reads every country at once only when no country is asked for', async () => {
+    await upsertDealItems(env, {
+      candidates: [candidate()],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::all-savings',
+    })
+    await upsertDealItems(env, {
+      candidates: [candidate({
+        productId: 'us-product-1',
+        productUrl: 'https://flipp.com/en-us/item/1-target-flyer?postal_code=30301',
+        retailerId: retailerSlug('target'),
+        sourceUrl: 'https://flipp.com/en-us/weekly_ads',
+      })],
+      countryCode: 'US',
+      currencyCode: 'USD',
+      retailerId: retailerSlug('target'),
+      sourceKey: 'flipp::target',
+    })
+
+    const everywhere = await listActiveDealItems(env, { now: '2026-07-17T10:00:00.000Z' })
+    expect(everywhere).toHaveLength(2)
+  })
+
+  it.each([['USA'], ['z'], [''], ['12']])(
+    'refuses %s as a country rather than filing deals nobody queries',
+    async (countryCode) => {
+      await expect(upsertDealItems(env, {
+        candidates: [candidate()],
+        countryCode,
+        retailerId: retailerSlug('woolworths'),
+        sourceKey: 'woolworths::all-savings',
+      })).rejects.toThrow(TypeError)
+    },
+  )
 
 })
 

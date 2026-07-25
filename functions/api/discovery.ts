@@ -119,6 +119,7 @@ async function openEdgeCache(): Promise<Cache | undefined> {
 }
 
 export interface NormalizedDealReadOptions {
+  countryCode?: string
   listItems?: typeof listActiveDealItems
   pageSize?: number
   safetyCap?: number
@@ -207,7 +208,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
     isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
     readAllStorePromotions(env, nowIso, 3000, countryCode),
-    isSouthAfrica ? readNormalizedDealItems(env, nowIso) : Promise.resolve([]),
+    readNormalizedDealItems(env, nowIso, { countryCode }),
   ])
   let storePromotions = initialStorePromotions
   const interests = await getRequestInterests(env, session.account?.id)
@@ -419,7 +420,7 @@ export async function refreshDiscoveryCache(
     readDealSnapshots(env),
     readLeafletSnapshot(env),
     readAllStorePromotions(env, nowIso),
-    readNormalizedDealItems(env, nowIso),
+    readNormalizedDealItems(env, nowIso, { countryCode: 'ZA' }),
   ])
   const [settled, leaflets] = await Promise.all([
     options.refreshDeals === false
@@ -461,7 +462,12 @@ export async function readNormalizedDealItems(
   try {
     while (items.length < safetyCap) {
       const limit = Math.min(pageSize, safetyCap - items.length)
-      const page = await listItems(env, { limit, now, offset: items.length })
+      const page = await listItems(env, {
+        countryCode: options.countryCode,
+        limit,
+        now,
+        offset: items.length,
+      })
       items.push(...page)
 
       if (page.length < limit) {
@@ -1499,9 +1505,13 @@ function storedItemToDiscovery(
     expiresAt: item.expiresAt,
     id: item.id,
     imageUrl: item.imageUrl,
-    previousPriceText: meaningfulPreviousPriceText(item.previousPriceCents, item.priceCents),
+    previousPriceText: meaningfulPreviousPriceText(
+      item.previousPriceCents,
+      item.priceCents,
+      item.currencyCode,
+    ),
     priceScope: item.scope,
-    priceText: centsToRand(item.priceCents),
+    priceText: formatDealPrice(item.priceCents, item.currencyCode),
     productId: item.productId,
     productUrl: item.productUrl,
     promotionId: item.promotionId,
@@ -1633,8 +1643,23 @@ function discoveryScopeKey(deal: DiscoveredDeal) {
   return `store:${[...scope.storeIds].sort().join(',')}`
 }
 
-function centsToRand(cents: number) {
-  return `R${(cents / 100).toFixed(2)}`
+// Prices used to be rands by assumption, which was true while every shop was
+// South African. A Walmart price rendered that way reads as R7.00 when it
+// means $7.00 — a number nine tenths too small, pointing at the wrong country.
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  EUR: '€',
+  GBP: '£',
+  USD: '$',
+  ZAR: 'R',
+}
+
+function formatDealPrice(cents: number, currencyCode = 'ZAR') {
+  const amount = (cents / 100).toFixed(2)
+  const symbol = CURRENCY_SYMBOLS[currencyCode.toUpperCase()]
+
+  // A currency with no symbol we know is named outright rather than guessed
+  // at, since the wrong symbol is worse than none.
+  return symbol ? `${symbol}${amount}` : `${currencyCode.toUpperCase()} ${amount}`
 }
 
 // A "was" price of zero (feeds use 0 for "no previous price") or one at or
@@ -1643,9 +1668,10 @@ function centsToRand(cents: number) {
 export function meaningfulPreviousPriceText(
   previousPriceCents: number | undefined,
   priceCents: number,
+  currencyCode = 'ZAR',
 ): string | undefined {
   return previousPriceCents !== undefined && previousPriceCents > priceCents
-    ? centsToRand(previousPriceCents)
+    ? formatDealPrice(previousPriceCents, currencyCode)
     : undefined
 }
 

@@ -27,6 +27,8 @@ export interface StoredDealItem {
   contentFingerprint: string
   createdAt: string
   evidenceText: string
+  countryCode: string
+  currencyCode: string
   expiresAt: string
   id: string
   imageUrl?: string
@@ -62,6 +64,10 @@ export interface DealSourceRunInput {
 
 export interface UpsertDealItemsOptions {
   candidates: readonly RetailerDealCandidate[]
+  // Where these deals are for, and what their prices are written in. Both
+  // default to South Africa because every source predating them is one.
+  countryCode?: string
+  currencyCode?: string
   retailerId: string
   run?: DealSourceRunInput
   sourceKey: string
@@ -80,6 +86,9 @@ export type DealItemScopeFilter =
   | { storeIds: readonly string[]; type: 'store' }
 
 export interface ListActiveDealItemsOptions {
+  // Left out, this reads every country at once, which is only ever right for
+  // the sweep's own bookkeeping. Shopper-facing callers must pass one.
+  countryCode?: string
   limit?: number
   now?: string
   offset?: number
@@ -160,6 +169,8 @@ interface DealItemRow {
   updated_at: string
   valid_from: string | null
   valid_to: string | null
+  country_code: string
+  currency_code: string
 }
 
 interface SourceCursorRow {
@@ -174,6 +185,8 @@ export async function upsertDealItems(
   const db = requireDatabase(env)
   const sourceKey = requiredText(options.sourceKey, 'sourceKey', 300)
   const retailerId = requiredRetailerId(options.retailerId)
+  const countryCode = requiredCountryCode(options.countryCode ?? 'ZA')
+  const currencyCode = requiredCurrencyCode(options.currencyCode ?? 'ZAR')
 
   if (options.candidates.length > MAX_UPSERT_ITEMS) {
     throw new RangeError(`candidates cannot exceed ${MAX_UPSERT_ITEMS} rows per call`)
@@ -223,10 +236,11 @@ export async function upsertDealItems(
       terms_text, unit_text, evidence_text, product_url, source_url, source_kind,
       captured_at, valid_from, valid_to, expires_at, scope_type, scope_store_ids,
       scope_region_ids, excluded_store_ids, scope_key, content_fingerprint,
+      country_code, currency_code,
       status, created_at, updated_at, last_seen_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, 'active', ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?
     )
     ON CONFLICT (id) DO UPDATE SET
       source_key = excluded.source_key,
@@ -251,6 +265,8 @@ export async function upsertDealItems(
       scope_region_ids = excluded.scope_region_ids,
       excluded_store_ids = excluded.excluded_store_ids,
       content_fingerprint = excluded.content_fingerprint,
+      country_code = excluded.country_code,
+      currency_code = excluded.currency_code,
       status = 'active',
       updated_at = CASE
         WHEN deal_items.content_fingerprint <> excluded.content_fingerprint
@@ -311,6 +327,8 @@ export async function upsertDealItems(
     JSON.stringify(item.excludedStoreIds),
     item.scopeKey,
     item.contentFingerprint,
+    countryCode,
+    currencyCode,
     finishedAt,
     finishedAt,
     item.capturedAt,
@@ -339,6 +357,11 @@ function buildActiveDealItemsStatement(
 
   addInFilter(where, bindings, 'retailer_id', options.retailerIds, 'retailerIds')
   addInFilter(where, bindings, 'source_key', options.sourceKeys, 'sourceKeys')
+
+  if (options.countryCode !== undefined) {
+    where.push('country_code = ?')
+    bindings.push(requiredCountryCode(options.countryCode))
+  }
 
   if (options.scope) {
     where.push('scope_type = ?')
@@ -373,7 +396,7 @@ function buildActiveDealItemsStatement(
       terms_text, unit_text, evidence_text, product_url, source_url, source_kind,
       captured_at, valid_from, valid_to, expires_at, scope_type, scope_store_ids,
       scope_region_ids, excluded_store_ids, content_fingerprint, status,
-      created_at, updated_at, last_seen_at
+      created_at, updated_at, last_seen_at, country_code, currency_code
     FROM deal_items
     WHERE ${where.join(' AND ')}
     ORDER BY expires_at ASC, retailer_id ASC, title ASC, id ASC
@@ -641,7 +664,9 @@ function mapDealItemRow(row: DealItemRow): StoredDealItem {
   return {
     capturedAt: row.captured_at,
     contentFingerprint: row.content_fingerprint,
+    countryCode: row.country_code ?? 'ZA',
     createdAt: row.created_at,
+    currencyCode: row.currency_code ?? 'ZAR',
     evidenceText: row.evidence_text,
     expiresAt: row.expires_at,
     id: row.id,
@@ -818,6 +843,27 @@ function requiredRetailerId(value: string) {
     throw new TypeError('retailerId must be a lowercase retailer slug')
   }
   return parsed
+}
+
+// ISO 3166-1 alpha-2, upper-cased. Narrow on purpose: a country arriving in
+// some other shape is a caller bug, and letting it through would file deals
+// under a country nobody queries and hide them from everyone.
+function requiredCountryCode(value: string) {
+  const code = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  if (!/^[A-Z]{2}$/.test(code)) {
+    throw new TypeError('countryCode must be a two-letter ISO country code')
+  }
+  return code
+}
+
+// ISO 4217. Kept separate from the country because they genuinely disagree:
+// Zimbabwe's shops price in US dollars.
+function requiredCurrencyCode(value: string) {
+  const code = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  if (!/^[A-Z]{3}$/.test(code)) {
+    throw new TypeError('currencyCode must be a three-letter ISO currency code')
+  }
+  return code
 }
 
 function requiredText(value: unknown, field: string, maxLength: number) {

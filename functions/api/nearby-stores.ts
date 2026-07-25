@@ -456,10 +456,10 @@ function normalizedItemToDiscoveredDeal(
     imageUrl: item.imageUrl,
     previousPriceText:
       item.previousPriceCents !== undefined && item.previousPriceCents > item.priceCents
-        ? centsToRand(item.previousPriceCents)
+        ? formatDealPrice(item.previousPriceCents, item.currencyCode)
         : undefined,
     priceScope: item.scope,
-    priceText: centsToRand(item.priceCents),
+    priceText: formatDealPrice(item.priceCents, item.currencyCode),
     productId: item.productId,
     productUrl: item.productUrl,
     promotionId: item.promotionId,
@@ -488,9 +488,21 @@ function mergeNearMeDeals(...groups: DiscoveredDeal[][]): DiscoveredDeal[] {
   })
 }
 
-function centsToRand(value: number): string {
+// Near me can now surface a shop that does not price in rands, and the symbol
+// has to follow the deal rather than the app's home country.
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  EUR: '€',
+  GBP: '£',
+  USD: '$',
+  ZAR: 'R',
+}
+
+function formatDealPrice(value: number, currencyCode = 'ZAR'): string {
   const amount = value / 100
-  return `R${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)}`
+  const rounded = Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)
+  const symbol = CURRENCY_SYMBOLS[currencyCode.toUpperCase()]
+
+  return symbol ? `${symbol}${rounded}` : `${currencyCode.toUpperCase()} ${rounded}`
 }
 
 function groupValidLeafletsByRetailer(
