@@ -181,10 +181,31 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     _trackIndex = index;
     if (mounted) setState(() {});
     try {
-      await _music.stop();
+      // Only stop something that is actually running. Stopping a player that
+      // has never been given a source leaves it unprepared on Android, and the
+      // play that followed did nothing — which is why the shop opened silent
+      // and only found its music once the screen had been left and returned to,
+      // by which point a resume had woken the player up.
+      if (_music.state == PlayerState.playing ||
+          _music.state == PlayerState.paused) {
+        await _music.stop();
+      }
       await _music.play(AssetSource(_tracks[index].asset),
           volume: _musicVolume);
-    } catch (_) {}
+
+      // Starting is not the same as playing. The unmute button has always
+      // checked and retried; opening the screen never did, and that asymmetry
+      // was the whole bug.
+      if (_music.state != PlayerState.playing) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        if (_music.state != PlayerState.playing) {
+          await _music.play(AssetSource(_tracks[index].asset),
+              volume: _musicVolume);
+        }
+      }
+    } catch (_) {
+      // Music is a nicety; the feed works without it.
+    }
   }
 
   Future<void> _toggleMute() async {

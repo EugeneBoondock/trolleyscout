@@ -63,9 +63,11 @@ class _DealsScreenState extends State<DealsScreen> {
   String _query = '';
   String _retailerId = 'all';
   String _sourceLabel = 'all';
-  bool _imagesOnly = false;
-  bool _savingsOnly = false;
-  bool _advancedOpen = false;
+  // The image and savings chips came off the filter panel with the disclosure
+  // that held them. The filter itself stays, so a future entry point can set
+  // it without the plumbing having to be rebuilt.
+  final bool _imagesOnly = false;
+  final bool _savingsOnly = false;
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
@@ -467,11 +469,9 @@ class _DealsScreenState extends State<DealsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('DEAL FINDER', style: TS.eyebrowOf(context)),
-                const SizedBox(height: 4),
-                const Text('Source-backed specials',
-                    style:
-                        TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+                // No page title here. "Marketplace" is already on the tab the
+                // shopper pressed to arrive, and a 26pt heading repeating it
+                // pushed the first deal most of a screen further down.
                 if (staleNote != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -709,12 +709,6 @@ class _DealsScreenState extends State<DealsScreen> {
     List<String> sources,
     int totalDealCount,
   ) {
-    final activeCount = [
-      _retailerId != 'all',
-      _sourceLabel != 'all',
-      _imagesOnly,
-      _savingsOnly,
-    ].where((active) => active).length;
     // Two form fields side by side stop fitting once the shopper scales text
     // up, so they stack instead of squeezing — same rule ScreenHeader uses.
     final stacked = MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
@@ -760,59 +754,28 @@ class _DealsScreenState extends State<DealsScreen> {
       ),
       child: Column(
         children: [
-          ListTile(
-            title: const Text('Advanced filters',
-                style: TextStyle(fontWeight: FontWeight.w900)),
-            subtitle: activeCount == 0
-                ? const Text('Retailer, source, images and savings')
-                : Text('$activeCount active'),
-            trailing:
-                Icon(_advancedOpen ? Icons.expand_less : Icons.expand_more),
-            onTap: () => setState(() => _advancedOpen = !_advancedOpen),
-          ),
-          if (_advancedOpen)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                children: [
-                  if (stacked) ...[
-                    retailerField,
-                    const SizedBox(height: 8),
-                    sourceField,
-                  ] else
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: retailerField),
-                        const SizedBox(width: 8),
-                        Expanded(child: sourceField),
-                      ],
-                    ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
+          // Straight to the two filters that get used. They sat behind an
+          // "Advanced filters" disclosure that had to be opened on every
+          // visit, which is a tap and a title spent on hiding a store picker.
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: stacked
+                ? Column(
                     children: [
-                      FilterChip(
-                        label: const Text('Has image'),
-                        selected: _imagesOnly,
-                        onSelected: (selected) => setState(() {
-                          _imagesOnly = selected;
-                          _page = 0;
-                        }),
-                      ),
-                      FilterChip(
-                        label: const Text('Shows savings'),
-                        selected: _savingsOnly,
-                        onSelected: (selected) => setState(() {
-                          _savingsOnly = selected;
-                          _page = 0;
-                        }),
-                      ),
+                      retailerField,
+                      const SizedBox(height: 8),
+                      sourceField,
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: retailerField),
+                      const SizedBox(width: 8),
+                      Expanded(child: sourceField),
                     ],
                   ),
-                ],
-              ),
-            ),
+          ),
         ],
       ),
     );

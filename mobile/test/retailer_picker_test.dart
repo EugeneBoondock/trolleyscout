@@ -243,8 +243,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Advanced filters'));
-    await tester.pumpAndSettle();
+    // The filters sit on the page now rather than behind a disclosure, so
+    // there is nothing to open first.
+    expect(find.text('Advanced filters'), findsNothing);
 
     // Only Source is still a dropdown; Retailer became the picker trigger.
     expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);

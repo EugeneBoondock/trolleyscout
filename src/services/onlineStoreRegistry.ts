@@ -267,6 +267,50 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
   // Netherlands, and the same presentment-currency caution as the United
   // States applies: a discount reads the same in any currency, but the amount
   // is only euros when the request comes from Europe.
+  // Argentina. Of 87 hosts probed in July 2026 these answered with a working
+  // discount feed, and almost every one runs on VTEX — the platform most of
+  // Argentine retail sits on, whose public catalogue search reports the list
+  // price and the price actually charged side by side. That includes the
+  // supermarkets a shopper actually uses: Jumbo, Disco, Vea, Dia and Masonline.
+  //
+  // Two things cost a first sweep most of this list, and both are worth
+  // recording. The bare domains redirect to www and the redirected JSON came
+  // back empty, and the search needed asking without VTEX's 'H:1' filter,
+  // which quietly returns nothing on these shops. Fravega is the one large
+  // chain still out of reach, on a 403.
+  //
+  // Counts were taken from the first fifty products of each catalogue, so they
+  // are a floor rather than a total.
+  AR: [
+    // Beauty
+    store("Beauty", "Get The Look", "https://www.getthelook.com.ar/"),
+    // Fashion
+    store("Fashion", "47 Street", "https://www.47street.com.ar/"),
+    store("Fashion", "Portsaid", "https://www.portsaid.com.ar/"),
+    // Food & drink
+    store("Food & drink", "Bonafide", "https://www.bonafide.com.ar/"),
+    // Groceries
+    store("Groceries", "Dia", "https://www.diaonline.supermercadosdia.com.ar/"),
+    store("Groceries", "Disco", "https://www.disco.com.ar/"),
+    store("Groceries", "Jumbo", "https://www.jumbo.com.ar/"),
+    store("Groceries", "Masonline", "https://www.masonline.com.ar/"),
+    store("Groceries", "Vea", "https://www.vea.com.ar/"),
+    // Hardware
+    store("Hardware", "Blaisten", "https://www.blaisten.com.ar/"),
+    store("Hardware", "Easy", "https://www.easy.com.ar/"),
+    // Health
+    store("Health", "Farmacity", "https://www.farmacity.com/"),
+    store("Health", "Farmaonline", "https://www.farmaonline.com/"),
+    // Home
+    store("Home", "Liliana", "https://www.liliana.com.ar/"),
+    // Sport
+    store("Sport", "Sportline", "https://www.sportline.com.ar/"),
+    // Tech
+    store("Tech", "BGH", "https://www.bgh.com.ar/"),
+    store("Tech", "Cetrogar", "https://www.cetrogar.com.ar/"),
+    store("Tech", "Naldo", "https://www.naldo.com.ar/"),
+    store("Tech", "On City", "https://www.oncity.com/"),
+  ],
   NL: [
     // Baby
     store("Baby", "Babywinkel.nl", "https://www.babywinkel.nl/"),

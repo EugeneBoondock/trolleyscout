@@ -39,6 +39,30 @@ const property = (
 ): PropertySource => ({ label, ...urls })
 
 export const PROPERTY_SOURCES: Readonly<Record<string, readonly PropertySource[]>> = {
+  // Argentina. Zonaprop and Properati both refuse us outright (403 and 401),
+  // and RE/MAX Argentina renders its results in the browser, so Argenprop is
+  // what is left that answers with listings in the page.
+  //
+  // It is registered honestly rather than optimistically: its Buenos Aires
+  // sale pages read cleanly — eighteen homes, every one priced — while other
+  // cities and its rental pages give up far less, because the card markup
+  // changes between them and rentals are quoted in pesos rather than dollars.
+  // The web-search pass that runs for every country covers what this misses.
+  AR: [
+    property('Argenprop', {
+      rentUrl: 'https://www.argenprop.com/departamentos/alquiler/{location}',
+      saleUrl: 'https://www.argenprop.com/casas/venta/{location}',
+    }),
+  ],
+  // Paraguay. InfoCasas answers directly and reads cleanly on both sides,
+  // which is the whole of what is reachable there today: Clasipar does not
+  // resolve at all.
+  PY: [
+    property('InfoCasas', {
+      rentUrl: 'https://www.infocasas.com.py/alquiler/casas/{location}',
+      saleUrl: 'https://www.infocasas.com.py/venta/casas/{location}',
+    }),
+  ],
   NL: [
     // Structured listings with a real euro price per card.
     property('Rentola', { rentUrl: 'https://rentola.nl/huren/{location}' }),

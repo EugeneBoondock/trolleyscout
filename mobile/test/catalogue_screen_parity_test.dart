@@ -25,15 +25,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Overview'), findsNothing);
-    expect(find.text('Advanced filters'), findsOneWidget);
-    expect(find.text('All retailers'), findsNothing);
 
-    await tester.tap(find.text('Advanced filters'));
-    await tester.pumpAndSettle();
+    // The two filters that get used are on the page, not behind a disclosure
+    // that had to be opened on every visit.
+    expect(find.text('Advanced filters'), findsNothing);
     expect(find.text('All retailers'), findsOneWidget);
     expect(find.text('All sources'), findsOneWidget);
-    expect(find.text('Has image'), findsOneWidget);
-    expect(find.text('Shows savings'), findsOneWidget);
 
     // Catalogues now live on their own tab, deduped by retailer.
     await tester.tap(find.byType(Tab).at(1));
