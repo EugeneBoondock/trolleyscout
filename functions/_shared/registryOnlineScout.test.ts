@@ -49,6 +49,17 @@ describe('buildRegistryOnlineStores', () => {
     expect(za.every((store) => store.countryCode === 'ZA')).toBe(true)
   })
 
+  it('sweeps United States storefronts, which have no country directory either', () => {
+    const us = buildRegistryOnlineStores(['US'])
+
+    expect(us.length).toBeGreaterThan(150)
+    expect(us.every((store) => store.countryCode === 'US')).toBe(true)
+    // The country name needs no article here, but the currency must be right:
+    // a US shop priced in dollars must not inherit a rand label.
+    expect(us.every((store) => store.countryName === 'United States')).toBe(true)
+    expect(us.map((store) => store.placeId)).toContain('online:us:allbirds.com')
+  })
+
   it('merges the country directory and the online registry without repeating a host', () => {
     const zw = buildRegistryOnlineStores(['ZW'])
     const hosts = zw.map((store) => store.placeId)

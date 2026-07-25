@@ -18,7 +18,7 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 - [Community offers](https://trolleyscout.co.za/api/offers): community-submitted local offers
 - [Vouchers](https://trolleyscout.co.za/api/vouchers): current voucher deals
 - [Sponsored listings](https://trolleyscout.co.za/api/public-ads?placement=feed): live sponsored listings by placement
-- [Geocode](https://trolleyscout.co.za/api/geocode?q=Soweto): geocode a South African address to coordinates
+- [Geocode](https://trolleyscout.co.za/api/geocode?q=Soweto): geocode an address to coordinates
 - [Health](https://trolleyscout.co.za/api/health): service liveness
 
 ## Agents

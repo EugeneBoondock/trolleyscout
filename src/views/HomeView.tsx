@@ -27,6 +27,24 @@ const SOUTH_AFRICA: CountryOption = {
   name: 'South Africa',
 }
 
+// A handful of country names read as a phrase rather than a place, so they
+// need a definite article: "across the United States", not "across United
+// States". Everything else is used as given.
+const COUNTRY_NAMES_TAKING_THE = new Set([
+  'Central African Republic',
+  'Czech Republic',
+  'Dominican Republic',
+  'Netherlands',
+  'Philippines',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States',
+])
+
+function countryPhrase(name: string): string {
+  return COUNTRY_NAMES_TAKING_THE.has(name) ? `the ${name}` : name
+}
+
 // The mall's departments. `needsAccount` marks the aisles that sit behind the
 // free sign-in gate so nobody walks into a wall without warning.
 type Department = {
@@ -111,7 +129,7 @@ export function HomeView({
       <section className="home-hero" aria-labelledby="home-hero-title">
         <div className="home-hero-copy">
           <p className="eyebrow">
-            {country.flag ? `${country.flag} ` : ''}For households in {country.name}
+            {country.flag ? `${country.flag} ` : ''}For households in {countryPhrase(country.name)}
           </p>
           <h1 id="home-hero-title">
             Stretch <mark>every budget</mark>.
@@ -119,7 +137,8 @@ export function HomeView({
             Find the right deal.
           </h1>
           <p className="hero-text">
-            One place for the specials, catalogues, and store prices across {country.name}. Every
+            One place for the specials, catalogues, and store prices across{' '}
+            {countryPhrase(country.name)}. Every
             amount you see here links back to the retailer page it was read from.
           </p>
           <div className="hero-actions">

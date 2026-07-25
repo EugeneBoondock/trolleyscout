@@ -27,6 +27,19 @@ describe('HomeView punctuation', () => {
     expect(container.textContent).toContain('Rice 2kg: save R10')
   })
 
+  it('gives a country name its article when the name needs one', () => {
+    const { container } = render(
+      <HomeView
+        country={{ code: 'US', currencyCode: 'USD', flag: '', name: 'United States' }}
+        onOpen={vi.fn()}
+      />,
+    )
+
+    // "For households in United States" reads as a mistake to an American.
+    expect(container.textContent).toContain('For households in the United States')
+    expect(container.textContent).toContain('store prices across the United States')
+  })
+
   it('shows country-matched shopping copy without country-specific support content', () => {
     const { container } = render(
       <HomeView
