@@ -47,6 +47,15 @@ import {
   parseMrPriceFeed,
 } from '../../src/services/retailerFeeds/mrPrice'
 import {
+  BOXER_PROVINCES,
+  buildBoxerPromotionsUrl,
+  parseBoxerLeaflets,
+} from '../../src/services/retailerFeeds/boxer'
+import {
+  ROOTS_SPECIALS_URL,
+  parseRootsLeaflets,
+} from '../../src/services/retailerFeeds/roots'
+import {
   PEP_COLLECTIONS_URL,
   PEP_ORIGIN,
   PEP_SHARD_COUNT,
@@ -89,8 +98,12 @@ import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 
 const PAGE_SIZE = 100
 // One request per source per run, so the budget must cover every registered
-// source or the ones at the end of the list never run at all.
-export const DEFAULT_REQUEST_CAP = 45
+// source or the ones at the end of the list never run at all. That is not
+// hypothetical: Takealot's shards sat past the end of this budget and fetched
+// nothing however many times the sweep ran. A test holds this above the source
+// count, so adding a source that would not fit fails the build rather than
+// quietly starving whatever sits last.
+export const DEFAULT_REQUEST_CAP = 60
 const MAX_REQUEST_CAP = 80
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
@@ -311,6 +324,8 @@ const structuredSources: readonly RetailerFeedSource[] = [
   bobshopSource(),
   mrPriceSource(),
   ...Array.from({ length: PEP_SHARD_COUNT }, (_, shard) => pepSource(shard)),
+  rootsSource(),
+  ...BOXER_PROVINCES.map((province) => boxerSource(province)),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
 ]
 
@@ -993,6 +1008,48 @@ function bobshopSource(): RetailerFeedSource {
     retailerName: 'Bob Shop',
     sourceLabel: 'Featured listings',
     sourceUrl: BOBSHOP_HOME_URL,
+  }
+}
+
+// Roots Butchery runs 175 stores off one national month-end leaflet, with the
+// dates written only into the heading above the PDF link.
+function rootsSource(): RetailerFeedSource {
+  return {
+    buildRequest() {
+      return { init: { headers: STOREFRONT_HTML_HEADERS }, url: ROOTS_SPECIALS_URL }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'roots-butchery::monthly-specials',
+    parse({ capturedAt, payload, sourceUrl }) {
+      return parseRootsLeaflets(String(payload), { capturedAt, sourceUrl })
+    },
+    retailerId: retailerSlug('roots-butchery'),
+    retailerName: 'Roots Butchery',
+    sourceLabel: 'Monthly specials',
+    sourceUrl: ROOTS_SPECIALS_URL,
+  }
+}
+
+// Boxer publishes a leaflet per province, so each province is its own source
+// and a shopper is offered the one that applies where they live.
+function boxerSource(province: string): RetailerFeedSource {
+  const sourceUrl = buildBoxerPromotionsUrl(province)
+
+  return {
+    buildRequest() {
+      return { init: { headers: STOREFRONT_HTML_HEADERS }, url: sourceUrl }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 0 },
+    key: `boxer::leaflets-${province}`,
+    parse({ capturedAt, payload }) {
+      return parseBoxerLeaflets(String(payload), { capturedAt, sourceUrl }, province)
+    },
+    retailerId: retailerSlug('boxer'),
+    retailerName: 'Boxer',
+    sourceLabel: `Leaflets (${province})`,
+    sourceUrl,
   }
 }
 

@@ -78,6 +78,17 @@ describe('structured retailer source decoders', () => {
       'pep::promotions-3',
       'pep::promotions-4',
       'pep::promotions-5',
+      'roots-butchery::monthly-specials',
+      'boxer::leaflets-eastern-cape',
+      'boxer::leaflets-free-state',
+      'boxer::leaflets-gauteng',
+      'boxer::leaflets-kzn',
+      'boxer::leaflets-limpopo',
+      'boxer::leaflets-mpumalanga',
+      'boxer::leaflets-northern-cape',
+      'boxer::leaflets-north-west',
+      'boxer::leaflets-western-cape',
+      'boxer::leaflets-eswatini',
       // Takealot's campaign sweep is sharded so the whole catalogue is walked
       // in about a day rather than over a week.
       'takealot::promotion-campaigns-0',
