@@ -42,6 +42,13 @@ reachable and neither was being read. Nothing is published without a date window
 that could be read and has not closed — a shopper drives out for a leaflet, so an
 expired one costs them a trip.
 
+**Mr Price, which had never once shown a deal.** Its markdowns were being read
+from the wrong half of the payload, so a dress on the shelf at R200 that was
+R299.99 looked like a full-price dress. Both kinds of Mr Price offer now come
+through: 186 markdowns across every department, and 66 multibuy items — "take 2
+for R130" — carried at the real shelf price with the offer in Mr Price's own
+words, because that saving happens at the till rather than on the shelf.
+
 **Every shop's whole catalogue, not just the front.** New World showed 5 deals
 while running well over a hundred, because its discounts are scattered through
 the catalogue rather than gathered at the front. The same six requests now reach
@@ -103,9 +110,7 @@ Shoprite. A branch is now credited with what its chain published as well as what
 was found at its own door, and the two are reported separately.
 
 **The retailer picker lists every shop we scout**, not just the ones with deals
-on screen — a quiet shop now says it is quiet instead of vanishing. Mr Price had
-disappeared permanently, because they mark down without ever recording a previous
-price.
+on screen — a quiet shop now says it is quiet instead of vanishing.
 
 **Window shopping**: the arrows are gone from the image carousel, leaving the
 dots; comment counts show on deals; the song indicator is tappable through to the
@@ -120,9 +125,9 @@ reading their own analytics can see the visit came from here.
 
 > Trolley Scout now finds deals at the big American supermarkets — Walmart,
 > Costco, Target, Kroger, Publix, ALDI, H-E-B and a dozen more — and shows every
-> price in your own country's money. New shops in Argentina and Paraguay, Makro's
-> full catalogue, and Roots and Boxer leaflets. Tap a deal and it opens that
-> deal. Sold-out items now say so.
+> price in your own country's money. Mr Price deals are here at last, along with
+> Makro's full catalogue, Roots and Boxer leaflets, and new shops in Argentina
+> and Paraguay. Tap a deal and it opens that deal. Sold-out items now say so.
 
 ---
 
@@ -141,9 +146,6 @@ reading their own analytics can see the visit came from here.
   filters to a shopper's nearest.
 - **No user-facing country picker.** Country is detected, with an admin override.
   A shopper detected wrongly cannot fix it themselves.
-- **Mr Price still shows no deals.** They price markdowns without ever recording
-  a previous price, so there is no saving to publish. They now appear in the
-  picker as a shop with nothing on, which is the honest answer.
 - **Shoprite and Checkers have ~739 live deals pinned to single store IDs** and
   invisible to shoppers. Still open — it needs a decision between publishing them
   chain-wide with the branch named, or resolving per-branch store codes.
