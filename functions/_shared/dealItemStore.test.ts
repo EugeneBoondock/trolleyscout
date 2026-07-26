@@ -22,6 +22,7 @@ const migrationUrls = [
   new NodeUrl('../../migrations/0013_deal_items.sql', import.meta.url),
   new NodeUrl('../../migrations/0033_deal_item_sold_out.sql', import.meta.url),
   new NodeUrl('../../migrations/0034_deal_item_country.sql', import.meta.url),
+  new NodeUrl('../../migrations/0037_source_run_catalogue_count.sql', import.meta.url),
 ]
 
 describe('deal item store', () => {

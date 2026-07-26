@@ -27,8 +27,10 @@ const BASELINE_WINDOW_HOURS = 72
 /// Snapshots older than this are history nobody reads.
 const RETAIN_HOURS = 30 * 24
 
-/// Runs that answered without error and without a single deal, this many times
-/// in a row, are not "quiet" — nothing legitimately returns nothing forever.
+/// Runs that answered without error and produced neither a deal nor a leaflet,
+/// this many times over, are not "quiet" — nothing legitimately returns nothing
+/// forever. Leaflets count, or the ten Boxer provinces and Roots would be
+/// reported dead for doing exactly what they are for.
 const BARREN_RUN_LIMIT = 6
 
 export type SourceHealthLevel = 'collapsed' | 'barren' | 'failing' | 'truncated'
@@ -174,6 +176,7 @@ export async function readSourceHealth(
                  WHERE r2.source_key = r1.source_key
                    AND r2.status = 'success'
                    AND r2.candidate_count = 0
+                   AND COALESCE(r2.catalogue_count, 0) = 0
                    AND r2.created_at >= ?) AS barren_runs,
                ROW_NUMBER() OVER (PARTITION BY source_key ORDER BY created_at DESC) AS rank
           FROM deal_source_runs AS r1

@@ -37,14 +37,18 @@ export function parseFoodLoversFeed(
       continue
     }
 
-    if (textValue(record, 'type') === 'PDF') {
+    // A leaflet is a leaflet whichever way Food Lovers chose to render it.
+    // Thirteen live ones were being dropped here because this asked for the
+    // literal type "PDF" and the feed had started saying "Image" — the same
+    // records, carrying the same pdf_url, for the same fortnight.
+    const documentUrl = textValue(record, 'pdf_url')
+
+    if (documentUrl) {
       const title = textValue(record, 'title') || textValue(id, 'post_title')
-      const documentUrl = textValue(record, 'pdf_url')
 
       if (
         !productId ||
         !title ||
-        !documentUrl ||
         !isCatalogueWindowRelevant({
           capturedAt: context.capturedAt,
           validFrom: window.validFrom,

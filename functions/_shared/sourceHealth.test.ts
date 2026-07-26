@@ -12,6 +12,7 @@ const migrationUrls = [
   new NodeUrl('../../migrations/0033_deal_item_sold_out.sql', import.meta.url),
   new NodeUrl('../../migrations/0034_deal_item_country.sql', import.meta.url),
   new NodeUrl('../../migrations/0036_source_health.sql', import.meta.url),
+  new NodeUrl('../../migrations/0037_source_run_catalogue_count.sql', import.meta.url),
 ]
 
 const NOW = '2026-07-26T12:00:00.000Z'
@@ -56,15 +57,16 @@ describe('source health', () => {
     status: string,
     candidateCount: number,
     createdAt: string,
+    catalogueCount = 0,
   ) {
     await db.prepare(
       `INSERT INTO deal_source_runs
         (id, source_key, retailer_id, status, started_at, finished_at,
-         candidate_count, written_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+         candidate_count, written_count, created_at, catalogue_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     ).bind(
       `run-${sourceKey}-${createdAt}`, sourceKey, retailerId, status,
-      createdAt, createdAt, candidateCount, createdAt,
+      createdAt, createdAt, candidateCount, createdAt, catalogueCount,
     ).run()
   }
 
@@ -188,6 +190,18 @@ describe('source health', () => {
     it('leaves a source alone that is merely having a quiet run or two', async () => {
       await run('boxer::leaflets-gauteng', 'boxer', 'success', 0, hoursBefore(2))
       await run('boxer::leaflets-gauteng', 'boxer', 'success', 0, hoursBefore(1))
+
+      const report = await readSourceHealth(env, NOW)
+      expect(report.alerts).toEqual([])
+    })
+
+    it('does not call a leaflet source barren for publishing leaflets', async () => {
+      // Boxer runs ten provincial leaflets and Roots one national one. None of
+      // them has ever produced a priced deal, because that is not what they
+      // are; reporting all eleven dead would have been most of the alarm.
+      for (let index = 0; index < 9; index += 1) {
+        await run('boxer::leaflets-gauteng', 'boxer', 'success', 0, hoursBefore(index + 1), 1)
+      }
 
       const report = await readSourceHealth(env, NOW)
       expect(report.alerts).toEqual([])

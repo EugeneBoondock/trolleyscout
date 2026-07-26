@@ -55,6 +55,9 @@ export interface StoredDealItem {
 }
 
 export interface DealSourceRunInput {
+  /// Leaflets this run produced. A source that answers with catalogues and no
+  /// priced deals is doing its job, and the health alarm needs to know that.
+  catalogueCount?: number
   errorText?: string
   finishedAt?: string
   id?: string
@@ -284,8 +287,8 @@ export async function upsertDealItems(
   const audit = db.prepare(
     `INSERT INTO deal_source_runs (
       id, source_key, retailer_id, status, started_at, finished_at,
-      candidate_count, written_count, error_text, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      candidate_count, written_count, error_text, created_at, catalogue_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
   ).bind(
     runId,
     sourceKey,
@@ -296,6 +299,7 @@ export async function upsertDealItems(
     options.candidates.length,
     errorText,
     finishedAt,
+    Math.max(0, Math.trunc(Number(options.run?.catalogueCount ?? 0)) || 0),
   )
 
   const upserts = normalized.map((item) => upsert.bind(

@@ -70,7 +70,6 @@ describe('structured retailer source decoders', () => {
       'decathlon::prices-drop',
       'evetech::specials',
       'loot::sale',
-      'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
       'mr-price::promotions',
@@ -237,7 +236,6 @@ describe('structured retailer source decoders', () => {
       'decathlon::prices-drop',
       'evetech::specials',
       'loot::sale',
-      'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
       'mr-price::promotions',
@@ -277,8 +275,6 @@ describe('structured retailer source decoders', () => {
       .toBe('https://www.evetech.co.za/amd-laptops-on-special/l/682')
     expect(find('loot::sale').buildRequest({ kind: 'page', page: 0 }).url)
       .toBe('https://www.loot.co.za/sale')
-    expect(find('wootware::open-box-specials').buildRequest({ kind: 'page', page: 0 }).url)
-      .toBe('https://www.wootware.co.za/computer-hardware/open-box-reburbished-specials')
     expect(find('bobshop::featured-listings').buildRequest({ kind: 'page', page: 0 }).url)
       .toBe('https://www.bobshop.co.za/')
 

@@ -101,11 +101,6 @@ import {
 } from '../../src/services/retailerFeeds/takealot'
 import { parseWoolworthsFeed } from '../../src/services/retailerFeeds/woolworths'
 import {
-  WOOTWARE_SPECIALS_URL,
-  decodeWootwareDataLayer,
-  parseWootwareFeed,
-} from '../../src/services/retailerFeeds/wootware'
-import {
   retailerSlug,
   type FeedCursor,
   type RetailerCatalogueRecord,
@@ -350,7 +345,14 @@ const structuredSources: readonly RetailerFeedSource[] = [
   decathlonSource(),
   evetechSource(),
   lootSource(),
-  wootwareSource(),
+  // Wootware is unregistered, not deleted: its whole site sits behind a bot
+  // challenge that answers 403 to anything without a browser completing a
+  // JavaScript check, which a Worker cannot do. It failed every run for weeks
+  // and held zero deals. Left in place because the day they drop the challenge
+  // this is one line to restore — but a source that can never answer keeps the
+  // health alarm permanently red, and an alarm nobody believes is worse than
+  // no alarm.
+  // wootwareSource(),
   bobshopSource(),
   mrPriceSource(),
   mrPricePromosSource(),
@@ -506,6 +508,7 @@ export async function runStructuredRetailerFeedScout(
         currencyCode: source.currencyCode,
         retailerId: source.retailerId,
         run: {
+          catalogueCount: page.catalogues.length,
           finishedAt: now(),
           startedAt,
           status: 'success',
@@ -1004,28 +1007,6 @@ function lootSource(): RetailerFeedSource {
 // Cloudflare answers some scheduled runs with a 403 interstitial. That is a
 // transient failure the run already records per source, so nothing here treats
 // it specially: the next run simply tries again.
-function wootwareSource(): RetailerFeedSource {
-  return {
-    buildRequest(cursor) {
-      requireCursor(cursor, 'page')
-      return {
-        init: { headers: STOREFRONT_HTML_HEADERS },
-        url: WOOTWARE_SPECIALS_URL,
-      }
-    },
-    decode: decodeWootwareDataLayer,
-    initialCursor: { kind: 'page', page: 0 },
-    key: 'wootware::open-box-specials',
-    parse({ capturedAt, payload, sourceUrl }) {
-      return parseWootwareFeed(payload, { capturedAt, sourceUrl })
-    },
-    retailerId: retailerSlug('wootware'),
-    retailerName: 'Wootware',
-    sourceLabel: 'Open-box specials',
-    sourceUrl: WOOTWARE_SPECIALS_URL,
-  }
-}
-
 function bobshopSource(): RetailerFeedSource {
   return {
     buildRequest(cursor) {
