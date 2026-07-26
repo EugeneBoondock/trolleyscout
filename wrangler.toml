@@ -12,3 +12,6 @@ migrations_dir = "migrations"
 binding = "MEDIA"
 bucket_name = "trolley-scout-media"
 preview_bucket_name = "trolley-scout-media-preview"
+
+[[send_email]]
+name = "EMAIL"

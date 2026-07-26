@@ -159,6 +159,8 @@ describe('Trolley Scout for Business', () => {
     expect(await screen.findByRole('heading', { name: 'Run your storefront' })).toBeTruthy()
     expect(screen.getByLabelText('Email')).toBeTruthy()
     expect(screen.getByLabelText('Password')).toBeTruthy()
+    expect(screen.getByText(/Subscribe and apply in Trolley Scout/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull()
   })
 
   it('shows the application state instead of exposing portal navigation', async () => {

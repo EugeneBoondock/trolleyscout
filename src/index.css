@@ -3986,6 +3986,172 @@ main {
   object-fit: contain;
 }
 
+.deal-product-image-button {
+  display: block;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.deal-product-image-button:focus-visible {
+  outline: 3px solid var(--red-bright);
+  outline-offset: 3px;
+}
+
+.marketplace-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(20 16 12 / 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.marketplace-viewer-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(58rem, 96vw);
+  height: min(47rem, 92svh);
+  overflow: hidden;
+  border: 3px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
+}
+
+.marketplace-viewer-head,
+.marketplace-viewer-foot {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  background: var(--surface);
+}
+
+.marketplace-viewer-head {
+  border-bottom: 2px solid var(--line);
+}
+
+.marketplace-viewer-head h2,
+.marketplace-viewer-head p {
+  margin: 0;
+}
+
+.marketplace-viewer-head h2 {
+  margin-top: 0.2rem;
+  font-size: clamp(1.25rem, 3vw, 1.8rem);
+}
+
+.marketplace-viewer-stage {
+  position: relative;
+  min-height: 0;
+  background: var(--surface-soft);
+}
+
+.marketplace-viewer-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.marketplace-viewer-track::-webkit-scrollbar {
+  display: none;
+}
+
+.marketplace-viewer-slide {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  scroll-snap-align: center;
+}
+
+.marketplace-viewer-slide img {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.marketplace-viewer-arrow {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-50%);
+}
+
+.marketplace-viewer-arrow.is-previous {
+  left: 1rem;
+}
+
+.marketplace-viewer-arrow.is-next {
+  right: 1rem;
+}
+
+.marketplace-viewer-arrow:disabled {
+  opacity: 0.35;
+}
+
+.marketplace-viewer-counter {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.marketplace-viewer-foot {
+  border-top: 2px solid var(--line);
+}
+
+.marketplace-viewer-foot > div {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.marketplace-viewer-foot strong {
+  color: var(--red);
+  font-family: var(--display);
+  font-size: 1.55rem;
+  font-weight: 400;
+}
+
+.marketplace-viewer-foot span {
+  color: var(--muted);
+}
+
+.marketplace-viewer-product {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .deal-price-line {
   display: flex;
   flex-wrap: wrap;
@@ -5248,6 +5414,340 @@ main {
   gap: 1.2rem;
 }
 
+.business-application-status,
+.business-application-form {
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+}
+
+.business-application-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1.1rem 1.2rem;
+  border-left: 6px solid var(--yellow);
+}
+
+.business-application-status.is-approved {
+  border-left-color: var(--green);
+}
+
+.business-application-status.is-rejected {
+  border-left-color: var(--red);
+}
+
+.business-application-status h2,
+.business-application-status p,
+.business-application-heading h2,
+.business-application-heading p {
+  margin: 0;
+}
+
+.business-application-status h2,
+.business-application-heading h2 {
+  margin-top: 0.15rem;
+  font-size: 1.3rem;
+}
+
+.business-application-status p:not(.eyebrow),
+.business-application-heading p:not(.eyebrow) {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.business-application-status .primary-button {
+  flex-shrink: 0;
+}
+
+.business-application-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.business-application-heading,
+.business-application-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.business-application-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.business-application-form label,
+.admin-review-note {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.business-application-form input,
+.business-application-form textarea,
+.admin-review-note textarea {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0.75rem 0.8rem;
+  font: inherit;
+  font-weight: 500;
+}
+
+.business-application-form input:focus,
+.business-application-form textarea:focus,
+.admin-review-note textarea:focus {
+  outline: 3px solid color-mix(in srgb, var(--green) 24%, transparent);
+  outline-offset: 1px;
+}
+
+.business-application-form input::placeholder,
+.business-application-form textarea::placeholder,
+.admin-review-note textarea::placeholder {
+  color: var(--faint);
+}
+
+.business-application-actions {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.admin-business-applications {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.admin-business-applications .section-heading {
+  align-items: flex-end;
+}
+
+.admin-business-applications .section-heading p:not(.eyebrow) {
+  max-width: 62ch;
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.admin-queue-count,
+.admin-business-loading {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.admin-queue-count {
+  padding: 0.5rem 0.7rem;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+}
+
+.admin-business-loading,
+.admin-business-empty {
+  padding: 1.2rem;
+  border: 2px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.admin-business-empty {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  color: var(--muted);
+}
+
+.admin-business-empty strong {
+  color: var(--ink);
+}
+
+.admin-business-empty p {
+  margin: 0;
+}
+
+.admin-business-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-business-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem;
+  border: 2px solid var(--line);
+  border-left: 6px solid var(--yellow);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+}
+
+.admin-business-card.is-approved {
+  border-left-color: var(--green);
+}
+
+.admin-business-card.is-rejected {
+  border-left-color: var(--red);
+}
+
+.admin-business-card > header,
+.admin-business-card > footer,
+.admin-business-identity,
+.admin-business-badges {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.admin-business-card > header,
+.admin-business-card > footer {
+  justify-content: space-between;
+}
+
+.admin-business-identity > span {
+  display: grid;
+  flex: 0 0 2.7rem;
+  place-items: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  background: var(--yellow);
+  color: #1c1710;
+  font-family: var(--display);
+  font-size: 1.2rem;
+}
+
+.admin-business-identity h3,
+.admin-business-identity p,
+.admin-business-description,
+.admin-review-history p {
+  margin: 0;
+}
+
+.admin-business-identity h3 {
+  margin-top: 0.1rem;
+  font-size: 1.25rem;
+}
+
+.admin-business-identity p:not(.eyebrow),
+.admin-business-description,
+.admin-review-history p {
+  color: var(--muted);
+}
+
+.admin-business-badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-state-badge,
+.admin-plan-badge {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.35rem 0.55rem;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.admin-state-badge.is-approved,
+.admin-plan-badge.is-active {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+  background: color-mix(in srgb, var(--green) 12%, var(--surface));
+  color: var(--green);
+}
+
+.admin-state-badge.is-rejected {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  color: var(--red);
+}
+
+.admin-business-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.admin-business-details div {
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1.5px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.admin-business-details dt {
+  margin-bottom: 0.2rem;
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.admin-business-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 0.87rem;
+  font-weight: 650;
+}
+
+.admin-business-details a {
+  color: var(--green);
+}
+
+.admin-review-history {
+  padding: 0.75rem;
+  border-left: 4px solid var(--yellow);
+  background: var(--surface-soft);
+}
+
+.admin-review-history p {
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 760px) {
+  .business-application-status,
+  .business-application-heading,
+  .admin-business-card > header,
+  .admin-business-card > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .business-application-status .primary-button {
+    align-self: flex-start;
+  }
+
+  .business-application-grid,
+  .admin-business-details {
+    grid-template-columns: 1fr;
+  }
+
+  .business-application-heading .icon-button {
+    position: absolute;
+    align-self: flex-end;
+  }
+
+  .admin-business-badges {
+    justify-content: flex-start;
+  }
+}
+
 .profile-head {
   display: flex;
   gap: 1rem;
@@ -5576,6 +6076,34 @@ main {
     height: 5.2rem;
   }
 
+  .marketplace-viewer-backdrop {
+    padding: 0.45rem;
+  }
+
+  .marketplace-viewer-card {
+    width: 100%;
+    height: calc(100svh - 0.9rem);
+  }
+
+  .marketplace-viewer-head,
+  .marketplace-viewer-foot {
+    padding: 0.85rem;
+  }
+
+  .marketplace-viewer-foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .marketplace-viewer-product {
+    width: 100%;
+  }
+
+  .marketplace-viewer-arrow {
+    width: 2.7rem;
+    height: 2.7rem;
+  }
+
   .offer-actions {
     justify-content: flex-start;
   }
@@ -5682,6 +6210,25 @@ main {
   .leaflet-modal-foot .ghost-button {
     flex: 1 1 auto;
     justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .member-topbar {
+    gap: 0.25rem;
+    padding-inline: 0.55rem;
+  }
+
+  .member-topbar .brand-mark {
+    min-width: 0;
+  }
+
+  .member-topbar .brand-mark > span:last-child {
+    display: none;
+  }
+
+  .member-topbar-actions {
+    gap: 0.1rem;
   }
 }
 

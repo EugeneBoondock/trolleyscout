@@ -52,6 +52,17 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
+  if (isBusinessHost(request)) {
+    return json(
+      {
+        issues: [
+          'Apply from the Organisation subscription in the Trolley Scout consumer app. The business workspace is for approved subscribers.',
+        ],
+      },
+      { headers: privateHeaders, status: 403 },
+    )
+  }
+
   let body: Record<string, unknown>
 
   try {
@@ -92,4 +103,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     },
     { headers: privateHeaders },
   )
+}
+
+function isBusinessHost(request: Request): boolean {
+  const hostname = new URL(request.url).hostname.toLowerCase()
+  return hostname === 'org.trolleyscout.co.za' || hostname === 'org.localhost'
 }

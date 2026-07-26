@@ -46,6 +46,23 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
+    if (draft.intent === 'signup' && isBusinessHost(request)) {
+      return json(
+        {
+          issues: [
+            'Business access is invitation-only. Subscribe and apply in the Trolley Scout consumer app, then sign in here after approval.',
+          ],
+          session: {
+            isAuthenticated: false,
+          },
+        },
+        {
+          headers: privateHeaders,
+          status: 403,
+        },
+      )
+    }
+
     // "signup" creates the account with a password; "login" verifies one.
     const country = detectRequestCountry(request)
     const result =
@@ -112,4 +129,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   return methodNotAllowed(request.method, 'GET, POST, DELETE')
+}
+
+function isBusinessHost(request: Request): boolean {
+  const hostname = new URL(request.url).hostname.toLowerCase()
+  return hostname === 'org.trolleyscout.co.za' || hostname === 'org.localhost'
 }

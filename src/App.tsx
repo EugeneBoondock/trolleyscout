@@ -48,6 +48,7 @@ import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
 import { RetailerPicker } from './components/RetailerPicker'
 import { AdminPublicationReview } from './business/AdminPublicationReview'
+import { AdminOrganizationApplications } from './business/AdminOrganizationApplications'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -93,6 +94,7 @@ import {
   startMemberSession,
   cancelScheduledPlanChange,
   startSubscriptionCheckout,
+  submitBusinessApplication,
   updateAccountProfile,
   updateBasketItemForMember,
   createDealWatch,
@@ -122,6 +124,7 @@ import type {
   MemberSessionDraft,
   OfferDraft,
   OfferValidationResult,
+  OrganizationApplicationDraft,
   Retailer,
   SavedDeal,
   SourceKind,
@@ -1931,7 +1934,7 @@ function MemberShell({
   onAddDealToBasket: (deal: DiscoveredDeal) => void
   onClaimVoucher: (voucherId: string) => void | Promise<void>
   onCancelScheduledChange: () => void
-  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
+  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => Promise<void>
   onCloseSidebar: () => void
   onDeleteBasketItem: (id: string) => void
   onDeleteOffer: (id: string) => void
@@ -3052,7 +3055,7 @@ function formatPlanDate(value: string) {
     : parsed.toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-function SubscriptionPanel({
+export function SubscriptionPanel({
   account,
   checkoutPlanId,
   country,
@@ -3066,7 +3069,7 @@ function SubscriptionPanel({
   country: CountryContext
   memberNotice?: string
   onCancelScheduledChange: () => void
-  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => void
+  onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => Promise<void>
   subscriptionState: ResourceState<SubscriptionResource>
 }) {
   // The subscription payload carries the freshest billing state, including any
@@ -3076,12 +3079,49 @@ function SubscriptionPanel({
   // opens showing what they actually have rather than a price they don't.
   const planCycle = billingAccount.billingCycle
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(planCycle ?? 'annual')
+  const [applicationOpen, setApplicationOpen] = useState(false)
+  const [applicationBusy, setApplicationBusy] = useState(false)
+  const [applicationIssues, setApplicationIssues] = useState<string[]>([])
+  const [applicationDraft, setApplicationDraft] = useState<OrganizationApplicationDraft>({
+    contactEmail: account.email,
+    contactName: account.displayName,
+    description: '',
+    organisationName: '',
+  })
   const pendingPlanId = billingAccount.pendingPlanId
   const pendingEffectiveAt = billingAccount.pendingEffectiveAt
   // Every paid plan is quoted in the same currency, so the first one that
   // carries a local price speaks for the panel.
   const quoteCurrency =
     subscriptionState.data.plans.find((plan) => plan.localPrices)?.localPrices?.currencyCode ?? 'ZAR'
+  const businessApplication = subscriptionState.data.businessApplications[0]
+
+  function updateApplicationField(name: keyof OrganizationApplicationDraft, value: string) {
+    setApplicationDraft((current) => ({ ...current, [name]: value }))
+  }
+
+  async function submitApplication(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setApplicationBusy(true)
+    setApplicationIssues([])
+
+    try {
+      const result = await submitBusinessApplication(applicationDraft)
+      if (!result.ok) {
+        setApplicationIssues(
+          result.issues.length > 0
+            ? result.issues
+            : ['Your business application could not be sent. Try again.'],
+        )
+        return
+      }
+
+      setApplicationOpen(false)
+      await onCheckout('organization', billingCycle)
+    } finally {
+      setApplicationBusy(false)
+    }
+  }
 
   return (
     <section className="subscription-panel" aria-label="Subscription">
@@ -3138,6 +3178,178 @@ function SubscriptionPanel({
         </button>
       </div>
 
+      {businessApplication && (
+        <div className={clsx('business-application-status', `is-${businessApplication.status}`)} role="status">
+          <div>
+            <p className="eyebrow">Trolley Scout for Business</p>
+            <h2>
+              {businessApplication.status === 'pending'
+                ? businessApplication.businessSubscriptionActive
+                  ? 'Payment confirmed, admin review pending'
+                  : 'Business details saved'
+                : businessApplication.status === 'approved'
+                  ? businessApplication.businessSubscriptionActive
+                    ? 'Your business workspace is ready'
+                    : 'Approval saved, subscription inactive'
+                  : 'Your application needs an update'}
+            </h2>
+            <p>
+              {businessApplication.status === 'pending'
+                ? businessApplication.businessSubscriptionActive
+                  ? 'The admin can now review your business. You will receive an access email after approval.'
+                  : 'Finish the Organisation subscription so the admin can approve your application.'
+                : businessApplication.status === 'approved'
+                  ? businessApplication.businessSubscriptionActive
+                    ? 'Use the approval email or open the business workspace below.'
+                    : 'Reactivate the Organisation subscription to restore business access.'
+                  : businessApplication.reviewNote ??
+                    'Update the business details and send a new application from this page.'}
+            </p>
+          </div>
+          {businessApplication.status === 'approved' &&
+            businessApplication.businessSubscriptionActive && (
+              <a className="primary-button" href="https://org.trolleyscout.co.za/">
+                <Storefront size={18} />
+                Open business workspace
+              </a>
+            )}
+        </div>
+      )}
+
+      {applicationOpen && (
+        <form className="business-application-form" onSubmit={submitApplication}>
+          <div className="business-application-heading">
+            <div>
+              <p className="eyebrow">Organisation application</p>
+              <h2>Tell us about your business</h2>
+              <p>
+                Your details go to the Trolley Scout admin for review. Checkout starts after the form is saved.
+              </p>
+            </div>
+            <button
+              aria-label="Close business application"
+              className="icon-button"
+              onClick={() => setApplicationOpen(false)}
+              type="button"
+            >
+              <X size={19} />
+            </button>
+          </div>
+          <div className="business-application-grid">
+            <label>
+              Registered business name
+              <input
+                onChange={(event) => updateApplicationField('organisationName', event.target.value)}
+                required
+                value={applicationDraft.organisationName}
+              />
+            </label>
+            <label>
+              Trading name
+              <input
+                onChange={(event) => updateApplicationField('tradingName', event.target.value)}
+                value={applicationDraft.tradingName ?? ''}
+              />
+            </label>
+            <label>
+              Registration number
+              <input
+                onChange={(event) => updateApplicationField('registrationNumber', event.target.value)}
+                value={applicationDraft.registrationNumber ?? ''}
+              />
+            </label>
+            <label>
+              Business category
+              <input
+                onChange={(event) => updateApplicationField('category', event.target.value)}
+                placeholder="Grocer, fashion, restaurant"
+                value={applicationDraft.category ?? ''}
+              />
+            </label>
+            <label>
+              Contact person
+              <input
+                autoComplete="name"
+                onChange={(event) => updateApplicationField('contactName', event.target.value)}
+                required
+                value={applicationDraft.contactName}
+              />
+            </label>
+            <label>
+              Contact email
+              <input
+                autoComplete="email"
+                onChange={(event) => updateApplicationField('contactEmail', event.target.value)}
+                required
+                type="email"
+                value={applicationDraft.contactEmail}
+              />
+            </label>
+            <label>
+              Contact phone
+              <input
+                autoComplete="tel"
+                inputMode="tel"
+                onChange={(event) => updateApplicationField('contactPhone', event.target.value)}
+                value={applicationDraft.contactPhone ?? ''}
+              />
+            </label>
+            <label>
+              Website
+              <input
+                inputMode="url"
+                onChange={(event) => updateApplicationField('websiteUrl', event.target.value)}
+                placeholder="https://"
+                value={applicationDraft.websiteUrl ?? ''}
+              />
+            </label>
+            <label>
+              City or town
+              <input
+                onChange={(event) => updateApplicationField('city', event.target.value)}
+                value={applicationDraft.city ?? ''}
+              />
+            </label>
+            <label>
+              Province
+              <input
+                onChange={(event) => updateApplicationField('province', event.target.value)}
+                value={applicationDraft.province ?? ''}
+              />
+            </label>
+          </div>
+          <label>
+            What does your business sell?
+            <textarea
+              minLength={20}
+              onChange={(event) => updateApplicationField('description', event.target.value)}
+              required
+              rows={4}
+              value={applicationDraft.description}
+            />
+          </label>
+          {applicationIssues.length > 0 && (
+            <div className="form-errors" role="alert">
+              {applicationIssues.map((issue) => <p key={issue}>{issue}</p>)}
+            </div>
+          )}
+          <div className="business-application-actions">
+            <button
+              className="ghost-button"
+              disabled={applicationBusy}
+              onClick={() => setApplicationOpen(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button className="primary-button" disabled={applicationBusy} type="submit">
+              <Storefront size={18} />
+              {applicationBusy ? 'Saving business details' : 'Save details and continue'}
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="plan-grid">
         {subscriptionState.data.plans.map((plan) => {
           const isCurrentPlan = plan.id === billingAccount.planId
@@ -3160,8 +3372,20 @@ function SubscriptionPanel({
             monthlyEquivalent(plan.id, billingCycle) <
             monthlyEquivalent(billingAccount.planId, planCycle ?? billingCycle)
           const isComingSoon = plan.comingSoon === true
+          const isBusinessPlan = plan.id === 'organization'
+          const needsBusinessApplication =
+            isBusinessPlan &&
+            (!businessApplication || businessApplication.status === 'rejected')
           const buttonText = isCurrent
             ? 'Current plan'
+            : needsBusinessApplication
+              ? businessApplication?.status === 'rejected'
+                ? 'Update Organisation application'
+                : 'Apply for Organisation access'
+              : isBusinessPlan &&
+                  businessApplication?.status === 'pending' &&
+                  !businessApplication.businessSubscriptionActive
+                ? 'Finish Organisation subscription'
             : isComingSoon
               ? 'Coming soon'
               : needsBilling
@@ -3254,7 +3478,13 @@ function SubscriptionPanel({
               <button
                 className={isCurrent ? 'ghost-button' : 'primary-button'}
                 disabled={isCurrent || isComingSoon || checkoutPlanId === plan.id || needsBilling}
-                onClick={() => onCheckout(plan.id, billingCycle)}
+                onClick={() => {
+                  if (needsBusinessApplication) {
+                    setApplicationOpen(true)
+                    return
+                  }
+                  void onCheckout(plan.id, billingCycle)
+                }}
                 type="button"
               >
                 <Wallet size={18} />
@@ -3973,6 +4203,8 @@ function AdminConsole() {
             ))}
           </div>
 
+          <AdminOrganizationApplications />
+
           <AdminPublicationReview />
 
           <div className="section-heading">
@@ -4011,6 +4243,7 @@ function AdminConsole() {
                       <option value="free">Free</option>
                       <option value="scout">Scout</option>
                       <option value="household">Household</option>
+                      <option value="organization">Organisation</option>
                     </select>
                   </span>
                   <span role="cell">
@@ -4905,6 +5138,153 @@ function recordBusinessPublicationEvent(
   void recordOrganizationPublicationEvent(deal.id, event).catch(() => undefined)
 }
 
+function discoveryDealImages(deal: DiscoveredDeal) {
+  const seen = new Set<string>()
+  return [deal.imageUrl, ...(deal.images ?? [])]
+    .map((value) => value?.trim())
+    .filter((value): value is string => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
+}
+
+function MarketplaceImageViewer({
+  deal,
+  onClose,
+}: {
+  deal: DiscoveredDeal
+  onClose: () => void
+}) {
+  const images = discoveryDealImages(deal)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [index, setIndex] = useState(0)
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  function showImage(next: number) {
+    const clamped = Math.max(0, Math.min(next, images.length - 1))
+    setIndex(clamped)
+    const track = trackRef.current
+    if (track) {
+      const left = track.clientWidth * clamped
+      if (typeof track.scrollTo === 'function') {
+        track.scrollTo({ behavior: 'smooth', left })
+      } else {
+        track.scrollLeft = left
+      }
+    }
+  }
+
+  function handleScroll() {
+    const track = trackRef.current
+    if (!track || track.clientWidth === 0) return
+    setIndex(Math.round(track.scrollLeft / track.clientWidth))
+  }
+
+  return (
+    <div
+      className="marketplace-viewer-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      role="presentation"
+    >
+      <section
+        aria-label={`${deal.title} images`}
+        aria-modal="true"
+        className="marketplace-viewer-card"
+        role="dialog"
+      >
+        <header className="marketplace-viewer-head">
+          <div>
+            <p className="eyebrow">{deal.retailerName}</p>
+            <h2>{deal.title}</h2>
+          </div>
+          <button
+            aria-label="Close product images"
+            className="icon-button"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="marketplace-viewer-stage">
+          <div
+            className="marketplace-viewer-track"
+            onScroll={handleScroll}
+            ref={trackRef}
+          >
+            {images.map((image, imageIndex) => (
+              <div className="marketplace-viewer-slide" key={`${image}-${imageIndex}`}>
+                <img
+                  alt={`${deal.title}, image ${imageIndex + 1}`}
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  src={image}
+                />
+              </div>
+            ))}
+          </div>
+          {images.length > 1 && (
+            <>
+              <button
+                aria-label="Previous image"
+                className="marketplace-viewer-arrow is-previous"
+                disabled={index === 0}
+                onClick={() => showImage(index - 1)}
+                type="button"
+              >
+                <ArrowLeft size={22} />
+              </button>
+              <button
+                aria-label="Next image"
+                className="marketplace-viewer-arrow is-next"
+                disabled={index === images.length - 1}
+                onClick={() => showImage(index + 1)}
+                type="button"
+              >
+                <ArrowRight size={22} />
+              </button>
+            </>
+          )}
+          <span className="marketplace-viewer-counter">
+            {index + 1} of {images.length}
+          </span>
+        </div>
+
+        <footer className="marketplace-viewer-foot">
+          <div>
+            {deal.priceText && <strong>{deal.priceText}</strong>}
+            {deal.savingText && <span>{deal.savingText}</span>}
+          </div>
+          <a
+            className="primary-button marketplace-viewer-product"
+            href={withReferralSource(deal.productUrl)}
+            onClick={() => {
+              recordBusinessPublicationEvent(deal, 'open')
+              recordBusinessPublicationEvent(deal, 'outbound')
+            }}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View product
+            <LinkSimple size={17} />
+          </a>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
 function DiscoveryPanel({
   canRunDiscovery = false,
   canWatchItems = false,
@@ -4940,6 +5320,7 @@ function DiscoveryPanel({
   const [dealQuery, setDealQuery] = useState(initialFilter?.query ?? '')
   const [watchNotice, setWatchNotice] = useState('')
   const [isWatching, setIsWatching] = useState(false)
+  const [previewDeal, setPreviewDeal] = useState<DiscoveredDeal>()
 
   const watchCurrentQuery = async () => {
     setIsWatching(true)
@@ -5028,7 +5409,8 @@ function DiscoveryPanel({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Deal finder</p>
-          <h1>Source-backed specials</h1>
+          <h1>Marketplace</h1>
+          <p>Source-backed specials from stores and approved businesses.</p>
           <p className="freshness-line">{describeFreshness(discovery.refreshedAt)}</p>
         </div>
         {canRunDiscovery && (
@@ -5152,15 +5534,25 @@ function DiscoveryPanel({
             <article className="discovery-deal-row" key={deal.id}>
               <div className="discovery-deal-main">
                 {deal.imageUrl && (
-                  <img
-                    alt={deal.title}
-                    className="deal-product-image"
-                    decoding="async"
-                    loading="lazy"
-                    onError={(event) => { event.currentTarget.hidden = true }}
-                    referrerPolicy="no-referrer"
-                    src={deal.imageUrl}
-                  />
+                  <button
+                    aria-label={`View images for ${deal.title}`}
+                    className="deal-product-image-button"
+                    onClick={() => {
+                      setPreviewDeal(deal)
+                      recordBusinessPublicationEvent(deal, 'open')
+                    }}
+                    type="button"
+                  >
+                    <img
+                      alt=""
+                      className="deal-product-image"
+                      decoding="async"
+                      loading="lazy"
+                      onError={(event) => { event.currentTarget.hidden = true }}
+                      referrerPolicy="no-referrer"
+                      src={deal.imageUrl}
+                    />
+                  </button>
                 )}
                 <div>
                   <p className="eyebrow">
@@ -5302,6 +5694,10 @@ function DiscoveryPanel({
       )}
 
       {activeTab === 'catalogues' && <CatalogueGroupsBoard leaflets={leaflets} />}
+
+      {previewDeal && (
+        <MarketplaceImageViewer deal={previewDeal} onClose={() => setPreviewDeal(undefined)} />
+      )}
 
     </section>
   )

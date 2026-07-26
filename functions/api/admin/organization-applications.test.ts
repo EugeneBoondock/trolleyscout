@@ -18,7 +18,14 @@ vi.mock('../../_shared/organizationStore', () => ({
 import { onRequest } from './organization-applications'
 
 const ENDPOINT = 'https://trolleyscout.co.za/api/admin/organization-applications'
-const queued = { accountId: 'member-1', id: 'org-app-1', status: 'pending' }
+const queued = {
+  accountId: 'member-1',
+  contactEmail: 'owner@freshmarket.co.za',
+  contactName: 'Thandi Nkosi',
+  id: 'org-app-1',
+  organisationName: 'Fresh Market',
+  status: 'pending',
+}
 const organization = { id: 'org-1', name: 'Fresh Market', slug: 'fresh-market', status: 'active' }
 
 describe('/api/admin/organization-applications', () => {
@@ -91,6 +98,29 @@ describe('/api/admin/organization-applications', () => {
       'org-app-1',
       'approved',
       'Verified against CIPC.',
+    )
+  })
+
+  it('sends the approved owner a business workspace link', async () => {
+    signedInAs('admin-1', 'admin')
+    const send = vi.fn().mockResolvedValue(undefined)
+
+    const response = await invoke(
+      decide({ applicationId: 'org-app-1', decision: 'approved' }),
+      { EMAIL: { send } },
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: { emailSent: true },
+    })
+    expect(send).toHaveBeenCalledOnce()
+    expect(send.mock.calls[0]?.[0]).toMatchObject({
+      subject: expect.stringContaining('workspace'),
+      to: expect.any(String),
+    })
+    expect(JSON.stringify(send.mock.calls[0]?.[0])).toContain(
+      'https://org.trolleyscout.co.za/?approved=1',
     )
   })
 
@@ -180,6 +210,6 @@ function decide(body: Record<string, unknown>, method = 'POST') {
   })
 }
 
-function invoke(request: Request) {
-  return onRequest({ env: { DB: {} }, request } as never)
+function invoke(request: Request, bindings: Record<string, unknown> = {}) {
+  return onRequest({ env: { DB: {}, ...bindings }, request } as never)
 }

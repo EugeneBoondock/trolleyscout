@@ -96,6 +96,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
+  Future<void> _startBusinessPlan(
+    MemberPlan plan,
+    SubscriptionData data,
+  ) async {
+    final application = data.businessApplications.isEmpty
+        ? null
+        : data.businessApplications.first;
+    if (application == null || application.status == 'rejected') {
+      final submitted = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (context) => _BusinessApplicationSheet(
+          api: widget.api,
+          account: data.account,
+        ),
+      );
+      if (submitted != true || !mounted) return;
+      _reload();
+    }
+    await _choose(plan, data.account?.planId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<SubscriptionData>(
@@ -223,15 +246,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         onPressed:
                             data.account?.planId == plan.id || _busyPlan != null
                                 ? null
-                                : () => _choose(plan, data.account?.planId),
+                                : () => plan.id == 'organization'
+                                    ? _startBusinessPlan(plan, data)
+                                    : _choose(plan, data.account?.planId),
                         child: Text(
                           data.account?.planId == plan.id
                               ? 'Current plan'
                               : _busyPlan == plan.id
                                   ? 'Opening checkout'
-                                  : plan.isPaid
-                                      ? 'Start ${plan.name}'
-                                      : 'Use Free',
+                                  : plan.id == 'organization' &&
+                                          (data.businessApplications.isEmpty ||
+                                              data.businessApplications.first
+                                                      .status ==
+                                                  'rejected')
+                                      ? 'Apply for Organisation access'
+                                      : plan.isPaid
+                                          ? 'Start ${plan.name}'
+                                          : 'Use Free',
                         ),
                       ),
                     ),
@@ -254,4 +285,217 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       },
     );
   }
+}
+
+class _BusinessApplicationSheet extends StatefulWidget {
+  const _BusinessApplicationSheet({
+    required this.api,
+    required this.account,
+  });
+
+  final Api api;
+  final MemberAccount? account;
+
+  @override
+  State<_BusinessApplicationSheet> createState() =>
+      _BusinessApplicationSheetState();
+}
+
+class _BusinessApplicationSheetState extends State<_BusinessApplicationSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _organisationName = TextEditingController();
+  final _tradingName = TextEditingController();
+  final _registrationNumber = TextEditingController();
+  final _category = TextEditingController();
+  late final TextEditingController _contactName =
+      TextEditingController(text: widget.account?.displayName ?? '');
+  late final TextEditingController _contactEmail =
+      TextEditingController(text: widget.account?.email ?? '');
+  final _contactPhone = TextEditingController();
+  final _websiteUrl = TextEditingController();
+  final _city = TextEditingController();
+  final _province = TextEditingController();
+  final _description = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final controller in [
+      _organisationName,
+      _tradingName,
+      _registrationNumber,
+      _category,
+      _contactName,
+      _contactEmail,
+      _contactPhone,
+      _websiteUrl,
+      _city,
+      _province,
+      _description,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.api.submitOrganizationApplication(
+        OrganizationApplicationDraft(
+          organisationName: _organisationName.text.trim(),
+          tradingName: _tradingName.text.trim(),
+          registrationNumber: _registrationNumber.text.trim(),
+          category: _category.text.trim(),
+          contactName: _contactName.text.trim(),
+          contactEmail: _contactEmail.text.trim(),
+          contactPhone: _contactPhone.text.trim(),
+          websiteUrl: _websiteUrl.text.trim(),
+          city: _city.text.trim(),
+          province: _province.text.trim(),
+          description: _description.text.trim(),
+        ),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Tell us about your business',
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.merge(TS.display),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close application',
+                      onPressed:
+                          _busy ? null : () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your details go to the Trolley Scout admin. Organisation checkout starts after the form is saved.',
+                  style: TextStyle(color: TS.mutedOf(context), height: 1.45),
+                ),
+                const SizedBox(height: 18),
+                _applicationField(
+                  controller: _organisationName,
+                  label: 'Registered business name',
+                  required: true,
+                ),
+                _applicationField(
+                    controller: _tradingName, label: 'Trading name'),
+                _applicationField(
+                    controller: _registrationNumber,
+                    label: 'Registration number'),
+                _applicationField(
+                    controller: _category, label: 'Business category'),
+                _applicationField(
+                  controller: _contactName,
+                  label: 'Contact person',
+                  required: true,
+                ),
+                _applicationField(
+                  controller: _contactEmail,
+                  label: 'Contact email',
+                  keyboardType: TextInputType.emailAddress,
+                  required: true,
+                ),
+                _applicationField(
+                  controller: _contactPhone,
+                  label: 'Contact phone',
+                  keyboardType: TextInputType.phone,
+                ),
+                _applicationField(
+                  controller: _websiteUrl,
+                  label: 'Website',
+                  keyboardType: TextInputType.url,
+                ),
+                _applicationField(controller: _city, label: 'City or town'),
+                _applicationField(controller: _province, label: 'Province'),
+                TextFormField(
+                  controller: _description,
+                  decoration: const InputDecoration(
+                      labelText: 'What does your business sell?'),
+                  maxLines: 4,
+                  minLines: 3,
+                  validator: (value) =>
+                      value == null || value.trim().length < 20
+                          ? 'Enter at least 20 characters.'
+                          : null,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _submit,
+                  icon: _busy
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.storefront_outlined),
+                  label: Text(
+                    _busy
+                        ? 'Saving business details'
+                        : 'Save details and continue',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _applicationField({
+    required TextEditingController controller,
+    required String label,
+    TextInputType? keyboardType,
+    bool required = false,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextFormField(
+          controller: controller,
+          decoration: InputDecoration(labelText: label),
+          keyboardType: keyboardType,
+          validator: required
+              ? (value) => value == null || value.trim().isEmpty
+                  ? 'This field is required.'
+                  : null
+              : null,
+        ),
+      );
 }

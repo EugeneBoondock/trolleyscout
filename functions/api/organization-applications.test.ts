@@ -121,6 +121,25 @@ describe('/api/organization-applications', () => {
     expect(mocks.submitOrganizationApplication).not.toHaveBeenCalled()
   })
 
+  it('refuses applications submitted from the business domain', async () => {
+    signedInAs('member-1')
+
+    const response = await invoke(new Request(
+      'https://org.trolleyscout.co.za/api/organization-applications',
+      {
+        body: JSON.stringify(applicationBody),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      },
+    ))
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      data: { issues: [expect.stringContaining('consumer app')] },
+    })
+    expect(mocks.submitOrganizationApplication).not.toHaveBeenCalled()
+  })
+
   it('refuses an oversized body before parsing it', async () => {
     signedInAs('member-1')
 

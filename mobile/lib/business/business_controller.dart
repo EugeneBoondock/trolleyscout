@@ -69,11 +69,10 @@ class BusinessController extends ChangeNotifier {
   Future<bool> submitApplication(
     BusinessOrganizationApplicationDraft draft,
   ) async {
-    return _run(() async {
-      await api.submitApplication(draft);
-      bootstrap = await api.bootstrap();
-      notice = 'Your business application was submitted.';
-    });
+    error =
+        'Apply from the Organisation subscription in the Trolley Scout consumer app.';
+    notifyListeners();
+    return false;
   }
 
   Future<BusinessPublication?> savePublication(

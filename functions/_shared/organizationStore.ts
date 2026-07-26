@@ -31,6 +31,9 @@ export interface OrganizationApplication {
   city?: string
   province?: string
   status: OrganizationApplicationStatus
+  planId?: string
+  planStatus?: string
+  businessSubscriptionActive: boolean
   reviewNote?: string
   reviewedAt?: string
   createdAt: string
@@ -96,6 +99,8 @@ interface ApplicationRow {
   reviewed_at: string | null
   created_at: string
   updated_at: string
+  member_plan_id?: string | null
+  member_plan_status?: string | null
 }
 
 interface OrganizationRow {
@@ -109,13 +114,14 @@ interface OrganizationRow {
   updated_at: string
 }
 
-const APPLICATION_COLUMNS =
-  'id, account_id, organisation_name, trading_name, registration_number, contact_name, ' +
-  'contact_email, contact_phone, website_url, category, description, city, province, ' +
-  'status, review_note, reviewed_at, created_at, updated_at'
-
-const ORGANIZATION_COLUMNS =
-  'id, account_id, application_id, name, slug, status, created_at, updated_at'
+const APPLICATION_WITH_PLAN_COLUMNS =
+  'application.id, application.account_id, application.organisation_name, ' +
+  'application.trading_name, application.registration_number, application.contact_name, ' +
+  'application.contact_email, application.contact_phone, application.website_url, ' +
+  'application.category, application.description, application.city, application.province, ' +
+  'application.status, application.review_note, application.reviewed_at, ' +
+  'application.created_at, application.updated_at, account.plan_id AS member_plan_id, ' +
+  'account.plan_status AS member_plan_status'
 
 const MAX_LENGTH = {
   category: 60,
@@ -227,8 +233,11 @@ export async function listMemberOrganizationApplications(
 
   try {
     const result = await env.DB.prepare(
-      `SELECT ${APPLICATION_COLUMNS} FROM organization_applications
-        WHERE account_id = ? ORDER BY created_at DESC LIMIT ?`,
+      `SELECT ${APPLICATION_WITH_PLAN_COLUMNS}
+        FROM organization_applications AS application
+        LEFT JOIN member_accounts AS account ON account.id = application.account_id
+        WHERE application.account_id = ?
+        ORDER BY application.created_at DESC LIMIT ?`,
     )
       .bind(accountId, MEMBER_APPLICATION_LIMIT)
       .all<ApplicationRow>()
@@ -253,12 +262,17 @@ export async function listOrganizationApplicationsForReview(
   try {
     const statement = filter
       ? env.DB.prepare(
-        `SELECT ${APPLICATION_COLUMNS} FROM organization_applications
-            WHERE status = ? ORDER BY created_at DESC LIMIT ?`,
+        `SELECT ${APPLICATION_WITH_PLAN_COLUMNS}
+            FROM organization_applications AS application
+            LEFT JOIN member_accounts AS account ON account.id = application.account_id
+            WHERE application.status = ?
+            ORDER BY application.created_at DESC LIMIT ?`,
       ).bind(filter, REVIEW_QUEUE_LIMIT)
       : env.DB.prepare(
-        `SELECT ${APPLICATION_COLUMNS} FROM organization_applications
-            ORDER BY created_at DESC LIMIT ?`,
+        `SELECT ${APPLICATION_WITH_PLAN_COLUMNS}
+            FROM organization_applications AS application
+            LEFT JOIN member_accounts AS account ON account.id = application.account_id
+            ORDER BY application.created_at DESC LIMIT ?`,
       ).bind(REVIEW_QUEUE_LIMIT)
 
     const result = await statement.all<ApplicationRow>()
@@ -278,7 +292,10 @@ export async function getOrganizationApplication(
 
   try {
     const row = await env.DB.prepare(
-      `SELECT ${APPLICATION_COLUMNS} FROM organization_applications WHERE id = ?`,
+      `SELECT ${APPLICATION_WITH_PLAN_COLUMNS}
+        FROM organization_applications AS application
+        LEFT JOIN member_accounts AS account ON account.id = application.account_id
+        WHERE application.id = ?`,
     )
       .bind(id)
       .first<ApplicationRow>()
@@ -295,7 +312,10 @@ export async function getOrganizationForAccount(
   env: TrolleyScoutEnv,
   accountId: string,
 ): Promise<Organization | undefined> {
-  return findAccountOrganization(env, accountId, { activeOnly: true })
+  return findAccountOrganization(env, accountId, {
+    activeOnly: true,
+    requireBusinessSubscription: true,
+  })
 }
 
 /// Whether the account has an organisation at all. Onboarding asks this rather
@@ -305,7 +325,7 @@ export async function getOrganizationForAccount(
 async function findAccountOrganization(
   env: TrolleyScoutEnv,
   accountId: string,
-  options: { activeOnly?: boolean } = {},
+  options: { activeOnly?: boolean; requireBusinessSubscription?: boolean } = {},
 ): Promise<Organization | undefined> {
   if (!hasTrolleyScoutDatabase(env)) {
     return undefined
@@ -313,11 +333,25 @@ async function findAccountOrganization(
 
   try {
     const row = await env.DB.prepare(
-      `SELECT ${ORGANIZATION_COLUMNS} FROM organizations
-        WHERE account_id = ? AND (? = 0 OR status = 'active')
-        ORDER BY created_at ASC LIMIT 1`,
+      `SELECT
+          organization.id, organization.account_id, organization.application_id,
+          organization.name, organization.slug, organization.status,
+          organization.created_at, organization.updated_at
+        FROM organizations AS organization
+        LEFT JOIN member_accounts AS account ON account.id = organization.account_id
+        WHERE organization.account_id = ?
+          AND (? = 0 OR organization.status = 'active')
+          AND (
+            ? = 0
+            OR (account.plan_id = 'organization' AND account.plan_status = 'active')
+          )
+        ORDER BY organization.created_at ASC LIMIT 1`,
     )
-      .bind(accountId, options.activeOnly ? 1 : 0)
+      .bind(
+        accountId,
+        options.activeOnly ? 1 : 0,
+        options.requireBusinessSubscription ? 1 : 0,
+      )
       .first<OrganizationRow>()
     return row ? rowToOrganization(row) : undefined
   } catch {
@@ -372,7 +406,23 @@ export async function reviewOrganizationApplication(
   const owned = await findAccountOrganization(env, application.accountId)
 
   if (application.status !== 'pending') {
-    return { application, changed: false, organization: activeOrUndefined(owned) }
+    return {
+      application,
+      changed: false,
+      organization: application.businessSubscriptionActive
+        ? activeOrUndefined(owned)
+        : undefined,
+    }
+  }
+
+  if (decision === 'approved' && !application.businessSubscriptionActive) {
+    return {
+      application,
+      changed: false,
+      issues: [
+        'The Organisation subscription must be active before this application can be approved.',
+      ],
+    }
   }
 
   if (decision === 'approved' && owned) {
@@ -679,6 +729,9 @@ function normalizeApplicationStatus(value: string): OrganizationApplicationStatu
 }
 
 function rowToApplication(row: ApplicationRow): OrganizationApplication {
+  const planId = row.member_plan_id ?? undefined
+  const planStatus = row.member_plan_status ?? undefined
+
   return {
     accountId: row.account_id,
     category: row.category ?? undefined,
@@ -695,6 +748,9 @@ function rowToApplication(row: ApplicationRow): OrganizationApplication {
     reviewNote: row.review_note ?? undefined,
     reviewedAt: row.reviewed_at ?? undefined,
     status: normalizeApplicationStatus(row.status),
+    planId,
+    planStatus,
+    businessSubscriptionActive: planId === 'organization' && planStatus === 'active',
     tradingName: row.trading_name ?? undefined,
     updatedAt: row.updated_at,
     websiteUrl: row.website_url ?? undefined,

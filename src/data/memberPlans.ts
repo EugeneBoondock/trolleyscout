@@ -85,9 +85,6 @@ export const memberPlans: MemberPlan[] = [
       'Publish your specials straight to the deals board',
       '3 sponsored campaigns included every month',
     ],
-    // The shop profile and self-published promos are still being built, so the
-    // tier is announced at its real price but cannot be bought yet.
-    comingSoon: true,
     id: 'organization',
     isPaid: true,
     limits: {
@@ -102,7 +99,7 @@ export const memberPlans: MemberPlan[] = [
     },
     name: 'Organisation',
     prices: randPrices('organization'),
-    statusText: 'Coming soon',
+    statusText: 'Application required',
   },
 ]
 

@@ -448,6 +448,7 @@ class Deal {
     this.validTo,
     this.productUrl,
     this.imageUrl,
+    this.images = const [],
     this.pageNumber,
     this.personalizationReason,
     this.soldOut = false,
@@ -468,6 +469,20 @@ class Deal {
   final String? validTo;
   final String? productUrl;
   final String? imageUrl;
+  final List<String> images;
+
+  List<String> get gallery {
+    final seen = <String>{};
+    return <String>[
+      if (imageUrl != null) imageUrl!,
+      ...images,
+    ]
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty && seen.add(url))
+        .toList(growable: false);
+  }
+
+  bool get hasImage => gallery.isNotEmpty;
 
   /// True only when the shop said every way of buying this is gone. A shop that
   /// says nothing leaves this false, because a wrong sold-out badge sends a
@@ -492,6 +507,13 @@ class Deal {
         validTo: _optionalString(json['validTo']),
         productUrl: _optionalString(json['productUrl']),
         imageUrl: _optionalString(json['imageUrl']),
+        images: json['images'] is List
+            ? (json['images'] as List)
+                .whereType<String>()
+                .map((url) => url.trim())
+                .where((url) => url.isNotEmpty)
+                .toList()
+            : const [],
         pageNumber: _intOrNull(json['pageNumber']),
         personalizationReason: _optionalString(json['personalizationReason']),
         soldOut: json['soldOut'] == true,
@@ -513,6 +535,7 @@ class Deal {
         'validTo': validTo,
         'evidenceText': evidenceText,
         'imageUrl': imageUrl,
+        if (images.isNotEmpty) 'images': images,
         'pageNumber': pageNumber,
         'personalizationReason': personalizationReason,
         'soldOut': soldOut,
@@ -882,12 +905,17 @@ class MemberPlan {
 }
 
 class SubscriptionData {
-  const SubscriptionData(
-      {required this.billingReady, required this.plans, this.account});
+  const SubscriptionData({
+    required this.billingReady,
+    required this.plans,
+    this.account,
+    this.businessApplications = const [],
+  });
 
   final bool billingReady;
   final List<MemberPlan> plans;
   final MemberAccount? account;
+  final List<OrganizationApplication> businessApplications;
 
   factory SubscriptionData.fromJson(Map<String, dynamic> json) {
     final account = _mapOrNull(json['account']);
@@ -895,8 +923,151 @@ class SubscriptionData {
       billingReady: json['billingReady'] == true,
       plans: _mapList(json['plans']).map(MemberPlan.fromJson).toList(),
       account: account == null ? null : MemberAccount.fromJson(account),
+      businessApplications: _mapList(json['businessApplications'])
+          .map(OrganizationApplication.fromJson)
+          .toList(),
     );
   }
+}
+
+class OrganizationApplicationDraft {
+  const OrganizationApplicationDraft({
+    required this.organisationName,
+    required this.contactName,
+    required this.contactEmail,
+    required this.description,
+    this.tradingName,
+    this.registrationNumber,
+    this.contactPhone,
+    this.websiteUrl,
+    this.category,
+    this.city,
+    this.province,
+  });
+
+  final String organisationName;
+  final String? tradingName;
+  final String? registrationNumber;
+  final String contactName;
+  final String contactEmail;
+  final String? contactPhone;
+  final String? websiteUrl;
+  final String? category;
+  final String description;
+  final String? city;
+  final String? province;
+
+  Map<String, dynamic> toJson() => {
+        'organisationName': organisationName,
+        'contactName': contactName,
+        'contactEmail': contactEmail,
+        'description': description,
+        if (tradingName != null && tradingName!.isNotEmpty)
+          'tradingName': tradingName,
+        if (registrationNumber != null && registrationNumber!.isNotEmpty)
+          'registrationNumber': registrationNumber,
+        if (contactPhone != null && contactPhone!.isNotEmpty)
+          'contactPhone': contactPhone,
+        if (websiteUrl != null && websiteUrl!.isNotEmpty)
+          'websiteUrl': websiteUrl,
+        if (category != null && category!.isNotEmpty) 'category': category,
+        if (city != null && city!.isNotEmpty) 'city': city,
+        if (province != null && province!.isNotEmpty) 'province': province,
+      };
+}
+
+class OrganizationApplication {
+  const OrganizationApplication({
+    required this.id,
+    required this.organisationName,
+    required this.contactName,
+    required this.contactEmail,
+    required this.description,
+    required this.status,
+    required this.businessSubscriptionActive,
+    this.tradingName,
+    this.registrationNumber,
+    this.contactPhone,
+    this.websiteUrl,
+    this.category,
+    this.city,
+    this.province,
+    this.planId,
+    this.planStatus,
+    this.reviewNote,
+    this.reviewedAt,
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
+
+  final String id;
+  final String organisationName;
+  final String? tradingName;
+  final String? registrationNumber;
+  final String contactName;
+  final String contactEmail;
+  final String? contactPhone;
+  final String? websiteUrl;
+  final String? category;
+  final String description;
+  final String? city;
+  final String? province;
+  final String status;
+  final String? planId;
+  final String? planStatus;
+  final bool businessSubscriptionActive;
+  final String? reviewNote;
+  final String? reviewedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory OrganizationApplication.fromJson(Map<String, dynamic> json) =>
+      OrganizationApplication(
+        id: _string(json['id']),
+        organisationName: _string(json['organisationName']),
+        tradingName: _optionalString(json['tradingName']),
+        registrationNumber: _optionalString(json['registrationNumber']),
+        contactName: _string(json['contactName']),
+        contactEmail: _string(json['contactEmail']),
+        contactPhone: _optionalString(json['contactPhone']),
+        websiteUrl: _optionalString(json['websiteUrl']),
+        category: _optionalString(json['category']),
+        description: _string(json['description']),
+        city: _optionalString(json['city']),
+        province: _optionalString(json['province']),
+        status: _string(json['status']),
+        planId: _optionalString(json['planId']),
+        planStatus: _optionalString(json['planStatus']),
+        businessSubscriptionActive: json['businessSubscriptionActive'] == true,
+        reviewNote: _optionalString(json['reviewNote']),
+        reviewedAt: _optionalString(json['reviewedAt']),
+        createdAt: _string(json['createdAt']),
+        updatedAt: _string(json['updatedAt']),
+      );
+}
+
+class OrganizationReviewResult {
+  const OrganizationReviewResult({
+    required this.applications,
+    required this.changed,
+    required this.emailSent,
+    this.emailIssue,
+  });
+
+  final List<OrganizationApplication> applications;
+  final bool changed;
+  final bool emailSent;
+  final String? emailIssue;
+
+  factory OrganizationReviewResult.fromJson(Map<String, dynamic> json) =>
+      OrganizationReviewResult(
+        applications: _mapList(json['applications'])
+            .map(OrganizationApplication.fromJson)
+            .toList(),
+        changed: json['changed'] == true,
+        emailSent: json['emailSent'] == true,
+        emailIssue: _optionalString(json['emailIssue']),
+      );
 }
 
 class SubscriptionCheckout {
@@ -1511,6 +1682,7 @@ class ScrollDeal {
   final List<String> images;
   final String? category;
   final String? expiresAt;
+
   /// Only ever true because the site said so. The reel sources that say nothing
   /// about stock leave this false rather than guessing.
   final bool soldOut;
@@ -1588,6 +1760,7 @@ class ScrollDeal {
         savingText: savingText,
         productUrl: productUrl,
         imageUrl: imageUrl,
+        images: gallery,
       );
 
   /// Builds a scroll deal from a regular discovery [Deal] so the reel can mix in
@@ -1603,6 +1776,7 @@ class ScrollDeal {
         previousPriceText: deal.previousPriceText,
         savingText: deal.savingText,
         imageUrl: deal.imageUrl,
+        images: deal.gallery,
         category: null,
         expiresAt: null,
       );

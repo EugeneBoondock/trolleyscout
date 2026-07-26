@@ -396,6 +396,10 @@ class _FakeApi extends Api {
   Future<int> voucherCount() async => 0;
 
   @override
+  Future<List<OrganizationApplication>> adminOrganizationApplications() async =>
+      const [];
+
+  @override
   Future<List<DealWatch>> dealWatches() async => const [];
 
   @override

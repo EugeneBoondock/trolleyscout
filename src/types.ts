@@ -147,6 +147,7 @@ export interface DiscoveredDeal {
   soldOut?: boolean
   evidenceText: string
   imageUrl?: string
+  images?: string[]
   imageCrop?: ImageCrop
   catalogueDeepLink?: string
   catalogueFingerprint?: string
@@ -371,6 +372,35 @@ export interface MemberAccount {
   pendingBillingCycle?: BillingCycle
   pendingEffectiveAt?: string
   pendingPlanId?: MemberPlanId
+}
+
+export type OrganizationApplicationStatus = 'pending' | 'approved' | 'rejected'
+
+export interface OrganizationApplicationDraft {
+  organisationName: string
+  tradingName?: string
+  registrationNumber?: string
+  contactName: string
+  contactEmail: string
+  contactPhone?: string
+  websiteUrl?: string
+  category?: string
+  description: string
+  city?: string
+  province?: string
+}
+
+export interface OrganizationApplication extends OrganizationApplicationDraft {
+  id: string
+  accountId: string
+  status: OrganizationApplicationStatus
+  planId?: string
+  planStatus?: string
+  businessSubscriptionActive: boolean
+  reviewNote?: string
+  reviewedAt?: string
+  createdAt: string
+  updatedAt: string
 }
 
 // Properties Scout — a Household-tier tool that finds homes to buy or rent from

@@ -228,9 +228,9 @@ class Api {
     return DiscoveryResult.fromJson(await _request(
       'GET',
       '/api/discovery$suffix',
-      // A forced live refresh re-scouts sources server-side and routinely
-      // outlives the standard timeout.
-      timeout: forceLive ? slowRequestTimeout : null,
+      // The full marketplace feed is several megabytes and can take longer
+      // than the standard request window even when the device is online.
+      timeout: slowRequestTimeout,
     ));
   }
 
@@ -436,6 +436,19 @@ class Api {
         await _request('GET', '/api/subscription'));
   }
 
+  Future<List<OrganizationApplication>> submitOrganizationApplication(
+    OrganizationApplicationDraft draft,
+  ) async {
+    final data = await _request(
+      'POST',
+      '/api/organization-applications',
+      body: draft.toJson(),
+    );
+    return _maps(data['applications'])
+        .map(OrganizationApplication.fromJson)
+        .toList();
+  }
+
   /// The shopper's country with a ZAR conversion rate, so prices can be
   /// shown in their own currency (PayFast still settles in rand).
   Future<CountryPricing> country() async {
@@ -544,6 +557,30 @@ class Api {
 
   Future<AdminOverview> adminOverview() async {
     return AdminOverview.fromJson(await _request('GET', '/api/admin'));
+  }
+
+  Future<List<OrganizationApplication>> adminOrganizationApplications() async {
+    final data = await _request('GET', '/api/admin/organization-applications');
+    return _maps(data['applications'])
+        .map(OrganizationApplication.fromJson)
+        .toList();
+  }
+
+  Future<OrganizationReviewResult> reviewOrganizationApplication(
+    String applicationId,
+    String decision, {
+    String? note,
+  }) async {
+    final data = await _request(
+      'PATCH',
+      '/api/admin/organization-applications',
+      body: {
+        'applicationId': applicationId,
+        'decision': decision,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return OrganizationReviewResult.fromJson(data);
   }
 
   Future<AdminOverview> setAdminTestCountry(String countryCode) async {

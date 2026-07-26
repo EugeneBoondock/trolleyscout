@@ -38,6 +38,8 @@ import type {
   MemberSessionDraft,
   OfferDraft,
   OfferValidationResult,
+  OrganizationApplication,
+  OrganizationApplicationDraft,
   PropertyListingType,
   PropertySearchResult,
   Retailer,
@@ -104,6 +106,7 @@ export interface BasketResource {
 export interface SubscriptionResource {
   account?: MemberSession['account']
   billingReady: boolean
+  businessApplications: OrganizationApplication[]
   plans: MemberPlan[]
 }
 
@@ -227,6 +230,7 @@ export function getInitialSubscriptionState(): ResourceState<SubscriptionResourc
   return {
     data: {
       billingReady: false,
+      businessApplications: [],
       plans: [],
     },
     message: 'Checking subscription.',
@@ -810,7 +814,10 @@ export async function loadSubscription(signal?: AbortSignal): Promise<ResourceSt
     const envelope = (await response.json()) as SubscriptionResponse
 
     return {
-      data: envelope.data,
+      data: {
+        ...envelope.data,
+        businessApplications: envelope.data.businessApplications ?? [],
+      },
       message: 'Subscription loaded.',
       meta: envelope.meta,
       status: 'ready',
@@ -823,6 +830,7 @@ export async function loadSubscription(signal?: AbortSignal): Promise<ResourceSt
     return {
       data: {
         billingReady: false,
+        businessApplications: [],
         plans: [],
       },
       message: 'Subscription API unavailable.',
@@ -916,6 +924,123 @@ export async function startSubscriptionCheckout(
         source: 'static-fallback',
       },
       status: 'error',
+    }
+  }
+}
+
+export async function submitBusinessApplication(
+  draft: OrganizationApplicationDraft,
+): Promise<{
+  application?: OrganizationApplication
+  applications: OrganizationApplication[]
+  issues: string[]
+  ok: boolean
+}> {
+  try {
+    const response = await fetch('/api/organization-applications', {
+      body: JSON.stringify(draft),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: {
+        application?: OrganizationApplication
+        applications?: OrganizationApplication[]
+        issues?: string[]
+      }
+    }
+
+    return {
+      application: envelope.data?.application,
+      applications: envelope.data?.applications ?? [],
+      issues: envelope.data?.issues ?? [],
+      ok: response.ok,
+    }
+  } catch {
+    return {
+      applications: [],
+      issues: ['The business application service is unavailable. Try again.'],
+      ok: false,
+    }
+  }
+}
+
+export async function loadBusinessApplicationsForReview(
+  signal?: AbortSignal,
+): Promise<{ applications: OrganizationApplication[]; message: string; ok: boolean }> {
+  try {
+    const response = await fetch('/api/admin/organization-applications', {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+    const envelope = (await response.json()) as {
+      data?: { applications?: OrganizationApplication[]; message?: string }
+    }
+    return {
+      applications: envelope.data?.applications ?? [],
+      message: response.ok
+        ? 'Business applications loaded.'
+        : envelope.data?.message ?? 'Business applications are unavailable.',
+      ok: response.ok,
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return {
+      applications: [],
+      message: 'Business applications are unavailable.',
+      ok: false,
+    }
+  }
+}
+
+export async function reviewBusinessApplication(
+  applicationId: string,
+  decision: 'approved' | 'rejected',
+  note?: string,
+): Promise<{
+  applications: OrganizationApplication[]
+  changed: boolean
+  emailIssue?: string
+  emailSent: boolean
+  issues: string[]
+  ok: boolean
+}> {
+  try {
+    const response = await fetch('/api/admin/organization-applications', {
+      body: JSON.stringify({ applicationId, decision, note }),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      method: 'PATCH',
+    })
+    const envelope = (await response.json()) as {
+      data?: {
+        applications?: OrganizationApplication[]
+        changed?: boolean
+        emailIssue?: string
+        emailSent?: boolean
+        issues?: string[]
+      }
+    }
+    return {
+      applications: envelope.data?.applications ?? [],
+      changed: envelope.data?.changed ?? false,
+      emailIssue: envelope.data?.emailIssue,
+      emailSent: envelope.data?.emailSent ?? false,
+      issues: envelope.data?.issues ?? [],
+      ok: response.ok,
+    }
+  } catch {
+    return {
+      applications: [],
+      changed: false,
+      emailSent: false,
+      issues: ['The application review service is unavailable. Try again.'],
+      ok: false,
     }
   }
 }

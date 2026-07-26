@@ -16,6 +16,7 @@ import {
   listOrganizationApplicationsForReview,
   reviewOrganizationApplication,
 } from '../../_shared/organizationStore'
+import { sendOrganizationAccessEmail } from '../../_shared/organizationEmail'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -96,11 +97,18 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
+  const emailResult =
+    decision === 'approved' && result.application && result.organization
+      ? await sendOrganizationAccessEmail(env, result.application, result.organization)
+      : undefined
+
   return json(
     {
       application: result.application,
       applications,
       changed: result.changed,
+      emailIssue: emailResult?.issue,
+      emailSent: emailResult?.sent ?? false,
       organization: result.organization,
     },
     { headers: privateHeaders },

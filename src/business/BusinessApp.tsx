@@ -13,14 +13,10 @@ import {
   BusinessApiError,
   loadBusinessBootstrap,
   signInBusiness,
-  submitOrganizationApplication,
 } from './api'
 import { BusinessShell } from './BusinessShell'
 import { IssueList } from './BusinessFeedback'
-import type {
-  BusinessBootstrap,
-  OrganizationApplicationDraft,
-} from './types'
+import type { BusinessBootstrap } from './types'
 import './business.css'
 
 type ThemeMode = 'light' | 'dark'
@@ -82,7 +78,6 @@ export function BusinessApp() {
     return (
       <OrganizationAccess
         bootstrap={current}
-        onApplicationSent={() => void refresh()}
         onTheme={setTheme}
         theme={theme}
       />
@@ -155,8 +150,6 @@ function BusinessAuth({
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [intent, setIntent] = useState<'login' | 'signup'>('login')
   const [issues, setIssues] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
@@ -165,7 +158,7 @@ function BusinessAuth({
     setBusy(true)
     setIssues([])
     try {
-      const session = await signInBusiness({ displayName, email, intent, password })
+      const session = await signInBusiness({ displayName: '', email, intent: 'login', password })
       if (!session.isAuthenticated) {
         setIssues(['Those account details could not be confirmed.'])
         return
@@ -204,38 +197,11 @@ function BusinessAuth({
         </section>
 
         <section className="biz-auth-card">
-          <div className="biz-auth-switch" aria-label="Account action">
-            <button
-              className={intent === 'login' ? 'is-active' : ''}
-              onClick={() => setIntent('login')}
-              type="button"
-            >
-              Sign in
-            </button>
-            <button
-              className={intent === 'signup' ? 'is-active' : ''}
-              onClick={() => setIntent('signup')}
-              type="button"
-            >
-              Create account
-            </button>
-          </div>
           <div>
-            <p className="biz-kicker">{intent === 'login' ? 'Welcome back' : 'Start here'}</p>
-            <h2>{intent === 'login' ? 'Open your workspace' : 'Create your owner account'}</h2>
+            <p className="biz-kicker">Approved businesses</p>
+            <h2>Open your workspace</h2>
           </div>
           <form className="biz-form-stack" onSubmit={submit}>
-            {intent === 'signup' && (
-              <label>
-                Your name
-                <input
-                  autoComplete="name"
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  required
-                  value={displayName}
-                />
-              </label>
-            )}
             <label>
               Email
               <input
@@ -250,7 +216,7 @@ function BusinessAuth({
             <label>
               Password
               <input
-                autoComplete={intent === 'login' ? 'current-password' : 'new-password'}
+                autoComplete="current-password"
                 minLength={8}
                 onChange={(event) => setPassword(event.target.value)}
                 required
@@ -260,12 +226,12 @@ function BusinessAuth({
             </label>
             {issues.length > 0 && <IssueList issues={issues} />}
             <button className="biz-primary-button biz-wide-button" disabled={busy} type="submit">
-              {busy ? 'Checking account' : intent === 'login' ? 'Sign in' : 'Create account'}
+              {busy ? 'Checking account' : 'Sign in'}
               {!busy && <ArrowRight size={18} />}
             </button>
           </form>
           <p className="biz-auth-note">
-            Business access is opened after Trolley Scout approves your organization.
+            Subscribe and apply in Trolley Scout first. You can sign in here after an admin approves your business.
           </p>
         </section>
       </div>
@@ -275,12 +241,10 @@ function BusinessAuth({
 
 function OrganizationAccess({
   bootstrap,
-  onApplicationSent,
   onTheme,
   theme,
 }: {
   bootstrap: BusinessBootstrap
-  onApplicationSent: () => void
   onTheme: (theme: ThemeMode) => void
   theme: ThemeMode
 }) {
@@ -308,151 +272,35 @@ function OrganizationAccess({
     )
   }
 
-  if (status === 'rejected') {
-    return (
-      <main className="biz-gate">
-        <GateHeader onTheme={onTheme} theme={theme} />
-        <section className="biz-gate-card">
-          <span className="biz-status-illustration is-warning"><WarningCircle size={42} weight="duotone" /></span>
-          <p className="biz-kicker">Details need attention</p>
-          <h1>Update your application</h1>
-          <p>{bootstrap.gate.message ?? 'Your application was not approved. Send corrected details for a new review.'}</p>
-          <ApplicationForm
-            accountEmail={bootstrap.session.account?.email ?? ''}
-            accountName={bootstrap.session.account?.displayName ?? ''}
-            onSent={onApplicationSent}
-          />
-        </section>
-      </main>
-    )
-  }
-
-  if (status === 'approved') {
-    return (
-      <main className="biz-gate">
-        <GateHeader onTheme={onTheme} theme={theme} />
-        <section className="biz-gate-card">
-          <WarningCircle size={34} />
-          <p className="biz-kicker">Access unavailable</p>
-          <h1>Your organization needs support</h1>
-          <p>{bootstrap.gate.message ?? 'The approved organization is not active.'}</p>
-          <a className="biz-primary-button" href="https://trolleyscout.co.za/support">Contact support</a>
-        </section>
-      </main>
-    )
-  }
-
   return (
     <main className="biz-gate">
       <GateHeader onTheme={onTheme} theme={theme} />
-      <section className="biz-application-card">
-        <div className="biz-application-intro">
-          <p className="biz-kicker">Business verification</p>
-          <h1>Tell us about your store</h1>
-          <p>
-            Approval protects shoppers and gives your business a named source across Marketplace and Window Shopping.
-          </p>
-        </div>
-        <ApplicationForm
-          accountEmail={bootstrap.session.account?.email ?? ''}
-          accountName={bootstrap.session.account?.displayName ?? ''}
-          onSent={onApplicationSent}
-        />
+      <section className="biz-gate-card">
+        <span className="biz-status-illustration is-warning"><WarningCircle size={42} weight="duotone" /></span>
+        <p className="biz-kicker">
+          {status === 'rejected' ? 'Application not approved' : 'Approved subscribers only'}
+        </p>
+        <h1>
+          {status === 'approved'
+            ? 'Reactivate your Organisation subscription'
+            : 'Business access is invitation-only'}
+        </h1>
+        <p>
+          {bootstrap.gate.message ??
+            (status === 'rejected'
+              ? 'Review the admin note in the Trolley Scout consumer app before you apply again.'
+              : status === 'approved'
+                ? 'Your approval is recorded. An active Organisation subscription is required to open this workspace.'
+                : 'Subscribe and apply from Trolley Scout. Sign in here after an admin approves your business.')}
+        </p>
+        <a className="biz-primary-button" href="https://trolleyscout.co.za/">
+          Open Trolley Scout
+        </a>
+        <a className="biz-secondary-button" href="https://trolleyscout.co.za/support">
+          Contact support
+        </a>
       </section>
     </main>
-  )
-}
-
-function ApplicationForm({
-  accountEmail,
-  accountName,
-  onSent,
-}: {
-  accountEmail: string
-  accountName: string
-  onSent: () => void
-}) {
-  const [draft, setDraft] = useState<OrganizationApplicationDraft>({
-    contactEmail: accountEmail,
-    contactName: accountName,
-    description: '',
-    organisationName: '',
-  })
-  const [issues, setIssues] = useState<string[]>([])
-  const [busy, setBusy] = useState(false)
-
-  function field(name: keyof OrganizationApplicationDraft) {
-    return {
-      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-        setDraft((current) => ({ ...current, [name]: event.target.value })),
-      value: draft[name] ?? '',
-    }
-  }
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    setIssues([])
-    try {
-      await submitOrganizationApplication(draft)
-      onSent()
-    } catch (caught) {
-      setIssues(
-        caught instanceof BusinessApiError
-          ? caught.issues
-          : ['The application could not be sent. Try again.'],
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form className="biz-application-form" onSubmit={submit}>
-      <div className="biz-form-grid">
-        <label>
-          Registered organization name
-          <input required {...field('organisationName')} />
-        </label>
-        <label>
-          Trading name
-          <input {...field('tradingName')} />
-        </label>
-        <label>
-          Contact person
-          <input autoComplete="name" required {...field('contactName')} />
-        </label>
-        <label>
-          Contact email
-          <input autoComplete="email" required type="email" {...field('contactEmail')} />
-        </label>
-        <label>
-          Business category
-          <input placeholder="Grocer, fashion, restaurant" {...field('category')} />
-        </label>
-        <label>
-          Website
-          <input inputMode="url" placeholder="https://" {...field('websiteUrl')} />
-        </label>
-        <label>
-          City or town
-          <input {...field('city')} />
-        </label>
-        <label>
-          Province or region
-          <input {...field('province')} />
-        </label>
-      </div>
-      <label>
-        What does your business sell?
-        <textarea minLength={20} required rows={4} {...field('description')} />
-      </label>
-      {issues.length > 0 && <IssueList issues={issues} />}
-      <button className="biz-primary-button" disabled={busy} type="submit">
-        {busy ? 'Sending application' : 'Send for review'}
-        {!busy && <ArrowRight size={18} />}
-      </button>
-    </form>
   )
 }
 

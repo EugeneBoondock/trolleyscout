@@ -36,7 +36,6 @@ abstract interface class BusinessApiClient {
     String? locationId,
   });
   Future<BusinessMetrics> metrics(int days);
-  Future<void> submitApplication(BusinessOrganizationApplicationDraft draft);
   Future<BusinessImageUpload> uploadImage(
     String path, {
     required String altText,
@@ -48,7 +47,7 @@ class BusinessApi implements BusinessApiClient {
     http.Client? client,
     SessionCookieStore? cookieStore,
     bool? useBrowserCookies,
-    this.baseUrl = 'https://trolleyscout.co.za',
+    this.baseUrl = 'https://org.trolleyscout.co.za',
     this.requestTimeout = const Duration(seconds: 20),
   })  : _client = client ?? createPlatformHttpClient(),
         _cookieStore = cookieStore ?? SecureSessionCookieStore(),
@@ -180,17 +179,6 @@ class BusinessApi implements BusinessApiClient {
       '/api/organization-metrics?days=$safeDays',
     );
     return BusinessMetrics.fromJson(_map(data['metrics']));
-  }
-
-  @override
-  Future<void> submitApplication(
-    BusinessOrganizationApplicationDraft draft,
-  ) async {
-    await _request(
-      'POST',
-      '/api/organization-applications',
-      body: draft.toJson(),
-    );
   }
 
   @override

@@ -79,14 +79,10 @@ describe('memberPlans', () => {
     expect(scout.prices).toEqual({ annual: 29000, monthly: 2900 })
   })
 
-  // The merchant tools it advertises are still being built, so nobody may be
-  // charged for it yet. Every other plan must stay purchasable.
-  it('keeps the business tier announced but not purchasable', () => {
-    expect(getMemberPlan('organization').comingSoon).toBe(true)
-
-    for (const plan of memberPlans.filter((candidate) => candidate.id !== 'organization')) {
-      expect(plan.comingSoon).toBeUndefined()
-    }
+  it('makes the business tier available for an approved application flow', () => {
+    const plan = getMemberPlan('organization')
+    expect(plan.comingSoon).toBeUndefined()
+    expect(plan.statusText).toBe('Application required')
   })
 
   it('grants merchant capacity only to the business plan', () => {

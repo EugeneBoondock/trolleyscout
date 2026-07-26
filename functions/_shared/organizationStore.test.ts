@@ -151,6 +151,7 @@ describe('organisation onboarding store', () => {
 
   it('refuses a new application once the account already runs an organisation', async () => {
     const first = await submitOrganizationApplication(env, 'member-1', validInput)
+    await activateOrganizationPlan(db, 'member-1')
     await reviewOrganizationApplication(env, 'admin-1', first.application!.id, 'approved')
 
     const second = await submitOrganizationApplication(env, 'member-1', {
@@ -165,6 +166,7 @@ describe('organisation onboarding store', () => {
   it('creates exactly one organisation on approval, and approving twice adds none', async () => {
     const submitted = await submitOrganizationApplication(env, 'member-1', validInput)
     const applicationId = submitted.application!.id
+    await activateOrganizationPlan(db, 'member-1')
 
     const first = await reviewOrganizationApplication(env, 'admin-1', applicationId, 'approved')
     const second = await reviewOrganizationApplication(env, 'admin-1', applicationId, 'approved')
@@ -183,8 +185,54 @@ describe('organisation onboarding store', () => {
     await expectOrganizationCount(db, 1)
   })
 
+  it('keeps approval closed until the Organisation subscription is active', async () => {
+    const submitted = await submitOrganizationApplication(env, 'member-1', validInput)
+
+    const result = await reviewOrganizationApplication(
+      env,
+      'admin-1',
+      submitted.application!.id,
+      'approved',
+    )
+
+    expect(result.changed).toBe(false)
+    expect(result.issues).toContain(
+      'The Organisation subscription must be active before this application can be approved.',
+    )
+    expect((await listMemberOrganizationApplications(env, 'member-1'))[0]?.status).toBe('pending')
+    await expectOrganizationCount(db, 0)
+  })
+
+  it('shows the subscription state in the admin review queue', async () => {
+    await submitOrganizationApplication(env, 'member-1', validInput)
+    await activateOrganizationPlan(db, 'member-1')
+
+    const queued = await listOrganizationApplicationsForReview(env, 'pending')
+
+    expect(queued[0]).toMatchObject({
+      businessSubscriptionActive: true,
+      planId: 'organization',
+      planStatus: 'active',
+    })
+  })
+
+  it('closes an approved workspace when its Organisation subscription stops', async () => {
+    await activateOrganizationPlan(db, 'member-1')
+    const submitted = await submitOrganizationApplication(env, 'member-1', validInput)
+    await reviewOrganizationApplication(env, 'admin-1', submitted.application!.id, 'approved')
+
+    expect(await getOrganizationForAccount(env, 'member-1')).toBeDefined()
+
+    await db.prepare(
+      "UPDATE member_accounts SET plan_id = 'free', plan_status = 'active' WHERE id = ?",
+    ).bind('member-1').run()
+
+    expect(await getOrganizationForAccount(env, 'member-1')).toBeUndefined()
+  })
+
   it('records who approved an application and when', async () => {
     const submitted = await submitOrganizationApplication(env, 'member-1', validInput)
+    await activateOrganizationPlan(db, 'member-1')
     await reviewOrganizationApplication(env, 'admin-1', submitted.application!.id, 'approved')
 
     const row = await db.prepare(
@@ -218,6 +266,8 @@ describe('organisation onboarding store', () => {
   it('gives two organisations with the same name distinct slugs', async () => {
     const first = await submitOrganizationApplication(env, 'member-1', validInput)
     const second = await submitOrganizationApplication(env, 'member-2', validInput)
+    await activateOrganizationPlan(db, 'member-1')
+    await activateOrganizationPlan(db, 'member-2')
 
     const approvedFirst = await reviewOrganizationApplication(
       env, 'admin-1', first.application!.id, 'approved',
@@ -233,6 +283,7 @@ describe('organisation onboarding store', () => {
 
   it('leaves the application pending when the approval write fails, never half-approved', async () => {
     const submitted = await submitOrganizationApplication(env, 'member-1', validInput)
+    await activateOrganizationPlan(db, 'member-1')
     const brokenDb = new Proxy(db, {
       get(target, property) {
         if (property === 'batch') {
@@ -268,6 +319,7 @@ describe('organisation onboarding store', () => {
 
   async function suspendOrganizationOf(accountId: string) {
     const submitted = await submitOrganizationApplication(env, accountId, validInput)
+    await activateOrganizationPlan(db, accountId)
     await reviewOrganizationApplication(env, 'admin-1', submitted.application!.id, 'approved')
     await db.prepare('UPDATE organizations SET status = ? WHERE account_id = ?')
       .bind('suspended', accountId)
@@ -367,6 +419,12 @@ async function expectOrganizationCount(db: D1Database, expected: number) {
   const row = await db.prepare('SELECT COUNT(*) AS total FROM organizations')
     .first<{ total: number }>()
   expect(row?.total).toBe(expected)
+}
+
+async function activateOrganizationPlan(db: D1Database, accountId: string) {
+  await db.prepare(
+    "UPDATE member_accounts SET plan_id = 'organization', plan_status = 'active' WHERE id = ?",
+  ).bind(accountId).run()
 }
 
 function splitMigrationStatements(migration: string): string[] {

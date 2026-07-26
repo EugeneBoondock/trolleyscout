@@ -128,15 +128,12 @@ class _BusinessAuthScreen extends StatefulWidget {
 
 class _BusinessAuthScreenState extends State<_BusinessAuthScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _displayName = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _signUp = false;
   bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _displayName.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -144,16 +141,10 @@ class _BusinessAuthScreenState extends State<_BusinessAuthScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final draft = _signUp
-        ? AuthDraft.signUp(
-            displayName: _displayName.text.trim(),
-            email: _email.text.trim(),
-            password: _password.text,
-          )
-        : AuthDraft.login(
-            email: _email.text.trim(),
-            password: _password.text,
-          );
+    final draft = AuthDraft.login(
+      email: _email.text.trim(),
+      password: _password.text,
+    );
     await widget.controller.authenticate(draft);
   }
 
@@ -207,47 +198,14 @@ class _BusinessAuthScreenState extends State<_BusinessAuthScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SegmentedButton<bool>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: false,
-                                  label: Text('Sign in'),
-                                ),
-                                ButtonSegment(
-                                  value: true,
-                                  label: Text('Create account'),
-                                ),
-                              ],
-                              selected: {_signUp},
-                              onSelectionChanged: (value) =>
-                                  setState(() => _signUp = value.first),
-                            ),
-                            const SizedBox(height: 20),
                             Text(
-                              _signUp
-                                  ? 'Create your business login'
-                                  : 'Open your workspace',
+                              'Open your workspace',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
                                   ?.merge(TS.display),
                             ),
                             const SizedBox(height: 16),
-                            if (_signUp) ...[
-                              TextFormField(
-                                controller: _displayName,
-                                decoration: const InputDecoration(
-                                  labelText: 'Your name',
-                                  prefixIcon: Icon(Icons.person_outline),
-                                ),
-                                textInputAction: TextInputAction.next,
-                                validator: (value) =>
-                                    value == null || value.trim().length < 2
-                                        ? 'Enter your name.'
-                                        : null,
-                              ),
-                              const SizedBox(height: 12),
-                            ],
                             TextFormField(
                               controller: _email,
                               keyboardType: TextInputType.emailAddress,
@@ -310,9 +268,7 @@ class _BusinessAuthScreenState extends State<_BusinessAuthScreen> {
                                       ),
                                     )
                                   : const Icon(Icons.arrow_forward),
-                              label: Text(
-                                _signUp ? 'Create account' : 'Sign in',
-                              ),
+                              label: const Text('Sign in'),
                             ),
                           ],
                         ),
@@ -320,7 +276,7 @@ class _BusinessAuthScreenState extends State<_BusinessAuthScreen> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Business access opens after Trolley Scout approves your organization.',
+                      'Subscribe and apply in Trolley Scout first. You can sign in here after an admin approves your business.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: TS.faintOf(context),
@@ -348,23 +304,32 @@ class _OrganizationGateScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = bootstrap.gate.applicationStatus;
-    if (status == 'pending' || status == 'approved') {
+    if (status == 'pending') {
       return _GateStatusScreen(
         controller: controller,
-        icon: status == 'pending'
-            ? Icons.hourglass_top_rounded
-            : Icons.support_agent_outlined,
-        eyebrow: status == 'pending' ? 'APPLICATION RECEIVED' : 'ACCOUNT CHECK',
-        title: status == 'pending'
-            ? 'Your application is in review'
-            : 'Your workspace needs support',
+        icon: Icons.hourglass_top_rounded,
+        eyebrow: 'APPLICATION RECEIVED',
+        title: 'Your application is in review',
         message: bootstrap.gate.message ??
-            'The Trolley Scout team is checking your business details.',
+            'Your Organisation subscription and business details are waiting for admin review.',
       );
     }
-    return _OrganizationApplicationScreen(
+    return _GateStatusScreen(
       controller: controller,
-      rejected: status == 'rejected',
+      icon: status == 'approved'
+          ? Icons.credit_card_off_outlined
+          : Icons.lock_outline_rounded,
+      eyebrow:
+          status == 'rejected' ? 'APPLICATION NOT APPROVED' : 'APPROVED ACCESS',
+      title: status == 'approved'
+          ? 'Reactivate your Organisation subscription'
+          : 'Business access is invitation-only',
+      message: bootstrap.gate.message ??
+          (status == 'rejected'
+              ? 'Review the admin note in the Trolley Scout consumer app before you apply again.'
+              : status == 'approved'
+                  ? 'Your approval is saved. An active Organisation subscription is required to open this workspace.'
+                  : 'Subscribe and apply in Trolley Scout. Return here after an admin approves your business.'),
     );
   }
 }

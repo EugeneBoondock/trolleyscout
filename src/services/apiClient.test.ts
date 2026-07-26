@@ -805,6 +805,7 @@ describe('apiClient', () => {
     const checkout = await startSubscriptionCheckout({ billingCycle: 'monthly', planId: 'scout' })
 
     expect(subscription.data.plans).toHaveLength(1)
+    expect(subscription.data.businessApplications).toEqual([])
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/subscription', expect.objectContaining({ method: 'POST' }))
     expect(checkout.data.checkout.status).toBe('billing_not_configured')
   })

@@ -6,6 +6,7 @@ import type {
   MemberPlan,
   MemberSession,
   MemberSessionDraft,
+  OrganizationApplication,
   DiscoveryRun,
   OfferDraft,
   OfferValidationResult,
@@ -142,6 +143,7 @@ export type BasketItemDeleteResponse = ApiEnvelope<{
 export type SubscriptionResponse = ApiEnvelope<{
   account?: MemberAccount
   billingReady: boolean
+  businessApplications: OrganizationApplication[]
   plans: MemberPlan[]
 }>
 

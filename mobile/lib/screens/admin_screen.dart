@@ -280,6 +280,8 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            OrganizationApplicationReviewSection(api: widget.api),
+            const SizedBox(height: 20),
             SupportInboxSection(
               api: widget.api,
               initialMessages: overview.support,
@@ -308,6 +310,239 @@ class _AdminScreenState extends State<AdminScreen> {
       },
     );
   }
+}
+
+class OrganizationApplicationReviewSection extends StatefulWidget {
+  const OrganizationApplicationReviewSection({
+    super.key,
+    required this.api,
+  });
+
+  final Api api;
+
+  @override
+  State<OrganizationApplicationReviewSection> createState() =>
+      _OrganizationApplicationReviewSectionState();
+}
+
+class _OrganizationApplicationReviewSectionState
+    extends State<OrganizationApplicationReviewSection> {
+  late Future<List<OrganizationApplication>> _future =
+      widget.api.adminOrganizationApplications();
+  final Map<String, TextEditingController> _notes = {};
+  String? _busyId;
+
+  @override
+  void dispose() {
+    for (final controller in _notes.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _noteFor(String id) =>
+      _notes.putIfAbsent(id, TextEditingController.new);
+
+  void _reload() => setState(() {
+        _future = widget.api.adminOrganizationApplications();
+      });
+
+  Future<void> _decide(
+    OrganizationApplication application,
+    String decision,
+  ) async {
+    setState(() => _busyId = application.id);
+    try {
+      final result = await widget.api.reviewOrganizationApplication(
+        application.id,
+        decision,
+        note: _noteFor(application.id).text,
+      );
+      if (!mounted) return;
+      setState(() => _future = Future.value(result.applications));
+      final message = decision == 'approved'
+          ? result.emailSent
+              ? 'Business approved. The access email was sent.'
+              : result.emailIssue ??
+                  'Business approved. The access email still needs to be sent.'
+          : 'Application rejected. The review note was saved.';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Business applications',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.merge(TS.display),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh business applications',
+                onPressed: _reload,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Confirm the Organisation subscription before approving workspace access.',
+            style: TextStyle(color: TS.mutedOf(context), height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<List<OrganizationApplication>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const PaperCard(
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return PaperCard(
+                  child: Column(
+                    children: [
+                      const Text('Business applications are unavailable.'),
+                      TextButton(
+                          onPressed: _reload, child: const Text('Try again')),
+                    ],
+                  ),
+                );
+              }
+              final applications = snapshot.data ?? const [];
+              if (applications.isEmpty) {
+                return const PaperCard(
+                  child: Text('No business applications yet.'),
+                );
+              }
+              return Column(
+                children: [
+                  for (final application in applications)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: PaperCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  application.organisationName,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.merge(TS.display),
+                                ),
+                                Chip(label: Text(application.status)),
+                                Chip(
+                                  avatar: Icon(
+                                    application.businessSubscriptionActive
+                                        ? Icons.check_circle
+                                        : Icons.schedule,
+                                    size: 17,
+                                  ),
+                                  label: Text(
+                                    application.businessSubscriptionActive
+                                        ? 'Subscription active'
+                                        : 'Waiting for subscription',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (application.tradingName != null) ...[
+                              const SizedBox(height: 4),
+                              Text('Trading as ${application.tradingName}'),
+                            ],
+                            const SizedBox(height: 8),
+                            Text(application.description),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${application.contactName} • ${application.contactEmail}',
+                              style: TextStyle(
+                                color: TS.mutedOf(context),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (application.reviewNote != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Previous note: ${application.reviewNote}',
+                                style: TextStyle(color: TS.mutedOf(context)),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _noteFor(application.id),
+                              decoration: const InputDecoration(
+                                labelText: 'Review note',
+                              ),
+                              maxLines: 3,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                if (application.status == 'pending')
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: _busyId == application.id
+                                          ? null
+                                          : () =>
+                                              _decide(application, 'rejected'),
+                                      child: const Text('Reject'),
+                                    ),
+                                  ),
+                                if (application.status == 'pending')
+                                  const SizedBox(width: 8),
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: _busyId == application.id ||
+                                            !application
+                                                .businessSubscriptionActive
+                                        ? null
+                                        : () =>
+                                            _decide(application, 'approved'),
+                                    child: Text(
+                                      _busyId == application.id
+                                          ? 'Saving'
+                                          : application.status == 'approved'
+                                              ? 'Resend access email'
+                                              : 'Approve and send access',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
 }
 
 /// One member row with a Properties Scout access toggle. Household plans and

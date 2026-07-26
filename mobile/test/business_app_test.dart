@@ -18,6 +18,9 @@ void main() {
     expect(find.text('Run your storefront'), findsOneWidget);
     expect(find.text('Open your workspace'), findsOneWidget);
     expect(find.byKey(const ValueKey('business-auth-submit')), findsOneWidget);
+    expect(find.textContaining('Subscribe and apply in Trolley Scout'),
+        findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
     expect(find.text('Marketplace'), findsNothing);
   });
 
@@ -55,10 +58,12 @@ void main() {
     await tester.scrollUntilVisible(
       save,
       700,
-      scrollable: find.descendant(
-        of: find.byKey(const ValueKey('business-composer-scroll')),
-        matching: find.byType(Scrollable),
-      ).first,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('business-composer-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.pump();
     await tester.tap(save);
@@ -88,13 +93,14 @@ void main() {
     );
   });
 
-  testWidgets('shows the application form when no organization exists',
+  testWidgets(
+      'sends an unapproved owner back to the consumer subscription flow',
       (tester) async {
     final api = _FakeBusinessApi(hasOrganization: false);
     await _pumpBusiness(tester, api);
 
-    expect(find.text('Open a business workspace'), findsOneWidget);
-    expect(find.text('Submit application'), findsOneWidget);
+    expect(find.text('Business access is invitation-only'), findsOneWidget);
+    expect(find.text('Submit application'), findsNothing);
     expect(find.text('Overview'), findsNothing);
   });
 }
@@ -236,11 +242,6 @@ class _FakeBusinessApi implements BusinessApiClient {
     authenticated = false;
     return const MemberSession.signedOut();
   }
-
-  @override
-  Future<void> submitApplication(
-    BusinessOrganizationApplicationDraft draft,
-  ) async {}
 
   @override
   Future<BusinessImageUpload> uploadImage(

@@ -253,6 +253,38 @@ void main() {
       expect(requestUri.queryParameters['refresh'], '1');
     });
 
+    test('allows the full marketplace feed to use the slow request window',
+        () async {
+      final api = Api(
+        client: MockClient((request) async {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'deals': [],
+                'sources': [],
+                'summary': {
+                  'checkedSourceCount': 0,
+                  'foundDealCount': 0,
+                  'unavailableSourceCount': 0,
+                },
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+        requestTimeout: const Duration(milliseconds: 20),
+        slowRequestTimeout: const Duration(milliseconds: 200),
+      );
+
+      final result = await api.discovery();
+
+      expect(result.foundDealCount, 0);
+    });
+
     test('uses the server refresh flag for a forced deal-site run', () async {
       late Uri requestUri;
       final api = Api(

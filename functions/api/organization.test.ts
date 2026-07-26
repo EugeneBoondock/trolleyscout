@@ -97,7 +97,7 @@ describe('/api/organization', () => {
       data: {
         applicationStatus: null,
         hasOrganization: false,
-        message: 'No organisation is linked to this account yet. Apply to start one.',
+        message: expect.stringContaining('consumer app'),
         organization: null,
       },
     })

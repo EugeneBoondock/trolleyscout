@@ -52,7 +52,7 @@ it('loads Find Deals once per app session and hides manual refresh from public u
 
   // The home hero's primary action is the public route into the deal aisle.
   fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
-  expect(await screen.findByRole('heading', { name: 'Source-backed specials' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'Marketplace' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Check now' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Deals' }))
@@ -113,6 +113,10 @@ it('shows matching image cards for today savings and saved deals', async () => {
     evidenceText: 'Coffee R79.99, was R109.99.',
     id: 'coffee-deal',
     imageUrl: 'https://images.example.test/coffee.png',
+    images: [
+      'https://images.example.test/coffee.png',
+      'https://images.example.test/coffee-side.png',
+    ],
     previousPriceText: 'R109.99',
     priceText: 'R79.99',
     productUrl: 'https://example.test/coffee',
@@ -176,6 +180,16 @@ it('shows matching image cards for today savings and saved deals', async () => {
   expect(savedCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
   expect(savingsCard).toBeTruthy()
   expect(savedCard).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Marketplace' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'View images for Ground coffee 250g' }))
+  const viewer = screen.getByRole('dialog', { name: 'Ground coffee 250g images' })
+  expect(within(viewer).getByText('1 of 2')).toBeTruthy()
+  fireEvent.click(within(viewer).getByRole('button', { name: 'Next image' }))
+  expect(within(viewer).getByText('2 of 2')).toBeTruthy()
+  expect(within(viewer).getByRole('link', { name: 'View product' }).getAttribute('href')).toContain(
+    'https://example.test/coffee',
+  )
 })
 
 function envelope(data: unknown) {

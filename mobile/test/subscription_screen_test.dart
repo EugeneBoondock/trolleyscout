@@ -103,6 +103,29 @@ void main() {
     expect(
         find.text('Checkout closed. No plan change was made.'), findsOneWidget);
   });
+
+  testWidgets('opens the business application before Organisation checkout',
+      (tester) async {
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'organization',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+      ),
+      plan: _organizationPlan,
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+        find.widgetWithText(FilledButton, 'Apply for Organisation access'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tell us about your business'), findsOneWidget);
+    expect(find.text('Registered business name'), findsOneWidget);
+    expect(api.checkoutCalls, 0);
+  });
 }
 
 Widget _wrap(Widget child) => MaterialApp(
@@ -190,6 +213,18 @@ const _householdPlan = MemberPlan(
   features: ['Larger saved lists'],
   monthlyCents: 9900,
   annualCents: 99000,
+);
+
+const _organizationPlan = MemberPlan(
+  id: 'organization',
+  name: 'Organisation',
+  description: 'Business publishing tools.',
+  badge: 'For businesses',
+  isPaid: true,
+  statusText: 'Application required',
+  features: ['Business workspace'],
+  monthlyCents: 49900,
+  annualCents: 499000,
 );
 
 // The same plan as the server prices it for an American: quoted at a whole $10,

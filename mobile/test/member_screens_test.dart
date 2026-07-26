@@ -253,7 +253,8 @@ void main() {
 
     // The control names the country it will sweep, so an admin who has
     // switched the console knows what a press is about to fetch.
-    final button = find.widgetWithText(FilledButton, 'Fetch South Africa deals now');
+    final button =
+        find.widgetWithText(FilledButton, 'Fetch South Africa deals now');
     expect(button, findsOneWidget);
 
     // It must span the card: beside a line of text it was pushed off the edge
@@ -418,6 +419,10 @@ class _FeatureApi extends Api {
         leafletCount: 3,
         sourceCount: 6,
       );
+
+  @override
+  Future<List<OrganizationApplication>> adminOrganizationApplications() async =>
+      const [];
 
   @override
   Future<void> refreshDealSources() async {

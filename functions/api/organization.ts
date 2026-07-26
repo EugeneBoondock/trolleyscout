@@ -66,16 +66,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
 function noOrganizationMessage(status: OrganizationApplicationStatus | null): string {
   if (status === 'pending') {
-    return 'Your organisation application is with our team. We will let you know as soon as it is reviewed.'
+    return 'Your application is waiting for admin review. Your Organisation subscription must stay active before workspace access can be approved.'
   }
 
   if (status === 'rejected') {
-    return 'Your organisation application was not approved. You can apply again with updated details.'
+    return 'Your application was not approved. Review the admin note and update it in the Trolley Scout consumer app.'
   }
 
   if (status === 'approved') {
-    return 'Your application was approved but the organisation is not active. Contact support.'
+    return 'Your approval is saved. Reactivate the Organisation subscription in the Trolley Scout consumer app to restore access.'
   }
 
-  return 'No organisation is linked to this account yet. Apply to start one.'
+  return 'Subscribe and apply from the Organisation plan in the Trolley Scout consumer app. Business access opens after admin approval.'
 }

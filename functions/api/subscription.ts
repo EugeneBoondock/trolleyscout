@@ -10,6 +10,7 @@ import {
 import { detectRequestCountry } from '../_shared/countryContext'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { listMemberOrganizationApplications } from '../_shared/organizationStore'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
@@ -28,6 +29,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       {
         account: session.account,
         billingReady: isBillingReady(env),
+        businessApplications: session.account
+          ? await listMemberOrganizationApplications(env, session.account.id)
+          : [],
         plans: await getSubscriptionPlans(env, countryCode),
       },
       {
@@ -81,9 +85,37 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    // Announced but not yet open. Guarded on the server, not just in the UI, so
-    // a hand-made request cannot buy a plan we are not able to deliver.
     const requestedPlan = memberPlans.find((plan) => plan.id === body.planId)
+
+    if (requestedPlan?.id === 'organization') {
+      const applications = session.account
+        ? await listMemberOrganizationApplications(env, session.account.id)
+        : []
+      const canStartBusinessCheckout = applications.some(
+        (application) =>
+          application.status === 'pending' || application.status === 'approved',
+      )
+
+      if (!canStartBusinessCheckout) {
+        return json(
+          {
+            checkout: {
+              billingCycle: isBillingCycle(body.billingCycle) ? body.billingCycle : 'monthly',
+              billingReady: isBillingReady(env),
+              message:
+                'Submit your business application from the Organisation plan before starting checkout.',
+              planId: body.planId,
+              provider: 'payfast',
+              status: 'checkout_required',
+            },
+          },
+          {
+            headers: privateHeaders,
+            status: 400,
+          },
+        )
+      }
+    }
 
     if (requestedPlan?.comingSoon) {
       return json(

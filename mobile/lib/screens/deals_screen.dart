@@ -367,17 +367,21 @@ class _DealsScreenState extends State<DealsScreen> {
         // with a freshness note, while the live copy loads behind them.
         if (snap.connectionState == ConnectionState.waiting) {
           if (_cached != null) {
-            return _buildBoard(_cached!.result,
-                staleNote:
-                    '${_freshnessLabel(_cached!.fetchedAt)} · refreshing…');
+            return _buildBoard(
+              _cached!.result,
+              staleNote: '${_freshnessLabel(_cached!.fetchedAt)} · refreshing…',
+              staleIsRefreshing: true,
+            );
           }
           return const SkeletonPane(rows: 6);
         }
         if (snap.hasError || snap.data == null) {
           if (_cached != null) {
-            return _buildBoard(_cached!.result,
-                staleNote:
-                    'Offline · showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}');
+            return _buildBoard(
+              _cached!.result,
+              staleNote:
+                  'Couldn’t refresh · showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}',
+            );
           }
           return _retry();
         }
@@ -387,7 +391,11 @@ class _DealsScreenState extends State<DealsScreen> {
     );
   }
 
-  Widget _buildBoard(DiscoveryResult result, {String? staleNote}) {
+  Widget _buildBoard(
+    DiscoveryResult result, {
+    String? staleNote,
+    bool staleIsRefreshing = false,
+  }) {
     final allDeals = _sortByPage([...result.deals, ..._siteDeals]);
     // The picker lists the shops in these deals plus every shop we scout, so a
     // shop with nothing on today still appears, saying so.
@@ -414,7 +422,9 @@ class _DealsScreenState extends State<DealsScreen> {
     );
     if (deals.isEmpty) {
       return _dealBoard(result, deals, retailers, sources, const [], 0, 0,
-          totalDealCount: allDeals.length, staleNote: staleNote);
+          totalDealCount: allDeals.length,
+          staleNote: staleNote,
+          staleIsRefreshing: staleIsRefreshing);
     }
 
     // Logged-out shoppers see a taste of the list; a gate invites them in for
@@ -424,6 +434,7 @@ class _DealsScreenState extends State<DealsScreen> {
       return _dealBoard(result, deals, retailers, sources, sample, 0, 1,
           totalDealCount: allDeals.length,
           staleNote: staleNote,
+          staleIsRefreshing: staleIsRefreshing,
           sampled: deals.length > sample.length);
     }
 
@@ -432,7 +443,9 @@ class _DealsScreenState extends State<DealsScreen> {
     final slice = deals.skip(page * _perPage).take(_perPage).toList();
 
     return _dealBoard(result, deals, retailers, sources, slice, page, pageCount,
-        totalDealCount: allDeals.length, staleNote: staleNote);
+        totalDealCount: allDeals.length,
+        staleNote: staleNote,
+        staleIsRefreshing: staleIsRefreshing);
   }
 
   static String _freshnessLabel(DateTime fetchedAt) {
@@ -455,6 +468,7 @@ class _DealsScreenState extends State<DealsScreen> {
     int pageCount, {
     required int totalDealCount,
     String? staleNote,
+    bool staleIsRefreshing = false,
     bool sampled = false,
   }) {
     final catalogueGroups = _groupCatalogues(result.catalogues);
@@ -469,20 +483,31 @@ class _DealsScreenState extends State<DealsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // No page title here. "Marketplace" is already on the tab the
-                // shopper pressed to arrive, and a 26pt heading repeating it
-                // pushed the first deal most of a screen further down.
+                Text(
+                  'Marketplace',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineMedium
+                      ?.merge(TS.display),
+                ),
                 if (staleNote != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 8),
                     child: Row(
                       children: [
-                        SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: TS.mutedOf(context)),
-                        ),
+                        if (staleIsRefreshing)
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: TS.mutedOf(context)),
+                          )
+                        else
+                          Icon(
+                            Icons.sync_problem_outlined,
+                            size: 16,
+                            color: TS.mutedOf(context),
+                          ),
                         const SizedBox(width: 8),
                         Text(staleNote,
                             style: TextStyle(
@@ -1097,8 +1122,8 @@ class _DealRow extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _DealImage(imageUrl: deal.imageUrl),
-                if (deal.imageUrl != null) const SizedBox(width: 10),
+                _DealImage(deal: deal),
+                if (deal.hasImage) const SizedBox(width: 10),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -1306,25 +1331,230 @@ class _DealActionIcon extends StatelessWidget {
 }
 
 class _DealImage extends StatelessWidget {
-  const _DealImage({required this.imageUrl});
-  final String? imageUrl;
+  const _DealImage({required this.deal});
+  final Deal deal;
 
   @override
   Widget build(BuildContext context) {
-    if (imageUrl == null) return const SizedBox.shrink();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        imageUrl!,
-        width: 56,
-        height: 56,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Container(
-          width: 56,
-          height: 56,
-          color: TS.surfaceOf(context),
-          child: const Icon(Icons.image_not_supported_outlined),
+    if (!deal.hasImage) return const SizedBox.shrink();
+    return Semantics(
+      button: true,
+      label: 'View images for ${deal.title}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: Key('deal-image-${deal.id}'),
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => showMarketplaceProductViewer(context, deal),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              deal.gallery.first,
+              width: 56,
+              height: 56,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Container(
+                width: 56,
+                height: 56,
+                color: TS.surfaceOf(context),
+                child: const Icon(Icons.image_not_supported_outlined),
+              ),
+            ),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+Future<void> showMarketplaceProductViewer(
+  BuildContext context,
+  Deal deal,
+) async {
+  if (!deal.hasImage) return;
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => _MarketplaceProductViewer(deal: deal),
+  );
+}
+
+class _MarketplaceProductViewer extends StatefulWidget {
+  const _MarketplaceProductViewer({required this.deal});
+
+  final Deal deal;
+
+  @override
+  State<_MarketplaceProductViewer> createState() =>
+      _MarketplaceProductViewerState();
+}
+
+class _MarketplaceProductViewerState extends State<_MarketplaceProductViewer> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deal = widget.deal;
+    final images = deal.gallery;
+    final height = MediaQuery.sizeOf(context).height * 0.9;
+
+    return Container(
+      key: const Key('marketplace-product-viewer'),
+      height: height,
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        border: Border.all(color: TS.lineOf(context), width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 10, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Marketplace product images',
+                        style: TS.eyebrowOf(context),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        deal.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.merge(TS.display),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close product images',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: TS.lineOf(context)),
+          Expanded(
+            child: Stack(
+              children: [
+                ColoredBox(
+                  color: TS.surfaceSoftOf(context),
+                  child: PageView.builder(
+                    key: const Key('marketplace-product-gallery'),
+                    controller: _controller,
+                    itemCount: images.length,
+                    onPageChanged: (value) => setState(() => _index = value),
+                    itemBuilder: (context, imageIndex) => Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 4,
+                        child: Center(
+                          child: Image.network(
+                            images[imageIndex],
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: double.infinity,
+                              color: TS.surfaceOf(context),
+                              child: Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 48,
+                                color: TS.mutedOf(context),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 14,
+                  bottom: 14,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: TS.surfaceOf(context),
+                      border: Border.all(color: TS.lineOf(context)),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${_index + 1} of ${images.length}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: TS.lineOf(context)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        deal.retailerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (deal.priceText != null)
+                      Text(
+                        deal.priceText!,
+                        style: TextStyle(
+                          color: TS.redOf(context),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                  ],
+                ),
+                if (deal.productUrl != null) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () => showInAppBrowser(
+                      context,
+                      deal.productUrl,
+                      title: deal.retailerName,
+                    ),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('View product'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
