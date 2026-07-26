@@ -7,3 +7,8 @@ binding = "DB"
 database_name = "trolley-scout"
 database_id = "2c43ec07-75b4-4d1f-aacb-ea0b112f36e3"
 migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "trolley-scout-media"
+preview_bucket_name = "trolley-scout-media-preview"

@@ -651,6 +651,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     // Opening a deal is a mild interest signal.
     _tasteStore.recordSignal(
         title: deal.title, category: deal.category, weight: 0.5);
+    _recordBusinessEvent(deal, 'open');
     _recordBusinessEvent(deal, 'outbound');
     await showInAppBrowser(context, uri.toString(), title: deal.retailerName);
   }
@@ -1529,7 +1530,9 @@ class _WindowCardState extends State<_WindowCard> {
                     ],
                   ],
                 ),
-                if (deal.soldOut || deal.savingText != null || endsLabel != null)
+                if (deal.soldOut ||
+                    deal.savingText != null ||
+                    endsLabel != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Wrap(

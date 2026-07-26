@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getMemberSession: vi.fn(),
+  listLiveOrganizationPublications: vi.fn(),
   readDealSiteFeed: vi.fn(),
   refreshDealSites: vi.fn(),
   runDealRefreshWithAlerts: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock('../_shared/memberStore', () => ({
   getMemberSession: mocks.getMemberSession,
 }))
 
+vi.mock('../_shared/organizationPublicationStore', () => ({
+  listLiveOrganizationPublications: mocks.listLiveOrganizationPublications,
+}))
+
 vi.mock('../_shared/dealAlertStore', () => ({
   runDealRefreshWithAlerts: mocks.runDealRefreshWithAlerts,
 }))
@@ -26,6 +31,7 @@ describe('/api/deal-sites', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+    mocks.listLiveOrganizationPublications.mockResolvedValue([])
     mocks.refreshDealSites.mockResolvedValue(undefined)
     mocks.runDealRefreshWithAlerts.mockImplementation(async (
       _env: unknown,
@@ -179,6 +185,43 @@ describe('/api/deal-sites', () => {
     expect(mocks.readDealSiteFeed).toHaveBeenCalledTimes(1)
     expect(mocks.refreshDealSites).not.toHaveBeenCalled()
     expect(waitUntil).not.toHaveBeenCalled()
+  })
+
+  it('adds approved business posts to Window Shopping', async () => {
+    mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
+    mocks.listLiveOrganizationPublications.mockResolvedValue([{
+      bodyText: 'Fresh baked bread is available this Saturday morning.',
+      createdAt: '2026-07-26T08:00:00.000Z',
+      createdBy: 'member-1',
+      id: 'org-pub-1',
+      kind: 'post',
+      locationIds: [],
+      organizationId: 'org-1',
+      organizationName: 'Fresh Market',
+      organizationSlug: 'fresh-market',
+      placement: 'window',
+      status: 'live',
+      title: 'Meet our Saturday bakers',
+      updatedAt: '2026-07-26T09:00:00.000Z',
+    }])
+
+    const response = await invoke(
+      new Request('https://trolleyscout.co.za/api/deal-sites'),
+      vi.fn(),
+    )
+    const envelope = await response.json() as {
+      data: { deals: Array<{ id: string }>; sources: Array<{ id: string; count: number }> }
+    }
+
+    expect(envelope.data.deals.map((deal) => deal.id)).toEqual(['org-pub-1', 'cached-deal'])
+    expect(envelope.data.sources).toContainEqual(expect.objectContaining({
+      count: 1,
+      id: 'trolleyscout-business',
+    }))
+    expect(mocks.listLiveOrganizationPublications).toHaveBeenCalledWith(
+      expect.anything(),
+      'window',
+    )
   })
 })
 

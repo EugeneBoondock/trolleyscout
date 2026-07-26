@@ -47,6 +47,7 @@ import { ScoutGuide, ScoutMascot } from './components/ScoutMascot'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
 import { RetailerPicker } from './components/RetailerPicker'
+import { AdminPublicationReview } from './business/AdminPublicationReview'
 import {
   addBasketItemForMember,
   getInitialOfferState,
@@ -98,6 +99,7 @@ import {
   deleteDealWatch,
   loadDealWatches,
   markDealWatchSeen,
+  recordOrganizationPublicationEvent,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
 import { useWebMcpTools } from './webmcp'
@@ -881,6 +883,7 @@ function App() {
             retailerId: deal.retailerId,
             title: deal.title,
           }).catch(() => undefined)
+          recordBusinessPublicationEvent(deal, 'save')
         }
       }
     } finally {
@@ -904,6 +907,7 @@ function App() {
         setMemberNotice(savedResult.message)
         return
       }
+      recordBusinessPublicationEvent(deal, 'save')
 
       setSavedDealState({
         data: { savedDeals: savedResult.data.savedDeals },
@@ -3969,6 +3973,8 @@ function AdminConsole() {
             ))}
           </div>
 
+          <AdminPublicationReview />
+
           <div className="section-heading">
             <div>
               <p className="eyebrow">Members</p>
@@ -4887,6 +4893,18 @@ function PublicSignInGate({ view, onSignIn }: { view: ActiveView; onSignIn: () =
   )
 }
 
+function isBusinessPublicationDeal(deal: DiscoveredDeal) {
+  return deal.id.startsWith('org-pub-') && deal.retailerId.startsWith('organization:')
+}
+
+function recordBusinessPublicationEvent(
+  deal: DiscoveredDeal,
+  event: 'impression' | 'open' | 'save' | 'outbound',
+) {
+  if (!isBusinessPublicationDeal(deal)) return
+  void recordOrganizationPublicationEvent(deal.id, event).catch(() => undefined)
+}
+
 function DiscoveryPanel({
   canRunDiscovery = false,
   canWatchItems = false,
@@ -4980,6 +4998,15 @@ function DiscoveryPanel({
   const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
   // Logged-out sample: show only the first N, never the pager.
   const shownDeals = isSample ? deals.slice(0, sampleLimit) : pagedDeals
+  const reportedImpressions = useRef(new Set<string>())
+
+  useEffect(() => {
+    for (const deal of shownDeals) {
+      if (!isBusinessPublicationDeal(deal) || reportedImpressions.current.has(deal.id)) continue
+      reportedImpressions.current.add(deal.id)
+      recordBusinessPublicationEvent(deal, 'impression')
+    }
+  }, [shownDeals])
 
   useEffect(
     () => setPage(0),
@@ -5158,7 +5185,15 @@ function DiscoveryPanel({
                 </div>
               </div>
               <div className="offer-actions">
-                <a href={withReferralSource(deal.productUrl)} rel="noreferrer" target="_blank">
+                <a
+                  href={withReferralSource(deal.productUrl)}
+                  onClick={() => {
+                    recordBusinessPublicationEvent(deal, 'open')
+                    recordBusinessPublicationEvent(deal, 'outbound')
+                  }}
+                  rel="noreferrer"
+                  target="_blank"
+                >
                   Product
                   <LinkSimple size={14} />
                 </a>

@@ -91,7 +91,7 @@ interface LiveDealSiteIndex {
 async function liveDealSiteIndex(env: TrolleyScoutEnv): Promise<LiveDealSiteIndex> {
   try {
     const feed = await readDealSiteFeed(env)
-    const availableSources = new Set(feed.sources.map((source) => source.id))
+    const availableSources = new Set<string>(feed.sources.map((source) => source.id))
     const idsBySource = new Map<string, Set<string>>()
     for (const source of availableSources) idsBySource.set(source, new Set())
     for (const deal of feed.deals) {

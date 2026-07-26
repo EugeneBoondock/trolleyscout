@@ -196,4 +196,19 @@ void main() {
 
     expect(deal.gallery, ['https://example.test/images/only.jpg']);
   });
+
+  test(
+      'identifies verified business publications for anonymous activity totals',
+      () {
+    const deal = ScrollDeal(
+      id: 'org-pub-1',
+      title: 'Fresh tomato tray',
+      retailerName: 'Fresh Market',
+      sourceLabel: 'Fresh Market business post',
+      source: 'trolleyscout-business',
+      productUrl: 'https://fresh.example.co.za/tomatoes',
+    );
+
+    expect(deal.isBusinessPublication, isTrue);
+  });
 }

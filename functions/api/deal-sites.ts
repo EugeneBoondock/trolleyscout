@@ -8,8 +8,16 @@ import { runDealRefreshWithAlerts } from '../_shared/dealAlertStore'
 import {
   readDealSiteFeed,
   refreshDealSites,
+  type DealSiteFeed,
 } from '../_shared/dealSiteScout'
 import { getMemberSession } from '../_shared/memberStore'
+import {
+  organizationPublicationsToWindowItems,
+} from '../_shared/organizationPublicationFeed'
+import {
+  listLiveOrganizationPublications,
+  type OrganizationPublication,
+} from '../_shared/organizationPublicationStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const publicHeaders = {
@@ -57,7 +65,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     }
   }
 
-  let feed = await readDealSiteFeed(env)
+  const [initialFeed, businessPublications] = await Promise.all([
+    readDealSiteFeed(env),
+    listLiveOrganizationPublications(env, 'window'),
+  ])
+  let feed = initialFeed
 
   // An administrator refresh bypasses response caches and waits for the
   // upstream scouts so the response contains the newest stored rows.
@@ -70,15 +82,41 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     feed = await readDealSiteFeed(env)
 
     return json(
-      { deals: feed.deals, refreshedAt: feed.refreshedAt, sources: feed.sources },
+      addBusinessPublications(feed, businessPublications),
       { headers: refreshHeaders },
     )
   }
 
   return json(
-    { deals: feed.deals, refreshedAt: feed.refreshedAt, sources: feed.sources },
+    addBusinessPublications(feed, businessPublications),
     { headers: publicHeaders },
   )
+}
+
+function addBusinessPublications(
+  feed: DealSiteFeed,
+  publications: OrganizationPublication[],
+) {
+  const businessDeals = organizationPublicationsToWindowItems(publications)
+  if (businessDeals.length === 0) return feed
+
+  const fetchedAt = publications.reduce(
+    (newest, publication) => publication.updatedAt > newest ? publication.updatedAt : newest,
+    publications[0].updatedAt,
+  )
+  return {
+    deals: [...businessDeals, ...feed.deals],
+    refreshedAt: !feed.refreshedAt || fetchedAt > feed.refreshedAt ? fetchedAt : feed.refreshedAt,
+    sources: [
+      {
+        count: businessDeals.length,
+        fetchedAt,
+        id: 'trolleyscout-business',
+        label: 'Trolley Scout businesses',
+      },
+      ...feed.sources,
+    ],
+  }
 }
 
 async function claimRefreshLease(

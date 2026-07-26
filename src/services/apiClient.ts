@@ -107,9 +107,28 @@ export interface SubscriptionResource {
   plans: MemberPlan[]
 }
 
+export type OrganizationPublicationEvent = 'impression' | 'open' | 'save' | 'outbound'
+
 const defaultMeta: ApiEnvelope<unknown>['meta'] = {
   generatedAt: new Date(0).toISOString(),
   source: 'static-fallback',
+}
+
+export async function recordOrganizationPublicationEvent(
+  publicationId: string,
+  event: OrganizationPublicationEvent,
+): Promise<void> {
+  const response = await fetch('/api/organization-publication-events', {
+    body: JSON.stringify({ event, publicationId }),
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error(`Publication event API returned ${response.status}`)
+  }
 }
 
 export function getInitialRetailerState(): ResourceState<RetailerResource> {

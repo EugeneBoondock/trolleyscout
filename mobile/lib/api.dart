@@ -748,6 +748,18 @@ class Api {
     return _maps(data['deals']).map(ScrollDeal.fromJson).toList();
   }
 
+  Future<void> recordOrganizationPublicationEvent(
+      String publicationId, String event) async {
+    await _request(
+      'POST',
+      '/api/organization-publication-events',
+      body: {
+        'publicationId': publicationId,
+        'event': event,
+      },
+    );
+  }
+
   Future<Basket> saveDealToBasket(Deal deal) async {
     final savedDeals = await saveDeal(deal);
     SavedDeal? saved;
