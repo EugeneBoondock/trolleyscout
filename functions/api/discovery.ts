@@ -92,7 +92,19 @@ interface SourceCheck {
 }
 
 const NORMALIZED_PAGE_SIZE = 200
-const NORMALIZED_SAFETY_CAP = 5_000
+// Every active deal has to fit under this, because the rows are read in expiry
+// order and whatever does not fit is not "trimmed" — it is invisible. The feed
+// grew past the old 5,000 and the deals that fell off the end were the ones
+// with the longest validity windows, which is exactly what a leaflet is: every
+// Checkers deal expires on one far-off date, so all 88 of them sat past the cap
+// and the shop read as having nothing while its catalogue was live. Shoprite
+// kept 57 of 615 for the same reason.
+//
+// Sized well above the current total (~7,700) rather than snugly, because the
+// symptom is silent: a shop reporting zero looks like a broken retailer rather
+// than a full bucket. `readNormalizedDealItems` now says when it stops early,
+// so the next time this fills up it is visible instead of guessed at.
+const NORMALIZED_SAFETY_CAP = 25_000
 const PAGER_MANIFEST_MAX_BYTES = 512 * 1024
 const PAGER_MANIFEST_TIMEOUT_MS = 8_000
 const PAGER_ENRICH_CONCURRENCY = 2
@@ -121,6 +133,8 @@ async function openEdgeCache(): Promise<Cache | undefined> {
 export interface NormalizedDealReadOptions {
   countryCode?: string
   listItems?: typeof listActiveDealItems
+  /// Called when the read stops on its own cap with rows still unread.
+  onTruncated?: (readCount: number) => void
   pageSize?: number
   safetyCap?: number
 }
@@ -471,9 +485,15 @@ export async function readNormalizedDealItems(
       items.push(...page)
 
       if (page.length < limit) {
-        break
+        return items
       }
     }
+
+    // Stopped on the cap rather than because the rows ran out, which means some
+    // active deal is not in this list. Rows come back in expiry order, so what
+    // gets left behind is whatever is valid longest — a leaflet, every time.
+    // Said out loud because the shop it hides just reads as empty.
+    options.onTruncated?.(items.length)
   } catch {
     // Missing migration or a transient D1 read leaves legacy snapshots usable.
   }

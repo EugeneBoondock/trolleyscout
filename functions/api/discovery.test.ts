@@ -461,6 +461,46 @@ describe('normalized discovery cutover', () => {
       .toEqual([[0, 2], [2, 2], [4, 1]])
   })
 
+  // Hitting the cap used to be silent, and rows come back in expiry order, so
+  // what fell off the end was whatever stays valid longest — a leaflet, every
+  // time. Checkers had 88 live catalogue deals and served none of them, which
+  // read as a broken shop rather than a full bucket.
+  it('says when it stops on the cap with rows still unread', async () => {
+    const rows = Array.from({ length: 7 }, (_, index) => storedItem({
+      id: `row-${index}`,
+      productId: `product-${index}`,
+    }))
+    const listItems = vi.fn(async (_env, options) =>
+      rows.slice(options.offset, options.offset + options.limit))
+    const onTruncated = vi.fn()
+
+    await readNormalizedDealItems(
+      { DB: {} as D1Database },
+      '2026-07-16T12:00:00.000Z',
+      { listItems, onTruncated, pageSize: 2, safetyCap: 4 },
+    )
+
+    expect(onTruncated).toHaveBeenCalledWith(4)
+  })
+
+  it('stays quiet when every active deal fits', async () => {
+    const rows = Array.from({ length: 3 }, (_, index) => storedItem({
+      id: `row-${index}`,
+      productId: `product-${index}`,
+    }))
+    const listItems = vi.fn(async (_env, options) =>
+      rows.slice(options.offset, options.offset + options.limit))
+    const onTruncated = vi.fn()
+
+    await readNormalizedDealItems(
+      { DB: {} as D1Database },
+      '2026-07-16T12:00:00.000Z',
+      { listItems, onTruncated, pageSize: 2, safetyCap: 50 },
+    )
+
+    expect(onTruncated).not.toHaveBeenCalled()
+  })
+
   it('degrades to legacy storage when the normalized table is not deployed', async () => {
     const listItems = vi.fn(async () => {
       throw new Error('no such table: deal_items')

@@ -36,6 +36,17 @@ void main() {
       final deal = _deal(id: 'c', saving: '25% off');
       expect(dealSavingCents(deal), isNull);
     });
+
+    test('does not read a multibuy total as a saving', () {
+      // R120 is what two bottles cost together, not what anybody saves, and
+      // reading it as one put juice at the top of "Most saved".
+      final deal = _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
+      expect(dealSavingCents(deal), isNull);
+    });
+
+    test('reads a saving stated with a decimal', () {
+      expect(dealSavingCents(_deal(id: 'e', saving: 'Save R300.00')), 30000);
+    });
   });
 
   group('dealDiscountFraction', () {
@@ -47,6 +58,34 @@ void main() {
     test('reads a percentage from the saving text', () {
       final deal = _deal(id: 'b', saving: '25% off');
       expect(dealDiscountFraction(deal), closeTo(0.25, 0.0001));
+    });
+
+    test('reads a percentage the text says is saved', () {
+      final deal = _deal(id: 'c', saving: 'Buy any 3 save 20% Toiletries');
+      expect(dealDiscountFraction(deal), closeTo(0.2, 0.0001));
+    });
+
+    test('does not read 100% fruit juice as a 100% discount', () {
+      // The percentage describes the juice. Taking any number before a percent
+      // sign sorted every carton above a genuine half-price rail.
+      final deal = _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
+      expect(dealDiscountFraction(deal), isNull);
+    });
+
+    test('ignores a percentage that describes the product', () {
+      for (final saving in const [
+        '100% Cotton Shirt',
+        '2 for R100, 100% recycled',
+        '100 % Apple Juice 1.5 L',
+      ]) {
+        expect(dealDiscountFraction(_deal(id: 'x', saving: saving)), isNull,
+            reason: saving);
+      }
+    });
+
+    test('still finds the discount when a description sits beside it', () {
+      final deal = _deal(id: 'y', saving: '100% cotton shirts, 30% off');
+      expect(dealDiscountFraction(deal), closeTo(0.3, 0.0001));
     });
   });
 

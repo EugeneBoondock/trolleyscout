@@ -31,31 +31,61 @@ const dealSortOptions = <DealSortOption>[
 ];
 
 /// The rand a deal saves, computed from the marked-down and previous prices,
-/// falling back to any amount named in the saving text ("Save R10"). Null when
-/// nothing usable is present (e.g. a percentage-only "25% off").
+/// falling back to an amount the saving text names as a saving ("Save R10").
+/// Null when nothing usable is present (e.g. a percentage-only "25% off").
 int? dealSavingCents(Deal deal) {
   final price = extractPriceCents(deal.priceText);
   final previous = extractPriceCents(deal.previousPriceText);
   if (price != null && previous != null && previous > price) {
     return previous - price;
   }
-  return extractPriceCents(deal.savingText);
+  return _savingNamedIn(deal.savingText);
 }
 
 /// The discount fraction 0..1, from prices when both are present, otherwise a
-/// "NN% off" in the saving text. Null when neither is available.
+/// percentage the saving text says comes off. Null when neither is available.
 double? dealDiscountFraction(Deal deal) {
   final price = extractPriceCents(deal.priceText);
   final previous = extractPriceCents(deal.previousPriceText);
   if (price != null && previous != null && previous > price && previous > 0) {
     return (previous - price) / previous;
   }
-  final percent = RegExp(r'(\d{1,3})\s*%').firstMatch(deal.savingText ?? '');
-  if (percent != null) {
-    final value = int.tryParse(percent.group(1)!);
-    if (value != null && value > 0 && value <= 100) return value / 100;
-  }
-  return null;
+  return _percentOffIn(deal.savingText);
+}
+
+/// A rand amount only counts as a saving when the text says it is one.
+///
+/// Reading any rand figure out of the offer put a bottle of juice at the top of
+/// "Most saved": Woolworths writes "Buy Any 2 For R120 100% Fruit Juice", and
+/// R120 is what two of them cost together, not what anybody saves.
+int? _savingNamedIn(String? text) {
+  if (text == null || text.isEmpty) return null;
+
+  final match = RegExp(r'\bsaves?\s*R\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
+      .firstMatch(text);
+  if (match == null) return null;
+
+  final rands = double.tryParse(match.group(1)!.replaceAll(',', '.'));
+  if (rands == null || rands <= 0) return null;
+  return (rands * 100).round();
+}
+
+/// A percentage only counts when the text says it comes off.
+///
+/// "100% Fruit Juice" describes the juice, and taking any number before a
+/// percent sign sorted every one of them above a genuine half-price rail.
+double? _percentOffIn(String? text) {
+  if (text == null || text.isEmpty) return null;
+
+  final claimed =
+      RegExp(r'(\d{1,3})\s*%\s*(?:off|discount)\b', caseSensitive: false).firstMatch(text) ??
+          RegExp(r'\bsaves?\s*(?:up\s*to\s*)?(\d{1,3})\s*%', caseSensitive: false)
+              .firstMatch(text);
+  if (claimed == null) return null;
+
+  final value = int.tryParse(claimed.group(1)!);
+  if (value == null || value <= 0 || value > 100) return null;
+  return value / 100;
 }
 
 /// Returns a new list ordered by [sort]. Deals that lack the value a sort needs
