@@ -67,6 +67,14 @@ import {
   listMemberInterestWeights,
 } from '../_shared/dealLearningStore'
 import { getMemberSession } from '../_shared/memberStore'
+import {
+  organizationPublicationDiscoverySource,
+  organizationPublicationsToDiscoveryDeals,
+} from '../_shared/organizationPublicationFeed'
+import {
+  listLiveOrganizationPublications,
+  type OrganizationPublication,
+} from '../_shared/organizationPublicationStore'
 import { detectRequestCountry } from '../_shared/countryContext'
 import { json, methodNotAllowed } from '../_shared/respond'
 import {
@@ -194,12 +202,17 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
         // topDeals field. Let those requests rebuild the row from source
         // snapshots once instead of returning an empty savings strip.
         if (Array.isArray(parsed.topDeals)) {
+          const businessPublications = await listLiveOrganizationPublications(env, 'marketplace')
+          const businessDeals = organizationPublicationsToDiscoveryDeals(businessPublications)
           return json(
             {
-              deals: summaryPreviewDeals(parsed.topDeals),
+              deals: summaryPreviewDeals(dedupeDiscoveryDeals([
+                ...businessDeals,
+                ...parsed.topDeals,
+              ])),
               leaflets: [],
               summary: {
-                foundDealCount: parsed.foundDealCount ?? 0,
+                foundDealCount: (parsed.foundDealCount ?? 0) + businessDeals.length,
                 leafletCount: parsed.leafletCount ?? 0,
                 refreshedAt: summaryRow.checked_at,
               },
@@ -218,15 +231,28 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     }
   }
 
-  const [snapshots, leafletSnapshot, initialStorePromotions, normalizedItems] = await Promise.all([
+  const [
+    snapshots,
+    leafletSnapshot,
+    initialStorePromotions,
+    normalizedItems,
+    businessPublications,
+  ] = await Promise.all([
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
     isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
     readAllStorePromotions(env, nowIso, 3000, countryCode),
     readNormalizedDealItems(env, nowIso, { countryCode }),
+    isSouthAfrica
+      ? listLiveOrganizationPublications(env, 'marketplace')
+      : Promise.resolve([]),
   ])
   let storePromotions = initialStorePromotions
   const interests = await getRequestInterests(env, session.account?.id)
-  let storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
+  let storeDiscovery = addBusinessDiscovery(
+    storePromotionsToDiscovery(storePromotions, nowIso),
+    businessPublications,
+    nowIso,
+  )
   const normalizedChecks = buildNormalizedDiscoveryChecks(normalizedItems)
 
   // Normal requests read stored rows only, including a cold or empty cache.
@@ -293,7 +319,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       () => refreshInternationalStoreSources(env, countryCode, Date.now()),
     )
     storePromotions = await readAllStorePromotions(env, nowIso, 3000, countryCode)
-    storeDiscovery = storePromotionsToDiscovery(storePromotions, nowIso)
+    storeDiscovery = addBusinessDiscovery(
+      storePromotionsToDiscovery(storePromotions, nowIso),
+      businessPublications,
+      nowIso,
+    )
     const response = respond(
       [],
       [],
@@ -422,6 +452,9 @@ async function refreshInternationalStoreSources(
 // Internal scheduled-worker entry point. It bypasses request authorization
 // because it is only called from the Worker bundle.
 export interface DiscoveryRefreshOptions {
+  /// Called when the deal read stopped on its own cap with rows still unread,
+  /// so the sweep can raise it rather than leave shops silently unserved.
+  onTruncated?: (readCount: number) => void
   refreshDeals?: boolean
 }
 
@@ -430,11 +463,21 @@ export async function refreshDiscoveryCache(
   options: DiscoveryRefreshOptions = {},
 ): Promise<DiscoveryRun> {
   const nowIso = new Date().toISOString()
-  const [snapshots, leafletSnapshot, storePromotions, normalizedItems] = await Promise.all([
+  const [
+    snapshots,
+    leafletSnapshot,
+    storePromotions,
+    normalizedItems,
+    businessPublications,
+  ] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
     readAllStorePromotions(env, nowIso),
-    readNormalizedDealItems(env, nowIso, { countryCode: 'ZA' }),
+    readNormalizedDealItems(env, nowIso, {
+      countryCode: 'ZA',
+      onTruncated: options.onTruncated,
+    }),
+    listLiveOrganizationPublications(env, 'marketplace'),
   ])
   const [settled, leaflets] = await Promise.all([
     options.refreshDeals === false
@@ -449,7 +492,11 @@ export async function refreshDiscoveryCache(
     new Date().toISOString(),
     false,
     [],
-    storePromotionsToDiscovery(storePromotions, nowIso),
+    addBusinessDiscovery(
+      storePromotionsToDiscovery(storePromotions, nowIso),
+      businessPublications,
+      nowIso,
+    ),
   )
 }
 
@@ -1164,6 +1211,22 @@ async function refreshAllSources(
     ...settled,
     ...buildDynamicSnapshotChecks(priorSnapshots, knownSourceKeys(targets)),
   ]
+}
+
+function addBusinessDiscovery(
+  discovery: ReturnType<typeof storePromotionsToDiscovery>,
+  publications: OrganizationPublication[],
+  checkedAt: string,
+): ReturnType<typeof storePromotionsToDiscovery> {
+  const deals = organizationPublicationsToDiscoveryDeals(publications)
+  const source = organizationPublicationDiscoverySource(publications, checkedAt)
+  if (deals.length === 0 || !source) return discovery
+
+  return {
+    deals: [...deals, ...discovery.deals],
+    leaflets: discovery.leaflets,
+    sources: [source, ...discovery.sources],
+  }
 }
 
 function respond(

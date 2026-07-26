@@ -9,6 +9,12 @@ import {
   snapshotDealAlertKeys,
 } from '../functions/_shared/dealAlertStore'
 import { refreshDealSites } from '../functions/_shared/dealSiteScout'
+import {
+  readSourceHealth,
+  recordSourceHealth,
+  truncationAlert,
+  type SourceHealthAlert,
+} from '../functions/_shared/sourceHealth'
 import { expireDealItems } from '../functions/_shared/dealItemStore'
 import { matchPendingWatches } from '../functions/_shared/dealWatchStore'
 import type { TrolleyScoutEnv } from '../functions/_shared/env'
@@ -41,6 +47,9 @@ import { buildRegistryOnlineStores } from '../functions/_shared/registryOnlineSc
 import { runVoucherScout } from '../functions/_shared/voucherScout'
 import { pruneWindowSocial } from '../functions/_shared/windowSocialStore'
 import { refreshDiscoveryCache } from '../functions/api/discovery'
+import {
+  advanceOrganizationPublicationStatuses,
+} from '../functions/_shared/organizationPublicationStore'
 import type { DiscoveryRun } from '../src/types'
 import { parseRetailerSlug } from '../src/services/retailerFeeds/types'
 
@@ -54,6 +63,7 @@ type ScoutFetch = (
 ) => Promise<Response>
 
 export interface ScheduledScoutDependencies {
+  advanceOrganizationPublicationStatuses?: typeof advanceOrganizationPublicationStatuses
   applyDuePlanChanges?: typeof applyDuePlanChanges
   expireDealItems: typeof expireDealItems
   matchPendingWatches?: typeof matchPendingWatches
@@ -61,6 +71,8 @@ export interface ScheduledScoutDependencies {
   readAllStoreCatalogues?: typeof readAllStoreCatalogues
   readDueDiscoveredStores: typeof readDueDiscoveredStores
   recordGlobalDealAlertBatch?: typeof recordGlobalDealAlertBatch
+  readSourceHealth?: typeof readSourceHealth
+  recordSourceHealth?: typeof recordSourceHealth
   refreshDealSites: typeof refreshDealSites
   refreshDiscovery: typeof refreshDiscoveryCache
   runCatalogueScout: typeof runCatalogueScout
@@ -87,6 +99,7 @@ export interface ScheduledScoutOptions {
 const ONLINE_RETAILER_SCOUT_LIMIT = 100
 
 const defaultDependencies: ScheduledScoutDependencies = {
+  advanceOrganizationPublicationStatuses,
   applyDuePlanChanges,
   expireDealItems,
   matchPendingWatches,
@@ -125,10 +138,16 @@ export async function runScheduledScout(
   }
   let discovery: DiscoveryRun | undefined
   let legacyRefreshFailed = false
+  // A full bucket hides whichever deals stay valid longest, which is every
+  // leaflet, so it is carried out with the rest of the alarms.
+  let truncatedAt: number | undefined
+  const onTruncated = (readCount: number) => {
+    truncatedAt = readCount
+  }
   try {
     discovery = refreshDealSources
-      ? await dependencies.refreshDiscovery(env)
-      : await dependencies.refreshDiscovery(env, { refreshDeals: false })
+      ? await dependencies.refreshDiscovery(env, { onTruncated })
+      : await dependencies.refreshDiscovery(env, { onTruncated, refreshDeals: false })
   } catch {
     // Structured feeds and discovered-store fallbacks still run when this
     // older refresh lane has a transient transport or endpoint failure.
@@ -219,6 +238,13 @@ export async function runScheduledScout(
   // Enforce the expiry rule: remove any store promotions and location caches
   // whose date has passed, so no shopper is ever shown an out-of-date special.
   const expiredRemoved = await dependencies.purgeExpired(env, nowIso)
+  let organizationPublicationStatusUpdates = 0
+  if (hasTrolleyScoutDatabase(env)) {
+    organizationPublicationStatusUpdates = await (
+      dependencies.advanceOrganizationPublicationStatuses ??
+      advanceOrganizationPublicationStatuses
+    )(env, nowIso)
+  }
   let expiredNormalizedDealCount = 0
   if (hasTrolleyScoutDatabase(env)) {
     try {
@@ -268,6 +294,24 @@ export async function runScheduledScout(
     }
   }
 
+  // Last, so it measures the sweep that just ran rather than the one before.
+  // A shop that died this hour is worth knowing about this hour, not next.
+  let sourceHealthAlerts: SourceHealthAlert[] = []
+  let sourceHealthFailed = false
+  if (hasTrolleyScoutDatabase(env)) {
+    try {
+      await (dependencies.recordSourceHealth ?? recordSourceHealth)(env, nowIso)
+      const health = await (dependencies.readSourceHealth ?? readSourceHealth)(env, nowIso)
+      sourceHealthAlerts = truncatedAt === undefined
+        ? health.alerts
+        : [truncationAlert(truncatedAt), ...health.alerts]
+    } catch {
+      // Health reporting must never be the thing that fails a sweep: the deals
+      // it watches over are more important than the watching.
+      sourceHealthFailed = true
+    }
+  }
+
   return {
     catalogueDealCount: catalogue.dealCount,
     catalogueScoutFailed,
@@ -286,11 +330,14 @@ export async function runScheduledScout(
     externalDealRefreshFailed,
     legacyRefreshFailed,
     onlineRetailerScoutFailed,
+    organizationPublicationStatusUpdates,
     planChangeFailureCount,
     planChangesApplied,
     refreshedDealCount: refreshDealSources ? discovery?.summary.foundDealCount ?? 0 : 0,
     refreshedSourceCount: refreshDealSources ? discovery?.summary.checkedSourceCount ?? 0 : 0,
     scannedDocumentCount: catalogue.scannedDocumentCount,
+    sourceHealthAlerts,
+    sourceHealthFailed,
     storeScoutFailed,
     structuredAcceptedDealCount: structured.acceptedDealCount,
     structuredCatalogueCount: structured.catalogueCount,

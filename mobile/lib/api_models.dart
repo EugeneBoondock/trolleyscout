@@ -1478,8 +1478,8 @@ class PublicAd {
 }
 
 /// One deal in the endless "Scroll" window-shopping reel. Sourced from the
-/// external deal sites (OneDayOnly, Hyperli, Daddy's Deals, MyRunway) and from
-/// the platform's own discovery feed.
+/// external deal sites, verified Trolley Scout business posts, and the
+/// platform's own discovery feed.
 class ScrollDeal {
   const ScrollDeal({
     required this.id,
@@ -1495,6 +1495,7 @@ class ScrollDeal {
     this.images = const [],
     this.category,
     this.expiresAt,
+    this.soldOut = false,
   });
 
   final String id;
@@ -1510,6 +1511,9 @@ class ScrollDeal {
   final List<String> images;
   final String? category;
   final String? expiresAt;
+  /// Only ever true because the site said so. The reel sources that say nothing
+  /// about stock leave this false rather than guessing.
+  final bool soldOut;
 
   List<String> get gallery {
     final seen = <String>{};
@@ -1523,6 +1527,9 @@ class ScrollDeal {
   }
 
   bool get hasImage => gallery.isNotEmpty;
+
+  bool get isBusinessPublication =>
+      source == 'trolleyscout-business' && id.startsWith('org-pub-');
 
   factory ScrollDeal.fromJson(Map<String, dynamic> json) => ScrollDeal(
         id: _string(json['id']),
@@ -1544,6 +1551,7 @@ class ScrollDeal {
             : const [],
         category: _optionalString(json['category']),
         expiresAt: _optionalString(json['expiresAt']),
+        soldOut: json['soldOut'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -1560,6 +1568,8 @@ class ScrollDeal {
         if (images.isNotEmpty) 'images': images,
         'category': category,
         'expiresAt': expiresAt,
+        // Round-trips so a saved deal keeps saying it is gone.
+        if (soldOut) 'soldOut': true,
       };
 
   /// Renders this deal-site item as a regular [Deal] so it can appear in the
@@ -1831,7 +1841,8 @@ class DealAlertSummary {
 
   factory DealAlertSummary.fromJson(Map<String, dynamic> json) {
     final expiring = json['expiringSavedDeals'];
-    final first = expiring is List && expiring.isNotEmpty ? expiring.first : null;
+    final first =
+        expiring is List && expiring.isNotEmpty ? expiring.first : null;
 
     return DealAlertSummary(
       enabled: json['enabled'] == true,

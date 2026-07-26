@@ -22,6 +22,48 @@ void main() {
     expect(safeWindowWebUri('/relative/deal'), isNull);
   });
 
+  // Said on the card, before the shopper taps through and finds it gone.
+  testWidgets('badges a sold-out deal in the reel', (tester) async {
+    final api = _WindowApi(initialDeals: const [_soldOutDeal]);
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('scroll-sold-out-deal-gone')), findsOneWidget);
+    expect(find.text('SOLD OUT'), findsOneWidget);
+  });
+
+  testWidgets('drops the saving from a sold-out card', (tester) async {
+    // A discount on something nobody can buy is not the news, and the reel is
+    // scrolled fast enough that a second badge reads as an offer.
+    final api = _WindowApi(initialDeals: const [_soldOutDeal]);
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('40% off'), findsNothing);
+  });
+
+  testWidgets('leaves an in-stock deal showing its saving', (tester) async {
+    const stocked = ScrollDeal(
+      id: 'deal-stocked',
+      title: 'Stocked deal',
+      retailerName: 'Example Store',
+      sourceLabel: 'Example',
+      source: 'onedayonly',
+      productUrl: 'https://example.test/deal-stocked',
+      imageUrl: 'https://example.test/deal-stocked.jpg',
+      savingText: '40% off',
+    );
+    final api = _WindowApi(initialDeals: const [stocked]);
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('scroll-sold-out-deal-stocked')), findsNothing);
+    expect(find.text('40% off'), findsOneWidget);
+  });
+
   testWidgets('saves a window item to the member saved-deals list',
       (tester) async {
     final api = _WindowApi(
@@ -589,6 +631,18 @@ const _deal1 = ScrollDeal(
   source: 'example',
   productUrl: 'https://example.test/deal-1',
   imageUrl: 'https://example.test/deal-1.jpg',
+);
+
+const _soldOutDeal = ScrollDeal(
+  id: 'deal-gone',
+  title: 'Gone deal',
+  retailerName: 'Example Store',
+  sourceLabel: 'Example',
+  source: 'onedayonly',
+  productUrl: 'https://example.test/deal-gone',
+  imageUrl: 'https://example.test/deal-gone.jpg',
+  savingText: '40% off',
+  soldOut: true,
 );
 
 const _deal2 = ScrollDeal(

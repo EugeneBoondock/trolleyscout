@@ -320,6 +320,16 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     final key = windowSeenKey(deal);
     if (!_seenThisVisit.add(key)) return;
     unawaited(_seenStore.markSeen(key));
+    _recordBusinessEvent(deal, 'impression');
+  }
+
+  void _recordBusinessEvent(ScrollDeal deal, String event) {
+    if (!deal.isBusinessPublication) return;
+    unawaited(
+      widget.api
+          .recordOrganizationPublicationEvent(deal.id, event)
+          .catchError((_) {}),
+    );
   }
 
   void _markFirstVisibleAfterFrame() {
@@ -599,6 +609,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
           ? await widget.api.unsaveWindowDeal(deal.id)
           : await widget.api.saveWindowDeal(deal);
       if (mounted) setState(() => _saveStats[deal.id] = stat);
+      if (!wasSaved) _recordBusinessEvent(deal, 'save');
       // Keep an on-device mirror so the saved sheet works offline too.
       await _savedStore.toggle(deal);
     } catch (_) {
@@ -640,6 +651,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     // Opening a deal is a mild interest signal.
     _tasteStore.recordSignal(
         title: deal.title, category: deal.category, weight: 0.5);
+    _recordBusinessEvent(deal, 'outbound');
     await showInAppBrowser(context, uri.toString(), title: deal.retailerName);
   }
 
@@ -1517,7 +1529,7 @@ class _WindowCardState extends State<_WindowCard> {
                     ],
                   ],
                 ),
-                if (deal.savingText != null || endsLabel != null)
+                if (deal.soldOut || deal.savingText != null || endsLabel != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Wrap(
@@ -1525,7 +1537,17 @@ class _WindowCardState extends State<_WindowCard> {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        if (deal.savingText != null)
+                        // First, and it takes the saving's place: a discount on
+                        // something nobody can buy is not the news, and the reel
+                        // is scrolled fast enough that a second badge would be
+                        // read as an offer rather than a warning.
+                        if (deal.soldOut)
+                          _Badge(
+                              key: Key('scroll-sold-out-${deal.id}'),
+                              text: 'SOLD OUT',
+                              color: Colors.white24,
+                              textColor: Colors.white),
+                        if (!deal.soldOut && deal.savingText != null)
                           _Badge(
                               text: deal.savingText!,
                               color: TS.red,
@@ -2229,7 +2251,10 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
 
 class _Badge extends StatelessWidget {
   const _Badge(
-      {required this.text, required this.color, required this.textColor});
+      {super.key,
+      required this.text,
+      required this.color,
+      required this.textColor});
 
   final String text;
   final Color color;
@@ -2280,7 +2305,6 @@ class _WindowImageGalleryState extends State<_WindowImageGallery> {
     _controller.dispose();
     super.dispose();
   }
-
 
   List<int> get _dotIndexes {
     const visibleDotLimit = 9;
@@ -2363,7 +2387,6 @@ class _WindowImageGalleryState extends State<_WindowImageGallery> {
     );
   }
 }
-
 
 class WindowProductImage extends StatefulWidget {
   const WindowProductImage({

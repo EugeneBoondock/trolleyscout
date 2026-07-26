@@ -49,7 +49,7 @@ describe('parseOneDayOnly', () => {
 
   it('extracts products with price, was-price, percentage saving and expiry', () => {
     const items = parseOneDayOnly(html)
-    expect(items).toHaveLength(1)
+    expect(items).toHaveLength(2)
     const item = items[0]
     expect(item.id).toBe('onedayonly-1292923')
     expect(item.title).toBe('Hand Woven Flatweave Rug')
@@ -64,6 +64,20 @@ describe('parseOneDayOnly', () => {
       'https://odo-cdn.imgix.net/x.jpeg',
       'https://odo-cdn.imgix.net/side.jpeg',
     ])
+  })
+
+  it('keeps a sold-out deal and says it is gone', () => {
+    // Dropping these meant the reel could never badge one: the card simply was
+    // not there, so a shopper never learned the thing had sold out.
+    const gone = parseOneDayOnly(html).find((item) => item.id === 'onedayonly-2')
+    expect(gone).toMatchObject({ soldOut: true, title: 'Gone' })
+  })
+
+  it('leaves soldOut unset on a deal still in stock', () => {
+    // Absent, not false: the sites that say nothing about stock must not read
+    // as having confirmed the thing is available.
+    const stocked = parseOneDayOnly(html).find((item) => item.id === 'onedayonly-1292923')
+    expect(stocked?.soldOut).toBeUndefined()
   })
 
   it('returns empty for html without __NEXT_DATA__', () => {

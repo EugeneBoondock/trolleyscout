@@ -64,7 +64,7 @@ describe('runScheduledScout', () => {
 
     expect(refreshDiscovery).toHaveBeenCalledWith(
       expect.anything(),
-      { refreshDeals: false },
+      expect.objectContaining({ refreshDeals: false }),
     )
     expect(runCatalogueScout).toHaveBeenCalledWith(
       expect.anything(),
@@ -114,7 +114,7 @@ describe('runScheduledScout', () => {
     )
 
     expect(fetcher).not.toHaveBeenCalled()
-    expect(refreshDiscovery).toHaveBeenCalledWith(expect.anything())
+    expect(refreshDiscovery).toHaveBeenCalledWith(expect.anything(), expect.anything())
     expect(refreshDealSites).toHaveBeenCalledWith(expect.anything())
     expect(result).toMatchObject({
       catalogueDealCount: 0,

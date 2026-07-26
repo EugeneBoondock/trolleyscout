@@ -8,10 +8,11 @@
 // Parsing is kept pure and injectable here; fetching lives in the scout.
 
 export type DealSiteId = 'onedayonly' | 'hyperli' | 'daddysdeals' | 'myrunway'
+export type WindowShoppingSource = DealSiteId | 'trolleyscout-business'
 
 export interface DealSiteItem {
   id: string
-  source: DealSiteId
+  source: WindowShoppingSource
   retailerName: string
   sourceLabel: string
   title: string
@@ -23,6 +24,10 @@ export interface DealSiteItem {
   images?: string[]
   category?: string
   expiresAt?: string
+  // True only where the site states it. Left absent by the sites that say
+  // nothing about stock rather than guessed at, because a wrong sold-out badge
+  // sends a shopper away from something they could have bought.
+  soldOut?: boolean
 }
 
 const SITE_LABEL: Record<DealSiteId, string> = {
@@ -55,7 +60,6 @@ export function parseOneDayOnly(html: string): DealSiteItem[] {
     const realId = String(product.realId ?? product.id ?? '')
     if (!realId || seen.has(realId)) continue
     seen.add(realId)
-    if (product.isSoldOut === true) continue
 
     const slug = typeof product.id === 'string' ? product.id : realId
     const externalListingUrl = webUrl(product.externalListingLink)
@@ -88,6 +92,12 @@ export function parseOneDayOnly(html: string): DealSiteItem[] {
       productUrl: externalListingUrl ?? `https://www.onedayonly.co.za/products/${slug}`,
       retailerName: SITE_LABEL.onedayonly,
       savingText: saving,
+      // OneDayOnly is the one reel source that says whether a thing is gone —
+      // selling out is the whole shape of the site, and `isSoldOut` is its own
+      // word for it. These used to be dropped here, silently, which is why the
+      // reel could never badge one: a shopper saw the card vanish between
+      // scrolls rather than being told it had gone.
+      ...(product.isSoldOut === true ? { soldOut: true } : {}),
       source: 'onedayonly',
       sourceLabel: SITE_LABEL.onedayonly,
       title: String(product.name),
