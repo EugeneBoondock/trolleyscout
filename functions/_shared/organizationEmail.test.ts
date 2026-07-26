@@ -13,10 +13,10 @@ describe('organization access email', () => {
   })
 
   it('sends text and escaped HTML with the approved workspace link', async () => {
-    const send = vi.fn().mockResolvedValue({})
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
 
     const result = await sendOrganizationAccessEmail(
-      { EMAIL: { send } as never },
+      { ORGANIZATION_EMAIL: { fetch } as never },
       {
         ...application,
         contactName: 'Thandi & Team',
@@ -26,7 +26,8 @@ describe('organization access email', () => {
     )
 
     expect(result).toEqual({ sent: true })
-    const payload = send.mock.calls[0]?.[0] as {
+    const request = fetch.mock.calls[0]?.[1] as RequestInit
+    const payload = JSON.parse(String(request.body)) as {
       html: string
       text: string
       to: string
@@ -36,6 +37,7 @@ describe('organization access email', () => {
     expect(payload.html).toContain('Thandi &amp; Team')
     expect(payload.html).toContain('Fresh &quot;Market&quot;')
     expect(payload.html).not.toContain('Thandi & Team')
+    expect(request.method).toBe('POST')
   })
 })
 

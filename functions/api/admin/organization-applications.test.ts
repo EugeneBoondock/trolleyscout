@@ -103,23 +103,25 @@ describe('/api/admin/organization-applications', () => {
 
   it('sends the approved owner a business workspace link', async () => {
     signedInAs('admin-1', 'admin')
-    const send = vi.fn().mockResolvedValue(undefined)
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
 
     const response = await invoke(
       decide({ applicationId: 'org-app-1', decision: 'approved' }),
-      { EMAIL: { send } },
+      { ORGANIZATION_EMAIL: { fetch } },
     )
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       data: { emailSent: true },
     })
-    expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0]?.[0]).toMatchObject({
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = fetch.mock.calls[0]?.[1] as RequestInit
+    const payload = JSON.parse(String(request.body)) as Record<string, unknown>
+    expect(payload).toMatchObject({
       subject: expect.stringContaining('workspace'),
       to: expect.any(String),
     })
-    expect(JSON.stringify(send.mock.calls[0]?.[0])).toContain(
+    expect(JSON.stringify(payload)).toContain(
       'https://org.trolleyscout.co.za/?approved=1',
     )
   })

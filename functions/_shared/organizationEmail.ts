@@ -13,7 +13,7 @@ export async function sendOrganizationAccessEmail(
   application: OrganizationApplication,
   organization: Organization,
 ): Promise<OrganizationAccessEmailResult> {
-  if (!env.EMAIL) {
+  if (!env.ORGANIZATION_EMAIL) {
     return {
       sent: false,
       issue: 'Approval was saved, but the access email service is unavailable.',
@@ -35,16 +35,20 @@ export async function sendOrganizationAccessEmail(
   ].join('\n')
 
   try {
-    await env.EMAIL.send({
-      from: {
-        email: 'access@trolleyscout.co.za',
-        name: 'Trolley Scout for Business',
+    const response = await env.ORGANIZATION_EMAIL.fetch(
+      'https://organization-email.internal/send',
+      {
+        body: JSON.stringify({
+          html: organizationAccessHtml(contactName, businessName),
+          subject: 'Your Trolley Scout business workspace is ready',
+          text,
+          to: application.contactEmail,
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
       },
-      html: organizationAccessHtml(contactName, businessName),
-      subject: 'Your Trolley Scout business workspace is ready',
-      text,
-      to: application.contactEmail,
-    })
+    )
+    if (!response.ok) throw new Error(`Email service returned ${response.status}.`)
     return { sent: true }
   } catch {
     return {

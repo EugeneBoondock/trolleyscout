@@ -2,7 +2,7 @@ export interface TrolleyScoutEnv {
   AI?: Ai
   DB?: D1Database
   MEDIA?: R2Bucket
-  EMAIL?: SendEmail
+  ORGANIZATION_EMAIL?: Fetcher
   EMAIL_ENCRYPTION_KEY?: string
   APP_URL?: string
   GEOAPIFY_API_KEY?: string
