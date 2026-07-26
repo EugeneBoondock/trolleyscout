@@ -81,6 +81,30 @@ describe('parseMrPriceFeed', () => {
     )
   })
 
+  it('replaces the catalogue placeholder with the official product image', () => {
+    const page = parseMrPriceFeed(feed([item(299.99, 200, {
+      small_image: {
+        url: 'https://m2prd.mrpg.com/media/catalog/product/placeholder/default/no-image_1.JPG',
+      },
+    })]), context)
+
+    expect(page.candidates[0].imageUrl).toBe(
+      'https://cdn.media.amplience.net/i/mrpricegroup/' +
+      '01_105262473_SI_00?$preset$&fmt=auto',
+    )
+  })
+
+  it('derives the official product image when GraphQL omits one', () => {
+    const page = parseMrPriceFeed(feed([item(299.99, 200, {
+      small_image: null,
+    })]), context)
+
+    expect(page.candidates[0].imageUrl).toBe(
+      'https://cdn.media.amplience.net/i/mrpricegroup/' +
+      '01_105262473_SI_00?$preset$&fmt=auto',
+    )
+  })
+
   it('ignores minimum_price, which never shows a markdown', () => {
     const page = parseMrPriceFeed(
       feed([{

@@ -73,7 +73,11 @@ export const MR_PRICE_MAX_CATEGORIES = 40
 export const MR_PRICE_MAX_CAMPAIGNS = 12
 
 const MR_PRICE_HOSTS = ['mrp.com', 'www.mrp.com']
-const MR_PRICE_IMAGE_HOSTS = ['m2prd.mrpg.com', ...MR_PRICE_HOSTS]
+const MR_PRICE_IMAGE_HOSTS = [
+  'cdn.media.amplience.net',
+  'm2prd.mrpg.com',
+  ...MR_PRICE_HOSTS,
+]
 
 const mrPriceRetailerId = retailerSlug('mr-price')
 const mrPriceScope = { type: 'online' } as const
@@ -436,11 +440,37 @@ function readTotalCount(products: Record<string, unknown>): number | undefined {
 }
 
 function mrPriceImage(item: unknown): string | undefined {
-  return officialUrl(
+  const supplied = officialUrl(
     textValue(recordValue(item, 'small_image'), 'url'),
     MR_PRICE_ORIGIN,
     MR_PRICE_IMAGE_HOSTS,
   )
+
+  if (supplied && !isMrPricePlaceholder(supplied)) {
+    return supplied
+  }
+
+  const sku = textValue(item, 'sku')
+
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(sku)) {
+    return undefined
+  }
+
+  return officialUrl(
+    `https://cdn.media.amplience.net/i/mrpricegroup/` +
+      `${encodeURIComponent(sku)}_SI_00?$preset$&fmt=auto`,
+    MR_PRICE_ORIGIN,
+    MR_PRICE_IMAGE_HOSTS,
+  )
+}
+
+function isMrPricePlaceholder(value: string): boolean {
+  try {
+    const path = new URL(value).pathname.toLowerCase()
+    return path.includes('/placeholder/') || path.includes('no-image')
+  } catch {
+    return true
+  }
 }
 
 /// Without the `.html` this used to append: that form answers 200 and then

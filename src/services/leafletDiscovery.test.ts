@@ -161,36 +161,56 @@ describe('extractSixtyLeaflets', () => {
 describe('extractPdfLeaflets', () => {
   test('extracts specials PDFs with readable names and skips terms docs', () => {
     const html = `
-      <a href="/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf">July specials</a>
+      <img src="/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg">
+      <span data-valid-until-timestamp="1786399140000">10 August 2026</span>
+      <button data-leaflet-external-url="https://specials.shoprite.co.za/deals/ecusave/index.html">
+        View catalogue
+      </button>
       <a href="/content/dam/ShopriteGroup/Terms/PDFS/Voucher-Product-Terms.pdf">Terms</a>
       <a href="/content/dam/shp/docs/shoprite-group-paia-manual.pdf">PAIA</a>`
 
     const leaflets = extractPdfLeaflets(usave, html, '2026-07-15T10:00:00.000Z')
 
     expect(leaflets).toHaveLength(1)
-    expect(leaflets[0].url).toBe(
+    expect(leaflets[0].documentUrl).toBe(
       'https://www.usave.co.za/content/dam/usave/specials/2026/july/ECFOUSDWEE_CP.pdf',
     )
-    expect(leaflets[0].retailerId).toBe('usave')
-    expect(leaflets[0].name).toBe('Usave specials (July)')
-    // Readers open documentUrl; without it the leaflet cannot be viewed.
-    expect(leaflets[0].documentUrl).toBe(leaflets[0].url)
+    expect(leaflets[0]).toMatchObject({
+      imageUrl:
+        'https://www.usave.co.za/content/dam/usave/specials/2026/july/' +
+        'ECFOUSDWEE_CP.pdf/_jcr_content/renditions/cq5dam.web.1280.1280.jpeg',
+      name: 'Usave specials (July)',
+      retailerId: 'usave',
+      url: 'https://specials.shoprite.co.za/deals/ecusave/index.html',
+      validTo: '2026-08-10',
+    })
   })
 
   test('surfaces every regional OK Foods leaflet with a readable region name', () => {
     const okFoods = leafletTargets.find((target) => target.retailerId === 'ok-foods')!
     // Live shape: one PDF per region/section for the current week.
-    const html = `
-      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf"></div>
-      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/KZN-urban.pdf"></div>
-      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/CEN-Foods.pdf"></div>
-      <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/RSA-Liquor.pdf"></div>
+    const codes = [
+      'WC-urban',
+      'KZN-urban',
+      'CEN-Foods',
+      'RSA-Liquor',
+      'EC-urban',
+      'NOR-urban',
+      'RSA-Foods',
+      'CEN-Grocer',
+    ]
+    const html = codes.map((code) => `
+      <div class="card">
+        <img src="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/${code}.pdf/_jcr_content/renditions/cq5dam.thumbnail.319.319.png">
+        <p class="offerValidDate">Valid 24/07/2026 - 10/08/2026</p>
+      </div>
+    `).join('') + `
       <div data-asset-path="/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf"></div>`
 
     const leaflets = extractPdfLeaflets(okFoods, html, '2026-07-17T10:00:00.000Z')
 
-    expect(leaflets).toHaveLength(4)
-    expect(leaflets.map((leaflet) => leaflet.name)).toEqual([
+    expect(leaflets).toHaveLength(8)
+    expect(leaflets.slice(0, 4).map((leaflet) => leaflet.name)).toEqual([
       'OK Foods specials: Western Cape (July)',
       'OK Foods specials: KwaZulu-Natal (July)',
       'OK Foods specials: Central Foods (July)',
@@ -199,6 +219,14 @@ describe('extractPdfLeaflets', () => {
     expect(leaflets[0].url).toBe(
       'https://www.okfoods.co.za/content/dam/okfoods/ok-food-leaflets/south-africa/2026/july/week-29/WC-urban.pdf',
     )
+    expect(leaflets[0]).toMatchObject({
+      imageUrl:
+        'https://www.okfoods.co.za/content/dam/okfoods/ok-food-leaflets/' +
+        'south-africa/2026/july/week-29/WC-urban.pdf/_jcr_content/' +
+        'renditions/cq5dam.thumbnail.319.319.png',
+      validFrom: '2026-07-24',
+      validTo: '2026-08-10',
+    })
   })
 })
 

@@ -1,6 +1,6 @@
-# Trolley Scout mobile app (Flutter)
+# Trolley Scout mobile apps (Flutter)
 
-Native Android and iOS app for Trolley Scout. It uses the same live Cloudflare API and member account as [trolleyscout.co.za](https://trolleyscout.co.za).
+The shopper and business apps are separate Android products backed by the same Flutter project and Cloudflare API.
 
 ## Features
 
@@ -10,13 +10,20 @@ Native Android and iOS app for Trolley Scout. It uses the same live Cloudflare A
 - Appearance: matching light and dark themes with a persistent theme choice.
 - Branding: one Trolley Scout mark across the app bar, Flutter web, Android, iOS, and the website.
 
-## Run
+## Run the shopper app
 
 ```text
 cd mobile
 flutter pub get
-flutter run
-flutter run -d chrome
+flutter run --flavor consumer -t lib/main.dart
+```
+
+## Run the business app
+
+```text
+cd mobile
+flutter pub get
+flutter run --flavor business -t lib/main_business.dart
 ```
 
 ## Verify
@@ -24,5 +31,6 @@ flutter run -d chrome
 ```text
 flutter analyze
 flutter test
-flutter build web --release
+flutter build appbundle --flavor consumer -t lib/main.dart
+flutter build appbundle --flavor business -t lib/main_business.dart
 ```

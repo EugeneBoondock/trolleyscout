@@ -297,9 +297,9 @@ function viewFromPath(pathname: string): ActiveView {
 
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
+  { icon: <Tag size={20} />, label: 'Marketplace', value: 'discovery' },
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
-  { icon: <Tag size={20} />, label: 'Find deals', value: 'discovery' },
   { icon: <Ticket size={20} />, label: 'Vouchers', value: 'vouchers' },
   { icon: <NavigationArrow size={20} />, label: 'Near me', value: 'near' },
   { icon: <Buildings size={20} />, label: 'Properties', value: 'properties' },

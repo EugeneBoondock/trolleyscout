@@ -47,6 +47,22 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "audience"
+    productFlavors {
+        create("consumer") {
+            dimension = "audience"
+            applicationId = "za.co.trolleyscout.trolley_scout"
+            resValue("string", "app_name", "Trolley Scout")
+            manifestPlaceholders["appLinkScheme"] = "trolleyscout"
+        }
+        create("business") {
+            dimension = "audience"
+            applicationId = "za.co.trolleyscout.business"
+            resValue("string", "app_name", "Trolley Scout for Business")
+            manifestPlaceholders["appLinkScheme"] = "trolleyscout-business"
+        }
+    }
+
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {

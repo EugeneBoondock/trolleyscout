@@ -924,14 +924,15 @@ export const retailers: Retailer[] = [
     shortName: 'H&M',
     group: 'Fashion',
     program: 'H&M sale',
-    sourceNote: 'Official H&M South Africa online store.',
-    verifiedOn: sourceVerifiedOn,
+    sourceNote:
+      'H&M South Africa directs online shopping to its official Superbalist partner store.',
+    verifiedOn: '2026-07-26',
     accentColor: '#e50010',
     sources: [
       {
-        label: 'Online store',
-        url: 'https://www2.hm.com/en_za/index.html',
-        kind: 'store-finder',
+        label: 'Online sale',
+        url: 'https://superbalist.com/browse?designer_s%5B0%5D=hm&min_discount=1',
+        kind: 'specials',
       },
     ],
   },

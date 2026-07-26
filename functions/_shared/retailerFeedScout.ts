@@ -62,6 +62,53 @@ import {
   parseRootsLeaflets,
 } from '../../src/services/retailerFeeds/roots'
 import {
+  MAX_SHOPIFY_RETAILER_PAGES,
+  SHOPIFY_RETAILERS,
+  buildShopifyRetailerUrl,
+  parseShopifyRetailerFeed,
+  type ShopifyRetailer,
+} from '../../src/services/retailerFeeds/shopifyRetailers'
+import {
+  DEMANDWARE_PAGE_SIZE,
+  DEMANDWARE_SHOPS,
+  buildDemandwareGridUrl,
+  parseDemandwareGrid,
+  type DemandwareShop,
+} from '../../src/services/retailerFeeds/demandware'
+import {
+  COTTON_ON_PAGE_SIZE,
+  COTTON_ON_SALE_URL,
+  MAX_COTTON_ON_PAGES,
+  buildCottonOnGridUrl,
+  parseCottonOnGrid,
+} from '../../src/services/retailerFeeds/cottonOn'
+import {
+  BASH_STOREFRONTS,
+  buildBashSaleUrl,
+  decodeBashNextData,
+  parseBashFeed,
+  type BashStorefront,
+} from '../../src/services/retailerFeeds/bash'
+import {
+  ORACLE_COMMERCE_SHOPS,
+  buildOracleCommerceUrl,
+  parseOracleCommerceFeed,
+  type OracleCommerceShop,
+} from '../../src/services/retailerFeeds/oracleCommerce'
+import {
+  BRAND_SFCC_SHOPS,
+  buildBrandSfccGridUrl,
+  parseBrandSfccGrid,
+  type BrandSfccShop,
+} from '../../src/services/retailerFeeds/brandSfcc'
+import {
+  MAX_SUPERBALIST_HM_PAGES,
+  SUPERBALIST_HM_PAGE_SIZE,
+  buildSuperbalistHmUrl,
+  decodeSuperbalistProductList,
+  parseSuperbalistHmFeed,
+} from '../../src/services/retailerFeeds/superbalistHm'
+import {
   FLIPP_US_CHAINS,
   FLIPP_WEB_ORIGIN,
   buildFlippFlyerItemsUrl,
@@ -99,6 +146,27 @@ import {
   parseTakealotFeed,
   parseTakealotPromotions,
 } from '../../src/services/retailerFeeds/takealot'
+import {
+  WOOTWARE_SPECIALS_URL,
+  buildWootwareSearchRequest,
+  parseWootwareSearchFeed,
+} from '../../src/services/retailerFeeds/wootware'
+import {
+  SPORTSMANS_OUTLET_URL,
+  SPORTSMANS_TOKEN_URL,
+  buildSportsmansSearchRequest,
+  parseSportsmansFeed,
+  parseSportsmansSearchToken,
+} from '../../src/services/retailerFeeds/sportsmansWarehouse'
+import {
+  ZARA_SALE_URL,
+  buildZaraCategoriesUrl,
+  buildZaraProductsUrl,
+  decodeZaraCursor,
+  encodeZaraCursor,
+  parseZaraSaleCategories,
+  parseZaraSaleFeed,
+} from '../../src/services/retailerFeeds/zara'
 import { parseWoolworthsFeed } from '../../src/services/retailerFeeds/woolworths'
 import {
   retailerSlug,
@@ -123,7 +191,7 @@ const PAGE_SIZE = 100
 // nothing however many times the sweep ran. A test holds this above the source
 // count, so adding a source that would not fit fails the build rather than
 // quietly starving whatever sits last.
-export const DEFAULT_REQUEST_CAP = 90
+export const DEFAULT_REQUEST_CAP = 100
 const MAX_REQUEST_CAP = 110
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
@@ -135,6 +203,8 @@ const MAX_CANDIDATES_PER_RUN = 100
 // sweep is split into shards that each take every Nth campaign, so the whole
 // deal catalogue lands within about a day and then keeps refreshing.
 const TAKEALOT_SHARD_COUNT = 16
+// Deals aisles run to a few hundred at most, and the sweep comes round again.
+const MAX_DEMANDWARE_PAGES = 6
 const INITIAL_STATE_MARKER = 'window.__INITIAL_STATE__'
 const WINDOW_CURSOR_PREFIX = 'trolley-scout:candidate-window:v1:'
 
@@ -179,6 +249,13 @@ export interface RetailerFeedSource {
   initialCursor: FeedCursor
   key: string
   parse: (input: RetailerFeedParseInput) => RetailerFeedPage
+  prepareRequest?: (
+    cursor: FeedCursor,
+    fetcher: typeof fetch,
+    timeoutMs: number,
+    responseByteLimit: number,
+  ) => Promise<RetailerFeedRequest>
+  requestCost?: number
   retailerId: RetailerSlug
   retailerName: string
   sourceLabel: string
@@ -345,14 +422,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   decathlonSource(),
   evetechSource(),
   lootSource(),
-  // Wootware is unregistered, not deleted: its whole site sits behind a bot
-  // challenge that answers 403 to anything without a browser completing a
-  // JavaScript check, which a Worker cannot do. It failed every run for weeks
-  // and held zero deals. Left in place because the day they drop the challenge
-  // this is one line to restore — but a source that can never answer keeps the
-  // health alarm permanently red, and an alarm nobody believes is worse than
-  // no alarm.
-  // wootwareSource(),
+  wootwareSource(),
   bobshopSource(),
   mrPriceSource(),
   mrPricePromosSource(),
@@ -362,6 +432,16 @@ const structuredSources: readonly RetailerFeedSource[] = [
   ...MAKRO_DEPARTMENTS.map((department) => makroProductSource(department)),
   ...Array.from({ length: TAKEALOT_SHARD_COUNT }, (_, shard) => takealotSource(shard)),
   ...FLIPP_US_CHAINS.map((chain) => flippSource(chain)),
+  ...DEMANDWARE_SHOPS.flatMap((shop) =>
+    shop.categoryIds.map((categoryId) => demandwareSource(shop, categoryId))),
+  ...SHOPIFY_RETAILERS.map((shop) => shopifyRetailerSource(shop)),
+  cottonOnSource(),
+  ...BASH_STOREFRONTS.map((shop) => bashStorefrontSource(shop)),
+  ...ORACLE_COMMERCE_SHOPS.map((shop) => oracleCommerceSource(shop)),
+  ...BRAND_SFCC_SHOPS.map((shop) => brandSfccSource(shop)),
+  superbalistHmSource(),
+  sportsmansWarehouseSource(),
+  zaraSource(),
 ]
 
 export function getStructuredRetailerSources(): readonly RetailerFeedSource[] {
@@ -463,7 +543,9 @@ export async function runStructuredRetailerFeedScout(
   const seenCatalogueUrls = new Set<string>()
 
   for (const source of sources) {
-    if (result.physicalRequestCount >= requestCap) {
+    const sourceRequestCost = source.requestCost ?? 1
+
+    if (result.physicalRequestCount + sourceRequestCost > requestCap) {
       break
     }
 
@@ -475,11 +557,27 @@ export async function runStructuredRetailerFeedScout(
       const storedCursor = await storage.readSourceCursor(env, source.key) ?? source.initialCursor
       const windowCursor = readCandidateWindowCursor(storedCursor)
       const sourceCursor = windowCursor?.sourceCursor ?? storedCursor
-      const request = source.buildRequest(sourceCursor)
-      startedAt = now()
-      requested = true
-      result.physicalRequestCount += 1
-      result.checkedSourceCount += 1
+      let request: RetailerFeedRequest
+
+      if (source.prepareRequest) {
+        startedAt = now()
+        requested = true
+        result.physicalRequestCount += 1
+        result.checkedSourceCount += 1
+        request = await source.prepareRequest(
+          sourceCursor,
+          fetcher,
+          timeoutMs,
+          responseByteLimit,
+        )
+        result.physicalRequestCount += 1
+      } else {
+        request = source.buildRequest(sourceCursor)
+        startedAt = now()
+        requested = true
+        result.physicalRequestCount += 1
+        result.checkedSourceCount += 1
+      }
       const response = await fetchWithTimeout(fetcher, request, timeoutMs)
 
       if (!response.ok) {
@@ -672,7 +770,11 @@ function mapStructuredCatalogues(
       retailerId: catalogue.retailerId,
       retailerName: source.retailerName,
       sourceLabel: source.sourceLabel,
-      url: sourceUrl,
+      // Open the published catalogue or viewer itself. The source page stays
+      // recorded separately for audit, but sending shoppers back to a listing
+      // page made Boxer leaflets look present while the selected one stayed
+      // closed.
+      url: documentUrl,
       validFrom: catalogue.validFrom,
       validTo: catalogue.validTo,
     }]
@@ -1053,6 +1155,372 @@ function makroProductSource(department: string): RetailerFeedSource {
     retailerName: 'Makro',
     sourceLabel: 'Catalogue',
     sourceUrl,
+  }
+}
+
+// Edgars and Under Armour are plain Shopify underneath, which hands its whole
+// catalogue to anyone who asks. Both showed zero deals not because they were
+// hard to read but because nobody had asked them.
+function shopifyRetailerSource(shop: ShopifyRetailer): RetailerFeedSource {
+  const sourceUrl = `https://${shop.host}/`
+
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: { ...STOREFRONT_HEADERS, accept: 'application/json' } },
+        url: buildShopifyRetailerUrl(shop, page + 1),
+      }
+    },
+    decode: (body) => parseJsonObject(body, shop.name),
+    initialCursor: { kind: 'page', page: 0 },
+    key: `${shop.retailerId}::shopify-markdowns`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const page = parseShopifyRetailerFeed(
+        payload,
+        { capturedAt, sourceUrl: officialSourceUrl },
+        shop,
+      )
+      const current = cursor.kind === 'page' ? cursor.page : 0
+
+      return {
+        ...page,
+        // An empty page is the end of the catalogue, not an error. Undefined
+        // resets the source so the next sweep starts from the front again.
+        nextCursor:
+          page.totalCount === 250 &&
+          current + 1 < MAX_SHOPIFY_RETAILER_PAGES
+          ? { kind: 'page', page: current + 1 }
+          : undefined,
+      }
+    },
+    retailerId: shop.retailerId,
+    retailerName: shop.name,
+    sourceLabel: 'Markdowns',
+    sourceUrl,
+  }
+}
+
+// Cape Union Mart and Old Khaki run Salesforce Commerce Cloud, which offers
+// nothing a fetch can read — no products.json, no GraphQL, and a front page
+// that assembles itself. The way in is the endpoint their own "load more"
+// button calls, found by watching the page make the request: it answers a
+// plain GET with the product tiles as HTML, paginated, no session needed.
+function demandwareSource(shop: DemandwareShop, categoryId: string): RetailerFeedSource {
+  const sourceUrl = `https://${shop.host}/c/${categoryId}/`
+
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: buildDemandwareGridUrl(shop, categoryId, page * DEMANDWARE_PAGE_SIZE),
+      }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 0 },
+    key: `${shop.retailerId}::${categoryId}`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const page = parseDemandwareGrid(
+        String(payload),
+        { capturedAt, sourceUrl: officialSourceUrl },
+        shop,
+        categoryId,
+      )
+      const current = cursor.kind === 'page' ? cursor.page : 0
+
+      return {
+        ...page,
+        // Walk the aisle a page at a time, then start again — undefined resets
+        // the source, so a shop that has been read through keeps refreshing.
+        nextCursor:
+          page.totalCount === DEMANDWARE_PAGE_SIZE &&
+          current + 1 < MAX_DEMANDWARE_PAGES
+          ? { kind: 'page', page: current + 1 }
+          : undefined,
+      }
+    },
+    retailerId: shop.retailerId,
+    retailerName: shop.name,
+    sourceLabel: categoryId
+      .split('-')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' '),
+    sourceUrl,
+  }
+}
+
+function cottonOnSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: buildCottonOnGridUrl(page * COTTON_ON_PAGE_SIZE),
+      }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'cotton-on::sale',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const page = parseCottonOnGrid(String(payload), { capturedAt, sourceUrl })
+      const current = cursor.kind === 'page' ? cursor.page : 0
+
+      return {
+        ...page,
+        nextCursor:
+          page.totalCount === COTTON_ON_PAGE_SIZE &&
+          current + 1 < MAX_COTTON_ON_PAGES
+            ? { kind: 'page', page: current + 1 }
+            : undefined,
+      }
+    },
+    retailerId: retailerSlug('cotton-on'),
+    retailerName: 'Cotton On',
+    sourceLabel: 'Sale',
+    sourceUrl: COTTON_ON_SALE_URL,
+  }
+}
+
+function bashStorefrontSource(shop: BashStorefront): RetailerFeedSource {
+  const sourceUrl = new URL(shop.path, 'https://bash.com').toString()
+
+  return {
+    buildRequest(cursor) {
+      const current = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: buildBashSaleUrl(shop, current + 1),
+      }
+    },
+    decode: decodeBashNextData,
+    initialCursor: { kind: 'page', page: 0 },
+    key: `${shop.retailerId}::sale`,
+    parse: ({ capturedAt, payload, sourceUrl: officialSourceUrl }) =>
+      parseBashFeed(payload, { capturedAt, sourceUrl: officialSourceUrl }, shop),
+    retailerId: shop.retailerId,
+    retailerName: shop.name,
+    sourceLabel: 'Sale',
+    sourceUrl,
+  }
+}
+
+function oracleCommerceSource(shop: OracleCommerceShop): RetailerFeedSource {
+  const sourceUrl = `https://${shop.host}/`
+
+  return {
+    buildRequest(cursor) {
+      const offset = cursor.kind === 'offset' ? cursor.offset : 0
+      return {
+        init: { headers: STOREFRONT_HEADERS },
+        url: buildOracleCommerceUrl(shop, offset),
+      }
+    },
+    decode: (body) => parseJsonObject(body, shop.name),
+    initialCursor: { kind: 'offset', offset: 0 },
+    key: `${shop.retailerId}::sale`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const offset = cursor.kind === 'offset' ? cursor.offset : 0
+      return parseOracleCommerceFeed(
+        payload,
+        { capturedAt, sourceUrl: officialSourceUrl },
+        shop,
+        offset,
+      )
+    },
+    retailerId: shop.retailerId,
+    retailerName: shop.name,
+    sourceLabel: 'Sale',
+    sourceUrl,
+  }
+}
+
+function brandSfccSource(shop: BrandSfccShop): RetailerFeedSource {
+  const sourceUrl = `https://${shop.host}${shop.sourcePath}`
+
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: buildBrandSfccGridUrl(shop, page * shop.pageSize),
+      }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 0 },
+    key: `${shop.retailerId}::${
+      shop.retailerId === retailerSlug('new-balance') ? 'clearance' : 'sale'
+    }`,
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const page = parseBrandSfccGrid(
+        String(payload),
+        { capturedAt, sourceUrl: officialSourceUrl },
+        shop,
+      )
+      const current = cursor.kind === 'page' ? cursor.page : 0
+
+      return {
+        ...page,
+        nextCursor: page.totalCount === shop.pageSize && current + 1 < 80
+          ? { kind: 'page', page: current + 1 }
+          : undefined,
+      }
+    },
+    retailerId: shop.retailerId,
+    retailerName: shop.name,
+    sourceLabel: 'Sale',
+    sourceUrl,
+  }
+}
+
+function superbalistHmSource(): RetailerFeedSource {
+  const sourceUrl = buildSuperbalistHmUrl()
+
+  return {
+    buildRequest(cursor) {
+      const current = cursor.kind === 'page' ? cursor.page : 0
+      return {
+        init: { headers: STOREFRONT_HTML_HEADERS },
+        url: buildSuperbalistHmUrl(current + 1),
+      }
+    },
+    decode: decodeSuperbalistProductList,
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'h-and-m::sale',
+    parse({ capturedAt, cursor, payload, sourceUrl: officialSourceUrl }) {
+      const page = parseSuperbalistHmFeed(payload, {
+        capturedAt,
+        sourceUrl: officialSourceUrl,
+      })
+      const current = cursor.kind === 'page' ? cursor.page : 0
+
+      return {
+        ...page,
+        nextCursor:
+          page.totalCount === SUPERBALIST_HM_PAGE_SIZE &&
+          current + 1 < MAX_SUPERBALIST_HM_PAGES
+            ? { kind: 'page', page: current + 1 }
+            : undefined,
+      }
+    },
+    retailerId: retailerSlug('h-and-m'),
+    retailerName: 'H&M',
+    sourceLabel: 'Sale',
+    sourceUrl,
+  }
+}
+
+function wootwareSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return buildWootwareSearchRequest(page)
+    },
+    decode: (body) => parseJsonObject(body, 'Wootware'),
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'wootware::open-box-specials',
+    parse: ({ capturedAt, payload, sourceUrl }) =>
+      parseWootwareSearchFeed(payload, { capturedAt, sourceUrl }),
+    retailerId: retailerSlug('wootware'),
+    retailerName: 'Wootware',
+    sourceLabel: 'Open box specials',
+    sourceUrl: WOOTWARE_SPECIALS_URL,
+  }
+}
+
+function sportsmansWarehouseSource(): RetailerFeedSource {
+  return {
+    buildRequest() {
+      return {
+        init: { headers: STOREFRONT_HEADERS },
+        url: SPORTSMANS_TOKEN_URL,
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Sportsmans Warehouse'),
+    initialCursor: { kind: 'page', page: 0 },
+    key: 'sportsmans-warehouse::yellow-ticket-sale',
+    parse: ({ capturedAt, payload, sourceUrl }) =>
+      parseSportsmansFeed(payload, { capturedAt, sourceUrl }),
+    async prepareRequest(cursor, fetcher, timeoutMs, responseByteLimit) {
+      const tokenResponse = await fetchWithTimeout(fetcher, {
+        init: { headers: { ...STOREFRONT_HEADERS, accept: 'application/json' } },
+        url: SPORTSMANS_TOKEN_URL,
+      }, timeoutMs)
+
+      if (!tokenResponse.ok) {
+        throw new Error(`Sportsmans Warehouse token HTTP ${tokenResponse.status}`)
+      }
+
+      const tokenBody = await readBoundedBody(tokenResponse, responseByteLimit)
+      const token = parseSportsmansSearchToken(
+        parseJsonObject(tokenBody, 'Sportsmans Warehouse token'),
+      )
+      const page = cursor.kind === 'page' ? cursor.page : 0
+      return buildSportsmansSearchRequest(token.token, page)
+    },
+    requestCost: 2,
+    retailerId: retailerSlug('sportsmans-warehouse'),
+    retailerName: 'Sportsmans Warehouse',
+    sourceLabel: 'Yellow Ticket Sale',
+    sourceUrl: SPORTSMANS_OUTLET_URL,
+  }
+}
+
+function zaraSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const plan = cursor.kind === 'token'
+        ? decodeZaraCursor(cursor.token)
+        : undefined
+
+      return {
+        init: { headers: { ...STOREFRONT_HEADERS, accept: 'application/json' } },
+        url: plan
+          ? buildZaraProductsUrl(plan.categoryIds[plan.index])
+          : buildZaraCategoriesUrl(),
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Zara'),
+    initialCursor: { kind: 'token', token: 'discover' },
+    key: 'zara::sale',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const plan = cursor.kind === 'token'
+        ? decodeZaraCursor(cursor.token)
+        : undefined
+
+      if (!plan) {
+        const categoryIds = parseZaraSaleCategories(payload)
+        return {
+          candidates: [],
+          catalogues: [],
+          nextCursor: {
+            kind: 'token',
+            token: encodeZaraCursor({ categoryIds, index: 0 }),
+          },
+        }
+      }
+
+      const page = parseZaraSaleFeed(payload, { capturedAt, sourceUrl })
+      const nextIndex = plan.index + 1
+
+      return {
+        ...page,
+        nextCursor: nextIndex < plan.categoryIds.length
+          ? {
+            kind: 'token',
+            token: encodeZaraCursor({
+              categoryIds: plan.categoryIds,
+              index: nextIndex,
+            }),
+          }
+          : undefined,
+      }
+    },
+    retailerId: retailerSlug('zara'),
+    retailerName: 'Zara',
+    sourceLabel: 'Sale',
+    sourceUrl: ZARA_SALE_URL,
   }
 }
 

@@ -70,6 +70,7 @@ describe('structured retailer source decoders', () => {
       'decathlon::prices-drop',
       'evetech::specials',
       'loot::sale',
+      'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
       'mr-price::promotions',
@@ -139,8 +140,71 @@ describe('structured retailer source decoders', () => {
       'flipp::hy-vee',
       'flipp::food-lion',
       'flipp::winn-dixie',
+      'cape-union-mart::deals-everyone',
+      'old-khaki::deals-offers',
+      'edgars::shopify-markdowns',
+      'under-armour::shopify-markdowns',
+      'cotton-on::sale',
+      'sportscene::sale',
+      'totalsports::sale',
+      'archive::sale',
+      'sneaker-factory::sale',
+      'truworths::sale',
+      'office-london::sale',
+      'adidas::sale',
+      'new-balance::clearance',
+      'h-and-m::sale',
+      'sportsmans-warehouse::yellow-ticket-sale',
+      'zara::sale',
     ])
     expect(sources.every((source) => !source.key.includes('amazon'))).toBe(true)
+    expect(
+      sources.reduce((cost, source) => cost + (source.requestCost ?? 1), 0),
+    ).toBeLessThanOrEqual(DEFAULT_REQUEST_CAP)
+  })
+
+  it('keeps paging through full catalogue pages with no markdowns', () => {
+    const sources = getStructuredRetailerSources()
+    const edgars = sources.find((source) => source.key === 'edgars::shopify-markdowns')
+    const capeUnion = sources.find((source) => source.key === 'cape-union-mart::deals-everyone')
+
+    expect(edgars).toBeDefined()
+    expect(capeUnion).toBeDefined()
+
+    const shopifyPage = edgars!.parse({
+      capturedAt: '2026-07-26T08:00:00.000Z',
+      cursor: { kind: 'page', page: 0 },
+      payload: {
+        products: Array.from({ length: 250 }, (_, index) => ({
+          handle: `full-price-${index}`,
+          title: `Full Price ${index}`,
+          variants: [{ compare_at_price: null, price: '499.00' }],
+        })),
+      },
+      sourceUrl: edgars!.sourceUrl,
+    })
+    const demandwarePage = capeUnion!.parse({
+      capturedAt: '2026-07-26T08:00:00.000Z',
+      cursor: { kind: 'page', page: 0 },
+      payload: Array.from({ length: 48 }, (_, index) => {
+        const facts = JSON.stringify({
+          id: `full-price-${index}`,
+          name: `Full Price ${index}`,
+          price: '499.00',
+        }).replace(/"/g, '&quot;')
+        return `<div data-pid="full-price-${index}" data-gtm-impression="${facts}">
+          <a href="/products/full-price-${index}">Full Price ${index}</a>
+          <span class="sales"><span class="value" content="499.00"></span></span>
+          <span class="value strike-through">null</span>
+        </div>`
+      }).join(''),
+      sourceUrl: capeUnion!.sourceUrl,
+    })
+
+    expect(shopifyPage.candidates).toEqual([])
+    expect(shopifyPage.nextCursor).toEqual({ kind: 'page', page: 1 })
+    expect(demandwarePage.candidates).toEqual([])
+    expect(demandwarePage.nextCursor).toEqual({ kind: 'page', page: 1 })
   })
 
   it('gives every registered source room to run inside the per-run request cap', () => {
@@ -394,6 +458,45 @@ describe('runStructuredRetailerFeedScout', () => {
     })
   })
 
+  it('prepares a short-lived request and accounts for both physical requests', async () => {
+    const storage = fakeStorage()
+    const source: RetailerFeedSource = {
+      ...testSource('alpha::deals', () => page([deal('alpha', 'a-1')])),
+      async prepareRequest(cursor, fetcher) {
+        expect(cursor).toEqual({ kind: 'page', page: 0 })
+        const token = await fetcher('https://official.test/token')
+        expect(await token.json()).toEqual({ token: 'short-lived' })
+        return { url: 'https://official.test/feed' }
+      },
+      requestCost: 2,
+    }
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith('/token')
+        ? Response.json({ token: 'short-lived' })
+        : Response.json({ items: [] }))
+
+    const result = await runStructuredRetailerFeedScout(
+      { DB: {} as D1Database },
+      { fetcher, sources: [source], storage },
+    )
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({
+      acceptedDealCount: 1,
+      checkedSourceCount: 1,
+      failedSourceCount: 0,
+      physicalRequestCount: 2,
+    })
+
+    const skipped = await runStructuredRetailerFeedScout(
+      { DB: {} as D1Database },
+      { fetcher, requestCap: 1, sources: [source], storage },
+    )
+    expect(skipped.checkedSourceCount).toBe(0)
+    expect(skipped.physicalRequestCount).toBe(0)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it('covers every registered lane under the default request cap', async () => {
     const fetcher = vi.fn(async () => Response.json({ ok: true }))
     const sources = Array.from({ length: getStructuredRetailerSources().length }, (_, index) =>
@@ -487,6 +590,7 @@ describe('runStructuredRetailerFeedScout', () => {
       retailerId: 'alpha',
       retailerName: 'alpha',
       sourceLabel: 'Deals',
+      url: 'https://official.test/catalogues/catalogue-1.pdf',
       validTo: '2026-07-20',
     })])
   })

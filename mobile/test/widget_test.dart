@@ -143,6 +143,13 @@ void main() {
     expect(tile.selectedTileColor, isNotNull);
     expect(tile.shape, isNotNull);
     expect(
+      tester
+          .widgetList<ListTile>(find.byType(ListTile))
+          .take(2)
+          .map((tile) => (tile.title as Text).data),
+      ['Dashboard', 'Marketplace'],
+    );
+    expect(
       find.ancestor(of: find.text('Home'), matching: find.byType(ListTile)),
       findsNothing,
     );

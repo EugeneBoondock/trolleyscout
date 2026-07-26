@@ -95,7 +95,10 @@ it('shows manual refresh to admins and requests a forced refresh when clicked', 
 
   await screen.findByRole('button', { name: 'Admin console' })
   const memberNavigation = screen.getByRole('navigation', { name: 'Member navigation' })
-  fireEvent.click(within(memberNavigation).getByRole('button', { name: 'Find deals' }))
+  expect(
+    within(memberNavigation).getAllByRole('button').slice(0, 2).map((button) => button.textContent),
+  ).toEqual(['Dashboard', 'Marketplace'])
+  fireEvent.click(within(memberNavigation).getByRole('button', { name: 'Marketplace' }))
   const refresh = await screen.findByRole('button', { name: 'Check now' })
   fireEvent.click(refresh)
 

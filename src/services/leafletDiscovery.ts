@@ -396,7 +396,7 @@ export function extractPdfLeaflets(
   target: LeafletTarget,
   html: string,
   capturedAt: string,
-  limit = 6,
+  limit = 16,
 ): StoreLeaflet[] {
   const leaflets: StoreLeaflet[] = []
   const seen = new Set<string>()
@@ -413,24 +413,96 @@ export function extractPdfLeaflets(
     }
 
     seen.add(path)
-    const url = target.origin ? `${target.origin}${path}` : path
+    const documentUrl = target.origin ? `${target.origin}${path}` : path
+    const details = pdfLeafletDetails(target, html, match.index)
 
     leaflets.push({
       capturedAt,
       // The link IS the leaflet PDF, so record it as the document too: readers
       // open documentUrl, and without it these leaflets cannot be viewed.
-      documentUrl: url,
+      documentUrl,
       id: leafletId(target.retailerId, path),
+      imageUrl: details.imageUrl,
       name: pdfLeafletName(target.retailerName, path),
       retailerId: target.retailerId,
       retailerName: target.retailerName,
-      url,
-      validFrom: undefined,
-      validTo: undefined,
+      url: details.viewerUrl ?? documentUrl,
+      validFrom: details.validFrom,
+      validTo: details.validTo,
     })
   }
 
   return leaflets
+}
+
+function pdfLeafletDetails(
+  target: LeafletTarget,
+  html: string,
+  matchIndex: number,
+): {
+  imageUrl?: string
+  validFrom?: string
+  validTo?: string
+  viewerUrl?: string
+} {
+  const context = html.slice(matchIndex, matchIndex + 2_000)
+  const rendition = /^\/content\/dam\/[^"'<> ]+?\.pdf\/_jcr_content\/renditions\/[^"'<> ]+\.(?:jpe?g|png|webp)/i
+    .exec(context)?.[0]
+  const imageUrl = rendition && target.origin
+    ? absoluteHttpUrl(rendition, target.origin)
+    : undefined
+  const dateRange =
+    /\bValid\s+(\d{2}\/\d{2}\/\d{4})\s*-\s*(\d{2}\/\d{2}\/\d{4})/i.exec(context)
+  const validUntil =
+    /\bValid\s+until[\s\S]{0,180}?(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/i.exec(context)
+  const validUntilTimestamp =
+    /\bdata-valid-until-timestamp=["'](\d{12,13})["']/i.exec(context)
+  const viewerMatch =
+    /\bdata-leaflet-external-url=["'](https:\/\/specials\.shoprite\.co\.za\/deals\/[a-z0-9/-]+\/index\.html)["']/i.exec(context)
+
+  return {
+    imageUrl,
+    validFrom: dateRange ? toIsoDate(dateRange[1]) : undefined,
+    validTo: dateRange
+      ? toIsoDate(dateRange[2])
+      : validUntil
+        ? longDateToIso(validUntil[1], validUntil[2], validUntil[3])
+        : epochMillisecondsToIsoDate(validUntilTimestamp?.[1]),
+    viewerUrl: trustedShopriteSpecialsUrl(viewerMatch?.[1]),
+  }
+}
+
+function trustedShopriteSpecialsUrl(value: string | undefined): string | undefined {
+  try {
+    const url = new URL(value ?? '')
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'specials.shoprite.co.za' &&
+      /^\/deals\/[a-z0-9/-]+\/index\.html$/i.test(url.pathname)
+    )
+      ? url.toString()
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function longDateToIso(day: string, month: string, year: string): string | undefined {
+  const monthIndex = Object.keys(MONTHS).indexOf(month.toLowerCase())
+  return monthIndex < 0
+    ? undefined
+    : isoCalendarDate(Number(year), monthIndex + 1, Number(day))
+}
+
+function epochMillisecondsToIsoDate(value: string | undefined): string | undefined {
+  const timestamp = Number(value)
+
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) {
+    return undefined
+  }
+
+  const date = new Date(timestamp)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10)
 }
 
 // Filename codes on OK Foods/Usave leaflet PDFs: region prefix + section,

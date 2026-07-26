@@ -53,9 +53,9 @@ class AppMenuDrawer extends StatelessWidget {
         'Shop',
         [
           AppDestination.dashboard,
+          AppDestination.deals,
           AppDestination.stores,
           AppDestination.near,
-          AppDestination.deals,
           AppDestination.scroll,
           AppDestination.vouchers,
         ],
