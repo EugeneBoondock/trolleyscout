@@ -73,6 +73,7 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
+      'mr-price::promotions',
       'pep::promotions-0',
       'pep::promotions-1',
       'pep::promotions-2',
@@ -239,6 +240,7 @@ describe('structured retailer source decoders', () => {
       'wootware::open-box-specials',
       'bobshop::featured-listings',
       'mr-price::markdowns',
+      'mr-price::promotions',
       'pep::promotions-0',
     ]
 
@@ -293,7 +295,11 @@ describe('structured retailer source decoders', () => {
       }),
       method: 'POST',
     })
-    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('url_key:{eq:"priced-to-go"}')
+    // Every aisle, not just the clearance rail: markdowns turn up right across
+    // the catalogue and asking only for "Priced To Go" missed most of them.
+    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('url_key:{in:[')
+    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('"priced-to-go"')
+    expect(JSON.parse(String(mrPrice.init?.body)).query).toContain('"new-in"')
 
     const mrPriceAisle = mrPriceSource.buildRequest({
       kind: 'token',

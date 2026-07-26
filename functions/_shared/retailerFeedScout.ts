@@ -38,13 +38,19 @@ import { parseMassmartFeed } from '../../src/services/retailerFeeds/massmart'
 import {
   MR_PRICE_GRAPHQL_URL,
   MR_PRICE_ORIGIN,
+  MR_PRICE_PROMOS_URL,
   MR_PRICE_STORE_HEADER,
   buildMrPriceCategoriesQuery,
   buildMrPriceProductsQuery,
+  buildMrPricePromotionsQuery,
+  decodeMrPriceCampaignCursor,
   decodeMrPriceCursor,
+  encodeMrPriceCampaignCursor,
   encodeMrPriceCursor,
+  parseMrPriceCampaignFeed,
   parseMrPriceCategories,
   parseMrPriceFeed,
+  parseMrPricePromotions,
 } from '../../src/services/retailerFeeds/mrPrice'
 import {
   BOXER_PROVINCES,
@@ -122,8 +128,8 @@ const PAGE_SIZE = 100
 // nothing however many times the sweep ran. A test holds this above the source
 // count, so adding a source that would not fit fails the build rather than
 // quietly starving whatever sits last.
-export const DEFAULT_REQUEST_CAP = 80
-const MAX_REQUEST_CAP = 100
+export const DEFAULT_REQUEST_CAP = 90
+const MAX_REQUEST_CAP = 110
 const DEFAULT_TIMEOUT_MS = 12_000
 const MAX_TIMEOUT_MS = 30_000
 const DEFAULT_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -347,6 +353,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   wootwareSource(),
   bobshopSource(),
   mrPriceSource(),
+  mrPricePromosSource(),
   ...Array.from({ length: PEP_SHARD_COUNT }, (_, shard) => pepSource(shard)),
   rootsSource(),
   ...BOXER_PROVINCES.map((province) => boxerSource(province)),
@@ -1325,6 +1332,76 @@ function mrPriceSource(): RetailerFeedSource {
     retailerName: 'Mr Price',
     sourceLabel: 'Markdowns',
     sourceUrl: `${MR_PRICE_ORIGIN}/en_za/`,
+  }
+}
+
+// Mr Price's other kind of offer. Multibuys mark nothing down — "take 2 for
+// R130" leaves the shelf price alone and the saving lands at the till — so they
+// are nowhere in the catalogue's prices. Each is a category under Promos whose
+// own name is the offer, so the campaign list is a category query rather than a
+// read of the promos page, which arrives as an empty shell and fills itself in
+// the browser.
+function mrPricePromosSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const plan = cursor.kind === 'token' ? decodeMrPriceCampaignCursor(cursor.token) : undefined
+      const campaign = plan?.campaigns[plan.index]
+
+      return {
+        init: {
+          body: JSON.stringify({
+            query: campaign === undefined
+              ? buildMrPricePromotionsQuery()
+              : buildMrPriceProductsQuery(campaign.categoryUid),
+          }),
+          headers: {
+            ...STOREFRONT_HEADERS,
+            accept: 'application/json',
+            'content-type': 'application/json',
+            store: MR_PRICE_STORE_HEADER,
+          },
+          method: 'POST',
+        },
+        url: MR_PRICE_GRAPHQL_URL,
+      }
+    },
+    decode: (body) => parseJsonObject(body, 'Mr Price'),
+    initialCursor: { kind: 'token', token: 'promo-list' },
+    key: 'mr-price::promotions',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const plan = cursor.kind === 'token' ? decodeMrPriceCampaignCursor(cursor.token) : undefined
+
+      if (!plan) {
+        const campaigns = parseMrPricePromotions(payload)
+        return {
+          candidates: [],
+          catalogues: [],
+          nextCursor: campaigns.length > 0
+            ? { kind: 'token', token: encodeMrPriceCampaignCursor({ campaigns, index: 0 }) }
+            : undefined,
+        }
+      }
+
+      const campaign = plan.campaigns[plan.index]
+      const page = parseMrPriceCampaignFeed(payload, { capturedAt, sourceUrl }, campaign)
+      const nextIndex = plan.index + 1
+
+      return {
+        ...page,
+        // Undefined resets the source, so each pass reads the promos page again
+        // and picks up a campaign that started since the last one.
+        nextCursor: nextIndex < plan.campaigns.length
+          ? {
+            kind: 'token',
+            token: encodeMrPriceCampaignCursor({ campaigns: plan.campaigns, index: nextIndex }),
+          }
+          : undefined,
+      }
+    },
+    retailerId: retailerSlug('mr-price'),
+    retailerName: 'Mr Price',
+    sourceLabel: 'Promotions',
+    sourceUrl: MR_PRICE_PROMOS_URL,
   }
 }
 
