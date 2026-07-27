@@ -75,6 +75,7 @@ describe('parseBobshopFeed', () => {
       scope: { type: 'online' },
       termsText: 'Auction listing from Wisedeals',
       title: '12V 6A Intelligent Pulse Repair Battery Charger',
+      unitText: 'Current bid',
       validFrom: '2026-07-24T15:00:00+02:00',
       validTo: '2026-07-26T23:45:00+02:00',
     })
@@ -126,6 +127,7 @@ describe('parseBobshopFeed', () => {
   it('labels a fixed-price listing as Buy Now', () => {
     const page = parseBobshopFeed({ cards: [card({ type: 'BUY_NOW' })] }, context)
     expect(page.candidates[0].termsText).toBe('Buy Now listing from Wisedeals')
+    expect(page.candidates[0].unitText).toBeUndefined()
   })
 
   it('rejects a payload without a cards array', () => {

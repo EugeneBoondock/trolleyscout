@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../api.dart';
 import '../currency.dart';
+import '../dashboard_stories.dart';
 import '../discovery_cache.dart';
 import '../price_display.dart';
 import '../theme.dart';
@@ -12,6 +13,7 @@ import '../top_savings.dart';
 import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
+import '../widgets/dashboard_stories.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/scout_avatar_view.dart';
 
@@ -39,7 +41,16 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  late Future<_DashboardData> _future = _load();
+  late Future<_DashboardData> _future;
+  Future<DiscoveryResult>? _storiesFuture;
+  int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+    _scheduleStoriesAfter(_future);
+  }
 
   Future<_DashboardData> _load() async {
     // Each lane falls back independently, but failures are COUNTED so an
@@ -117,9 +128,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return topSavingsDeals(cached?.result.deals ?? const []);
   }
 
-  void _refresh() => setState(() {
-        _future = _load();
+  Future<DiscoveryResult> _loadStoriesDiscovery({
+    bool forceRefresh = false,
+  }) async {
+    final cache = DiscoveryCache();
+    final countryCode = widget.api.effectiveCountryCode;
+    final cached = await cache.load(countryCode);
+    if (!forceRefresh && cached?.isFresh(DateTime.now()) == true) {
+      return cached!.result;
+    }
+
+    try {
+      final discovery = await widget.api.discovery();
+      await cache.save(discovery, DateTime.now(), countryCode);
+      return discovery;
+    } catch (_) {
+      if (cached != null) return cached.result;
+      rethrow;
+    }
+  }
+
+  void _scheduleStoriesAfter(
+    Future<_DashboardData> dashboardFuture, {
+    bool forceRefresh = false,
+  }) {
+    final generation = ++_loadGeneration;
+    dashboardFuture.whenComplete(() {
+      if (!mounted || generation != _loadGeneration) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || generation != _loadGeneration) return;
+        setState(() {
+          _storiesFuture = _loadStoriesDiscovery(
+            forceRefresh: forceRefresh,
+          );
+        });
       });
+    });
+  }
+
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _storiesFuture = null;
+      _future = next;
+    });
+    _scheduleStoriesAfter(next, forceRefresh: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +212,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 currency: Currency.of(widget.api.effectiveCurrencyCode),
                 onOpenBasket: () => widget.onNavigate(AppDestination.basket),
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
+              ),
+              const SizedBox(height: 20),
+              _DeferredDashboardStories(
+                future: _storiesFuture,
+                retailers: data.retailers.retailers,
               ),
               const SizedBox(height: 22),
               _TopSavingsStrip(
@@ -216,6 +275,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DeferredDashboardStories extends StatelessWidget {
+  const _DeferredDashboardStories({
+    required this.future,
+    required this.retailers,
+  });
+
+  final Future<DiscoveryResult>? future;
+  final List<Retailer> retailers;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<DiscoveryResult>(
+      future: future,
+      builder: (context, snapshot) {
+        if (future == null ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            key: const Key('dashboard-stories-loading'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Store stories',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Loading stores after the dashboard is ready.',
+                style: TextStyle(
+                  color: TS.mutedOf(context),
+                  fontSize: 12.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  minHeight: 4,
+                  backgroundColor: TS.lineSoftOf(context),
+                  color: TS.redOf(context),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final discovery = snapshot.data;
+        if (discovery == null) return const SizedBox.shrink();
+        return DashboardStories(
+          stories: buildDashboardStories(
+            catalogues: discovery.catalogues,
+            deals: discovery.deals,
+            retailers: retailers,
           ),
         );
       },
@@ -345,6 +463,7 @@ class _PlanPill extends StatelessWidget {
         decoration: BoxDecoration(
           color: TS.yellow,
           border: Border.all(color: TS.lineOf(context), width: 1.5),
+          borderRadius: BorderRadius.circular(TS.pillRadius),
         ),
         child: Text(
           '$planName plan'.toUpperCase(),
@@ -471,6 +590,7 @@ class _SavingsHero extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: TS.yellow,
                     border: Border.all(color: TS.lineOf(context), width: 2),
+                    borderRadius: BorderRadius.circular(TS.controlRadius),
                   ),
                   child: const PhosphorIcon(PhosphorIconsFill.piggyBank,
                       size: 28, color: TS.ink),
@@ -1117,6 +1237,7 @@ class _StatChip extends StatelessWidget {
             decoration: BoxDecoration(
               color: TS.surfaceOf(context),
               border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
+              borderRadius: BorderRadius.circular(TS.controlRadius),
             ),
             child: Row(
               children: [

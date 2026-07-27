@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// On-device record of the shopper's new-deal alert opt-in. Kept locally so the
@@ -9,6 +11,21 @@ class NotificationPrefsStore {
   static const _lastAlertKey = 'notify_last_alert_iso';
   static const _dealAlertCursorKey = 'notify_deal_alert_cursor';
   static const _lastExpiryWarningKey = 'notify_last_expiry_warning_iso';
+  static const _seenDealIdsKey = 'notify_seen_deal_ids_v1';
+  // Keep this equal to functions/api/discovery.ts NORMALIZED_SAFETY_CAP. A
+  // smaller baseline makes older deals beyond the cut look new after a batch.
+  static const maximumSeenDealIds = 25000;
+
+  /// Background isolates can retain an older SharedPreferences memory view.
+  /// Reload before a worker reads the current opt-in and cursor.
+  Future<void> reload() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.reload();
+    } catch (_) {
+      // The worker can still attempt to read its current view.
+    }
+  }
 
   Future<bool> loadOptIn() async {
     try {
@@ -23,7 +40,10 @@ class NotificationPrefsStore {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setBool(_optInKey, value);
-      if (!value) await preferences.remove(_dealAlertCursorKey);
+      if (!value) {
+        await preferences.remove(_dealAlertCursorKey);
+        await preferences.remove(_seenDealIdsKey);
+      }
     } catch (_) {
       // Preference persists next time.
     }
@@ -49,6 +69,41 @@ class NotificationPrefsStore {
     }
   }
 
+  /// Null means this device has not established a discovery baseline yet.
+  /// An empty set is a valid baseline for a feed that contained no deals.
+  Future<Set<String>?> loadSeenDealIds() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final raw = preferences.getString(_seenDealIdsKey);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<String>()
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveSeenDealIds(Iterable<String> values) async {
+    try {
+      final ids = values
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty && value.length <= 240)
+          .toSet()
+          .take(maximumSeenDealIds)
+          .toList(growable: false)
+        ..sort();
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_seenDealIdsKey, jsonEncode(ids));
+    } catch (_) {
+      // Best-effort. The next successful discovery can rebuild the baseline.
+    }
+  }
+
   Future<DateTime?> loadLastAlertAt() async {
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -62,7 +117,8 @@ class NotificationPrefsStore {
   Future<void> saveLastAlertAt(DateTime value) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(_lastAlertKey, value.toUtc().toIso8601String());
+      await preferences.setString(
+          _lastAlertKey, value.toUtc().toIso8601String());
     } catch (_) {
       // Best-effort.
     }
@@ -100,6 +156,7 @@ class NotificationPrefsStore {
       await preferences.remove(_lastAlertKey);
       await preferences.remove(_dealAlertCursorKey);
       await preferences.remove(_lastExpiryWarningKey);
+      await preferences.remove(_seenDealIdsKey);
     } catch (_) {
       // The next session sync retries the cleanup.
     }

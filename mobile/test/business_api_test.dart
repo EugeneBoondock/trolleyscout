@@ -117,6 +117,80 @@ void main() {
     expect(await store.read(), 'ts_member_session=business-session');
   });
 
+  test('uses the shared member session for a platform admin', () async {
+    final paths = <String>[];
+    final api = BusinessApi(
+      client: MockClient((request) async {
+        paths.add(request.url.path);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'session': {
+                'isAuthenticated': true,
+                'account': {
+                  ..._accountJson,
+                  'email': 'admin@trolleyscout.co.za',
+                  'role': 'admin',
+                },
+              },
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      cookieStore: MemorySessionCookieStore('ts_member_session=admin-session'),
+      useBrowserCookies: false,
+      baseUrl: 'https://example.com',
+    );
+
+    final bootstrap = await api.bootstrap();
+
+    expect(bootstrap.session.account?.isAdmin, isTrue);
+    expect(bootstrap.gate.hasOrganization, isFalse);
+    expect(paths, ['/api/member-session']);
+  });
+
+  test('maps the business admin reporting response', () async {
+    final api = BusinessApi(
+      client: MockClient((request) async => http.Response(
+            jsonEncode({
+              'data': {
+                'overview': {
+                  'businesses': [],
+                  'campaigns': [],
+                  'generatedAt': '2026-07-26T09:00:00.000Z',
+                  'payments': [],
+                  'totals': {
+                    'activeBusinesses': 12,
+                    'businesses': 14,
+                    'campaigns': 73,
+                    'completedCampaigns': 51,
+                    'liveCampaigns': 17,
+                    'paidCents': 1849900,
+                    'paidTransactions': 21,
+                    'pendingApplications': 3,
+                    'pendingModeration': 6,
+                    'suspendedBusinesses': 2,
+                  },
+                },
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          )),
+      cookieStore: MemorySessionCookieStore('ts_member_session=admin-session'),
+      useBrowserCookies: false,
+      baseUrl: 'https://example.com',
+    );
+
+    final overview = await api.adminOverview();
+
+    expect(overview.totals.activeBusinesses, 12);
+    expect(overview.totals.paidCents, 1849900);
+    expect(overview.totals.pendingModeration, 6);
+  });
+
   test('sends publication actions with the server operation', () async {
     late Map<String, dynamic> sent;
     final api = BusinessApi(

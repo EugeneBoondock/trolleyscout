@@ -8,12 +8,16 @@ import type { StoreLeaflet } from '../../src/types'
 import {
   defaultPdfMarkdown,
   buildFlippingBookPages,
+  buildModernFlippingBookPages,
   claimCatalogueScanLease,
   catalogueLeaseOwnerToken,
   catalogueSourceKey,
   flippingBookPageUrls,
   flippingBookPagerUrl,
+  modernFlippingBookPageAssetUrls,
+  modernFlippingBookPagerUrl,
   parseFlippingBookPager,
+  parseModernFlippingBookViewer,
   readHighResolutionImageDimensions,
   releaseCatalogueScanLease,
   runCatalogueScout,
@@ -85,7 +89,7 @@ describe('selectUnscannedLeaflets', () => {
     ])
   })
 
-  it('selects the first ready 1350px substrate and never emits the thumbnail path', () => {
+  it('selects the largest ready substrate and keeps smaller page images as fallbacks', () => {
     const interactive = leaflet({
       documentUrl: 'https://specials.shoprite.co.za/deals/current/catalogue.pdf',
       url: 'https://specials.shoprite.co.za/deals/current/index.html',
@@ -106,21 +110,21 @@ describe('selectUnscannedLeaflets', () => {
       'https://specials.shoprite.co.za/deals/current/files/assets/pager.js',
     )
     expect(flippingBookPageUrls(interactive, pager, 2)).toEqual([
-      'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_3.webp',
-      'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0002_3.webp',
+      'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_4.webp',
+      'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0002_4.webp',
     ])
     const firstPage = buildFlippingBookPages(interactive, pager, 1)[0]
     expect(firstPage).toMatchObject({
       fallbacks: [
-        'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_3.jpg',
-        'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_4.webp',
         'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_4.jpg',
+        'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_3.webp',
+        'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_3.jpg',
         'https://specials.shoprite.co.za/deals/current/catalogue.pdf',
       ],
       height: expect.any(Number),
-      imageUrl: 'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_3.webp',
+      imageUrl: 'https://specials.shoprite.co.za/deals/current/files/assets/common/page-html5-substrates/page0001_4.webp',
       pageNumber: 1,
-      width: 1350,
+      width: 2050,
     })
     expect(JSON.stringify(firstPage)).not.toContain('_w.webp')
   })
@@ -144,6 +148,87 @@ describe('selectUnscannedLeaflets', () => {
       imageUrl: 'https://specials.checkers.co.za/current/files/assets/common/page-html5-substrates/page0001_2.webp',
       width: 1350,
     })])
+  })
+
+  it('reads modern FlippingBook metadata and builds stable high-resolution page URLs', () => {
+    const viewerUrl = 'https://online.flippingbook.com/view/246249203/index.html'
+    const contentRoot =
+      'https://d17lvj5xn8sco6.cloudfront.net/boxer/006AE431/'
+    const viewer = parseModernFlippingBookViewer(`
+      <script>
+        window.FBO.PreloadedPublicationModel = { "Publication": {
+          ContentRoot: '${contentRoot}',
+          ContentVersion: '006AE431',
+          TotalPages: 12
+        }};
+        var initialPolicies = [{
+          "KeyId": "BOXER_KEY",
+          "PathPrefix": "://d17lvj5xn8sco6.cloudfront.net/boxer/006AE431/",
+          "Policy": "BOXER_POLICY",
+          "Signature": "BOXER_SIGNATURE"
+        }];
+      </script>
+    `)
+    const pager = {
+      bookSize: { height: 1105, width: 779 },
+      pages: {
+        defaults: {
+          substrateFormat: 'jpg',
+          substrateSizes: [650, 960, 1350, 2050],
+          substrateSizesReady: 4,
+          substrateWebPCount: 3,
+        },
+        structure: Array.from({ length: 12 }, (_, index) => String(index + 1)),
+      },
+    }
+
+    expect(viewer).toMatchObject({ contentRoot, totalPages: 12 })
+    if (!viewer) {
+      throw new Error('Expected modern viewer metadata')
+    }
+    expect(modernFlippingBookPagerUrl(viewer)).toContain(
+      '/common/pager.json?Key-Pair-Id=BOXER_KEY',
+    )
+    expect(modernFlippingBookPageAssetUrls(viewer, pager, 1)[0]).toContain(
+      '/common/pages/html5substrates/page0001_4.jpg?',
+    )
+
+    const pages = buildModernFlippingBookPages(
+      leaflet({ url: viewerUrl }),
+      viewer,
+      pager,
+      20,
+    )
+    expect(pages).toHaveLength(12)
+    expect(pages[0]).toMatchObject({
+      imageUrl:
+        'https://trolleyscout.co.za/api/catalogue-page?page=1&viewer=https%3A%2F%2Fonline.flippingbook.com%2Fview%2F246249203%2Findex.html',
+      pageNumber: 1,
+      width: 2050,
+    })
+    expect(pages[0].height).toBeGreaterThan(2_800)
+
+    const fallbackPages = buildModernFlippingBookPages(
+      leaflet({
+        pages: [{
+          height: 2908,
+          imageUrl: 'https://example.test/cover.jpg',
+          pageNumber: 1,
+          width: 2050,
+        }],
+        url: viewerUrl,
+      }),
+      viewer,
+      {},
+      20,
+    )
+    expect(fallbackPages).toHaveLength(12)
+    expect(fallbackPages[11]).toMatchObject({
+      imageUrl:
+        'https://trolleyscout.co.za/api/catalogue-page?page=12&viewer=https%3A%2F%2Fonline.flippingbook.com%2Fview%2F246249203%2Findex.html',
+      pageNumber: 12,
+      width: 2050,
+    })
   })
 
   it('rejects small page images and reads PNG, JPEG, and WebP dimensions', () => {
@@ -268,7 +353,7 @@ describe('resumable catalogue scanning', () => {
     manifestVersion = 2
     await runCatalogueScout(env, [current], dependencies)
 
-    expect(pageRequests.map((url) => url.match(/page(\d{4})_3/)?.[1])).toEqual([
+    expect(pageRequests.map((url) => url.match(/page(\d{4})_4/)?.[1])).toEqual([
       '0001',
       '0002',
       '0001',
@@ -278,7 +363,7 @@ describe('resumable catalogue scanning', () => {
     const firstWrite = upsert.mock.calls[0][1]
     expect(firstWrite.sourceKey).toMatch(/^catalogue::shoprite::[a-f0-9]{64}$/)
     expect(firstWrite.candidates[0]).toMatchObject({
-      imageUrl: expect.stringContaining('page0001_3.webp'),
+      imageUrl: expect.stringContaining('page0001_4.webp'),
       priceCents: 2_999,
       previousPriceCents: 3_999,
       retailerId: 'shoprite',
@@ -289,7 +374,7 @@ describe('resumable catalogue scanning', () => {
       crop: { height: 0.2, width: 0.2, x: 0.1, y: 0.1 },
       documentFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       pageNumber: 1,
-      pageImageUrl: expect.stringContaining('page0001_3.webp'),
+      pageImageUrl: expect.stringContaining('page0001_4.webp'),
     })
   })
 
@@ -466,7 +551,7 @@ describe('resumable catalogue scanning', () => {
     const detailUrl = 'https://www.boxer.test/specials/weekly'
     const viewerUrl = 'https://www.boxer.test/catalogues/weekly/index.html'
     const pagerUrl = 'https://www.boxer.test/catalogues/weekly/files/assets/pager.js'
-    const pageUrl = 'https://www.boxer.test/catalogues/weekly/files/assets/common/page-html5-substrates/page0001_3.webp'
+    const pageUrl = 'https://www.boxer.test/catalogues/weekly/files/assets/common/page-html5-substrates/page0001_4.webp'
     const requests: string[] = []
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -480,7 +565,7 @@ describe('resumable catalogue scanning', () => {
         return new Response(pagerManifest(1, 1))
       }
       if (url === pageUrl) {
-        return new Response(pngHeader(1350, 1909), {
+        return new Response(pngHeader(2050, 2899), {
           headers: { 'content-type': 'image/png' },
         })
       }
@@ -506,6 +591,94 @@ describe('resumable catalogue scanning', () => {
       pageUrl,
     ])
     expect(upsert).toHaveBeenCalledTimes(1)
+  })
+
+  it('scans supplied modern viewer pages without requesting a legacy pager', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const viewerUrl = 'https://online.flippingbook.com/view/246249203/index.html'
+    const pageUrl =
+      'https://trolleyscout.co.za/api/catalogue-page?page=1&viewer=https%3A%2F%2Fonline.flippingbook.com%2Fview%2F246249203%2Findex.html'
+    const requests: string[] = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      requests.push(url)
+      if (url === pageUrl) {
+        return new Response(pngHeader(2050, 2908), {
+          headers: { 'content-type': 'image/png' },
+        })
+      }
+      throw new Error(`Unexpected request ${url}`)
+    }) as typeof fetch
+    const upsert = vi.fn(async (_env, options) => ({
+      processed: options.candidates.length,
+      rowIds: [],
+      runId: 'boxer-modern-viewer',
+    }))
+
+    const result = await runCatalogueScout({ DB: {} as D1Database }, [leaflet({
+      id: 'boxer-modern-viewer',
+      pages: [{
+        height: 2908,
+        imageUrl: pageUrl,
+        pageNumber: 1,
+        width: 2050,
+      }],
+      retailerId: 'boxer',
+      retailerName: 'Boxer',
+      url: viewerUrl,
+    })], catalogueDependencies({ cursors, fetcher, upsert }))
+
+    expect(result.scannedDocumentCount).toBe(1)
+    expect(requests).toEqual([pageUrl])
+    expect(upsert.mock.calls[0][1].candidates[0]).toMatchObject({
+      imageUrl: pageUrl,
+      retailerId: 'boxer',
+      sourceKind: 'catalogue',
+    })
+  })
+
+  it('does not let one retailer fill the page-scan budget', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const pageUrl = (retailer: string, index: number) =>
+      `https://trolleyscout.co.za/api/catalogue-page?retailer=${retailer}&page=${index}`
+    const requests: string[] = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      requests.push(String(input))
+      return new Response(pngHeader(2050, 2908), {
+        headers: { 'content-type': 'image/png' },
+      })
+    }) as typeof fetch
+    const suppliedLeaflet = (
+      retailerId: 'pick-n-pay' | 'boxer',
+      index: number,
+    ) => leaflet({
+      id: `${retailerId}-${index}`,
+      pages: [{
+        height: 2908,
+        imageUrl: pageUrl(retailerId, index),
+        pageNumber: 1,
+        width: 2050,
+      }],
+      retailerId,
+      retailerName: retailerId === 'boxer' ? 'Boxer' : 'Pick n Pay',
+      url: `https://online.flippingbook.com/view/${retailerId}-${index}/index.html`,
+    })
+
+    await runCatalogueScout(
+      { DB: {} as D1Database },
+      [
+        suppliedLeaflet('pick-n-pay', 1),
+        suppliedLeaflet('pick-n-pay', 2),
+        suppliedLeaflet('pick-n-pay', 3),
+        suppliedLeaflet('pick-n-pay', 4),
+        suppliedLeaflet('boxer', 1),
+      ],
+      catalogueDependencies({ cursors, fetcher }),
+    )
+
+    expect(requests).toContain(pageUrl('boxer', 1))
+    expect(requests.filter((url) => url.includes('pick-n-pay')).length)
+      .toBeLessThan(4)
   })
 
   it('never sends HTML from a PDF-looking URL to document conversion', async () => {

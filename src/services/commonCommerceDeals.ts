@@ -438,7 +438,8 @@ interface DiscountPrices {
 }
 
 function bestVtexOffer(items: Record<string, unknown>[]): DiscountPrices | undefined {
-  let best: DiscountPrices | undefined
+  let bestAvailable: DiscountPrices | undefined
+  let bestSoldOut: DiscountPrices | undefined
 
   for (const item of items) {
     const sellers = Array.isArray(item.sellers) ? item.sellers : []
@@ -451,20 +452,23 @@ function bestVtexOffer(items: Record<string, unknown>[]): DiscountPrices | undef
       const current = decimalMoneyToCents(commercial.Price)
       const previous = decimalMoneyToCents(commercial.ListPrice)
       if (
-        availability <= 0 ||
         current === undefined ||
         previous === undefined ||
         previous <= current
       ) {
         continue
       }
-      if (!best || current < best.current) {
-        best = { current, previous }
+      if (Number.isFinite(availability) && availability <= 0) {
+        if (!bestSoldOut || current < bestSoldOut.current) {
+          bestSoldOut = { current, previous, soldOut: true }
+        }
+      } else if (!bestAvailable || current < bestAvailable.current) {
+        bestAvailable = { current, previous }
       }
     }
   }
 
-  return best
+  return bestAvailable ?? bestSoldOut
 }
 
 function getDescriptor(

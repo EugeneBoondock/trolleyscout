@@ -52,6 +52,12 @@ export const BASH_STOREFRONTS: readonly BashStorefront[] = [
     retailerId: retailerSlug('sneaker-factory'),
     storeKey: 'sneaker-factory',
   },
+  {
+    name: 'Jet',
+    path: '/jet/sale',
+    retailerId: retailerSlug('jet'),
+    storeKey: 'jet',
+  },
 ]
 
 export function buildBashSaleUrl(shop: BashStorefront, page = 1): string {

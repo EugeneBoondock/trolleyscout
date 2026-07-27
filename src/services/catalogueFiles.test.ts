@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { catalogueFileUrl, isPdfUrl, leafletPdfUrl, withProxiedFallbacks } from './catalogueFiles'
+import {
+  catalogueFileUrl,
+  cataloguePagesFromPayload,
+  isPdfUrl,
+  leafletPdfUrl,
+  withProxiedFallbacks,
+} from './catalogueFiles'
 
 describe('catalogueFileUrl', () => {
   it('routes an external https file through the same-origin relay', () => {
@@ -51,5 +57,31 @@ describe('withProxiedFallbacks', () => {
       '/api/catalogue-file?u=https%3A%2F%2Fcdn.test%2Fpage-1.webp',
       '/api/catalogue-file?u=https%3A%2F%2Fcdn.test%2Fpage-1.jpg',
     ])
+  })
+})
+
+describe('cataloguePagesFromPayload', () => {
+  it('keeps ordered safe pages and their image fallbacks', () => {
+    expect(cataloguePagesFromPayload({
+      data: {
+        pages: [
+          {
+            fallbacks: ['https://cdn.test/page-2-small.webp'],
+            height: 2000,
+            imageUrl: 'https://cdn.test/page-2.webp',
+            pageNumber: 2,
+            width: 1410,
+          },
+          {
+            imageUrl: 'https://cdn.test/page-1.webp',
+            pageNumber: 1,
+          },
+          {
+            imageUrl: 'http://unsafe.test/page.webp',
+            pageNumber: 3,
+          },
+        ],
+      },
+    }).map((page) => page.pageNumber)).toEqual([1, 2])
   })
 })

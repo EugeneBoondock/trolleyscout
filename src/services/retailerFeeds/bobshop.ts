@@ -140,12 +140,19 @@ export function parseBobshopFeed(
       sourceUrl: context.sourceUrl,
       termsText: listingTerms(card),
       title,
+      unitText: listingPriceQualifier(card),
       validFrom,
       validTo,
     })
   }
 
   return { candidates, catalogues: [], totalCount: payload.cards.length }
+}
+
+function listingPriceQualifier(card: unknown): string | undefined {
+  return textValue(card, 'type').toUpperCase() === 'ENGLISH_AUCTION'
+    ? 'Current bid'
+    : undefined
 }
 
 function quotedPercent(card: unknown): number | undefined {

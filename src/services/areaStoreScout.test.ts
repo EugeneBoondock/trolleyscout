@@ -60,10 +60,12 @@ describe('candidateNameFromTitle', () => {
 })
 
 describe('extractCandidateStoreNames', () => {
-  it('finds the independents Geoapify missed in real Edenvale results', () => {
+  it('finds unregistered independents Geoapify missed in real Edenvale results', () => {
     const names = extractCandidateStoreNames(EDENVALE_RESULTS, [])
 
-    expect(names).toContain('Devland Cash and Carry')
+    // Devland now has an official registered source, so the gap scout does not
+    // create a second approximate record for the same store.
+    expect(names).not.toContain('Devland Cash and Carry')
     expect(names).toContain('Frontline SA')
     expect(names).toContain('Hyperland')
     // Directory/category listings never become stores.

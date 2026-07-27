@@ -5,6 +5,7 @@ import type { DiscoveredDeal, StoreLeaflet } from '../../src/types'
 
 const mocks = vi.hoisted(() => ({
   getMemberSession: vi.fn(),
+  listLiveOrganizationPublications: vi.fn(),
   runDealRefreshWithAlerts: vi.fn(),
 }))
 
@@ -16,9 +17,15 @@ vi.mock('../_shared/memberStore', async (importOriginal) => ({
 vi.mock('../_shared/dealAlertStore', () => ({
   runDealRefreshWithAlerts: mocks.runDealRefreshWithAlerts,
 }))
+
+vi.mock('../_shared/organizationPublicationStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../_shared/organizationPublicationStore')>(),
+  listLiveOrganizationPublications: mocks.listLiveOrganizationPublications,
+}))
 import {
   buildNormalizedDiscoveryChecks,
   buildSnapshotChecks,
+  cataloguesForCountry,
   dedupeLeaflets,
   dedupeDiscoveryDeals,
   enrichInteractiveLeaflets,
@@ -26,6 +33,7 @@ import {
   onRequest,
   readNormalizedDealItems,
   refreshLeafletCache,
+  resolveEmbeddedViewers,
   resolvePnpHflipDocuments,
   storePromotionsToDiscovery,
   summaryPreviewDeals,
@@ -34,6 +42,8 @@ import {
 beforeEach(() => {
   mocks.getMemberSession.mockReset()
   mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+  mocks.listLiveOrganizationPublications.mockReset()
+  mocks.listLiveOrganizationPublications.mockResolvedValue([])
   mocks.runDealRefreshWithAlerts.mockReset()
   mocks.runDealRefreshWithAlerts.mockImplementation(async (
     _env: unknown,
@@ -156,6 +166,79 @@ describe('summary preview', () => {
     } as never)
 
     expect(bindings).toContainEqual(['__summary__:ZW'])
+  })
+
+  it('keeps South African business publications out of cached international summaries', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { countryCode: 'ZW', id: 'member-zw', role: 'member' },
+    })
+    mocks.listLiveOrganizationPublications.mockResolvedValue([{
+      bodyText: 'South African business offer',
+      createdAt: '2026-07-23T10:00:00.000Z',
+      createdBy: 'business-user',
+      currencyCode: 'ZAR',
+      id: 'za-business-deal',
+      kind: 'deal',
+      organizationId: 'za-business',
+      organizationName: 'South African business',
+      organizationSlug: 'south-african-business',
+      placement: 'marketplace',
+      previousPriceCents: 20_000,
+      priceCents: 10_000,
+      status: 'live',
+      title: 'South African business deal',
+      updatedAt: '2026-07-23T10:00:00.000Z',
+    }])
+    const previewDeal: DiscoveredDeal = {
+      capturedAt: '2026-07-23T10:00:00.000Z',
+      evidenceText: 'Zimbabwe offer',
+      id: 'zw-preview',
+      previousPriceText: 'USD 20.00',
+      priceText: 'USD 10.00',
+      productUrl: 'https://example.test/zw-preview',
+      retailerId: 'zw-retailer',
+      retailerName: 'Zimbabwe retailer',
+      sourceLabel: 'Zimbabwe specials',
+      sourceUrl: 'https://example.test/zw-specials',
+      title: 'Zimbabwe deal',
+    }
+    const first = vi.fn().mockResolvedValue({
+      checked_at: '2026-07-23T10:00:00.000Z',
+      deals_json: JSON.stringify({
+        foundDealCount: 1,
+        leafletCount: 0,
+        topDeals: [previewDeal],
+      }),
+    })
+    const env = {
+      DB: {
+        prepare: vi.fn(() => {
+          const statement = {
+            bind: vi.fn(),
+            first,
+          }
+          statement.bind.mockReturnValue(statement)
+          return statement
+        }),
+      },
+    }
+
+    const response = await onRequest({
+      env,
+      request: new Request('https://example.test/api/discovery?summary=1'),
+      waitUntil: vi.fn(),
+    } as never)
+    const body = await (response as Response).json() as {
+      data: {
+        deals: DiscoveredDeal[]
+        summary: { foundDealCount: number }
+      }
+    }
+
+    expect(mocks.listLiveOrganizationPublications).not.toHaveBeenCalled()
+    expect(body.data.deals).toEqual([previewDeal])
+    expect(body.data.summary.foundDealCount).toBe(1)
   })
 
   it('rebuilds a summary row created before savings previews existed', async () => {
@@ -331,6 +414,119 @@ describe('storePromotionsToDiscovery', () => {
     expect(dedupeDiscoveryDeals(globalRows).map((deal) => deal.id))
       .toEqual(['normalized-national'])
   })
+
+  it('removes logos, product photos, and ordinary promo images from catalogue results', () => {
+    const result = storePromotionsToDiscovery([
+      {
+        id: 'logo',
+        imageUrl: 'https://hisense.test/uploads/image002.png',
+        kind: 'catalogue',
+        placeId: 'hisense',
+        productUrl: 'https://hisense.test/uploads/image002.png',
+        sourceUrl: 'https://hisense.test/catalogues',
+        storeName: 'Hisense',
+        title: 'HiFi Specialists Logo',
+      },
+      {
+        id: 'product-photo',
+        imageUrl: 'https://shop.test/products/rice.jpg',
+        kind: 'catalogue',
+        placeId: 'shop',
+        productUrl: 'https://shop.test/products/rice.jpg',
+        sourceUrl: 'https://shop.test/specials',
+        storeName: 'Shop',
+        title: 'Rice 2kg product image',
+      },
+      {
+        id: 'hero',
+        imageUrl: 'https://network.test/hero/promotion.jpg',
+        kind: 'catalogue',
+        placeId: 'network',
+        productUrl: 'https://network.test/hero/promotion.jpg',
+        sourceUrl: 'https://network.test/promotions',
+        storeName: 'Network',
+        title: 'Spend R500 and get more',
+      },
+      {
+        id: 'real-pdf',
+        kind: 'catalogue',
+        placeId: 'market',
+        productUrl: 'https://market.test/catalogues/july.pdf',
+        sourceUrl: 'https://market.test/catalogues',
+        storeName: 'Market',
+        title: 'July catalogue',
+      },
+      {
+        id: 'real-leaflet-image',
+        imageUrl:
+          'https://market.test/content/specials-leaflets/july/page-1.jpeg',
+        kind: 'catalogue',
+        placeId: 'market',
+        productUrl:
+          'https://market.test/content/specials-leaflets/july/page-1.jpeg',
+        sourceUrl: 'https://market.test/specials',
+        storeName: 'Market',
+        title: 'July specials leaflet',
+      },
+    ], '2026-07-16T10:00:00.000Z')
+
+    expect(result.leaflets.map((leaflet) => leaflet.id)).toEqual([
+      'real-pdf',
+      'real-leaflet-image',
+    ])
+  })
+})
+
+describe('catalogue country scoping', () => {
+  it('returns only catalogues assigned to the shopper country', () => {
+    const base: StoreLeaflet = {
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      id: 'catalogue',
+      name: 'Current catalogue',
+      retailerId: 'store',
+      retailerName: 'Store',
+      url: 'https://store.test/catalogue.pdf',
+    }
+
+    expect(cataloguesForCountry([
+      { ...base, countryCode: 'ZA', id: 'za' },
+      { ...base, countryCode: 'ZW', id: 'zw' },
+      { ...base, id: 'legacy-za' },
+    ], 'ZW').map((leaflet) => leaflet.id)).toEqual(['zw'])
+  })
+
+  it('corrects older regional catalogue rows that have no country tag', () => {
+    const base: StoreLeaflet = {
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      id: 'catalogue',
+      name: 'Current catalogue',
+      retailerId: 'store',
+      retailerName: 'Store',
+      url: 'https://store.test/catalogue.pdf',
+    }
+
+    const leaflets = [
+      { ...base, id: 'za' },
+      {
+        ...base,
+        id: 'bw',
+        retailerName: 'Pick n Pay Botswana',
+      },
+      {
+        ...base,
+        countryCode: 'ZA',
+        id: 'zm',
+        name: 'Zambia winter catalogue',
+      },
+    ]
+
+    expect(cataloguesForCountry(leaflets, 'ZA').map(({ id }) => id))
+      .toEqual(['za'])
+    expect(cataloguesForCountry(leaflets, 'BW').map(({ id }) => id))
+      .toEqual(['bw'])
+    expect(cataloguesForCountry(leaflets, 'ZM').map(({ id }) => id))
+      .toEqual(['zm'])
+  })
 })
 
 describe('normalized discovery cutover', () => {
@@ -439,6 +635,17 @@ describe('normalized discovery cutover', () => {
       imageCrop: { height: 0.25, width: 0.2, x: 0.1, y: 0.3 },
       imageUrl: 'https://official.test/catalogue/page0004_3.webp',
       pageNumber: 4,
+    })
+  })
+
+  it('exposes a stored price qualifier for marketplace bid prices', () => {
+    const checks = buildNormalizedDiscoveryChecks([
+      storedItem({ retailerId: 'bobshop', unitText: 'Current bid' }),
+    ])
+
+    expect(checks[0].deals[0]).toMatchObject({
+      retailerId: 'bobshop',
+      unitText: 'Current bid',
     })
   })
 
@@ -579,6 +786,119 @@ describe('normalized discovery cutover', () => {
     expect(waitUntil).not.toHaveBeenCalled()
   })
 
+  it('limits country-matched discovery rows by the signed-in plan viewing allowance', async () => {
+    const current = new Date().toISOString()
+    const deals = Array.from({ length: 10_001 }, (_, index): DiscoveredDeal => ({
+      capturedAt: current,
+      evidenceText: `Deal ${index} from an official source`,
+      id: `access-deal-${index}`,
+      priceText: `R${index + 1}.00`,
+      productId: `access-product-${index}`,
+      productUrl: `https://shop.example.test/products/${index}`,
+      retailerId: 'access-market',
+      retailerName: 'Access Market',
+      sourceLabel: 'Official specials',
+      sourceUrl: 'https://shop.example.test/specials',
+      title: `Access deal ${index}`,
+    }))
+    const zaLeaflets = Array.from({ length: 51 }, (_, index): StoreLeaflet => ({
+      capturedAt: current,
+      countryCode: 'ZA',
+      documentUrl: `https://catalogues.example.test/za-${index}.pdf`,
+      id: `za-catalogue-${index}`,
+      name: `Weekly catalogue ${index}`,
+      retailerId: `za-retailer-${index}`,
+      retailerName: `ZA Retailer ${index}`,
+      url: `https://catalogues.example.test/za-${index}.pdf`,
+      validTo: '2099-12-31',
+    }))
+    const foreignLeaflet: StoreLeaflet = {
+      ...zaLeaflets[0],
+      countryCode: 'BW',
+      documentUrl: 'https://catalogues.example.test/bw.pdf',
+      id: 'bw-catalogue',
+      retailerId: 'bw-retailer',
+      retailerName: 'BW Retailer',
+      url: 'https://catalogues.example.test/bw.pdf',
+    }
+    const env = {
+      DB: discoveryAccessDatabase(deals, [...zaLeaflets, foreignLeaflet]),
+    }
+
+    mocks.getMemberSession.mockResolvedValue({
+      account: {
+        countryCode: 'ZA',
+        id: 'free-member',
+        planId: 'free',
+        role: 'member',
+      },
+      isAuthenticated: true,
+    })
+    const freeResponse = await onRequest({
+      env,
+      request: new Request('https://trolleyscout.co.za/api/discovery'),
+      waitUntil: vi.fn(),
+    } as never)
+    const free = await freeResponse.json() as {
+      data: {
+        access: {
+          availableCatalogueCount: number
+          availableDealCount: number
+          catalogueLimit: number
+          dealLimit: number
+          planId: string
+        }
+        deals: DiscoveredDeal[]
+        leaflets: StoreLeaflet[]
+      }
+    }
+
+    expect(free.data.deals).toHaveLength(10_000)
+    expect(free.data.leaflets).toHaveLength(50)
+    expect(free.data.leaflets.every((leaflet) => leaflet.countryCode === 'ZA')).toBe(true)
+    expect(free.data.access).toEqual({
+      availableCatalogueCount: 51,
+      availableDealCount: 10_001,
+      catalogueLimit: 50,
+      dealLimit: 10_000,
+      planId: 'free',
+    })
+
+    mocks.getMemberSession.mockResolvedValue({
+      account: {
+        countryCode: 'ZA',
+        id: 'scout-member',
+        planId: 'scout',
+        role: 'member',
+      },
+      isAuthenticated: true,
+    })
+    const scoutResponse = await onRequest({
+      env,
+      request: new Request('https://trolleyscout.co.za/api/discovery'),
+      waitUntil: vi.fn(),
+    } as never)
+    const scout = await scoutResponse.json() as {
+      data: {
+        access: {
+          catalogueLimit: number
+          dealLimit: number
+          planId: string
+        }
+        deals: DiscoveredDeal[]
+        leaflets: StoreLeaflet[]
+      }
+    }
+
+    expect(scout.data.deals).toHaveLength(10_001)
+    expect(scout.data.leaflets).toHaveLength(51)
+    expect(scout.data.access).toMatchObject({
+      catalogueLimit: 250,
+      dealLimit: 50_000,
+      planId: 'scout',
+    })
+  })
+
   it('rejects a forced refresh from a non-admin account before fetching sources', async () => {
     mocks.getMemberSession.mockResolvedValue({
       isAuthenticated: true,
@@ -660,6 +980,52 @@ describe('normalized discovery cutover', () => {
 })
 
 describe('interactive catalogue manifest enrichment', () => {
+  it('keeps every hosted Boxer page during the first viewer resolution', async () => {
+    const leaflet: StoreLeaflet = {
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      id: 'boxer-gp-july',
+      name: 'GP July ME',
+      retailerId: 'boxer',
+      retailerName: 'Boxer',
+      url: 'https://www.boxer.co.za/post/promotion_details/GPJULY',
+      validFrom: '2026-07-24',
+      validTo: '2026-08-02',
+    }
+    const viewerUrl = 'https://online.flippingbook.com/view/246249203/index.html'
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === leaflet.url) {
+        return new Response(`<a href="${viewerUrl}">Read catalogue</a>`)
+      }
+      return new Response(`
+        <img src="https://catalogue.cloudfront.net/current/cover300.jpg">
+        <script>
+          window.FBO.PreloadedPublicationModel = { "Publication": {
+            ContentRoot: 'https://catalogue.cloudfront.net/current/',
+            TotalPages: 12
+          }};
+          var initialPolicies = [{
+            "KeyId": "KEY",
+            "PathPrefix": "://catalogue.cloudfront.net/current/",
+            "Policy": "POLICY",
+            "Signature": "SIGNATURE"
+          }];
+        </script>
+      `)
+    })
+
+    const [resolved] = await resolveEmbeddedViewers([leaflet], fetcher)
+
+    expect(resolved.url).toBe(viewerUrl)
+    expect(resolved.imageUrl).toBe(
+      'https://catalogue.cloudfront.net/current/cover300.jpg',
+    )
+    expect(resolved.pages).toHaveLength(12)
+    expect(resolved.pages?.at(-1)).toMatchObject({
+      pageNumber: 12,
+      width: 2050,
+    })
+  })
+
   it('adds official high-resolution page URLs and preserves leaflets when a manifest fails', async () => {
     const leaflets = [{
       capturedAt: '2026-07-16T10:00:00.000Z',
@@ -702,8 +1068,8 @@ describe('interactive catalogue manifest enrichment', () => {
     expect(enriched[0]).toMatchObject({
       imageUrl: leaflets[0].imageUrl,
       pages: [
-        expect.objectContaining({ pageNumber: 1, width: 1350 }),
-        expect.objectContaining({ pageNumber: 2, width: 1350 }),
+        expect.objectContaining({ pageNumber: 1, width: 2050 }),
+        expect.objectContaining({ pageNumber: 2, width: 2050 }),
       ],
     })
     expect(enriched[1]).toEqual(leaflets[1])
@@ -721,18 +1087,34 @@ describe('interactive catalogue manifest enrichment', () => {
     }
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/pager.js')) {
-        return new Response(`window.pager = ${JSON.stringify({
+      if (url.includes('/common/pager.json?')) {
+        return new Response(JSON.stringify({
           pages: {
             defaults: {
               substrateFormat: 'jpg',
-              substrateSizes: [1350],
-              substrateSizesReady: [true],
-              substrateWebPCount: 1,
+              substrateSizes: [650, 1350, 2050],
+              substrateSizesReady: 3,
+              substrateWebPCount: 2,
             },
             structure: ['1'],
           },
-        })};`, { headers: { 'content-type': 'text/javascript' } })
+        }), { headers: { 'content-type': 'application/json' } })
+      }
+      if (url.includes('online.flippingbook.com/view/53977247')) {
+        return new Response(`
+          <script>
+            window.FBO.PreloadedPublicationModel = { "Publication": {
+              ContentRoot: 'https://cdn-viewer.cloudfront.net/book/current/',
+              TotalPages: 1
+            }};
+            var initialPolicies = [{
+              "KeyId": "KEY",
+              "PathPrefix": "://cdn-viewer.cloudfront.net/book/current/",
+              "Policy": "POLICY",
+              "Signature": "SIGNATURE"
+            }];
+          </script>
+        `, { headers: { 'content-type': 'text/html' } })
       }
       return new Response(
         '<a href="https://online.flippingbook.com/view/53977247/">Read our leaflet</a>',
@@ -745,8 +1127,9 @@ describe('interactive catalogue manifest enrichment', () => {
     expect(enriched[0].pages).toEqual([
       expect.objectContaining({
         imageUrl:
-          'https://online.flippingbook.com/view/53977247/files/assets/common/page-html5-substrates/page0001_1.webp',
+          'https://trolleyscout.co.za/api/catalogue-page?page=1&viewer=https%3A%2F%2Fonline.flippingbook.com%2Fview%2F53977247%2Findex.html',
         pageNumber: 1,
+        width: 2050,
       }),
     ])
     // The official source link must stay on the retailer page, not the viewer.
@@ -871,6 +1254,47 @@ function fakeDiscoveryDatabase(item?: StoredDealItem) {
   } as unknown as D1Database
 }
 
+function discoveryAccessDatabase(
+  deals: DiscoveredDeal[],
+  leaflets: StoreLeaflet[],
+): D1Database {
+  const checkedAt = new Date().toISOString()
+  const dealSnapshots = [{
+    checked_at: checkedAt,
+    deals_json: JSON.stringify(deals),
+    source_key: 'access-market::official-specials',
+  }]
+  const leafletSnapshot = {
+    checked_at: checkedAt,
+    deals_json: JSON.stringify(leaflets),
+  }
+
+  return {
+    prepare(sql: string) {
+      let bindings: unknown[] = []
+      const statement = {
+        all: async () => ({
+          results: sql.includes(
+            'SELECT source_key, checked_at, deals_json FROM deal_snapshots',
+          )
+            ? dealSnapshots
+            : [],
+        }),
+        bind: (...values: unknown[]) => {
+          bindings = values
+          return statement
+        },
+        first: async () =>
+          sql.includes('WHERE source_key = ?') && bindings[0] === '__leaflets__'
+            ? leafletSnapshot
+            : undefined,
+        run: async () => ({ meta: { changes: 0 } }),
+      }
+      return statement
+    },
+  } as unknown as D1Database
+}
+
 describe('catalogue-scanned deals in the feed', () => {
   it('names the source "Catalogue scan" instead of the key fingerprint', () => {
     // Catalogue source keys end in a content fingerprint. The generic
@@ -939,6 +1363,47 @@ describe('catalogue deal dedupe', () => {
 })
 
 describe('leaflet refresh retention', () => {
+  it('collects every validated catalogue directory page', async () => {
+    const card = (flyerId: string, store: string, name: string) => `
+      <a href="/stores/${store}/catalogues-specials">
+        <div class="flyer" data-flyer-id="${flyerId}" data-flyer-name="${name}">
+          <img alt="${name} (valid until 10-08)"
+            src="https://img.offers-cdn.net/assets/uploads/flyers/${flyerId}/thumbnailFixedWidth/${store}-catalogue-h400WebP-aabbcc.webp">
+        </div>
+      </a>`
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      return new Response(
+        url.endsWith('page=1')
+          ? `${card('3700001', 'boxer', 'Boxer')}
+             <a href="/latest-catalogues?page=2">2</a>`
+          : card('3700002', 'a5-cash-carry', 'A5 Cash & Carry'),
+      )
+    })
+    const saveSnapshot = vi.fn(async () => undefined)
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      [],
+      {
+        fetcher,
+        saveSnapshot,
+        targets: [{
+          countryCode: 'ZA',
+          kind: 'catalogue-directory',
+          pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues?page=1',
+          retailerId: 'catalogue-specials-za',
+          retailerName: 'South African catalogue directory',
+        }],
+      },
+    )
+
+    expect(leaflets).toHaveLength(2)
+    expect(leaflets.map((leaflet) => leaflet.countryCode)).toEqual(['ZA', 'ZA'])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(saveSnapshot).toHaveBeenCalledOnce()
+  })
+
   it('keeps prior rows for a failed retailer while replacing successful retailer rows', async () => {
     const prior: StoreLeaflet[] = [{
       capturedAt: '2026-07-18T10:00:00.000Z',
@@ -1002,6 +1467,46 @@ describe('leaflet refresh retention', () => {
       leaflets,
       expect.any(String),
     )
+  })
+
+  it('keeps every prior provider row when a directory is challenged', async () => {
+    const prior: StoreLeaflet[] = [{
+      capturedAt: '2026-07-27T08:00:00.000Z',
+      countryCode: 'ZA',
+      id: 'latest-specials-123',
+      imageUrl: 'https://eu.leafletscdn.com/cover.jpg',
+      name: 'Food Lover’s Market catalogue',
+      pagesUrl:
+        'https://trolleyscout.co.za/api/catalogue-pages?source=latest-specials&flyer=123&path=%2Ffood-lovers%2Fwinter-123%2F',
+      retailerId: 'food-lovers',
+      retailerName: 'Food Lover’s Market',
+      sourceId: 'latest-specials-za',
+      sourceLabel: 'Latest Specials',
+      url: 'https://www.latestspecials.co.za/food-lovers/winter-123/',
+      validTo: '2026-08-02',
+    }]
+    const fetcher = vi.fn(async () => new Response('', { status: 202 }))
+    const saveSnapshot = vi.fn(async () => undefined)
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      prior,
+      {
+        fetcher,
+        saveSnapshot,
+        targets: [{
+          countryCode: 'ZA',
+          kind: 'catalogue-directory',
+          pageUrl: 'https://www.latestspecials.co.za/rss/',
+          retailerId: 'latest-specials-za',
+          retailerName: 'Latest Specials South Africa',
+          sourceId: 'latest-specials-za',
+        }],
+      },
+    )
+
+    expect(leaflets).toEqual(prior)
+    expect(saveSnapshot).not.toHaveBeenCalled()
   })
 })
 
@@ -1148,6 +1653,6 @@ describe('Pick n Pay generic catalogue suppression', () => {
       url: 'https://www.spar.co.za/catalogues',
     }
 
-    expect(dedupeLeaflets([generic, other, official])).toEqual([other, official])
+    expect(dedupeLeaflets([generic, other, official])).toEqual([official])
   })
 })

@@ -23,6 +23,16 @@ describe('ScoutMark', () => {
     expect(mark.getAttribute('style')).toContain('28px')
   })
 
+  it('uses the dedicated business mark without changing the consumer default', () => {
+    render(<ScoutMark variant="business" />)
+
+    const mark = screen.getByTestId('scout-mark')
+    expect(mark.getAttribute('data-variant')).toBe('business')
+    expect(mark.querySelector('img')?.getAttribute('src')).toBe(
+      '/assets/scout-logo-business-v2.png',
+    )
+  })
+
   it('keeps the image decorative and exposes no duplicate label', () => {
     const { container } = render(<ScoutMark motion="static" />)
 

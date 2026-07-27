@@ -95,6 +95,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   final List<_Track> _tracks = List.of(_playlist)..shuffle();
 
   List<ScrollDeal> _deals = const [];
+  int? _dealAccessLimit;
   final Set<String> _seenThisVisit = {};
   Set<String> _saved = {};
   // Global save counts per deal id, so the reel shows "N saves".
@@ -462,6 +463,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 
   Future<List<ScrollDeal>> _discoveryDeals({bool forceLive = false}) async {
     final result = await _loadStoredDiscovery(forceLive: forceLive);
+    _dealAccessLimit = result.access?.dealLimit;
     return result.deals
         .where((d) => d.imageUrl != null)
         .map(ScrollDeal.fromDeal)
@@ -526,9 +528,12 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       for (final deal in combined) {
         if (responseKeys.add(windowSeenKey(deal))) unique.add(deal);
       }
+      final accessible = _dealAccessLimit == null
+          ? unique
+          : unique.take(_dealAccessLimit!).toList();
       final persistedSeen = await _seenStore.loadIds();
       _seenThisVisit.addAll(persistedSeen);
-      final unseen = unique
+      final unseen = accessible
           .where((deal) => !_seenThisVisit.contains(windowSeenKey(deal)))
           .toList();
       // Order by the shopper's taste so the window opens on things they'll love,
@@ -554,9 +559,10 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         _deals = varied;
         _currentPage = 0;
         _loading = false;
-        _caughtUp = unique.isNotEmpty && varied.isEmpty;
-        _error =
-            unique.isEmpty ? 'No deals to browse yet. Check back soon.' : null;
+        _caughtUp = accessible.isNotEmpty && varied.isEmpty;
+        _error = accessible.isEmpty
+            ? 'No deals to browse yet. Check back soon.'
+            : null;
       });
       if (varied.isNotEmpty) {
         _markFirstVisibleAfterFrame();
@@ -1417,6 +1423,16 @@ class _WindowCardState extends State<_WindowCard> {
           // The save confirmation blooms over the middle of the picture, clear
           // of both the rail and the details.
           WindowSaveBurst(trigger: _saveBurst),
+          if (deal.hasImage)
+            Positioned(
+              top: 78,
+              right: 10,
+              child: _RoundIcon(
+                icon: Icons.fullscreen_rounded,
+                tooltip: 'View product full screen',
+                onTap: () => openWindowProductShowcase(context, deal),
+              ),
+            ),
           Positioned(
             right: 10,
             bottom: 190,
@@ -1500,6 +1516,15 @@ class _WindowCardState extends State<_WindowCard> {
                       height: 1.1),
                 ),
                 const SizedBox(height: 8),
+                if (deal.unitText != null) ...[
+                  _Badge(
+                    key: Key('window-price-qualifier-${deal.id}'),
+                    text: deal.unitText!,
+                    color: TS.yellow,
+                    textColor: TS.ink,
+                  ),
+                  const SizedBox(height: 5),
+                ],
                 // Flexible so a large text scale ellipsises the prices rather
                 // than overflowing the card.
                 Row(
@@ -1584,6 +1609,309 @@ class _WindowCardState extends State<_WindowCard> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+Future<void> openWindowProductShowcase(
+  BuildContext context,
+  ScrollDeal deal,
+) async {
+  final images = deal.gallery
+      .where((url) => url.trim().isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+  if (images.isEmpty) return;
+
+  await Navigator.of(context).push<void>(
+    PageRouteBuilder<void>(
+      opaque: true,
+      transitionDuration: const Duration(milliseconds: 180),
+      reverseTransitionDuration: const Duration(milliseconds: 140),
+      pageBuilder: (_, __, ___) => _WindowProductShowcase(
+        dealId: deal.id,
+        images: images,
+      ),
+      transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        opacity: CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOut,
+        ),
+        child: child,
+      ),
+    ),
+  );
+}
+
+class _WindowProductShowcase extends StatefulWidget {
+  const _WindowProductShowcase({
+    required this.dealId,
+    required this.images,
+  });
+
+  final String dealId;
+  final List<String> images;
+
+  @override
+  State<_WindowProductShowcase> createState() => _WindowProductShowcaseState();
+}
+
+class _WindowProductShowcaseState extends State<_WindowProductShowcase> {
+  static const _minimumScale = 0.72;
+  static const _maximumScale = 5.0;
+
+  late final PageController _pageController;
+  late final List<TransformationController> _transformations;
+  int _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    _transformations = List<TransformationController>.generate(
+      widget.images.length,
+      (_) => TransformationController(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    );
+    for (final controller in _transformations) {
+      controller.dispose();
+    }
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _setScale(double nextScale) {
+    final scale = nextScale.clamp(_minimumScale, _maximumScale).toDouble();
+    final size = MediaQuery.sizeOf(context);
+    final matrix = Matrix4.diagonal3Values(scale, scale, 1);
+    matrix.setTranslationRaw(
+      (1 - scale) * size.width / 2,
+      (1 - scale) * size.height / 2,
+      0,
+    );
+    _transformations[_pageIndex].value = matrix;
+  }
+
+  void _zoomBy(double factor) {
+    final current = _transformations[_pageIndex].value.getMaxScaleOnAxis();
+    _setScale(current * factor);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: ValueKey('window-product-showcase-${widget.dealId}'),
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView(
+            controller: _pageController,
+            onPageChanged: (index) => setState(() => _pageIndex = index),
+            children: [
+              for (var index = 0; index < widget.images.length; index++)
+                Semantics(
+                  key: ValueKey('window-showcase-page-$index'),
+                  image: true,
+                  label:
+                      'Product image ${index + 1} of ${widget.images.length}',
+                  child: InteractiveViewer(
+                    transformationController: _transformations[index],
+                    minScale: _minimumScale,
+                    maxScale: _maximumScale,
+                    boundaryMargin: const EdgeInsets.all(160),
+                    child: Center(
+                      child: Image(
+                        image: NetworkImage(
+                          upgradeImageUrl(widget.images[index]),
+                        ),
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                          size: 48,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: Row(
+                  children: [
+                    _ShowcaseControl(
+                      icon: Icons.close_rounded,
+                      tooltip: 'Close full screen',
+                      onTap: () => Navigator.of(context).maybePop(),
+                    ),
+                    if (widget.images.length > 1) ...[
+                      const Spacer(),
+                      _ShowcaseDots(
+                        count: widget.images.length,
+                        selectedIndex: _pageIndex,
+                      ),
+                      const Spacer(),
+                      const SizedBox(width: 44),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xB31A1A1A),
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ShowcaseControl(
+                        icon: Icons.remove_rounded,
+                        tooltip: 'Zoom out',
+                        onTap: () => _zoomBy(0.8),
+                        compact: true,
+                      ),
+                      _ShowcaseControl(
+                        icon: Icons.center_focus_strong_rounded,
+                        tooltip: 'Reset zoom',
+                        onTap: () => _setScale(1),
+                        compact: true,
+                      ),
+                      _ShowcaseControl(
+                        icon: Icons.add_rounded,
+                        tooltip: 'Zoom in',
+                        onTap: () => _zoomBy(1.25),
+                        compact: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShowcaseDots extends StatelessWidget {
+  const _ShowcaseDots({
+    required this.count,
+    required this.selectedIndex,
+  });
+
+  final int count;
+  final int selectedIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleCount = count.clamp(1, 9);
+    final start = count <= visibleCount
+        ? 0
+        : (selectedIndex - visibleCount ~/ 2).clamp(0, count - visibleCount);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0x8F1A1A1A),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var offset = 0; offset < visibleCount; offset++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: start + offset == selectedIndex ? 8 : 5,
+                height: start + offset == selectedIndex ? 8 : 5,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: start + offset == selectedIndex
+                      ? Colors.white
+                      : Colors.white38,
+                  shape: BoxShape.circle,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShowcaseControl extends StatelessWidget {
+  const _ShowcaseControl({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 40.0 : 44.0;
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          radius: size / 2,
+          containedInkWell: true,
+          customBorder: const CircleBorder(),
+          child: SizedBox.square(
+            dimension: size,
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: compact ? 22 : 24,
+            ),
+          ),
+        ),
       ),
     );
   }

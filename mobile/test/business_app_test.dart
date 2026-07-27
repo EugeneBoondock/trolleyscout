@@ -103,6 +103,18 @@ void main() {
     expect(find.text('Submit application'), findsNothing);
     expect(find.text('Overview'), findsNothing);
   });
+
+  testWidgets('opens the shared-account business admin console',
+      (tester) async {
+    final api = _FakeBusinessApi(isAdmin: true);
+    await _pumpBusiness(tester, api);
+
+    expect(find.text('BUSINESS ADMIN'), findsOneWidget);
+    expect(find.text('Business control'), findsOneWidget);
+    expect(find.text('Active businesses'), findsOneWidget);
+    expect(find.text('Money received'), findsOneWidget);
+    expect(find.text('Business access is invitation-only'), findsNothing);
+  });
 }
 
 Future<BusinessController> _pumpBusiness(
@@ -124,21 +136,23 @@ class _FakeBusinessApi implements BusinessApiClient {
   _FakeBusinessApi({
     this.authenticated = true,
     this.hasOrganization = true,
+    this.isAdmin = false,
   });
 
   bool authenticated;
   final bool hasOrganization;
+  final bool isAdmin;
   BusinessPublicationDraft? lastSaved;
 
   @override
   Future<BusinessBootstrap> bootstrap() async => BusinessBootstrap(
         session: authenticated
-            ? const MemberSession(
+            ? MemberSession(
                 isAuthenticated: true,
-                account: _account,
+                account: isAdmin ? _adminAccount : _account,
               )
             : const MemberSession.signedOut(),
-        gate: authenticated && hasOrganization
+        gate: authenticated && hasOrganization && !isAdmin
             ? const BusinessGate(
                 applicationStatus: 'approved',
                 hasOrganization: true,
@@ -148,10 +162,13 @@ class _FakeBusinessApi implements BusinessApiClient {
                 applicationStatus: null,
                 hasOrganization: false,
               ),
-        publications:
-            authenticated && hasOrganization ? [_publication] : const [],
-        locations: authenticated && hasOrganization ? [_location] : const [],
-        metrics: authenticated && hasOrganization
+        publications: authenticated && hasOrganization && !isAdmin
+            ? [_publication]
+            : const [],
+        locations: authenticated && hasOrganization && !isAdmin
+            ? [_location]
+            : const [],
+        metrics: authenticated && hasOrganization && !isAdmin
             ? const BusinessMetrics(
                 days: [],
                 rangeDays: 30,
@@ -168,8 +185,45 @@ class _FakeBusinessApi implements BusinessApiClient {
   @override
   Future<MemberSession> authenticate(AuthDraft draft) async {
     authenticated = true;
-    return const MemberSession(isAuthenticated: true, account: _account);
+    return MemberSession(
+      isAuthenticated: true,
+      account: isAdmin ? _adminAccount : _account,
+    );
   }
+
+  @override
+  Future<BusinessAdminOverview> adminOverview() async => _adminOverview;
+
+  @override
+  Future<List<BusinessAdminApplication>> adminApplications() async =>
+      const [_adminApplication];
+
+  @override
+  Future<List<BusinessPublication>> adminPublicationQueue() async =>
+      const [_submittedPublication];
+
+  @override
+  Future<List<BusinessAdminApplication>> reviewAdminApplication(
+    String applicationId,
+    String decision, {
+    String? note,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<BusinessPublication>> reviewAdminPublication(
+    String publicationId,
+    String decision, {
+    String? note,
+  }) async =>
+      const [];
+
+  @override
+  Future<BusinessAdminOverview> setBusinessStatus(
+    String businessId,
+    String status,
+  ) async =>
+      _adminOverview;
 
   @override
   Future<BusinessPublicationChange> changePublication(
@@ -268,6 +322,116 @@ const _account = MemberAccount(
   propertiesAccess: false,
   createdAt: '2026-07-26T08:00:00.000Z',
   updatedAt: '2026-07-26T08:00:00.000Z',
+);
+
+const _adminAccount = MemberAccount(
+  id: 'admin-1',
+  email: 'admin@trolleyscout.co.za',
+  displayName: 'Trolley Scout Admin',
+  initials: 'TA',
+  planId: 'free',
+  planName: 'Free',
+  planStatus: 'active',
+  role: 'admin',
+  propertiesAccess: true,
+  createdAt: '2026-01-01T08:00:00.000Z',
+  updatedAt: '2026-07-26T08:00:00.000Z',
+);
+
+const _adminOverview = BusinessAdminOverview(
+  businesses: [
+    BusinessAdminOrganization(
+      activeCampaigns: 2,
+      campaigns: 8,
+      completedCampaigns: 5,
+      createdAt: '2026-06-01T08:00:00.000Z',
+      id: 'org-1',
+      impressions: 16200,
+      locations: 3,
+      name: 'Kasi Pantry',
+      opens: 4800,
+      ownerName: 'Naledi Mokoena',
+      paidCents: 349900,
+      paidTransactions: 3,
+      planId: 'business-growth',
+      planStatus: 'active',
+      saves: 910,
+      slug: 'kasi-pantry',
+      status: 'active',
+      updatedAt: '2026-07-26T09:00:00.000Z',
+      visits: 1200,
+      lastCampaignAt: '2026-07-25T09:00:00.000Z',
+    ),
+  ],
+  campaigns: [
+    BusinessAdminCampaign(
+      createdAt: '2026-07-20T08:00:00.000Z',
+      id: 'campaign-1',
+      impressions: 6200,
+      kind: 'deal',
+      opens: 1800,
+      organizationId: 'org-1',
+      organizationName: 'Kasi Pantry',
+      placement: 'both',
+      saves: 420,
+      soldOut: false,
+      status: 'live',
+      title: 'Family braai box',
+      updatedAt: '2026-07-26T09:00:00.000Z',
+      visits: 530,
+    ),
+  ],
+  generatedAt: '2026-07-26T09:00:00.000Z',
+  payments: [
+    BusinessAdminPayment(
+      amountCents: 149900,
+      businessId: 'org-1',
+      businessName: 'Kasi Pantry',
+      createdAt: '2026-07-01T08:00:00.000Z',
+      id: 'payment-event-1',
+      paymentId: 'payfast-1',
+      planId: 'business-growth',
+      status: 'COMPLETE',
+    ),
+  ],
+  totals: BusinessAdminTotals(
+    activeBusinesses: 12,
+    businesses: 14,
+    campaigns: 73,
+    completedCampaigns: 51,
+    liveCampaigns: 17,
+    paidCents: 1849900,
+    paidTransactions: 21,
+    pendingApplications: 3,
+    pendingModeration: 6,
+    suspendedBusinesses: 2,
+  ),
+);
+
+const _adminApplication = BusinessAdminApplication(
+  businessSubscriptionActive: true,
+  contactEmail: 'thabo@example.com',
+  contactName: 'Thabo Maseko',
+  createdAt: '2026-07-25T08:00:00.000Z',
+  description: 'A neighbourhood grocery store.',
+  id: 'application-1',
+  organisationName: 'Maseko Market',
+  status: 'pending',
+);
+
+const _submittedPublication = BusinessPublication(
+  id: 'org-pub-review',
+  organizationId: 'org-1',
+  organizationName: 'Kasi Pantry',
+  organizationSlug: 'kasi-pantry',
+  createdBy: 'member-1',
+  status: BusinessPublicationStatus.submitted,
+  createdAt: '2026-07-25T08:00:00.000Z',
+  updatedAt: '2026-07-26T09:00:00.000Z',
+  kind: BusinessPublicationKind.promotion,
+  placement: BusinessPublicationPlacement.both,
+  title: 'Weekend pantry sale',
+  bodyText: 'Save on household staples this weekend.',
 );
 
 const _organization = BusinessOrganization(

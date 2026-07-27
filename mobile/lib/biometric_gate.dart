@@ -42,7 +42,8 @@ class BiometricPrefs {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(stickyAuth: true, biometricOnly: false),
+        options:
+            const AuthenticationOptions(stickyAuth: true, biometricOnly: false),
       );
     } catch (_) {
       return false;
@@ -139,8 +140,11 @@ class _BiometricGateState extends State<BiometricGate> {
               style: FilledButton.styleFrom(
                 backgroundColor: TS.yellow,
                 foregroundColor: TS.ink,
-                shape: const RoundedRectangleBorder(),
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(TS.controlRadius),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
               ),
               onPressed: _authing ? null : _prompt,
               icon: const Icon(Icons.fingerprint),

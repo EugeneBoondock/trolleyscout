@@ -69,7 +69,8 @@ void main() {
         find.byKey(const Key('retailer-picker-search')), 'cafe');
     await tester.pump();
 
-    expect(find.byKey(const Key('retailer-option-cafe-milano')), findsOneWidget);
+    expect(
+        find.byKey(const Key('retailer-option-cafe-milano')), findsOneWidget);
     expect(find.byKey(const Key('retailer-option-checkers')), findsNothing);
     // Sections and shortcuts collapse into a flat result list while searching.
     expect(find.byKey(const Key('retailer-top-checkers')), findsNothing);
@@ -189,7 +190,8 @@ void main() {
     // and can only be reached if the sheet scrolled to it.
     final options = retailerOptionsFromDeals([
       for (final letter in 'abcdefghijklmnopqrstuvwxyz'.split(''))
-        _deal('d-$letter', 'store-$letter', '${letter.toUpperCase()}town Grocer')
+        _deal(
+            'd-$letter', 'store-$letter', '${letter.toUpperCase()}town Grocer')
     ]);
 
     await tester.pumpWidget(_host(
@@ -239,7 +241,8 @@ void main() {
     await _useTallViewport(tester);
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
-      home: Scaffold(body: DealsScreen(api: _PickerApi(), isAuthenticated: true)),
+      home:
+          Scaffold(body: DealsScreen(api: _PickerApi(), isAuthenticated: true)),
     ));
     await tester.pumpAndSettle();
 
@@ -262,6 +265,34 @@ void main() {
     expect(find.text('Checkers'), findsOneWidget);
   });
 
+  testWidgets('a catalogue-only store opens its fetched catalogues',
+      (tester) async {
+    await _useTallViewport(tester);
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(api: _CatalogueOnlyApi(), isAuthenticated: true),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('retailer-filter-trigger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('retailer-option-boxer')));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.text('Boxer has 2 catalogues ready to browse.'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('open-store-catalogues')));
+    await tester.tap(find.byKey(const Key('open-store-catalogues')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('catalogue-group-boxer')), findsOneWidget);
+    expect(find.text('Boxer'), findsOneWidget);
+    expect(find.text('2 current catalogues'), findsOneWidget);
+  });
+
   // A shop that happens to be running no promotion used to vanish from the
   // picker entirely, which reads as "not covered" rather than "nothing on
   // today". Mr Price prices its markdowns without ever recording a previous
@@ -272,14 +303,88 @@ void main() {
       catalog: [_retailer('mr-price', 'Mr Price'), _retailer('pep', 'PEP')],
     );
 
-    expect(options.map((option) => option.id), containsAll(['mr-price', 'pep']));
+    expect(
+        options.map((option) => option.id), containsAll(['mr-price', 'pep']));
 
     final quiet = options.firstWhere((option) => option.id == 'mr-price');
     expect(quiet.dealCount, 0);
-    expect(quiet.dealCountLabel, '0 deals');
+    expect(quiet.dealCountLabel, 'No current offers');
 
     // The shop with deals still reports the real number.
     expect(options.firstWhere((option) => option.id == 'pep').dealCount, 1);
+  });
+
+  test('counts fetched catalogues instead of showing zero deals', () {
+    final options = retailerOptionsFromDeals(
+      const [],
+      catalog: [_retailer('boxer', 'Boxer')],
+      catalogues: const [
+        Catalogue(
+          name: 'Boxer Superstores Gauteng',
+          url: 'https://boxer.test/gauteng.pdf',
+          retailerName: 'Boxer',
+        ),
+        Catalogue(
+          name: 'Boxer Superstores Western Cape',
+          url: 'https://boxer.test/western-cape.pdf',
+          retailerName: 'Boxer',
+        ),
+      ],
+    );
+
+    final boxer = options.single;
+    expect(boxer.id, 'boxer');
+    expect(boxer.dealCount, 0);
+    expect(boxer.catalogueCount, 2);
+    expect(boxer.dealCountLabel, '2 catalogues');
+  });
+
+  test('uses a catalogue retailer id when its display name is source-specific',
+      () {
+    final options = retailerOptionsFromDeals(
+      const [],
+      catalog: [_retailer('boxer', 'Boxer')],
+      catalogues: const [
+        Catalogue(
+          name: 'Boxer Superstores Gauteng',
+          url: 'https://boxer.test/gauteng.pdf',
+          retailerId: 'boxer',
+          retailerName: 'Boxer Superstores Gauteng',
+        ),
+      ],
+    );
+
+    final boxer = options.singleWhere((option) => option.id == 'boxer');
+    expect(boxer.catalogueCount, 1);
+    expect(boxer.dealCountLabel, '1 catalogue');
+  });
+
+  test('rolls retailer aliases into the canonical store count', () {
+    final options = retailerOptionsFromDeals(
+      [
+        _deal('u1', 'shoprite', 'Shoprite Usave'),
+        _deal('s1', 'store-online:za:greenfields-spar.test', 'KwikSpar'),
+      ],
+      catalog: [
+        _retailer('spar', 'SPAR'),
+        _retailer('usave', 'Usave'),
+      ],
+      catalogues: const [
+        Catalogue(
+          name: 'SPAR weekly catalogue',
+          url: 'https://spar.test/catalogue.pdf',
+          retailerName: 'Spar Express',
+        ),
+      ],
+    );
+
+    final spar = options.firstWhere((option) => option.id == 'spar');
+    final usave = options.firstWhere((option) => option.id == 'usave');
+    expect(spar.dealCount, 1);
+    expect(spar.catalogueCount, 1);
+    expect(spar.dealCountLabel, '1 deal · 1 catalogue');
+    expect(usave.dealCount, 1);
+    expect(options.where((option) => option.id == 'shoprite'), isEmpty);
   });
 
   // The name on the card and the name in the picker have to agree, so the one
@@ -365,7 +470,8 @@ class _PickerApi extends Api {
       );
 
   @override
-  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async => const [];
+  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async =>
+      const [];
 
   @override
   Future<List<PublicAd>> publicAds(String placement) async => const [];
@@ -373,6 +479,41 @@ class _PickerApi extends Api {
   @override
   Future<NotificationPreferences> notificationPreferences() async =>
       const NotificationPreferences.off();
+}
+
+class _CatalogueOnlyApi extends _PickerApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [],
+        foundDealCount: 0,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 2,
+        catalogues: [
+          Catalogue(
+            name: 'Boxer Gauteng',
+            url: 'https://boxer.test/gauteng.pdf',
+            retailerName: 'Boxer',
+          ),
+          Catalogue(
+            name: 'Boxer Western Cape',
+            url: 'https://boxer.test/western-cape.pdf',
+            retailerName: 'Boxer',
+          ),
+        ],
+      );
+
+  @override
+  Future<RetailerCatalog> retailers(
+          {String query = '',
+          String kind = 'all',
+          bool summary = false}) async =>
+      RetailerCatalog(
+        retailers: [_retailer('boxer', 'Boxer')],
+        sourceKinds: const ['catalogue'],
+      );
 }
 
 Retailer _retailer(String id, String name) => Retailer(

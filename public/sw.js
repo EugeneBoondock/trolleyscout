@@ -2,7 +2,7 @@
 // Goal: the app shell and tools keep working on flaky or absent connections,
 // while HTML navigations stay network-first so updates are never stuck.
 
-const CACHE_NAME = 'trolley-scout-v2'
+const CACHE_NAME = 'trolley-scout-v3'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['/'])))

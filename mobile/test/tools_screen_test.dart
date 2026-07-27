@@ -5,7 +5,8 @@ import 'package:trolley_scout/screens/tools_screen.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
-  testWidgets('keeps store comparison and removes shelf tools', (tester) async {
+  testWidgets('keeps store comparison and removes the hand-typed list tools',
+      (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       darkTheme: TS.darkTheme(),
@@ -17,7 +18,9 @@ void main() {
     expect(find.text('SHELF TOOLS'), findsNothing);
     expect(find.text('Which pack is really cheaper?'), findsNothing);
     expect(find.text('Compare a product across stores'), findsOneWidget);
-    expect(find.text('Which shop is cheapest?'), findsOneWidget);
+    // The hand-typed "which shop is cheapest" table is gone: the live
+    // multi-store search is the only comparison the app offers now.
+    expect(find.text('Which shop is cheapest?'), findsNothing);
   });
 }
 

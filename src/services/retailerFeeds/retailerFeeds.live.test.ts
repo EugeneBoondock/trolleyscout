@@ -48,6 +48,11 @@ import {
   parseZaraSaleCategories,
   parseZaraSaleFeed,
 } from './zara'
+import {
+  ASICS_CATALOGUE_URL,
+  buildAsicsCatalogueUrl,
+  parseAsicsCatalogue,
+} from './asics'
 import { ROOTS_SPECIALS_URL, parseRootsLeaflets } from './roots'
 import {
   buildBoxerPromotionsUrl,
@@ -174,6 +179,20 @@ describe.skipIf(!runLive)('live South African retailer feeds', () => {
       expect(page.candidates.length, shop.name).toBeGreaterThan(0)
       await expectCandidateImage(page)
     }
+  }, 30_000)
+
+  it('reads ASICS South Africa’s national catalogue without inventing discounts', async () => {
+    const response = await fetch(buildAsicsCatalogueUrl(), { headers: htmlHeaders })
+
+    expect(response.status).toBe(200)
+    const page = parseAsicsCatalogue(
+      await response.text(),
+      { capturedAt, sourceUrl: ASICS_CATALOGUE_URL },
+    )
+    expect(page.totalCount).toBeGreaterThan(0)
+    expect(page.candidates.every((candidate) =>
+      candidate.previousPriceCents !== undefined &&
+      candidate.previousPriceCents > candidate.priceCents)).toBe(true)
   }, 30_000)
 
   it('reads H&M markdowns from its official South African partner', async () => {

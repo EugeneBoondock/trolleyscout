@@ -40,7 +40,8 @@ void main() {
     test('does not read a multibuy total as a saving', () {
       // R120 is what two bottles cost together, not what anybody saves, and
       // reading it as one put juice at the top of "Most saved".
-      final deal = _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
+      final deal =
+          _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
       expect(dealSavingCents(deal), isNull);
     });
 
@@ -68,7 +69,8 @@ void main() {
     test('does not read 100% fruit juice as a 100% discount', () {
       // The percentage describes the juice. Taking any number before a percent
       // sign sorted every carton above a genuine half-price rail.
-      final deal = _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
+      final deal =
+          _deal(id: 'd', saving: 'Buy Any 2 For R120 100% Fruit Juice');
       expect(dealDiscountFraction(deal), isNull);
     });
 
@@ -104,6 +106,18 @@ void main() {
       ];
       final sorted = sortDeals(deals, DealSort.latest);
       expect(sorted.map((d) => d.id), ['new', 'old', 'none']);
+    });
+
+    test('latest uses a deterministic identity tie-break', () {
+      final deals = [
+        _deal(id: 'zulu', capturedAt: '2026-06-01T00:00:00Z'),
+        _deal(id: 'alpha', capturedAt: '2026-06-01T00:00:00Z'),
+      ];
+
+      expect(
+        sortDeals(deals, DealSort.latest).map((deal) => deal.id),
+        ['alpha', 'zulu'],
+      );
     });
 
     test('most saved orders by saving descending, unparseable last', () {

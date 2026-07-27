@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Bathtub,
   Bed,
@@ -16,7 +16,7 @@ import {
   ShareNetwork,
   TrendUp,
 } from '@phosphor-icons/react'
-import { searchProperties } from '../services/apiClient'
+import { getMemberState, searchProperties, setMemberState } from '../services/apiClient'
 import { ScoutMascot } from '../components/ScoutMascot'
 import { useSavedProperties } from '../hooks/useSavedProperties'
 import type { CountryContext, MemberAccount, PropertyListing, PropertyListingType } from '../types'
@@ -50,6 +50,7 @@ function galleryOf(listing: PropertyListing): string[] {
 // Recent searches power the recognition-over-recall chips on the start screen.
 // On-device only (localStorage), deduped case-insensitively and capped.
 const RECENT_KEY = 'ts_recent_property_searches_v1'
+const RECENT_REMOTE_KEY = 'recent_property_searches_v1'
 const RECENT_MAX = 6
 const POPULAR_LOCATIONS = [
   'Cape Town',
@@ -110,6 +111,23 @@ export function PropertiesView({ account, country, onUpgrade }: Props) {
   const [recent, setRecent] = useState<string[]>(() => loadRecentSearches())
 
   const { saved, savedCount, isSaved, toggle } = useSavedProperties(true)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getMemberState<string[]>(RECENT_REMOTE_KEY, controller.signal).then((remote) => {
+      if (controller.signal.aborted || !Array.isArray(remote)) return
+      const merged = [...new Set([...loadRecentSearches(), ...remote]
+        .filter((item): item is string => typeof item === 'string' && item.trim().length >= 2))]
+        .slice(0, RECENT_MAX)
+      try {
+        localStorage.setItem(RECENT_KEY, JSON.stringify(merged))
+      } catch {
+        // The current screen keeps the merged list when device storage is unavailable.
+      }
+      setRecent(merged)
+    })
+    return () => controller.abort()
+  }, [])
 
   if (!account.propertiesAccess) {
     return <PropertiesUpsell countryName={country.name} onUpgrade={onUpgrade} />
@@ -186,7 +204,9 @@ export function PropertiesView({ account, country, onUpgrade }: Props) {
       setMessage(`No ${listingType === 'rent' ? 'rentals' : 'listings'} found near ${where}.`)
     } else if (!coords) {
       // Remember the canonical resolved place for the recognition chips.
-      setRecent(saveRecentSearch(where))
+      const next = saveRecentSearch(where)
+      setRecent(next)
+      void setMemberState(RECENT_REMOTE_KEY, next)
     }
   }
 

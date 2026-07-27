@@ -18,6 +18,23 @@ void main() {
     expect(dark.cardTheme.color, const Color(0xFF221C15));
   });
 
+  test('shared surfaces and controls never fall back to square corners', () {
+    expect(TS.cardRadius, greaterThanOrEqualTo(20));
+    expect(TS.controlRadius, greaterThanOrEqualTo(16));
+    expect(TS.panelRadius, greaterThanOrEqualTo(28));
+
+    for (final theme in [TS.lightTheme(), TS.darkTheme()]) {
+      final card = theme.cardTheme.shape! as RoundedRectangleBorder;
+      final dialog = theme.dialogTheme.shape! as RoundedRectangleBorder;
+      final button = theme.filledButtonTheme.style!.shape!
+          .resolve(<WidgetState>{})! as RoundedRectangleBorder;
+
+      expect(card.borderRadius, BorderRadius.circular(TS.cardRadius));
+      expect(dialog.borderRadius, BorderRadius.circular(TS.panelRadius));
+      expect(button.borderRadius, BorderRadius.circular(TS.controlRadius));
+    }
+  });
+
   testWidgets('theme button switches the running app to dark mode',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

@@ -7,6 +7,7 @@ export interface DealFilterOptions {
   sourceLabel?: string
   imagesOnly?: boolean
   savingsOnly?: boolean
+  hideSoldOut?: boolean
   category?: DealCategory | 'all'
   foodSubcategory?: FoodSubcategory | 'all'
   // A deal ends before this ISO date (YYYY-MM-DD) is excluded; a deal with no
@@ -36,6 +37,7 @@ export function filterDiscoveryDeals(
     const matchesImage = !options.imagesOnly || Boolean(deal.imageUrl)
     const matchesSaving =
       !options.savingsOnly || Boolean(deal.savingText || deal.previousPriceText)
+    const matchesAvailability = !options.hideSoldOut || !deal.soldOut
 
     let matchesCategory = true
 
@@ -60,6 +62,7 @@ export function filterDiscoveryDeals(
       matchesSource &&
       matchesImage &&
       matchesSaving &&
+      matchesAvailability &&
       matchesCategory &&
       matchesExpiry
     )

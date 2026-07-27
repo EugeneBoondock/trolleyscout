@@ -9,10 +9,17 @@ class AnimatedScoutMark extends StatefulWidget {
     super.key,
     this.motion = ScoutMarkMotion.static,
     this.size = 38,
-  });
+  }) : assetPath = 'assets/scout-logo.png';
+
+  const AnimatedScoutMark.business({
+    super.key,
+    this.motion = ScoutMarkMotion.static,
+    this.size = 38,
+  }) : assetPath = 'assets/scout-logo-business-v2.png';
 
   final ScoutMarkMotion motion;
   final double size;
+  final String assetPath;
 
   @override
   State<AnimatedScoutMark> createState() => _AnimatedScoutMarkState();
@@ -106,7 +113,7 @@ class _AnimatedScoutMarkState extends State<AnimatedScoutMark>
               child: child,
             ),
             child: Image.asset(
-              'assets/scout-logo.png',
+              widget.assetPath,
               fit: BoxFit.contain,
               excludeFromSemantics: true,
             ),

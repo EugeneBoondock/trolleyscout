@@ -10,6 +10,7 @@ import type { DiscoveredStoresResource } from './services/apiClient'
 
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
   vi.unstubAllGlobals()
 })
 
@@ -30,6 +31,7 @@ const resource: DiscoveredStoresResource = {
         imageUrl: 'https://official.test/rice.jpg',
         kind: 'deal',
         priceText: 'R29.99',
+        soldOut: true,
         sourceUrl: 'https://official.test/rice',
         title: 'Rice 2kg',
       }],
@@ -66,8 +68,8 @@ describe('DiscoveredStoreDirectory', () => {
   it('opens one grouped retailer card and keeps branch-specific promotions distinct', () => {
     render(<DiscoveredStoreDirectory discovered={resource} />)
 
-    const groupButton = screen.getByRole('button', { name: /Pick n Pay.*2 locations/i })
-    expect(screen.getAllByRole('button', { name: /Pick n Pay.*locations/i })).toHaveLength(1)
+    const groupButton = screen.getByRole('button', { name: 'Enter Pick n Pay' })
+    expect(screen.getAllByRole('button', { name: 'Enter Pick n Pay' })).toHaveLength(1)
 
     fireEvent.click(groupButton)
     const dialog = screen.getByRole('dialog', { name: /Pick n Pay locations/i })
@@ -75,15 +77,16 @@ describe('DiscoveredStoreDirectory', () => {
     expect(within(dialog).getByText('2 Oak Road, Cape Town')).toBeTruthy()
     expect(within(dialog).queryByText('Rice 2kg')).toBeNull()
 
-    fireEvent.click(within(dialog).getByRole('button', { name: /Open Pick n Pay Central deals/i }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enter Pick n Pay Central' }))
     expect(within(dialog).getByText('Rice 2kg')).toBeTruthy()
     expect(within(dialog).getByText('R29.99')).toBeTruthy()
+    expect(within(dialog).getByText('Sold out')).toBeTruthy()
   })
 
   it('opens catalogue promotions in the in-platform leaflet viewer and closes on Escape', () => {
     const { container } = render(<DiscoveredStoreDirectory discovered={resource} />)
-    fireEvent.click(screen.getByRole('button', { name: /Pick n Pay.*2 locations/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Open Pick n Pay North deals/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter Pick n Pay' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter Pick n Pay North' }))
     fireEvent.click(screen.getByRole('button', { name: /Read Weekly catalogue here/i }))
 
     expect(screen.getByRole('dialog', { name: 'Weekly catalogue' })).toBeTruthy()
@@ -117,8 +120,8 @@ describe('DiscoveredStoreDirectory', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<DiscoveredStoreDirectory discovered={compact} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Pick n Pay.*1 location/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Open Pick n Pay Central deals/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter Pick n Pay' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enter Pick n Pay Central' }))
 
     expect(await screen.findByText('Rice 2kg')).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledWith(
@@ -148,7 +151,23 @@ describe('DiscoveredStoreDirectory', () => {
       />,
     )
 
-    expect(screen.getAllByRole('button', { name: /1 location, 0 live promotions/i })).toHaveLength(61)
+    expect(screen.getAllByRole('button', { name: /Enter Independent store/i })).toHaveLength(61)
+  })
+
+  it('lets shoppers favourite stores and filter the directory to favourites', () => {
+    render(<DiscoveredStoreDirectory discovered={resource} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Pick n Pay to favourites' }))
+    expect(
+      JSON.parse(window.localStorage.getItem('ts_favourite_stores_v1') ?? '[]'),
+    ).toEqual([expect.objectContaining({ id: 'retailer:pick-n-pay', displayName: 'Pick n Pay' })])
+
+    fireEvent.click(screen.getByRole('button', { name: /Favourites 1/i }))
+    expect(screen.getByRole('button', { name: 'Enter Pick n Pay' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Remove Pick n Pay from favourites' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Pick n Pay from favourites' }))
+    expect(screen.getByText('No favourite stores yet.')).toBeTruthy()
   })
 })
 

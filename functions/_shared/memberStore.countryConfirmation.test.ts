@@ -29,6 +29,11 @@ const COUNTRY_COLUMNS = [
   "ALTER TABLE member_accounts ADD COLUMN country_name TEXT NOT NULL DEFAULT 'South Africa'",
   "ALTER TABLE member_accounts ADD COLUMN currency_code TEXT NOT NULL DEFAULT 'ZAR'",
   'ALTER TABLE member_accounts ADD COLUMN country_confirmed_at TEXT',
+  // 0039: moderation and presence.
+  "ALTER TABLE member_accounts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+  'ALTER TABLE member_accounts ADD COLUMN banned_at TEXT',
+  'ALTER TABLE member_accounts ADD COLUMN ban_reason TEXT',
+  'ALTER TABLE member_accounts ADD COLUMN last_seen_at TEXT',
 ]
 
 const netherlands = {

@@ -213,6 +213,101 @@ describe('extractPublicStoreDeals', () => {
     ])
   })
 
+  it('marks embedded products sold out when every stated variant is unavailable', () => {
+    const html = `<script type="application/json">${JSON.stringify({
+      products: [{
+        compareAtPrice: 1_899,
+        name: 'Bathu Mesh Edition',
+        price: 1_299,
+        promotionId: 'mesh-sale',
+        url: '/products/mesh-edition',
+        variants: [
+          { available: false, title: 'Size 6' },
+          { available: false, title: 'Size 7' },
+        ],
+      }],
+    })}</script>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Bathu', placeId: 'bathu-online' },
+        html,
+        'https://www.bathu.co.za/collections/sale',
+        0,
+      )[0],
+    ).toMatchObject({
+      soldOut: true,
+      title: 'Bathu Mesh Edition',
+    })
+  })
+
+  it('keeps an embedded product available when one variant can still be bought', () => {
+    const html = `<script type="application/json">${JSON.stringify({
+      products: [{
+        compareAtPrice: 1_899,
+        name: 'Bathu Mesh Edition',
+        price: 1_299,
+        promotionId: 'mesh-sale',
+        variants: [
+          { available: false, title: 'Size 6' },
+          { available: true, title: 'Size 7' },
+        ],
+      }],
+    })}</script>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Bathu', placeId: 'bathu-online' },
+        html,
+        'https://www.bathu.co.za/collections/sale',
+        0,
+      )[0]?.soldOut,
+    ).toBeUndefined()
+  })
+
+  it('reads a sold-out label from within a visible product card', () => {
+    const html = `
+      <article itemtype="https://schema.org/Product" itemscope>
+        <a href="/products/maize" itemprop="url">
+          <h3 itemprop="name">Iwisa Maize Meal 5kg</h3>
+        </a>
+        <span class="was-price">Was R89.99</span>
+        <span class="sale-price" itemprop="price" content="69.99">R69.99</span>
+        <button disabled>Sold out</button>
+      </article>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Local Supermarket', placeId: 'local-market' },
+        html,
+        'https://local.test/specials',
+        0,
+      )[0],
+    ).toMatchObject({
+      soldOut: true,
+      title: 'Iwisa Maize Meal 5kg',
+    })
+  })
+
+  it('does not confuse a general availability note with sold-out stock', () => {
+    const html = `
+      <article itemtype="https://schema.org/Product" itemscope>
+        <h3 itemprop="name">Iwisa Maize Meal 5kg</h3>
+        <span class="was-price">Was R89.99</span>
+        <span class="sale-price" itemprop="price" content="69.99">R69.99</span>
+        <small>Subject to availability</small>
+      </article>`
+
+    expect(
+      extractPublicStoreDeals(
+        { lat: 0, lon: 0, name: 'Local Supermarket', placeId: 'local-market' },
+        html,
+        'https://local.test/specials',
+        0,
+      )[0]?.soldOut,
+    ).toBeUndefined()
+  })
+
   it('does not treat a visible ordinary-price card as a deal on a general page', () => {
     const html = `
       <article itemtype="https://schema.org/Product" itemscope>
@@ -225,6 +320,77 @@ describe('extractPublicStoreDeals', () => {
         { lat: 0, lon: 0, name: 'Local Supermarket', placeId: 'local-market' },
         html,
         'https://local.test/products',
+        0,
+      ),
+    ).toEqual([])
+  })
+
+  it('reads official network plan cards without requiring a struck-through price', () => {
+    const html = `
+      <section class="mobile-plan-card">
+        <img src="/images/unlimited-mobile.webp" alt="Unlimited mobile">
+        <h3>Unlimited mobile</h3>
+        <p>Unlimited calls and data</p>
+        <p>from <strong>R595</strong> month-to-month</p>
+        <a href="/plans/unlimited-mobile">Explore plan</a>
+      </section>
+      <article class="deal-card">
+        <h3>Double deals Oppo A6 bundle</h3>
+        <p>2GB Anytime Data and 75 All-Net Minutes</p>
+        <span class="deal-price">R799 PM x36</span>
+        <a href="/deals/oppo-a6-bundle">View details</a>
+      </article>`
+
+    const deals = extractPublicStoreDeals(
+      {
+        countryCode: 'ZA',
+        lat: 0,
+        lon: 0,
+        name: 'Example Mobile',
+        placeId: 'online:za:mobile.test',
+        retailerId: 'example-mobile',
+        sourceCategory: 'network-provider',
+      },
+      html,
+      'https://mobile.test/deals',
+      Date.parse('2026-07-26T10:00:00.000Z'),
+    )
+
+    expect(deals).toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://mobile.test/images/unlimited-mobile.webp',
+        priceText: 'R595',
+        productUrl: 'https://mobile.test/plans/unlimited-mobile',
+        retailerId: 'example-mobile',
+        title: 'Unlimited mobile',
+      }),
+      expect.objectContaining({
+        priceText: 'R799',
+        productUrl: 'https://mobile.test/deals/oppo-a6-bundle',
+        title: 'Double deals Oppo A6 bundle',
+      }),
+    ])
+  })
+
+  it('does not relax promotion proof for an ordinary non-network store', () => {
+    const html = `
+      <section class="mobile-plan-card">
+        <h3>Unlimited mobile</h3>
+        <p>Unlimited calls and data</p>
+        <p>R595 month-to-month</p>
+      </section>`
+
+    expect(
+      extractPublicStoreDeals(
+        {
+          countryCode: 'ZA',
+          lat: 0,
+          lon: 0,
+          name: 'Ordinary Store',
+          placeId: 'ordinary-store',
+        },
+        html,
+        'https://ordinary.test/products',
         0,
       ),
     ).toEqual([])
@@ -645,6 +811,55 @@ describe('scheduled discovered-store scouting', () => {
   afterEach(async () => {
     vi.unstubAllGlobals()
     await miniflare.dispose()
+  })
+
+  it('saves a country-scoped network plan from its official provider page',
+      async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'carrier.test' && url.pathname === '/offers') {
+        return htmlResponse(`
+          <section class="mobile-plan-card">
+            <h3>Unlimited 5G plan</h3>
+            <p>Unlimited mobile data from $45 monthly</p>
+            <a href="/plans/unlimited-5g">View plan</a>
+          </section>`)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'US',
+        countryName: 'United States',
+        name: 'Example Carrier',
+        placeId: 'online:us:carrier.test',
+        retailerId: 'example-carrier-us',
+        sourceCategory: 'network-provider',
+        website: 'https://carrier.test/offers',
+        websiteSource: 'country-retailer',
+      })],
+      Date.parse('2026-07-26T10:00:00.000Z'),
+      1,
+    )
+
+    const row = await db.prepare(
+      `SELECT title, price_text, product_url, country_code
+       FROM store_promotions WHERE place_id = 'online:us:carrier.test'`,
+    ).first<{
+      country_code: string
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+
+    expect(row).toEqual({
+      country_code: 'US',
+      price_text: 'USD 45',
+      product_url: 'https://carrier.test/plans/unlimited-5g',
+      title: 'Unlimited 5G plan',
+    })
   })
 
   it('uses a discovered country retailer website for a matching nearby branch', async () => {

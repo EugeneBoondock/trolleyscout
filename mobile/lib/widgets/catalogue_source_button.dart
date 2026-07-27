@@ -21,10 +21,12 @@ class CatalogueSourceButton extends StatelessWidget {
   const CatalogueSourceButton({
     super.key,
     required this.sourceUrl,
+    this.label = 'Open official source',
     this.openExternal = launchCatalogueSource,
   });
 
   final String? sourceUrl;
+  final String label;
   final CatalogueUriOpener openExternal;
 
   @override
@@ -37,7 +39,7 @@ class CatalogueSourceButton extends StatelessWidget {
       child: FilledButton.icon(
         onPressed: () => openExternal(uri),
         icon: const Icon(Icons.open_in_new),
-        label: const Text('Open official source'),
+        label: Text(label),
       ),
     );
   }

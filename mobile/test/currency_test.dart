@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/currency.dart';
 import 'package:trolley_scout/recent_searches_store.dart';
-import 'package:trolley_scout/shop_compare.dart';
 
 void main() {
   group('Currency.format (always two decimals)', () {
@@ -49,20 +48,6 @@ void main() {
       expect(Currency.of('ZAR').symbol, 'R');
       expect(Currency.of('USD').symbol, r'$');
       expect(Currency.of('PLN').symbol, 'PLN');
-    });
-  });
-
-  group('parsePriceInput (prices the shopper types)', () {
-    test('accepts whichever currency symbol the shopper types', () {
-      expect(parsePriceInput('R24,99'), 2499);
-      expect(parsePriceInput(r'$24.99'), 2499);
-      expect(parsePriceInput('24.99'), 2499);
-    });
-
-    test('still rejects input that is not a price', () {
-      expect(parsePriceInput('cheap'), isNull);
-      expect(parsePriceInput('1.2.3'), isNull);
-      expect(parsePriceInput(''), isNull);
     });
   });
 

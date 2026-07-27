@@ -8,6 +8,7 @@ import 'notifications.dart';
 
 typedef DealAlertRunner = Future<bool> Function(Api api);
 typedef DealAlertPermissionRequest = Future<bool> Function();
+typedef DealAlertBackgroundInitializer = Future<void> Function();
 
 /// Keeps the server preference, local cursor, and Android periodic task aligned
 /// when a member session starts or ends.
@@ -17,16 +18,20 @@ class DealAlertLifecycle {
     DealAlertScheduler? scheduler,
     DealAlertRunner? runPoller,
     DealAlertPermissionRequest? requestPermission,
+    DealAlertBackgroundInitializer? initializeBackground,
   })  : _preferences = preferences ?? NotificationPrefsStore(),
         _scheduler = scheduler ?? DealAlertScheduler(),
         _runPoller = runPoller,
         _requestPermission =
-            requestPermission ?? DealNotifications.instance.requestPermission;
+            requestPermission ?? DealNotifications.instance.requestPermission,
+        _initializeBackground =
+            initializeBackground ?? initializeDealAlertBackground;
 
   final NotificationPrefsStore _preferences;
   final DealAlertScheduler _scheduler;
   final DealAlertRunner? _runPoller;
   final DealAlertPermissionRequest _requestPermission;
+  final DealAlertBackgroundInitializer _initializeBackground;
   Future<void> _operationTail = Future<void>.value();
 
   Future<void> syncAuthenticated(Api api) =>
@@ -50,6 +55,7 @@ class DealAlertLifecycle {
     }
 
     await _preferences.saveOptIn(enabled);
+    if (enabled) await _initializeBackground();
     await _scheduler.setEnabled(enabled);
     if (!enabled) return;
 

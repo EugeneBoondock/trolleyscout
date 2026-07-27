@@ -3,6 +3,7 @@ import { MapContainer, Marker, Polyline, TileLayer, useMap } from 'react-leaflet
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { X } from '@phosphor-icons/react'
+import { storeNavigationUrl } from '../services/storeNavigation'
 
 // Keyless map: CARTO Voyager basemap tiles + OSRM routing (proxied through our
 // own /api/map-route). Markers are inline HTML divIcons so we never depend on
@@ -110,7 +111,7 @@ export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMa
     )
   }
 
-  const externalMapsUrl = `https://www.openstreetmap.org/directions?to=${lat},${lon}`
+  const externalMapsUrl = storeNavigationUrl(lat, lon)
 
   return (
     <div className="store-map-backdrop" onClick={onClose} role="presentation">
@@ -155,10 +156,10 @@ export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMa
               onClick={routeToStore}
               type="button"
             >
-              {status === 'locating' ? 'Finding you' : status === 'routing' ? 'Routing' : 'Directions from me'}
+              {status === 'locating' ? 'Finding you' : status === 'routing' ? 'Routing' : 'Preview route'}
             </button>
             <a className="primary-button" href={externalMapsUrl} rel="noreferrer" target="_blank">
-              Open in Maps
+              Start navigation
             </a>
           </div>
         </div>

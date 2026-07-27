@@ -102,6 +102,11 @@ import {
   type BrandSfccShop,
 } from '../../src/services/retailerFeeds/brandSfcc'
 import {
+  ASICS_CATALOGUE_URL,
+  buildAsicsCatalogueUrl,
+  parseAsicsCatalogue,
+} from '../../src/services/retailerFeeds/asics'
+import {
   MAX_SUPERBALIST_HM_PAGES,
   SUPERBALIST_HM_PAGE_SIZE,
   buildSuperbalistHmUrl,
@@ -439,6 +444,7 @@ const structuredSources: readonly RetailerFeedSource[] = [
   ...BASH_STOREFRONTS.map((shop) => bashStorefrontSource(shop)),
   ...ORACLE_COMMERCE_SHOPS.map((shop) => oracleCommerceSource(shop)),
   ...BRAND_SFCC_SHOPS.map((shop) => brandSfccSource(shop)),
+  asicsSource(),
   superbalistHmSource(),
   sportsmansWarehouseSource(),
   zaraSource(),
@@ -762,6 +768,7 @@ function mapStructuredCatalogues(
 
     return [{
       capturedAt: catalogue.capturedAt,
+      countryCode: source.countryCode ?? 'ZA',
       documentUrl,
       id: catalogue.catalogueId,
       imageUrl,
@@ -1464,6 +1471,32 @@ function sportsmansWarehouseSource(): RetailerFeedSource {
     retailerName: 'Sportsmans Warehouse',
     sourceLabel: 'Yellow Ticket Sale',
     sourceUrl: SPORTSMANS_OUTLET_URL,
+  }
+}
+
+function asicsSource(): RetailerFeedSource {
+  return {
+    buildRequest(cursor) {
+      const page = cursor.kind === 'page' ? cursor.page : 1
+      return {
+        init: { headers: STOREFRONT_HEADERS },
+        url: buildAsicsCatalogueUrl(page),
+      }
+    },
+    decode: (body) => body,
+    initialCursor: { kind: 'page', page: 1 },
+    key: 'asics::national-catalogue',
+    parse({ capturedAt, cursor, payload, sourceUrl }) {
+      const page = cursor.kind === 'page' ? cursor.page : 1
+      if (typeof payload !== 'string') {
+        throw new TypeError('Invalid ASICS catalogue response')
+      }
+      return parseAsicsCatalogue(payload, { capturedAt, sourceUrl }, page)
+    },
+    retailerId: retailerSlug('asics'),
+    retailerName: 'ASICS',
+    sourceLabel: 'National product catalogue',
+    sourceUrl: ASICS_CATALOGUE_URL,
   }
 }
 

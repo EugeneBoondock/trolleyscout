@@ -41,6 +41,11 @@ class MemberAccount {
     this.billingCycle,
     this.pendingPlanId,
     this.pendingEffectiveAt,
+    this.status = 'active',
+    this.bannedAt,
+    this.banReason,
+    this.lastSeenAt,
+    this.dealViewCount = 0,
   });
 
   final String id;
@@ -64,8 +69,20 @@ class MemberAccount {
   // so the app must show what they still have, not what is coming.
   final String? pendingPlanId;
   final String? pendingEffectiveAt;
+  // Moderation and presence. Only the admin console reads these; a banned
+  // account never resolves a session, so a signed-in member always sees
+  // 'active' for themselves.
+  final String status;
+  final String? bannedAt;
+  final String? banReason;
+  final String? lastSeenAt;
+  // Deals this member has opened. Only counted while they leave deal learning
+  // on, so a zero can mean "opted out" rather than "never looked".
+  final int dealViewCount;
 
   bool get isAdmin => role == 'admin';
+
+  bool get isBanned => status == 'banned';
 
   bool get hasScheduledPlanChange =>
       pendingPlanId != null && pendingEffectiveAt != null;
@@ -91,6 +108,11 @@ class MemberAccount {
             : null,
         pendingPlanId: _optionalString(json['pendingPlanId']),
         pendingEffectiveAt: _optionalString(json['pendingEffectiveAt']),
+        status: _string(json['status'], 'active'),
+        bannedAt: _optionalString(json['bannedAt']),
+        banReason: _optionalString(json['banReason']),
+        lastSeenAt: _optionalString(json['lastSeenAt']),
+        dealViewCount: _int(json['dealViewCount']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -444,6 +466,7 @@ class Deal {
     this.priceText,
     this.previousPriceText,
     this.savingText,
+    this.unitText,
     this.validFrom,
     this.validTo,
     this.productUrl,
@@ -465,6 +488,7 @@ class Deal {
   final String? priceText;
   final String? previousPriceText;
   final String? savingText;
+  final String? unitText;
   final String? validFrom;
   final String? validTo;
   final String? productUrl;
@@ -503,6 +527,7 @@ class Deal {
         priceText: _optionalString(json['priceText']),
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
+        unitText: _optionalString(json['unitText']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         productUrl: _optionalString(json['productUrl']),
@@ -531,6 +556,7 @@ class Deal {
         'priceText': priceText,
         'previousPriceText': previousPriceText,
         'savingText': savingText,
+        'unitText': unitText,
         'validFrom': validFrom,
         'validTo': validTo,
         'evidenceText': evidenceText,
@@ -542,6 +568,43 @@ class Deal {
       };
 }
 
+class DiscoveryAccess {
+  const DiscoveryAccess({
+    required this.availableCatalogueCount,
+    required this.availableDealCount,
+    required this.catalogueLimit,
+    required this.dealLimit,
+    required this.planId,
+  });
+
+  final int availableCatalogueCount;
+  final int availableDealCount;
+  final int catalogueLimit;
+  final int dealLimit;
+  final String planId;
+
+  bool get cataloguesLimited => availableCatalogueCount > catalogueLimit;
+  bool get dealsLimited => availableDealCount > dealLimit;
+  bool get isLimited => cataloguesLimited || dealsLimited;
+
+  factory DiscoveryAccess.fromJson(Map<String, dynamic> json) =>
+      DiscoveryAccess(
+        availableCatalogueCount: _int(json['availableCatalogueCount']),
+        availableDealCount: _int(json['availableDealCount']),
+        catalogueLimit: _int(json['catalogueLimit']),
+        dealLimit: _int(json['dealLimit']),
+        planId: _string(json['planId'], 'free'),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'availableCatalogueCount': availableCatalogueCount,
+        'availableDealCount': availableDealCount,
+        'catalogueLimit': catalogueLimit,
+        'dealLimit': dealLimit,
+        'planId': planId,
+      };
+}
+
 class DiscoveryResult {
   const DiscoveryResult({
     required this.deals,
@@ -550,6 +613,7 @@ class DiscoveryResult {
     required this.unavailableSourceCount,
     required this.leafletCount,
     this.catalogues = const [],
+    this.access,
     this.refreshedAt,
   });
 
@@ -559,10 +623,12 @@ class DiscoveryResult {
   final int unavailableSourceCount;
   final int leafletCount;
   final List<Catalogue> catalogues;
+  final DiscoveryAccess? access;
   final String? refreshedAt;
 
   factory DiscoveryResult.fromJson(Map<String, dynamic> json) {
     final summary = _mapOrEmpty(json['summary']);
+    final access = _mapOrNull(json['access']);
     return DiscoveryResult(
       deals: _mapList(json['deals']).map(Deal.fromJson).toList(),
       foundDealCount: _int(summary['foundDealCount']),
@@ -571,6 +637,7 @@ class DiscoveryResult {
       leafletCount: _int(summary['leafletCount']),
       catalogues:
           _mapList(json['leaflets']).map(Catalogue.fromLeaflet).toList(),
+      access: access == null ? null : DiscoveryAccess.fromJson(access),
       refreshedAt: _optionalString(json['refreshedAt']),
     );
   }
@@ -580,6 +647,7 @@ class DiscoveryResult {
   Map<String, dynamic> toJson() => {
         'deals': deals.map((deal) => deal.toJson()).toList(),
         'leaflets': catalogues.map((catalogue) => catalogue.toJson()).toList(),
+        if (access != null) 'access': access!.toJson(),
         'refreshedAt': refreshedAt,
         'summary': {
           'foundDealCount': foundDealCount,
@@ -604,10 +672,12 @@ class SavedDeal extends Deal {
     super.priceText,
     super.previousPriceText,
     super.savingText,
+    super.unitText,
     super.productUrl,
     super.imageUrl,
     super.pageNumber,
     super.personalizationReason,
+    super.soldOut,
   });
 
   final String savedAt;
@@ -626,10 +696,12 @@ class SavedDeal extends Deal {
       priceText: deal.priceText,
       previousPriceText: deal.previousPriceText,
       savingText: deal.savingText,
+      unitText: deal.unitText,
       productUrl: deal.productUrl,
       imageUrl: deal.imageUrl,
       pageNumber: deal.pageNumber,
       personalizationReason: deal.personalizationReason,
+      soldOut: deal.soldOut,
       savedAt: _string(json['savedAt']),
     );
   }
@@ -1117,6 +1189,10 @@ class SupportMessage {
     required this.createdAt,
     this.accountId,
     this.adminNote,
+    this.channel = 'form',
+    this.aiBrief,
+    this.category,
+    this.severity,
   });
 
   final String id;
@@ -1128,6 +1204,12 @@ class SupportMessage {
   final String createdAt;
   final String? accountId;
   final String? adminNote;
+  // Where it came from. A chat report carries a brief the model wrote from the
+  // member's own words; the words themselves stay in [message].
+  final String channel;
+  final String? aiBrief;
+  final String? category;
+  final String? severity;
 
   bool get isOpen => status == 'open';
 
@@ -1141,7 +1223,162 @@ class SupportMessage {
         createdAt: _string(json['createdAt']),
         accountId: _optionalString(json['accountId']),
         adminNote: _optionalString(json['adminNote']),
+        channel: _string(json['channel'], 'form'),
+        aiBrief: _optionalString(json['aiBrief']),
+        category: _optionalString(json['category']),
+        severity: _optionalString(json['severity']),
       );
+}
+
+/// One reply from the help chat. [filedTopic] is set on the turn where the
+/// chat handed the report to the admin.
+class SupportChatAnswer {
+  const SupportChatAnswer({
+    required this.reply,
+    this.filedTopic,
+    this.filedCategory,
+    this.filedSeverity,
+  });
+
+  final String reply;
+  final String? filedTopic;
+  final String? filedCategory;
+  final String? filedSeverity;
+
+  bool get wasFiled => filedTopic != null;
+
+  factory SupportChatAnswer.fromJson(Map<String, dynamic> json) {
+    final answer = _mapOrEmpty(json['answer']);
+    final filed = _mapOrEmpty(answer['filed']);
+    return SupportChatAnswer(
+      reply: _string(answer['reply']),
+      filedTopic: _optionalString(filed['topic']),
+      filedCategory: _optionalString(filed['category']),
+      filedSeverity: _optionalString(filed['severity']),
+    );
+  }
+}
+
+/// One day of Cloudflare zone traffic.
+class AdminTrafficDay {
+  const AdminTrafficDay({
+    required this.date,
+    required this.requests,
+    required this.pageViews,
+    required this.uniques,
+    required this.bytes,
+  });
+
+  final String date;
+  final int requests;
+  final int pageViews;
+  final int uniques;
+  final int bytes;
+
+  factory AdminTrafficDay.fromJson(Map<String, dynamic> json) =>
+      AdminTrafficDay(
+        date: _string(json['date']),
+        requests: _int(json['requests']),
+        pageViews: _int(json['pageViews']),
+        uniques: _int(json['uniques']),
+        bytes: _int(json['bytes']),
+      );
+}
+
+/// Cloudflare traffic. [configured] is false until a read token is set on the
+/// server, in which case [issue] says what to set.
+class AdminTrafficReport {
+  const AdminTrafficReport({
+    required this.configured,
+    this.days = const [],
+    this.issue,
+    this.requests = 0,
+    this.pageViews = 0,
+    this.uniques = 0,
+    this.bytes = 0,
+  });
+
+  final bool configured;
+  final List<AdminTrafficDay> days;
+  final String? issue;
+  final int requests;
+  final int pageViews;
+  final int uniques;
+  final int bytes;
+
+  bool get hasData => configured && issue == null && days.isNotEmpty;
+
+  factory AdminTrafficReport.fromJson(Map<String, dynamic> json) {
+    final totals = _mapOrEmpty(json['totals']);
+    return AdminTrafficReport(
+      configured: json['configured'] == true,
+      days: _mapList(json['days']).map(AdminTrafficDay.fromJson).toList(),
+      issue: _optionalString(json['issue']),
+      requests: _int(totals['requests']),
+      pageViews: _int(totals['pageViews']),
+      uniques: _int(totals['uniques']),
+      bytes: _int(totals['bytes']),
+    );
+  }
+}
+
+/// Member-side analytics. Every series is aligned to [days], oldest first.
+class AdminAnalyticsReport {
+  const AdminAnalyticsReport({
+    required this.windowDays,
+    required this.days,
+    required this.signups,
+    required this.activeMembers,
+    required this.dealViews,
+    required this.topSearches,
+    required this.traffic,
+    this.accountCount = 0,
+    this.activeToday = 0,
+    this.activeThisWeek = 0,
+    this.bannedCount = 0,
+    this.neverSeenCount = 0,
+    this.dealViewsInWindow = 0,
+  });
+
+  final int windowDays;
+  final List<String> days;
+  final List<int> signups;
+  final List<int> activeMembers;
+  final List<int> dealViews;
+  final List<({String term, int count})> topSearches;
+  final AdminTrafficReport traffic;
+  final int accountCount;
+  final int activeToday;
+  final int activeThisWeek;
+  final int bannedCount;
+  final int neverSeenCount;
+  final int dealViewsInWindow;
+
+  factory AdminAnalyticsReport.fromJson(Map<String, dynamic> json) {
+    final members = _mapOrEmpty(json['members']);
+    final totals = _mapOrEmpty(members['totals']);
+    List<int> series(Object? value) =>
+        (value is List ? value : const []).map(_int).toList();
+    return AdminAnalyticsReport(
+      windowDays: _int(json['windowDays']),
+      days: (members['days'] is List ? members['days'] as List : const [])
+          .map(_string)
+          .toList(),
+      signups: series(members['signups']),
+      activeMembers: series(members['activeMembers']),
+      dealViews: series(members['dealViews']),
+      topSearches: _mapList(members['topSearches'])
+          .map((row) => (term: _string(row['term']), count: _int(row['count'])))
+          .toList(),
+      traffic: AdminTrafficReport.fromJson(_mapOrEmpty(json['traffic'])),
+      accountCount: _int(totals['accountCount']),
+      activeToday: _int(totals['activeToday']),
+      activeThisWeek: _int(totals['activeThisWeek']),
+      bannedCount: _int(totals['bannedCount']),
+      neverSeenCount: _int(totals['neverSeenCount']),
+      dealViewsInWindow: _int(totals['dealViewsInWindow']),
+    );
+  }
 }
 
 class AdminOverview {
@@ -1361,7 +1598,11 @@ class Catalogue {
   const Catalogue({
     required this.name,
     required this.url,
+    this.id,
+    this.retailerId,
     this.sourceUrl,
+    this.sourceLabel,
+    this.pagesUrl,
     this.capturedAt,
     this.validFrom,
     this.validTo,
@@ -1371,7 +1612,11 @@ class Catalogue {
   });
   final String name;
   final String url;
+  final String? id;
+  final String? retailerId;
   final String? sourceUrl;
+  final String? sourceLabel;
+  final String? pagesUrl;
   final String? capturedAt;
   final String? validFrom;
   final String? validTo;
@@ -1393,9 +1638,13 @@ class Catalogue {
           : null);
 
   factory Catalogue.fromLeaflet(Map<String, dynamic> json) => Catalogue(
+        id: _optionalString(json['id']),
+        retailerId: _optionalString(json['retailerId']),
         name: _string(json['name'], 'Catalogue'),
         url: _string(json['documentUrl'] ?? json['url']),
         sourceUrl: _optionalString(json['sourceUrl'] ?? json['url']),
+        sourceLabel: _optionalString(json['sourceLabel']),
+        pagesUrl: _optionalString(json['pagesUrl']),
         capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
@@ -1405,9 +1654,12 @@ class Catalogue {
       );
 
   factory Catalogue.fromPromotion(Map<String, dynamic> json) => Catalogue(
+        id: _optionalString(json['id']),
+        retailerId: _optionalString(json['retailerId']),
         name: _string(json['title'], 'Specials'),
         url: _string(json['productUrl'] ?? json['sourceUrl']),
         sourceUrl: _optionalString(json['sourceUrl']),
+        sourceLabel: _optionalString(json['sourceLabel']),
         capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
@@ -1417,10 +1669,14 @@ class Catalogue {
       );
 
   Map<String, dynamic> toJson() => {
+        'id': id,
+        'retailerId': retailerId,
         'name': name,
         'documentUrl': url,
         'url': sourceUrl ?? url,
         'sourceUrl': sourceUrl,
+        'sourceLabel': sourceLabel,
+        'pagesUrl': pagesUrl,
         'capturedAt': capturedAt,
         'validFrom': validFrom,
         'validTo': validTo,
@@ -1428,6 +1684,157 @@ class Catalogue {
         'retailerName': retailerName,
         'pages': pages.map((page) => page.toJson()).toList(),
       };
+
+  Catalogue copyWith({List<CataloguePage>? pages}) => Catalogue(
+        id: id,
+        retailerId: retailerId,
+        name: name,
+        url: url,
+        sourceUrl: sourceUrl,
+        sourceLabel: sourceLabel,
+        pagesUrl: pagesUrl,
+        capturedAt: capturedAt,
+        validFrom: validFrom,
+        validTo: validTo,
+        imageUrl: imageUrl,
+        retailerName: retailerName,
+        pages: pages ?? this.pages,
+      );
+}
+
+enum ScoutChatRole { assistant, user }
+
+class ScoutChatTurn {
+  const ScoutChatTurn({required this.role, required this.text});
+
+  final ScoutChatRole role;
+  final String text;
+
+  Map<String, dynamic> toJson() => {
+        'role': role.name,
+        'text': text,
+      };
+}
+
+class ScoutChatDealCard {
+  const ScoutChatDealCard({
+    required this.id,
+    required this.retailerName,
+    required this.title,
+    required this.priceText,
+    required this.productUrl,
+    this.previousPriceText,
+    this.savingText,
+    this.imageUrl,
+    this.soldOut = false,
+  });
+
+  final String id;
+  final String retailerName;
+  final String title;
+  final String priceText;
+  final String productUrl;
+  final String? previousPriceText;
+  final String? savingText;
+  final String? imageUrl;
+  final bool soldOut;
+
+  factory ScoutChatDealCard.fromJson(Map<String, dynamic> json) =>
+      ScoutChatDealCard(
+        id: _string(json['id']),
+        retailerName: _string(json['retailerName'], 'Retailer'),
+        title: _string(json['title'], 'Deal'),
+        priceText: _string(json['priceText']),
+        productUrl: _string(json['productUrl']),
+        previousPriceText: _optionalString(json['previousPriceText']),
+        savingText: _optionalString(json['savingText']),
+        imageUrl: _optionalString(json['imageUrl']),
+        soldOut: json['soldOut'] == true,
+      );
+}
+
+class ScoutChatCatalogueCard {
+  const ScoutChatCatalogueCard({
+    required this.id,
+    required this.retailerName,
+    required this.name,
+    required this.url,
+    required this.pageCount,
+    this.imageUrl,
+    this.pageImageUrls = const [],
+    this.pagesUrl,
+    this.validTo,
+  });
+
+  final String id;
+  final String retailerName;
+  final String name;
+  final String url;
+  final int pageCount;
+  final String? imageUrl;
+  final List<String> pageImageUrls;
+  final String? pagesUrl;
+  final String? validTo;
+
+  factory ScoutChatCatalogueCard.fromJson(Map<String, dynamic> json) =>
+      ScoutChatCatalogueCard(
+        id: _string(json['id']),
+        retailerName: _string(json['retailerName'], 'Retailer'),
+        name: _string(json['name'], 'Catalogue'),
+        url: _string(json['url']),
+        pageCount: _int(json['pageCount']),
+        imageUrl: _optionalString(json['imageUrl']),
+        pageImageUrls: _stringList(json['pageImageUrls']),
+        pagesUrl: _optionalString(json['pagesUrl']),
+        validTo: _optionalString(json['validTo']),
+      );
+
+  Catalogue toCatalogue() => Catalogue(
+        id: id,
+        name: name,
+        url: url,
+        sourceUrl: url,
+        validTo: validTo,
+        imageUrl: imageUrl,
+        retailerName: retailerName,
+        pagesUrl: pagesUrl,
+        pages: [
+          for (var index = 0; index < pageImageUrls.length; index++)
+            CataloguePage(
+              pageNumber: index + 1,
+              imageUrl: pageImageUrls[index],
+            ),
+        ],
+      );
+}
+
+class ScoutChatAnswer {
+  const ScoutChatAnswer({
+    required this.reply,
+    this.deals = const [],
+    this.catalogues = const [],
+    this.followUps = const [],
+  });
+
+  final String reply;
+  final List<ScoutChatDealCard> deals;
+  final List<ScoutChatCatalogueCard> catalogues;
+  final List<String> followUps;
+
+  factory ScoutChatAnswer.fromJson(Map<String, dynamic> json) =>
+      ScoutChatAnswer(
+        reply: _string(
+          json['reply'],
+          'Mr Scout could not answer right now.',
+        ),
+        deals: _mapList(json['deals'])
+            .map(ScoutChatDealCard.fromJson)
+            .toList(growable: false),
+        catalogues: _mapList(json['catalogues'])
+            .map(ScoutChatCatalogueCard.fromJson)
+            .toList(growable: false),
+        followUps: _stringList(json['followUps']),
+      );
 }
 
 class DiscoveredStoresResult {
@@ -1662,10 +2069,12 @@ class ScrollDeal {
     this.priceText,
     this.previousPriceText,
     this.savingText,
+    this.unitText,
     this.imageUrl,
     this.images = const [],
     this.category,
     this.expiresAt,
+    this.capturedAt,
     this.soldOut = false,
   });
 
@@ -1678,10 +2087,12 @@ class ScrollDeal {
   final String? priceText;
   final String? previousPriceText;
   final String? savingText;
+  final String? unitText;
   final String? imageUrl;
   final List<String> images;
   final String? category;
   final String? expiresAt;
+  final String? capturedAt;
 
   /// Only ever true because the site said so. The reel sources that say nothing
   /// about stock leave this false rather than guessing.
@@ -1713,6 +2124,7 @@ class ScrollDeal {
         priceText: _optionalString(json['priceText']),
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
+        unitText: _optionalString(json['unitText']),
         imageUrl: _optionalString(json['imageUrl']),
         images: json['images'] is List
             ? (json['images'] as List)
@@ -1723,6 +2135,7 @@ class ScrollDeal {
             : const [],
         category: _optionalString(json['category']),
         expiresAt: _optionalString(json['expiresAt']),
+        capturedAt: _optionalString(json['capturedAt']),
         soldOut: json['soldOut'] == true,
       );
 
@@ -1736,10 +2149,12 @@ class ScrollDeal {
         'priceText': priceText,
         'previousPriceText': previousPriceText,
         'savingText': savingText,
+        'unitText': unitText,
         'imageUrl': imageUrl,
         if (images.isNotEmpty) 'images': images,
         'category': category,
         'expiresAt': expiresAt,
+        if (capturedAt != null) 'capturedAt': capturedAt,
         // Round-trips so a saved deal keeps saying it is gone.
         if (soldOut) 'soldOut': true,
       };
@@ -1753,14 +2168,17 @@ class ScrollDeal {
         retailerId: source,
         sourceLabel: sourceLabel,
         sourceUrl: productUrl,
-        capturedAt: (capturedAt ?? DateTime.now()).toUtc().toIso8601String(),
+        capturedAt:
+            capturedAt?.toUtc().toIso8601String() ?? this.capturedAt ?? '',
         evidenceText: 'Found by Trolley Scout from the $sourceLabel feed.',
         priceText: priceText,
         previousPriceText: previousPriceText,
         savingText: savingText,
+        unitText: unitText,
         productUrl: productUrl,
         imageUrl: imageUrl,
         images: gallery,
+        soldOut: soldOut,
       );
 
   /// Builds a scroll deal from a regular discovery [Deal] so the reel can mix in
@@ -1775,10 +2193,13 @@ class ScrollDeal {
         priceText: deal.priceText,
         previousPriceText: deal.previousPriceText,
         savingText: deal.savingText,
+        unitText: deal.unitText,
         imageUrl: deal.imageUrl,
         images: deal.gallery,
         category: null,
         expiresAt: null,
+        capturedAt: deal.capturedAt.isEmpty ? null : deal.capturedAt,
+        soldOut: deal.soldOut,
       );
 }
 

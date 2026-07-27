@@ -1427,9 +1427,15 @@ export function extractPublicStoreDeals(
   sourceUrl: string,
   nowMs: number,
 ): StorePromotion[] {
-  const records = [...embeddedRecords(html), ...visibleProductRecords(html)]
+  const records = [
+    ...embeddedRecords(html),
+    ...(store.sourceCategory === 'network-provider'
+      ? visibleNetworkPlanRecords(html)
+      : []),
+    ...visibleProductRecords(html),
+  ]
   const promotions: StorePromotion[] = []
-  const seen = new Set<string>()
+  const seen = new Map<string, number>()
   const promotionalPath = isPromotionPath(sourceUrl)
 
   for (const product of records) {
@@ -1508,12 +1514,17 @@ export function extractPublicStoreDeals(
       sourceUrl,
     )
     const key = `${title.toLowerCase()}::${productUrl ?? sourceUrl}`
+    const soldOut = explicitlySoldOut(product, offer)
 
-    if (seen.has(key)) {
+    const existingIndex = seen.get(key)
+    if (existingIndex !== undefined) {
+      if (soldOut) {
+        promotions[existingIndex].soldOut = true
+      }
       continue
     }
 
-    seen.add(key)
+    seen.set(key, promotions.length)
     const validFrom = dateValue(
       product.validFrom ??
         product.valid_from ??
@@ -1583,6 +1594,7 @@ export function extractPublicStoreDeals(
       savingText: explicitSaving ?? (savingAmount !== undefined && savingAmount > 0
         ? formatSaving(savingAmount, currency)
         : undefined),
+      ...(soldOut ? { soldOut: true } : {}),
       sourceUrl,
       storeName: store.name,
       title,
@@ -1650,11 +1662,218 @@ function visibleProductRecords(html: string): Record<string, unknown>[] {
       productUrl: visibleItemPropValue(segment, 'url', ['href', 'content']) ??
         visibleProductUrl(segment),
       promotionText,
+      ...(visibleSoldOut(segment) ? { soldOut: true } : {}),
       validTo: visibleItemPropValue(segment, 'priceValidUntil', ['content', 'datetime']),
     })
   }
 
   return records
+}
+
+function explicitlySoldOut(
+  product: Record<string, unknown>,
+  offer?: Record<string, unknown>,
+): boolean {
+  const variants = Array.isArray(product.variants)
+    ? product.variants.filter(
+      (variant): variant is Record<string, unknown> => recordValue(variant) !== undefined,
+    )
+    : []
+  if (variants.length > 0) {
+    const availability = variants.map(explicitAvailability)
+    if (availability.every((value) => value === false)) {
+      return true
+    }
+    if (availability.some((value) => value === true || value === undefined)) {
+      return false
+    }
+  }
+
+  return explicitAvailability(product) === false ||
+    (offer !== undefined && explicitAvailability(offer) === false)
+}
+
+function explicitAvailability(record: Record<string, unknown>): boolean | undefined {
+  if (record.soldOut === true || record.isSoldOut === true || record.is_sold_out === true) {
+    return false
+  }
+  const statedBoolean = [
+    record.available,
+    record.availableForSale,
+    record.isAvailable,
+    record.inStock,
+    record.is_in_stock,
+  ].find((value) => typeof value === 'boolean')
+  if (typeof statedBoolean === 'boolean') {
+    return statedBoolean
+  }
+
+  const status = stringValue(
+    record.availability ??
+      record.availabilityStatus ??
+      record.inventoryStatus ??
+      record.stockStatus ??
+      record.stock_status,
+  )
+  if (!status) {
+    return undefined
+  }
+  if (/(?:out[-_\s]?of[-_\s]?stock|sold[-_\s]?out|unavailable|not[-_\s]?available)/i.test(status)) {
+    return false
+  }
+  if (/(?:^|[/#:_\s-])(?:in[-_\s]?stock|available)(?:$|[/#:_\s-])/i.test(status)) {
+    return true
+  }
+  return undefined
+}
+
+function visibleSoldOut(segment: string): boolean {
+  return /\b(?:sold\s*out|out\s*of\s*stock|currently\s*unavailable)\b/i.test(
+    cleanText(segment),
+  )
+}
+
+const NETWORK_PLAN_SIGNAL =
+  /\b(?:airtime|broadband|bundle|calls?|contract|data|fibre|fiber|internet|minutes?|mobile|month(?:ly)?|month-to-month|phone|postpaid|prepaid|roaming|sim|unlimited|wi-?fi)\b|\b\d+(?:\.\d+)?\s*(?:gb|gbps|mb|mbps|tb)\b/i
+const GENERIC_NETWORK_TITLE =
+  /^(?:all\s+)?(?:broadband|deals?|mobile|offers?|packages?|phone\s+deals?|plans?|products?|shop)$/i
+
+// Carrier pages sell plans and device contracts. Their current monthly price
+// is the offer, so a struck-through supermarket-style “was” price is uncommon.
+// This parser is enabled only for the country-scoped provider registry.
+function visibleNetworkPlanRecords(html: string): Record<string, unknown>[] {
+  const candidates: Array<{ index: number; segment: string }> = []
+  const cardStarts = Array.from(html.matchAll(
+    /<(?:article|li|section|div|a)\b[^>]{0,3000}\b(?:class|data-testid|id)\s*=\s*["'][^"']*\b(?:bundle|deal|device|offer|package|plan|product|tariff)(?:[-_ ]?(?:card|item|tile))?\b[^"']*["'][^>]*>/gi,
+  )).slice(0, 160)
+
+  for (let index = 0; index < cardStarts.length; index += 1) {
+    const start = cardStarts[index].index ?? 0
+    const next = cardStarts[index + 1]?.index ?? html.length
+    candidates.push({
+      index: start,
+      segment: html.slice(start, Math.min(next, start + 24_000)),
+    })
+  }
+
+  // Some provider home pages use plain layout sections with a heading, price,
+  // and link. Heading windows cover those without assuming a framework class.
+  const headings = Array.from(html.matchAll(/<h[2-4]\b[^>]*>[\s\S]{0,600}?<\/h[2-4]>/gi))
+    .slice(0, 160)
+  for (let index = 0; index < headings.length; index += 1) {
+    const start = headings[index].index ?? 0
+    const next = headings[index + 1]?.index ?? html.length
+    candidates.push({
+      index: start,
+      segment: html.slice(start, Math.min(next, start + 8_000)),
+    })
+  }
+
+  candidates.sort((left, right) => left.index - right.index)
+  const records: Record<string, unknown>[] = []
+  const seen = new Set<string>()
+
+  for (const candidate of candidates) {
+    const record = networkPlanRecord(candidate.segment)
+    if (!record) continue
+    const key = `${record.name ?? ''}::${record.productUrl ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    records.push(record)
+    if (records.length >= MAX_PROMOTIONS_PER_PAGE) break
+  }
+
+  return records
+}
+
+function networkPlanRecord(segment: string): Record<string, unknown> | undefined {
+  const text = cleanText(segment)
+  if (!NETWORK_PLAN_SIGNAL.test(text)) return undefined
+
+  const rawTitle =
+    visibleHeadingText(segment) ??
+    attributeValue(segment.slice(0, 3_000), [
+      'data-product-name',
+      'data-plan-name',
+      'aria-label',
+      'data-name',
+    ]) ??
+    visibleProductLabel(segment)
+  const title = cleanNetworkPlanTitle(rawTitle)
+  const price = networkPlanPrice(text)
+
+  if (!title || !price || GENERIC_NETWORK_TITLE.test(title)) {
+    return undefined
+  }
+
+  return {
+    currentPrice: price.amount,
+    image: visibleImageUrl(segment),
+    name: title,
+    priceCurrency: price.currency,
+    productUrl: visibleProductUrl(segment),
+    promotionText: 'Official network offer',
+  }
+}
+
+function cleanNetworkPlanTitle(value: string | undefined): string | undefined {
+  const title = cleanText(value ?? '')
+    .replace(/^(?:explore|shop|view)(?:\s+(?:deal|details?|offer|plan))?\s+/i, '')
+    .replace(
+      /\s+(?:from\s+)?(?:R|ZAR|US\$|CA\$|A\$|NZ\$|\$|\u00A3|\u20AC|\u20B9|\u20A6|N\$|KES|KSh|GHS|GH\u20B5|AED|SAR|RM|\u20B1|PHP|Rp|IDR|\u00A5|JPY|R\$|MX\$|AR\$|CLP|COP|S\/)\s*[\d.,\s]+.*$/i,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+  return title.length >= 3 && title.length <= 140 ? title : undefined
+}
+
+function networkPlanPrice(
+  value: string,
+): { amount: number; currency?: string } | undefined {
+  const match =
+    /(?:\bfrom\s+)?(ZAR|US\$|CA\$|A\$|NZ\$|R\$|MX\$|AR\$|N\$|KES|KSh|GHS|GH\u20B5|AED|SAR|RM|PHP|IDR|JPY|CLP|COP|S\/|R|\$|\u00A3|\u20AC|\u20B9|\u20A6|\u20B1|Rp|\u00A5)\s*([\d][\d\s.,]*)/i
+      .exec(value)
+  const amount = numberValue(match?.[2])
+  if (!match || amount === undefined) return undefined
+
+  const token = match[1].toUpperCase()
+  const currencies: Record<string, string> = {
+    '\u00A3': 'GBP',
+    '\u00A5': 'JPY',
+    '\u20AC': 'EUR',
+    '\u20B1': 'PHP',
+    '\u20B5': 'GHS',
+    '\u20B9': 'INR',
+    '\u20A6': 'NGN',
+    '$': 'USD',
+    'A$': 'AUD',
+    'AED': 'AED',
+    'AR$': 'ARS',
+    'CA$': 'CAD',
+    'CLP': 'CLP',
+    'COP': 'COP',
+    'GH\u20B5': 'GHS',
+    'GHS': 'GHS',
+    'IDR': 'IDR',
+    'JPY': 'JPY',
+    'KES': 'KES',
+    'KSH': 'KES',
+    'MX$': 'MXN',
+    'N$': 'NAD',
+    'NZ$': 'NZD',
+    'PHP': 'PHP',
+    'R': 'ZAR',
+    'R$': 'BRL',
+    'RM': 'MYR',
+    'RP': 'IDR',
+    'S/': 'PEN',
+    'SAR': 'SAR',
+    'US$': 'USD',
+    'ZAR': 'ZAR',
+  }
+
+  return { amount, currency: currencies[token] }
 }
 
 function visibleItemPropValue(
@@ -2536,6 +2755,15 @@ function verifyOfficialStorePage(
   })
 
   if (organizationMatch) {
+    return true
+  }
+
+  if (
+    store.sourceCategory === 'network-provider' &&
+    store.websiteSource === 'country-retailer'
+  ) {
+    // The provider registry already binds this exact official source to the
+    // active country. Same-origin checks run before this function.
     return true
   }
 

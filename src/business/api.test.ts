@@ -52,6 +52,29 @@ describe('business API client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the shared admin session without requiring a business organization', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          session: {
+            account: {
+              id: 'admin-1',
+              role: 'admin',
+            },
+            isAuthenticated: true,
+          },
+        },
+      }), { headers: { 'content-type': 'application/json' }, status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await loadBusinessBootstrap()
+
+    expect(result.session.account?.role).toBe('admin')
+    expect(result.gate.hasOrganization).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('uses POST for creation and PATCH with a publication id for updates', async () => {
     const fetchMock = vi.fn().mockImplementation(async () =>
       new Response(JSON.stringify({

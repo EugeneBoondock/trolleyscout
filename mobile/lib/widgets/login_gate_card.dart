@@ -10,7 +10,8 @@ class LoginGateCard extends StatelessWidget {
     super.key,
     required this.onLogin,
     this.onSignUp,
-    this.message = 'You are seeing a sample. Log in or sign up to see everything.',
+    this.message =
+        'You are seeing a sample. Log in or sign up to see everything.',
   });
 
   final VoidCallback onLogin;
@@ -32,8 +33,8 @@ class LoginGateCard extends StatelessWidget {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('See the full list',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w900)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               ),
             ],
           ),
@@ -47,7 +48,9 @@ class LoginGateCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: TS.yellow,
                     foregroundColor: TS.ink,
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(TS.controlRadius),
+                    ),
                   ),
                   onPressed: onSignUp ?? onLogin,
                   icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
@@ -60,7 +63,9 @@ class LoginGateCard extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: TS.inkOf(context),
                     side: BorderSide(color: TS.lineOf(context), width: 2),
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(TS.controlRadius),
+                    ),
                   ),
                   onPressed: onLogin,
                   child: const Text('Log in'),

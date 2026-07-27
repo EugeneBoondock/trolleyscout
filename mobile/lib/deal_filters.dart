@@ -1,5 +1,6 @@
 import 'api_models.dart';
 import 'deal_categories.dart';
+import 'retailer_identity.dart';
 import 'price_compare.dart';
 import 'taste_profile.dart';
 
@@ -61,8 +62,9 @@ double? dealDiscountFraction(Deal deal) {
 int? _savingNamedIn(String? text) {
   if (text == null || text.isEmpty) return null;
 
-  final match = RegExp(r'\bsaves?\s*R\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
-      .firstMatch(text);
+  final match =
+      RegExp(r'\bsaves?\s*R\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
+          .firstMatch(text);
   if (match == null) return null;
 
   final rands = double.tryParse(match.group(1)!.replaceAll(',', '.'));
@@ -77,10 +79,11 @@ int? _savingNamedIn(String? text) {
 double? _percentOffIn(String? text) {
   if (text == null || text.isEmpty) return null;
 
-  final claimed =
-      RegExp(r'(\d{1,3})\s*%\s*(?:off|discount)\b', caseSensitive: false).firstMatch(text) ??
-          RegExp(r'\bsaves?\s*(?:up\s*to\s*)?(\d{1,3})\s*%', caseSensitive: false)
-              .firstMatch(text);
+  final claimed = RegExp(r'(\d{1,3})\s*%\s*(?:off|discount)\b',
+              caseSensitive: false)
+          .firstMatch(text) ??
+      RegExp(r'\bsaves?\s*(?:up\s*to\s*)?(\d{1,3})\s*%', caseSensitive: false)
+          .firstMatch(text);
   if (claimed == null) return null;
 
   final value = int.tryParse(claimed.group(1)!);
@@ -119,15 +122,25 @@ List<Deal> sortDeals(List<Deal> deals, DealSort sort, {TasteProfile? taste}) {
     return descending ? b.compareTo(a) : a.compareTo(b);
   }
 
+  int byIdentity(Deal a, Deal b) {
+    final byId = a.id.toLowerCase().compareTo(b.id.toLowerCase());
+    if (byId != 0) return byId;
+    final byRetailer =
+        a.retailerName.toLowerCase().compareTo(b.retailerName.toLowerCase());
+    if (byRetailer != 0) return byRetailer;
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  }
+
   switch (sort) {
     case DealSort.latest:
       sorted.sort((a, b) {
         final aAt = DateTime.tryParse(a.capturedAt);
         final bAt = DateTime.tryParse(b.capturedAt);
-        if (aAt == null && bAt == null) return 0;
+        if (aAt == null && bAt == null) return byIdentity(a, b);
         if (aAt == null) return 1;
         if (bAt == null) return -1;
-        return bAt.compareTo(aAt);
+        final byTime = bAt.compareTo(aAt);
+        return byTime != 0 ? byTime : byIdentity(a, b);
       });
     case DealSort.mostSaved:
       sorted.sort(
@@ -159,6 +172,7 @@ List<Deal> filterDeals(
   String sourceLabel = 'all',
   bool imagesOnly = false,
   bool savingsOnly = false,
+  bool hideSoldOut = false,
   DealCategory? category,
   FoodSubcategory? foodSubcategory,
 }) {
@@ -168,14 +182,15 @@ List<Deal> filterDeals(
         deal.title.toLowerCase().contains(normalizedQuery) ||
         deal.retailerName.toLowerCase().contains(normalizedQuery) ||
         deal.sourceLabel.toLowerCase().contains(normalizedQuery);
-    final matchesRetailer =
-        retailerId == 'all' || deal.retailerId == retailerId;
+    final matchesRetailer = retailerId == 'all' ||
+        canonicalRetailerId(deal.retailerId, deal.retailerName) == retailerId;
     final matchesSource =
         sourceLabel == 'all' || deal.sourceLabel == sourceLabel;
     final matchesImage = !imagesOnly || deal.imageUrl != null;
     final matchesSaving = !savingsOnly ||
         deal.savingText != null ||
         deal.previousPriceText != null;
+    final matchesAvailability = !hideSoldOut || !deal.soldOut;
 
     var matchesCategory = true;
     if (category != null || foodSubcategory != null) {
@@ -200,6 +215,7 @@ List<Deal> filterDeals(
         matchesSource &&
         matchesImage &&
         matchesSaving &&
+        matchesAvailability &&
         matchesCategory;
   }).toList();
 }

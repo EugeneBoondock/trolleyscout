@@ -15,7 +15,8 @@ void main() {
   test('server opt-in schedules a fresh device and establishes its baseline',
       () async {
     final preferences = NotificationPrefsStore();
-    final tasks = _TaskPlatform();
+    final events = <String>[];
+    final tasks = _TaskPlatform(events: events);
     final polled = <Api>[];
     var permissionRequests = 0;
     final api = _PreferenceApi(enabled: true);
@@ -26,6 +27,7 @@ void main() {
         permissionRequests += 1;
         return true;
       },
+      initializeBackground: () async => events.add('initialize'),
       runPoller: (api) async {
         polled.add(api);
         return true;
@@ -37,6 +39,7 @@ void main() {
     expect(await preferences.loadOptIn(), isTrue);
     expect(permissionRequests, 1);
     expect(tasks.scheduledNames, [DealAlertScheduler.uniqueTaskName]);
+    expect(events, ['initialize', 'schedule']);
     expect(polled, [api]);
   });
 
@@ -80,6 +83,7 @@ void main() {
       preferences: preferences,
       scheduler: DealAlertScheduler(platform: tasks),
       requestPermission: () async => true,
+      initializeBackground: () async {},
       runPoller: (_) async => true,
     );
 
@@ -260,6 +264,9 @@ const _memberSession = MemberSession(
 );
 
 class _TaskPlatform implements DealAlertTaskPlatform {
+  _TaskPlatform({this.events});
+
+  final List<String>? events;
   final List<String> scheduledNames = [];
   final List<String> cancelledNames = [];
 
@@ -274,6 +281,7 @@ class _TaskPlatform implements DealAlertTaskPlatform {
     required Duration frequency,
     required bool networkRequired,
   }) async {
+    events?.add('schedule');
     scheduledNames.add(uniqueName);
   }
 }

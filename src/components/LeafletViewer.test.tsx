@@ -1,10 +1,14 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { StoreLeaflet } from '../types'
+import { catalogueShareUrl } from '../services/catalogueShare'
 import { LeafletViewer } from './LeafletViewer'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 function leaflet(overrides: Partial<StoreLeaflet> = {}): StoreLeaflet {
   return {
@@ -55,6 +59,11 @@ describe('LeafletViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go to page 3' }))
     expect(screen.getByText('Page 3 of 3')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Reset zoom to 100%/ }).textContent).toContain('100%')
+    for (let step = 0; step < 16; step += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+    }
+    expect(screen.getByRole('button', { name: /Reset zoom to 100%/ }).textContent).toContain('500%')
+    expect((screen.getByRole('button', { name: 'Zoom in' }) as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.keyDown(window, { key: 'Home' })
     expect(screen.getByText('Page 1 of 3')).toBeTruthy()
@@ -98,7 +107,7 @@ describe('LeafletViewer', () => {
     )
   })
 
-  it('keeps published pages as the reader even when a PDF also exists', () => {
+  it('uses the full PDF when the published pages only contain a cover preview', () => {
     const { container } = render(
       <LeafletViewer
         leaflet={leaflet({
@@ -111,8 +120,8 @@ describe('LeafletViewer', () => {
       />,
     )
 
-    expect(container.querySelector('object')).toBeNull()
-    expect(screen.getByText('Page 1 of 1')).toBeTruthy()
+    expect(container.querySelector('object')?.getAttribute('type')).toBe('application/pdf')
+    expect(screen.queryByText('Page 1 of 1')).toBeNull()
   })
 
   it('retries a failing page image through the same-origin relay before giving up', () => {
@@ -145,5 +154,72 @@ describe('LeafletViewer', () => {
 
     expect((screen.getByRole('img', { name: 'Shoprite catalogue page 1' }) as HTMLImageElement).src)
       .toBe('https://cdn.test/cover.jpg')
+  })
+
+  it('loads every high-resolution directory page when the catalogue opens', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: {
+        pages: [
+          {
+            height: 2000,
+            imageUrl: 'https://cdn.test/directory-page-1.webp',
+            pageNumber: 1,
+            width: 1410,
+          },
+          {
+            height: 2000,
+            imageUrl: 'https://cdn.test/directory-page-2.webp',
+            pageNumber: 2,
+            width: 1410,
+          },
+        ],
+      },
+    }), { headers: { 'content-type': 'application/json' } })))
+
+    render(
+      <LeafletViewer
+        leaflet={leaflet({
+          imageUrl: 'https://cdn.test/cover.webp',
+          pages: [
+            {
+              height: 270,
+              imageUrl: 'https://cdn.test/cover.webp',
+              pageNumber: 1,
+              width: 260,
+            },
+          ],
+          pagesUrl:
+            'https://trolleyscout.co.za/api/catalogue-pages?flyer=3703321&store=boxer',
+          sourceLabel: 'Catalogue Specials',
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Loading every catalogue page')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Page 1 of 2')).toBeTruthy())
+    expect(screen.getByRole('link', { name: 'Catalogue source' })).toBeTruthy()
+  })
+
+  it('shares an exact Trolley Scout catalogue link', async () => {
+    const share = vi.fn(async () => undefined)
+    vi.stubGlobal('navigator', { share })
+    const item = leaflet({
+      id: 'latest-specials-123130',
+      retailerId: 'food-lovers',
+      sourceLabel: 'Latest Specials',
+    })
+
+    render(<LeafletViewer leaflet={item} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+
+    await waitFor(() => expect(share).toHaveBeenCalledWith({
+      text: 'Read Weekly catalogue from Shoprite on Trolley Scout.',
+      title: 'Shoprite catalogue',
+      url:
+        'https://trolleyscout.co.za/deals?catalogue=latest-specials-123130&retailer=food-lovers',
+    }))
+    expect(screen.getByText('Catalogue shared.')).toBeTruthy()
+    expect(catalogueShareUrl(item)).toContain('catalogue=latest-specials-123130')
   })
 })

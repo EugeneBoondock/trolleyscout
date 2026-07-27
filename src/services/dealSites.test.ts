@@ -181,6 +181,7 @@ describe('parseHyperli', () => {
 describe('parseDaddysDeals', () => {
   const payload = [
     {
+      modified_gmt: '2026-07-20T08:15:00',
       id: 88,
       link: 'https://daddysdeals.co.za/deals/durban/vouchers/massage/',
       title: { rendered: 'Head &amp; Back Massage for 1' },
@@ -200,6 +201,7 @@ describe('parseDaddysDeals', () => {
     expect(item.priceText).toBe('R199')
     expect(item.imageUrl).toBe('https://daddysdeals.co.za/img.png')
     expect(item.category).toBe('Durban')
+    expect(item.capturedAt).toBe('2026-07-20T08:15:00.000Z')
     expect(item.productUrl).toContain('/vouchers/massage/')
   })
 })

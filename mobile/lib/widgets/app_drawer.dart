@@ -8,6 +8,7 @@ import 'in_app_browser.dart';
 enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
   deals('Marketplace', Icons.local_offer_outlined, false),
+  chat('Mr Scout', Icons.chat_bubble_outline, true),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
   tools('Price comparisons', Icons.calculate_outlined, false),
@@ -54,6 +55,7 @@ class AppMenuDrawer extends StatelessWidget {
         [
           AppDestination.dashboard,
           AppDestination.deals,
+          AppDestination.chat,
           AppDestination.stores,
           AppDestination.near,
           AppDestination.scroll,

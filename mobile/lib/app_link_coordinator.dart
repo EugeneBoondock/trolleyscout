@@ -6,11 +6,13 @@ import 'package:flutter/foundation.dart';
 class AppLinkRequest {
   const AppLinkRequest({
     required this.destination,
+    this.catalogueId,
     this.query,
     this.retailerId,
   });
 
   final String destination;
+  final String? catalogueId;
   final String? query;
   final String? retailerId;
 }
@@ -49,6 +51,7 @@ AppLinkRequest? parseAppLink(Uri uri) {
   }
 
   return AppLinkRequest(
+    catalogueId: clean(uri.queryParameters['catalogue']),
     destination: destination,
     query: clean(uri.queryParameters['q']),
     retailerId: clean(uri.queryParameters['retailer']),

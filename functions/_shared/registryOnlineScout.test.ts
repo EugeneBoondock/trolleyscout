@@ -45,8 +45,27 @@ describe('buildRegistryOnlineStores', () => {
     const hosts = za.map((store) => store.placeId)
 
     expect(hosts).toContain('online:za:techexchange.co.za')
+    expect(hosts).toContain('online:za:rain.co.za')
+    expect(
+      za.find((store) => store.placeId === 'online:za:rain.co.za'),
+    ).toMatchObject({
+      name: 'rain',
+      retailerId: 'rain',
+      sourceCategory: 'network-provider',
+    })
     expect(za.length).toBeGreaterThan(100)
     expect(za.every((store) => store.countryCode === 'ZA')).toBe(true)
+  })
+
+  it('adds the active country mobile networks without leaking other countries', () => {
+    const british = buildRegistryOnlineStores(['GB'])
+    const names = british.map((store) => store.name)
+
+    expect(names).toEqual(expect.arrayContaining(['EE', 'O2', 'Three', 'Vodafone']))
+    expect(names).not.toContain('Cell C')
+    expect(
+      british.filter((store) => store.sourceCategory === 'network-provider'),
+    ).toHaveLength(4)
   })
 
   it('sweeps United States storefronts, which have no country directory either', () => {

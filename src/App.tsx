@@ -10,6 +10,7 @@ import {
   BookmarkSimple,
   Buildings,
   Calculator,
+  ChatsCircle,
   CheckCircle,
   ClipboardText,
   CreditCard,
@@ -17,6 +18,7 @@ import {
   EyeSlash,
   GooglePlayLogo,
   HandCoins,
+  Heart,
   HouseLine,
   Info,
   Lifebuoy,
@@ -31,7 +33,6 @@ import {
   ReceiptX,
   ShieldCheck,
   ShoppingCart,
-  SlidersHorizontal,
   SignOut,
   Storefront,
   Sun,
@@ -43,9 +44,11 @@ import {
   X,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
+import { useFavouriteStores } from './hooks/useFavouriteStores'
 import { ScoutGuide, ScoutMascot } from './components/ScoutMascot'
 import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
+import { DeferredDashboardStories } from './components/DashboardStories'
 import { RetailerPicker } from './components/RetailerPicker'
 import { AdminPublicationReview } from './business/AdminPublicationReview'
 import { AdminOrganizationApplications } from './business/AdminOrganizationApplications'
@@ -76,8 +79,10 @@ import {
   getInitialCountryState,
   loadMemberSession,
   changeAccountPassword,
+  loadAdminAnalytics,
   loadAdminOverview,
   setAdminTestCountry,
+  setMemberBanned,
   setMemberPropertiesAccess,
   setMemberPlan,
   setSupportStatus,
@@ -127,8 +132,8 @@ import type {
   OrganizationApplicationDraft,
   Retailer,
   SavedDeal,
-  SourceKind,
   DiscoveredDeal,
+  AdminAnalyticsReport,
   AdminOverview,
   CountryContext,
   CountryOption,
@@ -147,10 +152,11 @@ import type {
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
 import { filterDiscoveryDeals } from './services/dealFilters'
+import { buildRetailerPickerOptions } from './services/retailerOptions'
 import {
   groupLeafletsByRetailer,
-  type CatalogueGroup,
 } from './services/catalogueOrdering'
+import { selectCurrentCatalogues } from './services/catalogueSelection'
 import {
   CATEGORY_OPTIONS,
   FOOD_SUBCATEGORY_OPTIONS,
@@ -193,10 +199,14 @@ const ToolkitView = lazy(() =>
 const VouchersView = lazy(() =>
   import('./views/VouchersView').then((module) => ({ default: module.VouchersView })),
 )
+const ScoutChatView = lazy(() =>
+  import('./views/ScoutChatView').then((module) => ({ default: module.ScoutChatView })),
+)
 
 type ThemeMode = 'light' | 'dark'
 type ActiveView =
   | 'home'
+  | 'chat'
   | 'near'
   | 'tools'
   | 'sources'
@@ -212,6 +222,7 @@ type ActiveView =
   | 'cookies'
 type MemberView =
   | 'dashboard'
+  | 'chat'
   | 'near'
   | 'tools'
   | 'sources'
@@ -247,6 +258,7 @@ const viewOptions: Array<{ label: string; value: ActiveView }> = [
 // Views that require an account; if a logged-out visitor deep-links to one, the
 // public shell shows a sign-in gate instead of the members-only content.
 const MEMBER_ONLY_PUBLIC_VIEWS: ReadonlySet<ActiveView> = new Set<ActiveView>([
+  'chat',
   'near',
   'tools',
   'sources',
@@ -256,6 +268,7 @@ const MEMBER_ONLY_PUBLIC_VIEWS: ReadonlySet<ActiveView> = new Set<ActiveView>([
 // listed in the sitemap. The SPA reads the path on load and keeps it in sync.
 const VIEW_PATHS: Record<ActiveView, string> = {
   home: '/',
+  chat: '/mr-scout',
   discovery: '/deals',
   near: '/near-me',
   tools: '/tools',
@@ -274,6 +287,7 @@ const VIEW_PATHS: Record<ActiveView, string> = {
 const VIEW_TITLES: Record<ActiveView, string> = {
   // Kept identical to the <title> in index.html so the tab never flips on load.
   home: 'Trolley Scout: South African grocery specials, with sources',
+  chat: 'Mr Scout: your personal deal finder | Trolley Scout',
   discovery: 'Find a deal: this week’s grocery specials | Trolley Scout',
   near: 'Near me: supermarkets and specials around you | Trolley Scout',
   tools: 'Tools: product and store comparison | Trolley Scout',
@@ -301,6 +315,7 @@ function viewFromPath(pathname: string): ActiveView {
 const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberView }> = [
   { icon: <HouseLine size={20} />, label: 'Dashboard', value: 'dashboard' },
   { icon: <Tag size={20} />, label: 'Marketplace', value: 'discovery' },
+  { icon: <ChatsCircle size={20} />, label: 'Mr Scout', value: 'chat' },
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Ticket size={20} />, label: 'Vouchers', value: 'vouchers' },
@@ -321,14 +336,6 @@ const adminViewOption: { icon: ReactNode; label: string; value: MemberView } = {
   value: 'admin',
 }
 
-const sourceLabels: Record<SourceKind | 'all', string> = {
-  all: 'All',
-  app: 'App',
-  loyalty: 'Loyalty',
-  specials: 'Specials',
-  'store-finder': 'Store finder',
-}
-
 const initialRetailers = getInitialRetailerState().data.retailers
 const defaultRetailerId = initialRetailers[0]?.id ?? 'pick-n-pay'
 
@@ -338,7 +345,6 @@ function App() {
     typeof window === 'undefined' ? 'home' : viewFromPath(window.location.pathname),
   )
   const [query, setQuery] = useState('')
-  const [sourceKind, setSourceKind] = useState<SourceKind | 'all'>('all')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [retailerState, setRetailerState] = useState<ResourceState<RetailerResource>>(
@@ -446,7 +452,7 @@ function App() {
 
       loadRetailers({
         query,
-        sourceKind,
+        sourceKind: 'all',
         signal: controller.signal,
       })
         .then(setRetailerState)
@@ -462,7 +468,7 @@ function App() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [memberState.data.session.account?.countryCode, query, refreshKey, sourceKind])
+  }, [memberState.data.session.account?.countryCode, query, refreshKey])
 
   useEffect(() => {
     if (!memberState.data.session.isAuthenticated || query.trim().length < 3) {
@@ -645,7 +651,6 @@ function App() {
     return () => controller.abort()
   }, [memberState.data.session.isAuthenticated])
 
-  const sourceKinds = retailerState.data.summary.sourceKinds
   const filteredRetailers = retailerState.data.retailers
   const officialSourceCount = retailerState.data.summary.sourceCount
   const retailerCount = retailerState.data.summary.retailerCount
@@ -1339,7 +1344,6 @@ function App() {
         onUpdateBasketQuantity={updateBasketQuantity}
         onUpdateScanner={updateScannerDraft}
         onQueryChange={setQuery}
-        onSourceKindChange={setSourceKind}
         query={query}
         retailerState={retailerState}
         savedDealCount={savedDealCount}
@@ -1352,7 +1356,6 @@ function App() {
         scannerDraft={scannerDraft}
         scannerResult={scannerResult}
         sidebarOpen={isMemberSidebarOpen}
-        sourceKind={sourceKind}
         subscriptionState={subscriptionState}
         theme={theme}
         updatingBasketItemId={updatingBasketItemId}
@@ -1445,6 +1448,12 @@ function App() {
           </LazyView>
         )}
 
+        {activeView === 'chat' && (
+          <LazyView label="Opening Mr Scout">
+            <ScoutChatView />
+          </LazyView>
+        )}
+
         {activeView === 'tools' && (
           <LazyView label="Opening tools"><ToolkitView /></LazyView>
         )}
@@ -1473,6 +1482,7 @@ function App() {
             <SupportView
               defaultEmail={memberSession.account?.email}
               defaultName={memberSession.account?.displayName}
+              isSignedIn={Boolean(memberSession.account)}
             />
           </LazyView>
         )}
@@ -1513,7 +1523,7 @@ function App() {
                 Check sources
               </button>
             </section>
-            <section className="filter-panel" aria-label="Source filters">
+            <section className="filter-panel" aria-label="Search stores">
               <div className="search-field">
                 <MagnifyingGlass size={20} />
                 <input
@@ -1527,30 +1537,6 @@ function App() {
                     Clear
                   </button>
                 )}
-              </div>
-
-              <div className="filter-row">
-                <span className="filter-label">
-                  <SlidersHorizontal size={18} />
-                  Type
-                </span>
-                <button
-                  className={clsx('chip', sourceKind === 'all' && 'is-active')}
-                  onClick={() => setSourceKind('all')}
-                  type="button"
-                >
-                  {sourceLabels.all}
-                </button>
-                {sourceKinds.map((kind) => (
-                  <button
-                    className={clsx('chip', sourceKind === kind && 'is-active')}
-                    key={kind}
-                    onClick={() => setSourceKind(kind)}
-                    type="button"
-                  >
-                    {sourceLabels[kind]}
-                  </button>
-                ))}
               </div>
             </section>
 
@@ -1885,7 +1871,6 @@ function MemberShell({
   onScan,
   onSetView,
   onSignOut,
-  onSourceKindChange,
   onThemeToggle,
   onToggleSidebar,
   onUpdateBasketQuantity,
@@ -1902,7 +1887,6 @@ function MemberShell({
   scannerDraft,
   scannerResult,
   sidebarOpen,
-  sourceKind,
   subscriptionState,
   theme,
   updatingBasketItemId,
@@ -1953,7 +1937,6 @@ function MemberShell({
   onScan: () => void
   onSetView: (view: MemberView) => void
   onSignOut: () => void
-  onSourceKindChange: (value: SourceKind | 'all') => void
   onThemeToggle: () => void
   onToggleSidebar: () => void
   onUpdateBasketQuantity: (item: BasketItem, quantity: number) => void
@@ -1970,7 +1953,6 @@ function MemberShell({
   scannerDraft: OfferDraft
   scannerResult?: ResourceState<OfferValidationResult>
   sidebarOpen: boolean
-  sourceKind: SourceKind | 'all'
   subscriptionState: ResourceState<SubscriptionResource>
   theme: ThemeMode
   updatingBasketItemId?: string
@@ -1983,8 +1965,6 @@ function MemberShell({
   if (!account) {
     return null
   }
-
-  const sourceKinds = retailerState.data.summary.sourceKinds
 
   return (
     <div className="member-shell">
@@ -2074,6 +2054,12 @@ function MemberShell({
           />
         )}
 
+        {activeView === 'chat' && (
+          <LazyView label="Opening Mr Scout">
+            <ScoutChatView />
+          </LazyView>
+        )}
+
         {activeView === 'near' && (
           <LazyView label="Opening Near me">
             <NearMeView countryCode={account.countryCode} onViewStoreDeals={onViewStoreDeals} />
@@ -2107,7 +2093,7 @@ function MemberShell({
 
         {activeView === 'support' && (
           <LazyView label="Opening support">
-            <SupportView defaultEmail={account.email} defaultName={account.displayName} />
+            <SupportView defaultEmail={account.email} defaultName={account.displayName} isSignedIn />
           </LazyView>
         )}
 
@@ -2125,10 +2111,7 @@ function MemberShell({
             </section>
             <SourceFilterPanel
               onQueryChange={onQueryChange}
-              onSourceKindChange={onSourceKindChange}
               query={query}
-              sourceKind={sourceKind}
-              sourceKinds={sourceKinds}
             />
             <SourcePanel
               country={retailerState.data.country}
@@ -2249,6 +2232,49 @@ function MemberShell({
 
         {activeView === 'rules' && <RulesPanel />}
       </main>
+      <nav className="member-mobile-nav" aria-label="Primary member navigation">
+        <button
+          className={clsx(activeView === 'dashboard' && 'is-active')}
+          onClick={() => onSetView('dashboard')}
+          type="button"
+        >
+          <HouseLine aria-hidden="true" size={21} />
+          Dashboard
+        </button>
+        <button
+          className={clsx(activeView === 'discovery' && 'is-active')}
+          onClick={() => onSetView('discovery')}
+          type="button"
+        >
+          <Tag aria-hidden="true" size={21} />
+          Marketplace
+        </button>
+        <button
+          aria-label="Open Mr Scout"
+          className={clsx('is-scout', activeView === 'chat' && 'is-active')}
+          onClick={() => onSetView('chat')}
+          type="button"
+        >
+          <span><ScoutMark motion="scout" size={31} /></span>
+          Mr Scout
+        </button>
+        <button
+          className={clsx(activeView === 'sources' && 'is-active')}
+          onClick={() => onSetView('sources')}
+          type="button"
+        >
+          <Storefront aria-hidden="true" size={21} />
+          Stores
+        </button>
+        <button
+          className={clsx(activeView === 'near' && 'is-active')}
+          onClick={() => onSetView('near')}
+          type="button"
+        >
+          <NavigationArrow aria-hidden="true" size={21} />
+          Near me
+        </button>
+      </nav>
       <ScoutGuide view={activeView} />
     </div>
   )
@@ -2256,19 +2282,13 @@ function MemberShell({
 
 function SourceFilterPanel({
   onQueryChange,
-  onSourceKindChange,
   query,
-  sourceKind,
-  sourceKinds,
 }: {
   onQueryChange: (value: string) => void
-  onSourceKindChange: (value: SourceKind | 'all') => void
   query: string
-  sourceKind: SourceKind | 'all'
-  sourceKinds: SourceKind[]
 }) {
   return (
-    <section className="filter-panel" aria-label="Source filters">
+    <section className="filter-panel" aria-label="Search stores">
       <div className="search-field">
         <MagnifyingGlass size={20} />
         <input
@@ -2284,29 +2304,6 @@ function SourceFilterPanel({
         )}
       </div>
 
-      <div className="filter-row">
-        <span className="filter-label">
-          <SlidersHorizontal size={18} />
-          Type
-        </span>
-        <button
-          className={clsx('chip', sourceKind === 'all' && 'is-active')}
-          onClick={() => onSourceKindChange('all')}
-          type="button"
-        >
-          {sourceLabels.all}
-        </button>
-        {sourceKinds.map((kind) => (
-          <button
-            className={clsx('chip', sourceKind === kind && 'is-active')}
-            key={kind}
-            onClick={() => onSourceKindChange(kind)}
-            type="button"
-          >
-            {sourceLabels[kind]}
-          </button>
-        ))}
-      </div>
     </section>
   )
 }
@@ -2478,6 +2475,8 @@ function MemberDashboard({
         totalCents={basketTotalCents}
       />
 
+      <DeferredDashboardStories retailers={retailerState.data.retailers} />
+
       <PlanUsage
         account={account}
         basketItemCount={basketItemCount}
@@ -2609,6 +2608,7 @@ function DashboardDealCard({
         ) : (
           <Tag aria-hidden="true" size={32} />
         )}
+        {deal.soldOut && <span className="deal-stock-badge is-overlay">Sold out</span>}
       </span>
       <span className="dash-deal-retailer">{deal.retailerName}</span>
       <span className="dash-deal-title">{deal.title}</span>
@@ -3928,6 +3928,7 @@ function AdminConsole() {
   const [pendingId, setPendingId] = useState<string | undefined>()
   const [scoutNotice, setScoutNotice] = useState<string>()
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>()
+  const [adminTab, setAdminTab] = useState<AdminTab>('overview')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -4068,6 +4069,42 @@ function AdminConsole() {
     }
   }
 
+  async function onToggleBan(member: MemberAccount) {
+    const banning = member.status !== 'banned'
+    // A ban is not reversible from the member's side, so it is confirmed, and
+    // the reason travels with it — it becomes the sign-in message they see.
+    const reason = banning
+      ? window.prompt(
+          `Ban ${member.displayName}? They are signed out everywhere and cannot sign back in.\n\n` +
+            'Reason (shown to them when they try to sign in):',
+          '',
+        )
+      : ''
+    if (banning && reason === null) {
+      return
+    }
+
+    setPendingId(member.id)
+    const result = await setMemberBanned(member.id, banning, {
+      countryCode: activeCountryCode,
+      reason: reason ?? undefined,
+    })
+    setPendingId(undefined)
+    setMessage(result.message)
+
+    if (result.ok && result.account) {
+      const updated = result.account
+      setOverview((current) =>
+        current
+          ? {
+              ...current,
+              accounts: current.accounts.map((row) => (row.id === updated.id ? updated : row)),
+            }
+          : current,
+      )
+    }
+  }
+
   return (
     <section className="admin-console" aria-label="Admin console">
       <div className="member-section-head">
@@ -4107,6 +4144,26 @@ function AdminConsole() {
       )}
 
       {overview && (
+        <div className="admin-tabs" role="tablist" aria-label="Admin console sections">
+          {ADMIN_TABS.map(([id, label]) => (
+            <button
+              aria-selected={adminTab === id}
+              className={clsx('deal-tab', adminTab === id && 'is-active')}
+              key={id}
+              onClick={() => setAdminTab(id)}
+              role="tab"
+              type="button"
+            >
+              {label}
+              {id === 'support' && overview.summary.supportOpenCount > 0 && (
+                <span className="admin-queue-count">{overview.summary.supportOpenCount}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {overview && adminTab === 'overview' && (
         <>
           <div className="member-metrics">
             <Metric
@@ -4202,36 +4259,61 @@ function AdminConsole() {
               </span>
             ))}
           </div>
+        </>
+      )}
 
+      {overview && adminTab === 'business' && (
+        <>
           <AdminOrganizationApplications />
 
           <AdminPublicationReview />
+        </>
+      )}
 
+      {overview && adminTab === 'analytics' && (
+        <AdminAnalyticsPanel countryCode={activeCountryCode} />
+      )}
+
+      {overview && adminTab === 'members' && (
+        <>
           <div className="section-heading">
             <div>
               <p className="eyebrow">Members</p>
               <h2>Recent accounts</h2>
+              <p className="section-lede">
+                Deals opened only counts members who left deal learning on, so a zero can mean
+                "opted out" rather than "never looked".
+              </p>
             </div>
           </div>
 
-          <div className="admin-table admin-table-properties" role="table" aria-label="Member accounts">
+          <div className="admin-table admin-table-members" role="table" aria-label="Member accounts">
             <div className="admin-row admin-row-head" role="row">
               <span role="columnheader">Member</span>
               <span role="columnheader">Plan</span>
               <span role="columnheader">Role</span>
               <span role="columnheader">Properties</span>
+              <span role="columnheader">Deals opened</span>
+              <span role="columnheader">Last online</span>
               <span role="columnheader">Joined</span>
+              <span role="columnheader">Access</span>
             </div>
             {overview.accounts.map((member) => {
               // Household and admins always have access via their plan/role, so
               // the grant toggle is only meaningful for other members.
               const planBased = member.planId === 'household' || member.role === 'admin'
+              const isBanned = member.status === 'banned'
               return (
-                <div className="admin-row" key={member.id} role="row">
+                <div className={clsx('admin-row', isBanned && 'is-banned')} key={member.id} role="row">
                   <span role="cell">
                     <strong>{member.displayName}</strong>
                     <small>{member.email}</small>
                     <small>{member.countryName}</small>
+                    {isBanned && (
+                      <small className="admin-ban-note">
+                        Banned{member.banReason ? `: ${member.banReason}` : ''}
+                      </small>
+                    )}
                   </span>
                   <span role="cell">
                     <select
@@ -4266,12 +4348,32 @@ function AdminConsole() {
                       </button>
                     )}
                   </span>
+                  <span role="cell">{member.dealViewCount ?? 0}</span>
+                  <span role="cell">{describeLastSeen(member.lastSeenAt)}</span>
                   <span role="cell">{member.createdAt.slice(0, 10)}</span>
+                  <span role="cell">
+                    {member.role === 'admin' ? (
+                      <span className="admin-access-note">Owner</span>
+                    ) : (
+                      <button
+                        className={clsx('admin-access-toggle', isBanned && 'is-danger')}
+                        disabled={pendingId === member.id}
+                        onClick={() => void onToggleBan(member)}
+                        type="button"
+                      >
+                        {isBanned ? 'Unban' : 'Ban'}
+                      </button>
+                    )}
+                  </span>
                 </div>
               )
             })}
           </div>
+        </>
+      )}
 
+      {overview && adminTab === 'support' && (
+        <>
           <div className="section-heading">
             <div>
               <p className="eyebrow">Support</p>
@@ -4293,8 +4395,21 @@ function AdminConsole() {
                       <strong>{msg.name}</strong>
                       <a href={`mailto:${msg.email}`}>{msg.email}</a>
                     </div>
-                    <span className="admin-support-topic">{msg.topic}</span>
+                    <span className="admin-support-topic">
+                      {msg.topic}
+                      {msg.severity && (
+                        <span
+                          className={clsx(
+                            'admin-support-severity',
+                            msg.severity === 'high' && 'is-high',
+                          )}
+                        >
+                          {msg.severity}
+                        </span>
+                      )}
+                    </span>
                   </header>
+                  {msg.aiBrief && <p className="admin-support-brief">{msg.aiBrief}</p>}
                   <p className="admin-support-message">{msg.message}</p>
                   <footer className="admin-support-foot">
                     <span className="admin-support-meta">
@@ -4328,12 +4443,205 @@ function AdminConsole() {
   )
 }
 
-// One card per retailer, so ten SPAR branch catalogues collapse to a single
-// "SPAR — 10 catalogues" card; tapping opens a modal listing every location.
-function CatalogueGroupsBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
+type AdminTab = 'overview' | 'members' | 'analytics' | 'support' | 'business'
+
+const ADMIN_TABS: Array<[AdminTab, string]> = [
+  ['overview', 'Overview'],
+  ['members', 'Members'],
+  ['analytics', 'Analytics'],
+  ['support', 'Support'],
+  ['business', 'Business'],
+]
+
+/// "3 hours ago" beats a timestamp for the question this column answers, which
+/// is always "are they still around".
+function describeLastSeen(lastSeenAt?: string): string {
+  if (!lastSeenAt) {
+    return 'Never'
+  }
+  const seenAt = Date.parse(lastSeenAt)
+  if (!Number.isFinite(seenAt)) {
+    return 'Never'
+  }
+  const minutes = Math.max(0, Math.round((Date.now() - seenAt) / 60000))
+  if (minutes < 5) return 'Just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} hr ago`
+  const days = Math.round(hours / 24)
+  if (days < 31) return `${days} day${days === 1 ? '' : 's'} ago`
+  return lastSeenAt.slice(0, 10)
+}
+
+function formatCompact(value: number): string {
+  return new Intl.NumberFormat('en-ZA', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+}
+
+/// Member analytics from our own database, plus Cloudflare zone traffic when a
+/// read token is configured. Loads on its own so the console's first paint
+/// never waits on a call out to Cloudflare.
+function AdminAnalyticsPanel({ countryCode }: { countryCode: string }) {
+  const [report, setReport] = useState<AdminAnalyticsReport | undefined>()
+  const [windowDays, setWindowDays] = useState(30)
+  const [message, setMessage] = useState('Loading analytics.')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setMessage('Loading analytics.')
+
+    loadAdminAnalytics(countryCode, windowDays, controller.signal)
+      .then((result) => {
+        setReport(result.data)
+        setMessage(result.ok ? '' : result.message)
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+        setMessage('Analytics are not available.')
+      })
+
+    return () => controller.abort()
+  }, [countryCode, windowDays])
+
+  if (message === 'Loading analytics.') {
+    return <LoadingStrip label="Loading analytics" />
+  }
+
+  if (!report) {
+    return <div className="write-notice" role="status">{message}</div>
+  }
+
+  const { members, traffic } = report
+
+  return (
+    <div className="admin-analytics">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Analytics</p>
+          <h2>Last {report.windowDays} days</h2>
+        </div>
+        <label className="admin-country-picker">
+          <span>Window</span>
+          <select onChange={(event) => setWindowDays(Number(event.target.value))} value={windowDays}>
+            <option value={7}>7 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="member-metrics">
+        <Metric icon={<UserCircle size={22} />} label="Members" value={`${members.totals.accountCount}`} />
+        <Metric icon={<UserCircle size={22} />} label="Online today" value={`${members.totals.activeToday}`} />
+        <Metric icon={<UserCircle size={22} />} label="Active this week" value={`${members.totals.activeThisWeek}`} />
+        <Metric icon={<Tag size={22} />} label="Deals opened" value={formatCompact(members.totals.dealViewsInWindow)} />
+        <Metric icon={<UserCircle size={22} />} label="Never signed in" value={`${members.totals.neverSeenCount}`} />
+        <Metric icon={<ShieldCheck size={22} />} label="Banned" value={`${members.totals.bannedCount}`} />
+      </div>
+
+      <AdminTrend days={members.days} label="New members" values={members.signups} />
+      <AdminTrend days={members.days} label="Members online" values={members.activeMembers} />
+      <AdminTrend days={members.days} label="Deals opened" values={members.dealViews} />
+
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Cloudflare</p>
+          <h2>Site traffic</h2>
+        </div>
+      </div>
+
+      {!traffic.configured || traffic.issue ? (
+        <div className="write-notice" role="status">
+          {traffic.issue ?? 'Cloudflare traffic is not connected yet.'}
+        </div>
+      ) : (
+        <>
+          <div className="member-metrics">
+            <Metric icon={<ArrowClockwise size={22} />} label="Requests" value={formatCompact(traffic.totals?.requests ?? 0)} />
+            <Metric icon={<ArrowClockwise size={22} />} label="Page views" value={formatCompact(traffic.totals?.pageViews ?? 0)} />
+            <Metric icon={<UserCircle size={22} />} label="Unique visitors" value={formatCompact(traffic.totals?.uniques ?? 0)} />
+            <Metric
+              icon={<ArrowClockwise size={22} />}
+              label="Data served"
+              value={`${formatCompact(Math.round((traffic.totals?.bytes ?? 0) / 1_048_576))} MB`}
+            />
+          </div>
+          <AdminTrend
+            days={traffic.days.map((day) => day.date)}
+            label="Page views a day"
+            values={traffic.days.map((day) => day.pageViews)}
+          />
+          <AdminTrend
+            days={traffic.days.map((day) => day.date)}
+            label="Unique visitors a day"
+            values={traffic.days.map((day) => day.uniques)}
+          />
+        </>
+      )}
+
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Members</p>
+          <h2>What they searched for</h2>
+        </div>
+      </div>
+      {members.topSearches.length === 0 ? (
+        <p className="admin-access-note">No searches recorded in this window.</p>
+      ) : (
+        <div className="admin-plans">
+          {members.topSearches.map((search) => (
+            <span className="admin-plan-tag" key={search.term}>
+              {search.term}: <strong>{search.count}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/// A bar per day. Deliberately CSS-only — a chart library for six sparklines
+/// would cost more bundle than the whole admin console.
+function AdminTrend({ days, label, values }: { days: string[]; label: string; values: number[] }) {
+  const peak = Math.max(1, ...values)
+  const total = values.reduce((sum, value) => sum + value, 0)
+
+  return (
+    <figure className="admin-trend">
+      <figcaption>
+        <strong>{label}</strong>
+        <span>{formatCompact(total)} in total, peak {formatCompact(peak)}</span>
+      </figcaption>
+      <div className="admin-trend-bars" role="img" aria-label={`${label}: ${total} in total over ${values.length} days`}>
+        {values.map((value, index) => (
+          <span
+            className="admin-trend-bar"
+            key={days[index] ?? index}
+            style={{ height: `${Math.max(2, Math.round((value / peak) * 100))}%` }}
+            title={`${days[index] ?? ''}: ${value}`}
+          />
+        ))}
+      </div>
+    </figure>
+  )
+}
+
+function CatalogueGroupsBoard({
+  initialCatalogueId,
+  leaflets,
+}: {
+  initialCatalogueId?: string
+  leaflets: StoreLeaflet[]
+}) {
   const groups = groupLeafletsByRetailer(leaflets)
-  const [openGroup, setOpenGroup] = useState<CatalogueGroup | undefined>()
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+
+  useEffect(() => {
+    if (!initialCatalogueId || openLeaflet) return
+    const shared = leaflets.find((leaflet) => leaflet.id === initialCatalogueId)
+    if (shared) setOpenLeaflet(shared)
+  }, [initialCatalogueId, leaflets, openLeaflet])
 
   if (groups.length === 0) {
     return (
@@ -4348,87 +4656,93 @@ function CatalogueGroupsBoard({ leaflets }: { leaflets: StoreLeaflet[] }) {
 
   return (
     <div className="catalogue-board" aria-label="Store catalogues">
-      <div className="leaflet-grid">
-        {groups.map((group) => {
-          const cover = group.leaflets.find((leaflet) => leaflet.imageUrl)?.imageUrl
-
-          return (
-            <article className="leaflet-card" key={group.retailerId}>
-              {cover && (
-                <img
-                  alt={`${group.retailerName} catalogue cover`}
-                  className="leaflet-cover"
-                  decoding="async"
-                  loading="lazy"
-                  onError={(event) => { event.currentTarget.hidden = true }}
-                  referrerPolicy="no-referrer"
-                  src={cover}
-                />
-              )}
-              <p className="leaflet-retailer">{group.retailerName}</p>
-              <h4>
-                {group.leaflets.length === 1
-                  ? group.leaflets[0].name
-                  : `${group.leaflets.length} catalogues`}
-              </h4>
-              <button
-                className="leaflet-open"
-                onClick={() =>
-                  group.leaflets.length === 1
-                    ? setOpenLeaflet(group.leaflets[0])
-                    : setOpenGroup(group)
-                }
-                type="button"
-              >
-                {group.leaflets.length === 1 ? 'View leaflet' : 'View locations'}
-                <MagnifyingGlass size={14} />
-              </button>
-            </article>
-          )
-        })}
-      </div>
-
-      {openGroup && (
-        <div className="catalogue-modal-backdrop" onClick={() => setOpenGroup(undefined)} role="presentation">
-          <div
-            aria-label={`${openGroup.retailerName} catalogues`}
-            className="catalogue-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="catalogue-modal-head">
-              <h3>{openGroup.retailerName} catalogues</h3>
-              <button aria-label="Close" className="icon-button" onClick={() => setOpenGroup(undefined)} type="button">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="catalogue-modal-list">
-              {openGroup.leaflets.map((leaflet) => (
-                <button
-                  className="catalogue-modal-row"
-                  key={leaflet.id}
-                  onClick={() => { setOpenLeaflet(leaflet); setOpenGroup(undefined) }}
-                  type="button"
-                >
-                  <div>
-                    <strong>{leaflet.name}</strong>
-                    {(leaflet.validFrom || leaflet.validTo) && (
-                      <span>{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</span>
-                    )}
-                  </div>
-                  <MagnifyingGlass size={16} />
-                </button>
-              ))}
-            </div>
-          </div>
+      <header className="catalogue-library-head">
+        <div>
+          <p className="eyebrow">Fresh from stores</p>
+          <h3>Current catalogues</h3>
+          <p>Open a cover to read every available page in order.</p>
         </div>
-      )}
+        <span>{leaflets.length} available</span>
+      </header>
+
+      <div className="catalogue-store-list">
+        {groups.map((group) => (
+          <section
+            aria-labelledby={`catalogue-store-${group.retailerId}`}
+            className="catalogue-store-section"
+            key={group.retailerId}
+          >
+            <header className="catalogue-store-head">
+              <span aria-hidden="true" className="catalogue-store-avatar">
+                {group.retailerName.charAt(0).toUpperCase()}
+              </span>
+              <div>
+                <h4 id={`catalogue-store-${group.retailerId}`}>{group.retailerName}</h4>
+                <p>
+                  {group.leaflets.length} current {group.leaflets.length === 1 ? 'catalogue' : 'catalogues'}
+                </p>
+              </div>
+            </header>
+
+            <div className="catalogue-shelf">
+              {group.leaflets.map((leaflet) => {
+                const cover = leaflet.imageUrl ?? leaflet.pages?.[0]?.imageUrl
+                return (
+                  <button
+                    aria-label={`Read ${leaflet.name} from ${group.retailerName}`}
+                    className="catalogue-tile"
+                    key={leaflet.id}
+                    onClick={() => setOpenLeaflet(leaflet)}
+                    type="button"
+                  >
+                    <span className="catalogue-cover-frame">
+                      {cover ? (
+                        <img
+                          alt=""
+                          decoding="async"
+                          loading="lazy"
+                          onError={(event) => { event.currentTarget.hidden = true }}
+                          referrerPolicy="no-referrer"
+                          src={cover}
+                        />
+                      ) : (
+                        <span className="catalogue-cover-fallback" aria-hidden="true">
+                          <Storefront size={34} />
+                        </span>
+                      )}
+                      <span className="catalogue-read-pill">
+                        Read
+                        <ArrowRight size={14} />
+                      </span>
+                    </span>
+                    <span className="catalogue-tile-copy">
+                      <strong>{leaflet.name}</strong>
+                      <span>{describeCatalogueFormat(leaflet)}</span>
+                      {(leaflet.validFrom || leaflet.validTo) && (
+                        <small>{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</small>
+                      )}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
 
       {openLeaflet && (
         <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
       )}
     </div>
   )
+}
+
+function describeCatalogueFormat(leaflet: StoreLeaflet): string {
+  const pageCount = leaflet.pages?.length ?? 0
+  if (pageCount > 1) return `${pageCount} pages`
+  if (leaflet.pagesUrl) return 'Multi-page catalogue'
+  if (leaflet.documentUrl?.toLowerCase().includes('.pdf')) return 'Full PDF'
+  return pageCount === 1 ? '1 page' : 'Store catalogue'
 }
 
 function describeLeafletDates(validFrom?: string, validTo?: string): string {
@@ -4581,6 +4895,7 @@ function RuntimeBanner({
 
 export function DiscoveredStoreDirectory({
   discovered,
+  isAuthenticated = false,
   isLoading = false,
   onLoadMore,
   onQueryChange,
@@ -4588,13 +4903,19 @@ export function DiscoveredStoreDirectory({
   query = '',
 }: {
   discovered: DiscoveredStoresResource
+  isAuthenticated?: boolean
   isLoading?: boolean
   onLoadMore?: () => void
   onQueryChange?: (value: string) => void
   onRetry?: () => void
   query?: string
 }) {
-  const groups = groupDiscoveredStores(discovered.stores)
+  const allGroups = groupDiscoveredStores(discovered.stores)
+  const { favouriteCount, isFavourite, toggle } = useFavouriteStores(isAuthenticated)
+  const [storeTab, setStoreTab] = useState<'all' | 'favourites'>('all')
+  const groups = storeTab === 'favourites'
+    ? allGroups.filter((group) => isFavourite(group.id))
+    : allGroups
   const [openGroup, setOpenGroup] = useState<DiscoveredStoreGroup | undefined>()
   const [openBranch, setOpenBranch] = useState<NearbyStoreResult | undefined>()
   const [branchLoadState, setBranchLoadState] = useState<'idle' | 'loading' | 'error'>('idle')
@@ -4653,13 +4974,32 @@ export function DiscoveredStoreDirectory({
     <div className="discovered-store-directory" aria-label="Stores found near shoppers">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">National store directory</p>
+          <p className="eyebrow">Store directory</p>
           <h3>Stores found near shoppers</h3>
           <p>
             {discovered.summary.storeCount} permanent store records across {discovered.summary.areaCount} searched areas.
           </p>
         </div>
         <Storefront size={26} />
+      </div>
+
+      <div className="store-directory-tabs" aria-label="Store filters">
+        <button
+          aria-pressed={storeTab === 'all'}
+          className={clsx(storeTab === 'all' && 'is-active')}
+          onClick={() => setStoreTab('all')}
+          type="button"
+        >
+          All stores
+        </button>
+        <button
+          aria-pressed={storeTab === 'favourites'}
+          className={clsx(storeTab === 'favourites' && 'is-active')}
+          onClick={() => setStoreTab('favourites')}
+          type="button"
+        >
+          Favourites {favouriteCount}
+        </button>
       </div>
 
       {onQueryChange && (
@@ -4694,36 +5034,57 @@ export function DiscoveredStoreDirectory({
 
       {groups.length > 0 ? (
         <div className="discovered-store-grid">
-          {groups.map((group) => (
-            <button
-              aria-label={`${cleanUiPunctuation(group.displayName)}, ${group.branchCount} ${group.branchCount === 1 ? 'location' : 'locations'}, ${group.promotionCount} live promotions`}
-              className="discovered-store-card"
-              key={group.id}
-              onClick={() => {
-                setOpenBranch(undefined)
-                setOpenGroup(group)
-              }}
-              type="button"
-            >
-              {group.logoUrl ? (
-                <img alt="" className="store-logo" loading="lazy" src={group.logoUrl} />
-              ) : (
-                <span className="store-logo-fallback"><Storefront size={22} /></span>
-              )}
-              <span className="discovered-store-card-copy">
-                <strong>{cleanUiPunctuation(group.displayName)}</strong>
-                <span>{group.branchCount} {group.branchCount === 1 ? 'location' : 'locations'}</span>
-                <span>
-                  {group.promotionCount} live promotion{group.promotionCount === 1 ? '' : 's'}
-                </span>
-                {group.nearestDistanceM !== undefined && (
-                  <span>Nearest {formatStoreDistance(group.nearestDistanceM)}</span>
-                )}
-              </span>
-            </button>
-          ))}
+          {groups.map((group) => {
+            const favourite = isFavourite(group.id)
+            return (
+              <article className="discovered-store-card" key={group.id}>
+                <button
+                  aria-label={favourite
+                    ? `Remove ${cleanUiPunctuation(group.displayName)} from favourites`
+                    : `Add ${cleanUiPunctuation(group.displayName)} to favourites`}
+                  aria-pressed={favourite}
+                  className={clsx('favourite-store-button', favourite && 'is-favourite')}
+                  onClick={() => toggle(group)}
+                  type="button"
+                >
+                  <Heart size={20} weight={favourite ? 'fill' : 'regular'} />
+                </button>
+                <button
+                  aria-label={`Enter ${cleanUiPunctuation(group.displayName)}`}
+                  className="discovered-store-enter"
+                  onClick={() => {
+                    setOpenBranch(undefined)
+                    setOpenGroup(group)
+                  }}
+                  type="button"
+                >
+                  {group.logoUrl ? (
+                    <img alt="" className="store-logo" loading="lazy" src={group.logoUrl} />
+                  ) : (
+                    <span className="store-logo-fallback"><Storefront size={22} /></span>
+                  )}
+                  <span className="discovered-store-card-copy">
+                    <strong>{cleanUiPunctuation(group.displayName)}</strong>
+                    <span>{group.branchCount} {group.branchCount === 1 ? 'location' : 'locations'}</span>
+                    <span>
+                      {group.promotionCount} live promotion{group.promotionCount === 1 ? '' : 's'}
+                    </span>
+                    {group.nearestDistanceM !== undefined && (
+                      <span>Nearest {formatStoreDistance(group.nearestDistanceM)}</span>
+                    )}
+                    <span className="enter-store-label">
+                      Enter store
+                      <ArrowRight size={15} />
+                    </span>
+                  </span>
+                </button>
+              </article>
+            )
+          })}
         </div>
-      ) : isLoading ? null : query ? (
+      ) : isLoading ? null : storeTab === 'favourites' ? (
+        <p className="directory-empty">No favourite stores yet.</p>
+      ) : query ? (
         <p className="directory-empty">No stores match “{query}”. Try a store name or suburb.</p>
       ) : (
         <p className="directory-empty">Use Near me to add the first stores in a searched area.</p>
@@ -4788,7 +5149,7 @@ export function DiscoveredStoreDirectory({
                 <section className="store-location-section" key={branch.placeId}>
                   <div className="store-location-head">
                     <button
-                      aria-label={`Open ${cleanUiPunctuation(branch.name)} deals`}
+                      aria-label={`Enter ${cleanUiPunctuation(branch.name)}`}
                       className="store-location-summary"
                       disabled={openBranch?.placeId === branch.placeId}
                       onClick={() => void openBranchDetails(branch)}
@@ -4853,12 +5214,17 @@ export function DiscoveredStoreDirectory({
                             <span className="promotion-kind">
                               {promotion.kind === 'catalogue' ? 'Catalogue' : 'Deal'}
                             </span>
+                            {promotion.soldOut && (
+                              <span className="deal-stock-badge store-promotion-stock">Sold out</span>
+                            )}
                             <h5>{cleanUiPunctuation(promotion.title)}</h5>
                             {(promotion.priceText || promotion.previousPriceText || promotion.savingText) && (
                               <p className="store-location-price">
                                 {promotion.priceText && <strong>{cleanUiPunctuation(promotion.priceText)}</strong>}
                                 {meaningfulWasPrice(promotion.previousPriceText, promotion.priceText) && <s>{cleanUiPunctuation(meaningfulWasPrice(promotion.previousPriceText, promotion.priceText)!)}</s>}
-                                {promotion.savingText && <span>{cleanUiPunctuation(promotion.savingText)}</span>}
+                                {!promotion.soldOut && promotion.savingText && (
+                                  <span>{cleanUiPunctuation(promotion.savingText)}</span>
+                                )}
                               </p>
                             )}
                             {(promotion.validFrom || promotion.validTo) && (
@@ -5037,6 +5403,7 @@ function SourcePanel({
       {isLoading && <LoadingStrip label="Refreshing source directory" />}
       <DiscoveredStoreDirectory
         discovered={discovered}
+        isAuthenticated={memberMode}
         isLoading={isDirectoryLoading}
         onLoadMore={() => void loadMoreStores()}
         onQueryChange={setDirectoryQuery}
@@ -5259,12 +5626,15 @@ function MarketplaceImageViewer({
           <span className="marketplace-viewer-counter">
             {index + 1} of {images.length}
           </span>
+          {deal.soldOut && <span className="deal-stock-badge marketplace-viewer-stock">Sold out</span>}
         </div>
 
         <footer className="marketplace-viewer-foot">
           <div>
             {deal.priceText && <strong>{deal.priceText}</strong>}
-            {deal.savingText && <span>{deal.savingText}</span>}
+            {deal.soldOut
+              ? <span className="deal-stock-badge">Sold out</span>
+              : deal.savingText && <span>{deal.savingText}</span>}
           </div>
           <a
             className="primary-button marketplace-viewer-product"
@@ -5316,7 +5686,15 @@ function DiscoveryPanel({
 }) {
   const discovery = state.data.discovery
   const allDeals = sortDealsByPage(discovery.deals)
-  const leaflets = discovery.leaflets ?? []
+  const leaflets = selectCurrentCatalogues(discovery.leaflets ?? [])
+  const access = discovery.access
+  const accessIsLimited = Boolean(
+    access &&
+    (
+      access.availableDealCount > access.dealLimit ||
+      access.availableCatalogueCount > access.catalogueLimit
+    ),
+  )
   const [dealQuery, setDealQuery] = useState(initialFilter?.query ?? '')
   const [watchNotice, setWatchNotice] = useState('')
   const [isWatching, setIsWatching] = useState(false)
@@ -5344,28 +5722,26 @@ function DiscoveryPanel({
   const [sourceLabel, setSourceLabel] = useState('all')
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
+  const [hideSoldOut, setHideSoldOut] = useState(false)
   const [category, setCategory] = useState<DealCategory | 'all'>('all')
   const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
-  const [activeTab, setActiveTab] = useState<'deals' | 'catalogues'>('deals')
+  const sharedCatalogueId = typeof window === 'undefined'
+    ? undefined
+    : new URLSearchParams(window.location.search).get('catalogue') ?? undefined
+  const [activeTab, setActiveTab] = useState<'deals' | 'catalogues'>(
+    sharedCatalogueId ? 'catalogues' : 'deals',
+  )
   const deals = filterDiscoveryDeals(allDeals, {
     category,
     foodSubcategory,
+    hideSoldOut,
     imagesOnly,
     query: dealQuery,
     retailerId,
     savingsOnly,
     sourceLabel,
   })
-  // Retailer picker rows: one entry per store that published a deal, in the
-  // order the feed lists them, carrying how many deals each store has.
-  const retailerDealCounts = new Map<string, number>()
-  for (const deal of allDeals) {
-    retailerDealCounts.set(deal.retailerId, (retailerDealCounts.get(deal.retailerId) ?? 0) + 1)
-  }
-  const retailers = Array.from(
-    new Map(allDeals.map((deal) => [deal.retailerId, deal.retailerName])),
-    ([id, name]) => ({ count: retailerDealCounts.get(id) ?? 0, id, name }),
-  )
+  const retailers = buildRetailerPickerOptions(allDeals, leaflets)
   const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
   const catalogueRetailerCount = new Set(
     leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
@@ -5391,7 +5767,16 @@ function DiscoveryPanel({
 
   useEffect(
     () => setPage(0),
-    [dealQuery, retailerId, sourceLabel, imagesOnly, savingsOnly, category, foodSubcategory],
+    [
+      dealQuery,
+      retailerId,
+      sourceLabel,
+      imagesOnly,
+      savingsOnly,
+      hideSoldOut,
+      category,
+      foodSubcategory,
+    ],
   )
 
   // When a Near-me store card sends a new filter, apply it and jump to Deals.
@@ -5420,6 +5805,18 @@ function DiscoveryPanel({
           </button>
         )}
       </div>
+
+      {access && accessIsLimited && (
+        <div className="marketplace-access-notice" role="status">
+          <Info aria-hidden="true" size={20} weight="bold" />
+          <span>
+            {memberPlanLabel(access.planId)} plan: up to {wholeNumber(access.dealLimit)} deals and{' '}
+            {wholeNumber(access.catalogueLimit)} catalogues.{' '}
+            {wholeNumber(access.availableDealCount)} deals and{' '}
+            {wholeNumber(access.availableCatalogueCount)} catalogues are available.
+          </span>
+        </div>
+      )}
 
       {state.status === 'loading' && <LoadingStrip label="Checking official deal pages" />}
       {state.status === 'error' && <div className="write-notice" role="status">{state.message}</div>}
@@ -5463,6 +5860,7 @@ function DiscoveryPanel({
                 labelId="deal-retailer-filter-label"
                 onChange={setRetailerId}
                 options={retailers}
+                totalCatalogueCount={leaflets.length}
                 totalCount={allDeals.length}
                 value={retailerId}
               />
@@ -5481,6 +5879,10 @@ function DiscoveryPanel({
             <label className="deal-filter-check">
               <input checked={savingsOnly} onChange={(event) => setSavingsOnly(event.target.checked)} type="checkbox" />
               Shows savings
+            </label>
+            <label className="deal-filter-check">
+              <input checked={hideSoldOut} onChange={(event) => setHideSoldOut(event.target.checked)} type="checkbox" />
+              Hide sold out
             </label>
           </div>
         </details>
@@ -5552,6 +5954,7 @@ function DiscoveryPanel({
                       referrerPolicy="no-referrer"
                       src={deal.imageUrl}
                     />
+                    {deal.soldOut && <span className="deal-stock-badge is-overlay">Sold out</span>}
                   </button>
                 )}
                 <div>
@@ -5566,13 +5969,19 @@ function DiscoveryPanel({
                   )}
                   <h3>{deal.title}</h3>
                   <div className="deal-price-line">
+                    {deal.unitText && (
+                      <span className="deal-price-qualifier">{deal.unitText}</span>
+                    )}
+                    {deal.soldOut && !deal.imageUrl && (
+                      <span className="deal-stock-badge">Sold out</span>
+                    )}
                     {deal.priceText && <strong>{deal.priceText}</strong>}
                     {meaningfulWasPrice(deal.previousPriceText, deal.priceText) && (
                       <span className="deal-was-price">
                         {meaningfulWasPrice(deal.previousPriceText, deal.priceText)}
                       </span>
                     )}
-                    {deal.savingText && <span>{deal.savingText}</span>}
+                    {!deal.soldOut && deal.savingText && <span>{deal.savingText}</span>}
                   </div>
                 </div>
               </div>
@@ -5606,12 +6015,16 @@ function DiscoveryPanel({
                 {onAddDealToBasket && (
                   <button
                     className="primary-button"
-                    disabled={savingDealUrl === deal.productUrl}
+                    disabled={deal.soldOut || savingDealUrl === deal.productUrl}
                     onClick={() => onAddDealToBasket(deal)}
                     type="button"
                   >
                     <ShoppingCart size={16} />
-                    {savingDealUrl === deal.productUrl ? 'Adding' : 'Add to basket'}
+                    {deal.soldOut
+                      ? 'Sold out'
+                      : savingDealUrl === deal.productUrl
+                        ? 'Adding'
+                        : 'Add to basket'}
                   </button>
                 )}
               </div>
@@ -5693,7 +6106,12 @@ function DiscoveryPanel({
       </>
       )}
 
-      {activeTab === 'catalogues' && <CatalogueGroupsBoard leaflets={leaflets} />}
+      {activeTab === 'catalogues' && (
+        <CatalogueGroupsBoard
+          initialCatalogueId={sharedCatalogueId}
+          leaflets={leaflets}
+        />
+      )}
 
       {previewDeal && (
         <MarketplaceImageViewer deal={previewDeal} onClose={() => setPreviewDeal(undefined)} />
@@ -5701,6 +6119,17 @@ function DiscoveryPanel({
 
     </section>
   )
+}
+
+function memberPlanLabel(planId: MemberPlanId): string {
+  if (planId === 'organization') return 'Organisation'
+  if (planId === 'household') return 'Household'
+  if (planId === 'scout') return 'Scout'
+  return 'Free'
+}
+
+function wholeNumber(value: number): string {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
 }
 
 function OffersPanel({

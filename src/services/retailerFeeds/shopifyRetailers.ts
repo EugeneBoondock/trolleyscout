@@ -30,6 +30,11 @@ export const MAX_SHOPIFY_RETAILER_PAGES = 4
 
 export const SHOPIFY_RETAILERS: readonly ShopifyRetailer[] = [
   {
+    host: 'www.bathu.co.za',
+    name: 'Bathu',
+    retailerId: retailerSlug('bathu'),
+  },
+  {
     host: 'www.edgars.co.za',
     name: 'Edgars',
     retailerId: retailerSlug('edgars'),

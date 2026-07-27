@@ -26,7 +26,10 @@ import type {
   SubscriptionResponse,
 } from '../api/contracts'
 import type {
+  AdminAnalyticsReport,
   AdminOverview,
+  SupportChatAnswer,
+  SupportChatTurn,
   Basket,
   BasketItemDraft,
   BasketQuantityDraft,
@@ -1069,6 +1072,7 @@ export interface NearbyStoreResult {
     priceText?: string
     previousPriceText?: string
     savingText?: string
+    soldOut?: boolean
     sourceUrl: string
     productUrl?: string
     imageUrl?: string
@@ -1777,6 +1781,95 @@ export async function setMemberPlan(accountId: string, planId: string, countryCo
     }
   } catch {
     return { message: 'Admin API unavailable.', ok: false }
+  }
+}
+
+// Admin-only: close or reopen a member account. Banning also signs the member
+// out of every device server-side.
+export async function setMemberBanned(
+  accountId: string,
+  banned: boolean,
+  options: { countryCode?: string; reason?: string } = {},
+) {
+  try {
+    const response = await fetch('/api/admin', {
+      body: JSON.stringify({
+        action: 'set_member_banned',
+        accountId,
+        banned,
+        countryCode: options.countryCode ?? 'ZA',
+        reason: options.reason,
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { account?: MemberAccount; accounts?: MemberAccount[]; message?: string }
+    }
+    return {
+      account: envelope.data?.account,
+      accounts: envelope.data?.accounts,
+      message:
+        envelope.data?.message ??
+        (response.ok ? 'Account updated.' : 'Could not update that account.'),
+      ok: response.ok,
+    }
+  } catch {
+    return { message: 'Admin API unavailable.', ok: false }
+  }
+}
+
+// Admin-only: member analytics from our own database plus Cloudflare zone
+// traffic when a read token is configured.
+export async function loadAdminAnalytics(
+  countryCode: string,
+  windowDays = 30,
+  signal?: AbortSignal,
+): Promise<{ data?: AdminAnalyticsReport; message: string; ok: boolean }> {
+  try {
+    const response = await fetch(
+      `/api/admin/analytics?country=${encodeURIComponent(countryCode)}&days=${windowDays}`,
+      { signal },
+    )
+    const envelope = (await response.json()) as {
+      data?: AdminAnalyticsReport & { message?: string }
+    }
+    if (!response.ok || !envelope.data?.members) {
+      return { message: envelope.data?.message ?? 'Analytics are not available.', ok: false }
+    }
+    return { data: envelope.data, message: '', ok: true }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
+    return { message: 'Analytics are not available.', ok: false }
+  }
+}
+
+// Members only: the AI help chat. It answers, and once it understands the
+// issue it files a brief into the admin's support queue.
+export async function sendSupportChat(
+  message: string,
+  history: SupportChatTurn[],
+): Promise<{ answer?: SupportChatAnswer; message: string; ok: boolean }> {
+  try {
+    const response = await fetch('/api/support-chat', {
+      body: JSON.stringify({ history, message }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { answer?: SupportChatAnswer; message?: string }
+    }
+    if (!response.ok || !envelope.data?.answer) {
+      return {
+        message: envelope.data?.message ?? 'The help chat could not answer. Use the form below.',
+        ok: false,
+      }
+    }
+    return { answer: envelope.data.answer, message: '', ok: true }
+  } catch {
+    return { message: 'The help chat is unavailable. Use the form below.', ok: false }
   }
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../saved_addresses_store.dart';
 import '../catalogue_sort.dart';
+import '../favourite_stores_store.dart';
 import '../store_grouping.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
@@ -27,8 +28,10 @@ class _StoresScreenState extends State<StoresScreen> {
   late Future<_StoresData> _future;
   final _savedUrls = <String>{};
   final _addressesStore = SavedAddressesStore();
+  final _favouriteStore = FavouriteStoresStore();
+  List<FavouriteStore> _favourites = const [];
   String _query = '';
-  String _kind = 'all';
+  String _storeTab = 'all';
   bool _loadingMore = false;
 
   // Where the shopper is, taken from the address they most recently saved on
@@ -44,7 +47,9 @@ class _StoresScreenState extends State<StoresScreen> {
 
   Future<_StoresData> _load() async {
     final addresses = await _addressesStore.load();
+    final favourites = await _favouriteStore.load();
     _origin = addresses.isEmpty ? null : addresses.first;
+    _favourites = favourites;
 
     final results = await Future.wait<dynamic>([
       widget.api.retailers(),
@@ -127,6 +132,18 @@ class _StoresScreenState extends State<StoresScreen> {
     }
   }
 
+  bool _isFavourite(String id) =>
+      _favourites.any((favourite) => favourite.id == id);
+
+  Future<void> _toggleFavourite(StoreGroup group) async {
+    final next = await _favouriteStore.toggle(FavouriteStore(
+      id: group.id,
+      displayName: group.displayName,
+      savedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+    if (mounted) setState(() => _favourites = next);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<_StoresData>(
@@ -147,12 +164,13 @@ class _StoresScreenState extends State<StoresScreen> {
               retailer.name.toLowerCase().contains(_query) ||
               retailer.group.toLowerCase().contains(_query) ||
               retailer.program.toLowerCase().contains(_query);
-          final matchesKind = _kind == 'all' ||
-              retailer.sources.any((source) => source.kind == _kind);
-          return matchesQuery && matchesKind;
+          return matchesQuery;
         }).toList();
         final allDiscoveredGroups = groupNearbyStores(data.discovered.stores);
         final discovered = allDiscoveredGroups.where((group) {
+          if (_storeTab == 'favourites' && !_isFavourite(group.id)) {
+            return false;
+          }
           if (_query.isEmpty) return true;
           return group.displayName.toLowerCase().contains(_query) ||
               group.branches.any((store) =>
@@ -187,17 +205,23 @@ class _StoresScreenState extends State<StoresScreen> {
                       ),
                       onChanged: _search,
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        for (final kind in ['all', ...catalog.sourceKinds])
-                          ChoiceChip(
-                            label: Text(_kindLabel(kind)),
-                            selected: _kind == kind,
-                            onSelected: (_) => setState(() => _kind = kind),
-                          ),
+                    const SizedBox(height: 16),
+                    SegmentedButton<String>(
+                      segments: [
+                        const ButtonSegment(
+                          value: 'all',
+                          label: Text('All stores'),
+                          icon: Icon(Icons.storefront_outlined),
+                        ),
+                        ButtonSegment(
+                          value: 'favourites',
+                          label: Text('Favourites ${_favourites.length}'),
+                          icon: const Icon(Icons.favorite_outline),
+                        ),
                       ],
+                      selected: {_storeTab},
+                      onSelectionChanged: (selection) =>
+                          setState(() => _storeTab = selection.first),
                     ),
                     const SizedBox(height: 16),
                     Text('Stores found near shoppers',
@@ -212,9 +236,13 @@ class _StoresScreenState extends State<StoresScreen> {
                     ),
                     const SizedBox(height: 10),
                     if (discovered.isEmpty)
-                      const EmptyCard(
-                        message: 'No discovered stores match this search yet.',
-                        icon: Icons.travel_explore_outlined,
+                      EmptyCard(
+                        message: _storeTab == 'favourites'
+                            ? 'No favourite stores yet.'
+                            : 'No discovered stores match this search yet.',
+                        icon: _storeTab == 'favourites'
+                            ? Icons.favorite_outline
+                            : Icons.travel_explore_outlined,
                       ),
                   ],
                 ),
@@ -228,6 +256,9 @@ class _StoresScreenState extends State<StoresScreen> {
                   itemBuilder: (context, index) => _DiscoveredGroupCard(
                     group: discovered[index],
                     api: widget.api,
+                    isFavourite: _isFavourite(discovered[index].id),
+                    onToggleFavourite: () =>
+                        _toggleFavourite(discovered[index]),
                   ),
                 ),
               ),
@@ -275,7 +306,6 @@ class _StoresScreenState extends State<StoresScreen> {
                   itemCount: retailers.length,
                   itemBuilder: (context, index) => _RetailerCard(
                     retailer: retailers[index],
-                    kind: _kind,
                     savedUrls: _savedUrls,
                     onSave: _save,
                   ),
@@ -290,10 +320,17 @@ class _StoresScreenState extends State<StoresScreen> {
 }
 
 class _DiscoveredGroupCard extends StatelessWidget {
-  const _DiscoveredGroupCard({required this.group, required this.api});
+  const _DiscoveredGroupCard({
+    required this.group,
+    required this.api,
+    required this.isFavourite,
+    required this.onToggleFavourite,
+  });
 
   final StoreGroup group;
   final Api api;
+  final bool isFavourite;
+  final VoidCallback onToggleFavourite;
 
   @override
   Widget build(BuildContext context) {
@@ -334,15 +371,23 @@ class _DiscoveredGroupCard extends StatelessWidget {
                   ],
                 ),
               ),
+              IconButton(
+                tooltip: isFavourite
+                    ? 'Remove ${group.displayName} from favourites'
+                    : 'Add ${group.displayName} to favourites',
+                onPressed: onToggleFavourite,
+                icon: Icon(
+                  isFavourite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavourite ? TS.redOf(context) : TS.mutedOf(context),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () => _showStoreGroup(context),
-            icon: const Icon(Icons.location_on_outlined),
-            label: Text(group.branches.length == 1
-                ? 'View location'
-                : 'View ${group.branches.length} locations'),
+            icon: const Icon(Icons.storefront_outlined),
+            label: const Text('Enter store'),
           ),
         ],
       ),
@@ -355,7 +400,9 @@ class _DiscoveredGroupCard extends StatelessWidget {
         isScrollControlled: true,
         useSafeArea: true,
         backgroundColor: TS.bgOf(context),
-        shape: const RoundedRectangleBorder(),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TS.controlRadius),
+        ),
         builder: (_) => FractionallySizedBox(
           heightFactor: 0.92,
           child: _StoreGroupSheet(group: group, api: api),
@@ -366,13 +413,11 @@ class _DiscoveredGroupCard extends StatelessWidget {
 class _RetailerCard extends StatelessWidget {
   const _RetailerCard({
     required this.retailer,
-    required this.kind,
     required this.savedUrls,
     required this.onSave,
   });
 
   final Retailer retailer;
-  final String kind;
   final Set<String> savedUrls;
   final Future<void> Function(Retailer, RetailerSource) onSave;
 
@@ -401,8 +446,7 @@ class _RetailerCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(retailer.sourceNote),
           const SizedBox(height: 10),
-          for (final source in retailer.sources
-              .where((source) => kind == 'all' || source.kind == kind))
+          for (final source in retailer.sources)
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.link),
@@ -564,7 +608,14 @@ class _BranchCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right),
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Enter store',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                Icon(Icons.chevron_right),
+              ],
+            ),
           ],
         ),
       ),
@@ -701,23 +752,110 @@ class _BranchDetailBody extends StatelessWidget {
           )
         else
           for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
-            PaperCard(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: _StoreLogo(
-                  imageUrl: catalogue.coverImageUrl,
-                  label: catalogue.name,
-                ),
-                title: Text(catalogue.name),
-                subtitle: catalogue.validTo == null
-                    ? null
-                    : Text('Valid until ${_shortDate(catalogue.validTo!)}'),
-                trailing: const Icon(Icons.menu_book_outlined),
-                onTap: () => showCatalogueReader(context, catalogue),
+            _CatalogueCard(catalogue: catalogue),
+      ],
+    );
+  }
+}
+
+class _CatalogueCard extends StatelessWidget {
+  const _CatalogueCard({required this.catalogue});
+
+  final Catalogue catalogue;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = catalogue.coverImageUrl;
+    final format = catalogue.pages.length > 1
+        ? '${catalogue.pages.length} pages'
+        : catalogue.pagesUrl != null
+            ? 'Multi-page catalogue'
+            : catalogue.isDirectPdf
+                ? 'Full PDF'
+                : catalogue.pages.length == 1
+                    ? '1 page'
+                    : 'Store catalogue';
+    final fallback = ColoredBox(
+      color: TS.surfaceSoftOf(context),
+      child: Center(
+        child: Icon(
+          Icons.menu_book_outlined,
+          color: TS.mutedOf(context),
+          size: 34,
+        ),
+      ),
+    );
+
+    return InkWell(
+      onTap: () => showCatalogueReader(context, catalogue),
+      child: PaperCard(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 86,
+              height: 116,
+              child: cover == null
+                  ? fallback
+                  : Image.network(
+                      cover,
+                      fit: BoxFit.contain,
+                      cacheWidth: 258,
+                      errorBuilder: (_, __, ___) => fallback,
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    catalogue.name,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(format, style: TS.eyebrowOf(context)),
+                  if (catalogue.validTo != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'Valid until ${_shortDate(catalogue.validTo!)}',
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Text(
+                        'Read catalogue',
+                        style: TextStyle(
+                          color: TS.redOf(context),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward,
+                        color: TS.redOf(context),
+                        size: 17,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-      ],
+          ],
+        ),
+      ),
     );
   }
 }

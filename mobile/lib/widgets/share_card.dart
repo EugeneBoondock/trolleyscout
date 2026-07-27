@@ -45,7 +45,8 @@ class ShareCardData {
 
   /// A grocery special or discovery find. [imageUrl] overrides the deal's own
   /// cover for feeds that carry a richer gallery.
-  factory ShareCardData.fromDeal(Deal deal, {String? imageUrl}) => ShareCardData(
+  factory ShareCardData.fromDeal(Deal deal, {String? imageUrl}) =>
+      ShareCardData(
         eyebrow: 'DEAL',
         title: deal.title,
         sourceName: deal.retailerName,
@@ -65,10 +66,34 @@ class ShareCardData {
 
   /// A Window Shopping find — the reel keeps its gallery separate from the
   /// single cover image, so take the first frame of whichever it has.
-  factory ShareCardData.fromScrollDeal(ScrollDeal deal) => ShareCardData.fromDeal(
+  factory ShareCardData.fromScrollDeal(ScrollDeal deal) =>
+      ShareCardData.fromDeal(
         deal.toDeal(),
         imageUrl: deal.hasImage ? deal.gallery.first : null,
       );
+
+  factory ShareCardData.fromCatalogue(Catalogue catalogue) {
+    final parameters = <String, String>{
+      if (catalogue.id?.trim().isNotEmpty == true)
+        'catalogue': catalogue.id!.trim(),
+      if (catalogue.retailerId?.trim().isNotEmpty == true)
+        'retailer': catalogue.retailerId!.trim(),
+    };
+    final link =
+        Uri.https('trolleyscout.co.za', '/deals', parameters).toString();
+    return ShareCardData(
+      eyebrow: 'CATALOGUE',
+      title: catalogue.name,
+      sourceName: catalogue.retailerName ?? 'Trolley Scout',
+      badgeText:
+          catalogue.validTo == null ? null : 'Valid until ${catalogue.validTo}',
+      imageUrl: catalogue.coverImageUrl,
+      link: link,
+      fallbackIcon: Icons.menu_book_outlined,
+      noun: 'catalogue',
+      sourcePreposition: 'from',
+    );
+  }
 
   /// A Properties Scout listing. Homes are photographed, not cut out, so the
   /// artwork fills its frame instead of sitting on a plate.
@@ -154,7 +179,9 @@ class ShareCardData {
     if (trimmed == null) return null;
     final uri = Uri.tryParse(trimmed);
     if (uri == null || uri.host.isEmpty) return null;
-    return uri.scheme == 'https' || uri.scheme == 'http' ? uri.toString() : null;
+    return uri.scheme == 'https' || uri.scheme == 'http'
+        ? uri.toString()
+        : null;
   }
 
   static String? _propertyPlace(PropertyListing listing) {
@@ -171,8 +198,7 @@ class ShareCardData {
     final baths = listing.bathrooms;
     final parts = [
       if (listing.bedrooms != null) '${listing.bedrooms} bed',
-      if (baths != null)
-        '${baths % 1 == 0 ? baths.toInt() : baths} bath',
+      if (baths != null) '${baths % 1 == 0 ? baths.toInt() : baths} bath',
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }
@@ -378,7 +404,7 @@ class _ShareCardSheetState extends State<_ShareCardSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: TS.lineSoftOf(context),
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
             ),

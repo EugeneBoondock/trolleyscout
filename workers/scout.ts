@@ -9,6 +9,7 @@ import {
   snapshotDealAlertKeys,
 } from '../functions/_shared/dealAlertStore'
 import { refreshDealSites } from '../functions/_shared/dealSiteScout'
+import { saveLeafletSnapshot } from '../functions/_shared/dealSnapshotStore'
 import {
   readSourceHealth,
   recordSourceHealth,
@@ -78,6 +79,7 @@ export interface ScheduledScoutDependencies {
   runCatalogueScout: typeof runCatalogueScout
   runStructuredRetailerFeedScout: typeof runStructuredRetailerFeedScout
   runVoucherScout?: typeof runVoucherScout
+  saveLeafletSnapshot?: typeof saveLeafletSnapshot
   scoutNearbyStores: typeof scoutNearbyStores
   snapshotDealAlertKeys?: typeof snapshotDealAlertKeys
 }
@@ -112,6 +114,7 @@ const defaultDependencies: ScheduledScoutDependencies = {
   runCatalogueScout,
   runStructuredRetailerFeedScout,
   runVoucherScout,
+  saveLeafletSnapshot,
   scoutNearbyStores,
   snapshotDealAlertKeys,
 }
@@ -164,6 +167,17 @@ export async function runScheduledScout(
   }
   const nowMs = Date.now()
   const nowIso = new Date(nowMs).toISOString()
+
+  const publicCatalogueLeaflets = dedupeCatalogueLeaflets([
+    ...structured.catalogues,
+    ...(discovery?.leaflets ?? []),
+  ])
+  if (structured.catalogues.length > 0) {
+    await (
+      dependencies.saveLeafletSnapshot ?? saveLeafletSnapshot
+    )(env, publicCatalogueLeaflets, nowIso).catch(() => undefined)
+  }
+
   let dueStores: Awaited<ReturnType<typeof readDueDiscoveredStores>> = []
   let storeScoutFailed = false
   if (refreshDealSources) {
@@ -202,8 +216,7 @@ export async function runScheduledScout(
     )
   }
   const catalogueLeaflets = dedupeCatalogueLeaflets([
-    ...structured.catalogues,
-    ...(discovery?.leaflets ?? []),
+    ...publicCatalogueLeaflets,
     ...storePromotionsToLeaflets(discoveredStoreCatalogues, nowIso),
   ])
   let catalogue: CatalogueScoutResult = {

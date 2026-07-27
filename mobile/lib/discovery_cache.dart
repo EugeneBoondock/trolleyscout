@@ -12,6 +12,14 @@ class CachedDiscovery {
 
   Set<String> get dealIds =>
       result.deals.map((deal) => deal.id).where((id) => id.isNotEmpty).toSet();
+
+  bool isFresh(
+    DateTime now, {
+    Duration maxAge = const Duration(hours: 3),
+  }) {
+    final age = now.toUtc().difference(fetchedAt.toUtc());
+    return !age.isNegative && age <= maxAge;
+  }
 }
 
 /// Last successful Find-deals payload, kept on-device so reopening the screen
@@ -46,7 +54,7 @@ class DiscoveryCache {
     DateTime fetchedAt, [
     String countryCode = 'ZA',
   ]) async {
-    if (result.deals.isEmpty) return;
+    if (result.deals.isEmpty && result.catalogues.isEmpty) return;
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api_models.dart';
+import '../retailer_identity.dart';
 import '../theme.dart';
 import '../ux.dart';
 import 'scout_mascot.dart';
@@ -19,20 +20,34 @@ class RetailerOption {
     required this.id,
     required this.name,
     required this.dealCount,
+    this.catalogueCount = 0,
   }) : searchKey = foldStoreName(name);
 
   final String id;
   final String name;
   final int dealCount;
+  final int catalogueCount;
 
   /// The folded name, computed once at build time so filtering a few hundred
   /// stores per keystroke stays a plain substring scan.
   final String searchKey;
 
-  String get dealCountLabel => _dealCountLabel(dealCount);
+  int get contentCount => dealCount + catalogueCount;
+
+  String get dealCountLabel {
+    if (dealCount > 0 && catalogueCount > 0) {
+      return '${_dealCountLabel(dealCount)} · '
+          '${_catalogueCountLabel(catalogueCount)}';
+    }
+    if (dealCount > 0) return _dealCountLabel(dealCount);
+    if (catalogueCount > 0) return _catalogueCountLabel(catalogueCount);
+    return 'No current offers';
+  }
 }
 
 String _dealCountLabel(int count) => '$count deal${count == 1 ? '' : 's'}';
+String _catalogueCountLabel(int count) =>
+    '$count catalogue${count == 1 ? '' : 's'}';
 
 /// Builds the picker's store list from the deals already on screen, plus every
 /// shop we scout, whether or not it has anything on today.
@@ -47,22 +62,52 @@ String _dealCountLabel(int count) => '$count deal${count == 1 ? '' : 's'}';
 List<RetailerOption> retailerOptionsFromDeals(
   Iterable<Deal> deals, {
   Iterable<Retailer> catalog = const [],
+  Iterable<Catalogue> catalogues = const [],
 }) {
   final names = <String, String>{};
   final counts = <String, int>{};
+  final catalogueCounts = <String, int>{};
+  final catalogById = <String, Retailer>{};
+  final catalogNameIds = <String, String>{};
+
+  for (final retailer in catalog) {
+    if (retailer.name.trim().isEmpty) continue;
+    catalogById[retailer.id] = retailer;
+    names[retailer.id] = retailer.name;
+    counts[retailer.id] = 0;
+    catalogueCounts[retailer.id] = 0;
+    for (final value in [retailer.name, retailer.shortName]) {
+      final key = retailerNameKey(value);
+      if (key.isNotEmpty) catalogNameIds[key] = retailer.id;
+    }
+  }
 
   for (final deal in deals) {
     if (deal.retailerName.trim().isEmpty) continue;
-    names[deal.retailerId] = deal.retailerName;
-    counts[deal.retailerId] = (counts[deal.retailerId] ?? 0) + 1;
+    final retailerId = canonicalRetailerId(deal.retailerId, deal.retailerName);
+    if (retailerId.isEmpty) continue;
+    if (retailerId == deal.retailerId || !catalogById.containsKey(retailerId)) {
+      names[retailerId] = deal.retailerName;
+    }
+    counts[retailerId] = (counts[retailerId] ?? 0) + 1;
+    catalogueCounts.putIfAbsent(retailerId, () => 0);
   }
 
-  // The name a deal carries wins: it is what the shopper will read on the card
-  // beside it, so the two must agree.
-  for (final retailer in catalog) {
-    if (retailer.name.trim().isEmpty) continue;
-    names.putIfAbsent(retailer.id, () => retailer.name);
-    counts.putIfAbsent(retailer.id, () => 0);
+  for (final catalogue in catalogues) {
+    final retailerName = catalogue.retailerName?.trim() ?? '';
+    final suppliedRetailerId = catalogue.retailerId?.trim() ?? '';
+    if (retailerName.isEmpty && suppliedRetailerId.isEmpty) continue;
+    var retailerId = canonicalRetailerId(suppliedRetailerId, retailerName);
+    if (retailerId.isEmpty || !catalogById.containsKey(retailerId)) {
+      retailerId = catalogNameIds[retailerNameKey(retailerName)] ?? retailerId;
+    }
+    if (retailerId.isEmpty) continue;
+    names.putIfAbsent(
+      retailerId,
+      () => catalogById[retailerId]?.name ?? retailerName,
+    );
+    counts.putIfAbsent(retailerId, () => 0);
+    catalogueCounts[retailerId] = (catalogueCounts[retailerId] ?? 0) + 1;
   }
 
   return [
@@ -71,6 +116,7 @@ List<RetailerOption> retailerOptionsFromDeals(
         id: entry.key,
         name: entry.value,
         dealCount: counts[entry.key] ?? 0,
+        catalogueCount: catalogueCounts[entry.key] ?? 0,
       ),
   ]..sort((a, b) => a.searchKey.compareTo(b.searchKey));
 }
@@ -89,23 +135,66 @@ String foldStoreName(String value) {
 /// Latin accents seen in South African and regional store names, folded to
 /// their plain letters. Anything outside this map passes through untouched.
 const _diacriticFolds = <String, String>{
-  'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a', 'ā': 'a',
-  'ă': 'a', 'ą': 'a', 'æ': 'ae',
-  'ç': 'c', 'ć': 'c', 'č': 'c',
-  'ď': 'd', 'đ': 'd',
-  'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e', 'ē': 'e', 'ė': 'e', 'ę': 'e',
+  'à': 'a',
+  'á': 'a',
+  'â': 'a',
+  'ã': 'a',
+  'ä': 'a',
+  'å': 'a',
+  'ā': 'a',
+  'ă': 'a',
+  'ą': 'a',
+  'æ': 'ae',
+  'ç': 'c',
+  'ć': 'c',
+  'č': 'c',
+  'ď': 'd',
+  'đ': 'd',
+  'è': 'e',
+  'é': 'e',
+  'ê': 'e',
+  'ë': 'e',
+  'ē': 'e',
+  'ė': 'e',
+  'ę': 'e',
   'ě': 'e',
-  'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i', 'ī': 'i', 'į': 'i',
+  'ì': 'i',
+  'í': 'i',
+  'î': 'i',
+  'ï': 'i',
+  'ī': 'i',
+  'į': 'i',
   'ł': 'l',
-  'ñ': 'n', 'ń': 'n', 'ň': 'n',
-  'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ø': 'o', 'ō': 'o',
-  'ő': 'o', 'œ': 'oe',
+  'ñ': 'n',
+  'ń': 'n',
+  'ň': 'n',
+  'ò': 'o',
+  'ó': 'o',
+  'ô': 'o',
+  'õ': 'o',
+  'ö': 'o',
+  'ø': 'o',
+  'ō': 'o',
+  'ő': 'o',
+  'œ': 'oe',
   'ř': 'r',
-  'ś': 's', 'š': 's', 'ß': 'ss',
-  'ť': 't', 'þ': 'th',
-  'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u', 'ū': 'u', 'ů': 'u', 'ű': 'u',
-  'ý': 'y', 'ÿ': 'y',
-  'ź': 'z', 'ż': 'z', 'ž': 'z',
+  'ś': 's',
+  'š': 's',
+  'ß': 'ss',
+  'ť': 't',
+  'þ': 'th',
+  'ù': 'u',
+  'ú': 'u',
+  'û': 'u',
+  'ü': 'u',
+  'ū': 'u',
+  'ů': 'u',
+  'ű': 'u',
+  'ý': 'y',
+  'ÿ': 'y',
+  'ź': 'z',
+  'ż': 'z',
+  'ž': 'z',
 };
 
 /// Substring match on the folded store name. An empty (or punctuation-only)
@@ -363,8 +452,7 @@ class _RetailerPickerSheetState extends State<_RetailerPickerSheet> {
   }
 
   static double _headerExtent(BuildContext context) =>
-      (MediaQuery.textScalerOf(context).scale(12) * 1.4 + 16)
-          .clamp(32.0, 96.0);
+      (MediaQuery.textScalerOf(context).scale(12) * 1.4 + 16).clamp(32.0, 96.0);
 
   static double _rowExtent(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);

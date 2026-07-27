@@ -1,4 +1,5 @@
 import type { Retailer } from '../types'
+import { cataloguePlatformRetailers } from './cataloguePlatformRetailers'
 
 export const sourceVerifiedOn = '2026-07-23'
 
@@ -953,6 +954,7 @@ export const retailers: Retailer[] = [
       },
     ],
   },
+  ...cataloguePlatformRetailers,
 ]
 
 export const retailerById = new Map(retailers.map((retailer) => [retailer.id, retailer]))

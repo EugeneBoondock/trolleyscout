@@ -179,6 +179,16 @@ class Api {
     }
   }
 
+  /// Restores country and currency before a background worker chooses a
+  /// country-scoped cache. This is local-only, so a notification check does
+  /// not add another network request before its alert inbox request.
+  Future<void> restoreCachedMemberContext() async {
+    final cached = await _readCachedSession();
+    if (cached == null) return;
+    _memberCountryCode = cached.account?.countryCode;
+    _memberCurrencyCode = cached.account?.currencyCode;
+  }
+
   Future<MemberSession> authenticate(AuthDraft draft) async {
     final data =
         await _request('POST', '/api/member-session', body: draft.toJson());
@@ -634,6 +644,22 @@ class Api {
         : 'Thanks — your message has reached the team.';
   }
 
+  /// The AI help chat behind About & help. Signed-in only: the report is filed
+  /// against the member's own account, so nothing is asked for twice. Once the
+  /// chat understands the issue it files a brief for the admin.
+  Future<SupportChatAnswer> supportChat({
+    required String message,
+    List<({String role, String text})> history = const [],
+  }) async {
+    final data = await _request('POST', '/api/support-chat', body: {
+      'message': message,
+      'history': [
+        for (final turn in history) {'role': turn.role, 'text': turn.text},
+      ],
+    });
+    return SupportChatAnswer.fromJson(data);
+  }
+
   /// Admin: mark a support message open/resolved. Returns the refreshed
   /// console overview.
   Future<AdminOverview> setSupportMessageStatus(
@@ -659,6 +685,34 @@ class Api {
       },
     );
     return MemberAccount.fromJson(_map(data['account']));
+  }
+
+  /// Closes or reopens a member account. Banning signs them out of every
+  /// device server-side and blocks the next sign-in. Admin only.
+  Future<MemberAccount> setMemberBanned(
+    String accountId,
+    bool banned, {
+    String? reason,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/api/admin',
+      body: {
+        'action': 'set_member_banned',
+        'accountId': accountId,
+        'banned': banned,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    return MemberAccount.fromJson(_map(data['account']));
+  }
+
+  /// Admin analytics: member numbers from our own database plus Cloudflare
+  /// zone traffic when a read token is configured on the server.
+  Future<AdminAnalyticsReport> adminAnalytics({int windowDays = 30}) async {
+    return AdminAnalyticsReport.fromJson(
+      await _request('GET', '/api/admin/analytics?days=$windowDays'),
+    );
   }
 
   /// Properties Scout — searches Property24 and Private Property for homes to
@@ -928,6 +982,22 @@ class Api {
     final suffix = after == null ? '' : '?after=$after';
     final data = await _request('GET', '/api/deal-alerts$suffix');
     return DealAlertSummary.fromJson(data);
+  }
+
+  Future<ScoutChatAnswer> scoutChat(
+    String message,
+    List<ScoutChatTurn> history,
+  ) async {
+    final data = await _request(
+      'POST',
+      '/api/scout-chat',
+      body: {
+        'message': message,
+        'history': history.map((turn) => turn.toJson()).toList(growable: false),
+      },
+      timeout: const Duration(seconds: 35),
+    );
+    return ScoutChatAnswer.fromJson(_map(data['answer']));
   }
 
   Future<Map<String, dynamic>> _request(

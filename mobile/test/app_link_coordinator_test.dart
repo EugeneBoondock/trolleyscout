@@ -4,7 +4,9 @@ import 'package:trolley_scout/app_link_coordinator.dart';
 void main() {
   test('maps trusted app links to supported destinations and filters', () {
     final custom = parseAppLink(
-      Uri.parse('trolleyscout://deals?q=milk&retailer=checkers'),
+      Uri.parse(
+        'trolleyscout://deals?q=milk&retailer=checkers&catalogue=latest-specials-123',
+      ),
     );
     final website = parseAppLink(
       Uri.parse('https://trolleyscout.co.za/near-me'),
@@ -13,6 +15,7 @@ void main() {
     expect(custom?.destination, 'deals');
     expect(custom?.query, 'milk');
     expect(custom?.retailerId, 'checkers');
+    expect(custom?.catalogueId, 'latest-specials-123');
     expect(website?.destination, 'near');
   });
 

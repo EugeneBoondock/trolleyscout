@@ -4,6 +4,10 @@ import {
   getOnlineStoreSources,
 } from '../../src/services/onlineStoreRegistry'
 import {
+  getNetworkProviderCountryCodes,
+  getNetworkProviderSources,
+} from '../../src/services/networkProviderRegistry'
+import {
   getSadcCountryCodes,
   getSadcRetailSources,
 } from '../../src/services/sadcSourceRegistry'
@@ -28,7 +32,18 @@ export function buildRegistryOnlineStores(
     const seen = new Set<string>()
     const stores: NearbyStore[] = []
 
-    const sources = [
+    const sources: Array<{
+      name: string
+      retailerId?: NearbyStore['retailerId']
+      sourceCategory?: NearbyStore['sourceCategory']
+      url: string
+    }> = [
+      ...getNetworkProviderSources(code).map((source) => ({
+        name: source.name,
+        retailerId: source.retailerId,
+        sourceCategory: 'network-provider' as const,
+        url: source.url,
+      })),
       ...getSadcRetailSources(code).map((source) => ({
         name: source.retailerName,
         url: source.url,
@@ -52,6 +67,8 @@ export function buildRegistryOnlineStores(
         lon: 0,
         name: source.name,
         placeId: `online:${country.code.toLowerCase()}:${host}`,
+        retailerId: source.retailerId,
+        sourceCategory: source.sourceCategory,
         website: source.url,
         // Verify the page as a directory-matched chain page, not a branch, so a
         // national storefront is accepted without a branch address.
@@ -79,7 +96,13 @@ export function buildRegistryOnlineStores(
 }
 
 function allRegisteredCountryCodes(): string[] {
-  return [...new Set([...getSadcCountryCodes(), ...getOnlineStoreCountryCodes()])]
+  return [
+    ...new Set([
+      ...getSadcCountryCodes(),
+      ...getOnlineStoreCountryCodes(),
+      ...getNetworkProviderCountryCodes(),
+    ]),
+  ]
 }
 
 function safeHost(value: string): string | undefined {

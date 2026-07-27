@@ -78,6 +78,7 @@ it('shows manual refresh to admins and requests a forced refresh when clicked', 
             planName: 'Household',
             planStatus: 'active',
             propertiesAccess: true,
+            status: 'active' as const,
             role: 'admin',
             updatedAt: '2026-07-01T10:00:00.000Z',
           },
@@ -107,6 +108,61 @@ it('shows manual refresh to admins and requests a forced refresh when clicked', 
   })
 })
 
+it('explains when a Free member reaches the marketplace viewing allowance', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({
+        session: {
+          isAuthenticated: true,
+          account: {
+            createdAt: '2026-07-01T10:00:00.000Z',
+            displayName: 'Free Shopper',
+            email: 'free@example.com',
+            id: 'free-1',
+            initials: 'FS',
+            planId: 'free',
+            planName: 'Free',
+            planStatus: 'active',
+            propertiesAccess: false,
+            status: 'active' as const,
+            role: 'member',
+            updatedAt: '2026-07-01T10:00:00.000Z',
+          },
+        },
+      })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        access: {
+          availableCatalogueCount: 72,
+          availableDealCount: 12_000,
+          catalogueLimit: 50,
+          dealLimit: 10_000,
+          planId: 'free',
+        },
+        summary: {
+          ...emptyDiscovery.summary,
+          foundDealCount: 12_000,
+          leafletCount: 72,
+        },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+
+  const navigation = await screen.findByRole('navigation', { name: 'Member navigation' })
+  fireEvent.click(within(navigation).getByRole('button', { name: 'Marketplace' }))
+
+  expect(await screen.findByText(
+    'Free plan: up to 10,000 deals and 50 catalogues. ' +
+    '12,000 deals and 72 catalogues are available.',
+  )).toBeTruthy()
+})
+
 it('shows matching image cards for today savings and saved deals', async () => {
   const deal = {
     capturedAt: '2026-07-23T10:00:00.000Z',
@@ -122,9 +178,22 @@ it('shows matching image cards for today savings and saved deals', async () => {
     productUrl: 'https://example.test/coffee',
     retailerId: 'checkers',
     retailerName: 'Checkers',
+    soldOut: true,
     sourceLabel: 'Official specials',
     sourceUrl: 'https://example.test/specials',
     title: 'Ground coffee 250g',
+  }
+  const bidDeal = {
+    ...deal,
+    id: 'bobshop-bid',
+    imageUrl: 'https://images.example.test/camera.png',
+    images: ['https://images.example.test/camera.png'],
+    productUrl: 'https://www.bobshop.co.za/camera/p/1',
+    retailerId: 'bobshop',
+    retailerName: 'Bob Shop',
+    soldOut: undefined,
+    title: 'Camera auction',
+    unitText: 'Current bid',
   }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input)
@@ -142,6 +211,7 @@ it('shows matching image cards for today savings and saved deals', async () => {
             planName: 'Household',
             planStatus: 'active',
             propertiesAccess: true,
+            status: 'active' as const,
             role: 'member',
             updatedAt: '2026-07-01T10:00:00.000Z',
           },
@@ -151,10 +221,10 @@ it('shows matching image cards for today savings and saved deals', async () => {
     if (path.startsWith('/api/discovery')) {
       return envelope({
         ...emptyDiscovery,
-        deals: [deal],
+        deals: [deal, bidDeal],
         summary: {
           ...emptyDiscovery.summary,
-          foundDealCount: 1,
+          foundDealCount: 2,
         },
       })
     }
@@ -180,16 +250,32 @@ it('shows matching image cards for today savings and saved deals', async () => {
   expect(savedCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
   expect(savingsCard).toBeTruthy()
   expect(savedCard).toBeTruthy()
+  expect(savingsCard?.textContent).toContain('Sold out')
+  expect(savedCard?.textContent).toContain('Sold out')
 
-  fireEvent.click(screen.getByRole('button', { name: 'Marketplace' }))
+  fireEvent.click(
+    within(screen.getByRole('navigation', { name: 'Member navigation' }))
+      .getByRole('button', { name: 'Marketplace' }),
+  )
+  const soldOutBasketButton = await screen.findByRole('button', { name: 'Sold out' })
+  expect(soldOutBasketButton).toHaveProperty('disabled', true)
+  expect(screen.getByText('Current bid')).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: 'View images for Ground coffee 250g' }))
   const viewer = screen.getByRole('dialog', { name: 'Ground coffee 250g images' })
   expect(within(viewer).getByText('1 of 2')).toBeTruthy()
+  expect(within(viewer).getAllByText('Sold out').length).toBeGreaterThan(0)
   fireEvent.click(within(viewer).getByRole('button', { name: 'Next image' }))
   expect(within(viewer).getByText('2 of 2')).toBeTruthy()
   expect(within(viewer).getByRole('link', { name: 'View product' }).getAttribute('href')).toContain(
     'https://example.test/coffee',
   )
+  fireEvent.click(within(viewer).getByRole('button', { name: 'Close product images' }))
+
+  fireEvent.click(screen.getByText('Advanced filters'))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Hide sold out' }))
+  await waitFor(() => {
+    expect(screen.queryByRole('button', { name: 'Sold out' })).toBeNull()
+  })
 })
 
 function envelope(data: unknown) {

@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   changeBusinessPublication: vi.fn(),
   createBusinessLocation: vi.fn(),
   createBusinessPublication: vi.fn(),
+  loadBusinessAdminOverview: vi.fn(),
   loadBusinessBootstrap: vi.fn(),
+  setBusinessOrganizationStatus: vi.fn(),
   signInBusiness: vi.fn(),
   signOutBusiness: vi.fn(),
   updateBusinessPublication: vi.fn(),
@@ -75,9 +77,77 @@ const activeBootstrap = {
   session: { account, isAuthenticated: true },
 }
 
+const adminOverview = {
+  businesses: [{
+    activeCampaigns: 1,
+    campaigns: 4,
+    completedCampaigns: 2,
+    createdAt: '2026-07-01T08:00:00.000Z',
+    id: 'org-1',
+    impressions: 820,
+    locations: 1,
+    name: 'Fresh Market',
+    opens: 94,
+    ownerName: 'Thandi Nkosi',
+    paidCents: 149900,
+    paidTransactions: 1,
+    planId: 'organization',
+    planStatus: 'active',
+    saves: 67,
+    slug: 'fresh-market',
+    status: 'active',
+    updatedAt: '2026-07-26T08:00:00.000Z',
+    visits: 31,
+  }],
+  campaigns: [{
+    createdAt: '2026-07-26T08:00:00.000Z',
+    id: 'pub-1',
+    impressions: 820,
+    kind: 'deal',
+    opens: 94,
+    organizationId: 'org-1',
+    organizationName: 'Fresh Market',
+    placement: 'both',
+    saves: 67,
+    soldOut: false,
+    status: 'live',
+    title: 'Weekend potatoes',
+    updatedAt: '2026-07-26T08:00:00.000Z',
+    visits: 31,
+  }],
+  generatedAt: '2026-07-26T08:00:00.000Z',
+  payments: [{
+    amountCents: 149900,
+    businessId: 'org-1',
+    businessName: 'Fresh Market',
+    createdAt: '2026-07-01T08:00:00.000Z',
+    id: 'payment-event-1',
+    paymentId: 'payment-1',
+    planId: 'organization',
+    status: 'COMPLETE',
+  }],
+  totals: {
+    activeBusinesses: 1,
+    businesses: 1,
+    campaigns: 4,
+    completedCampaigns: 2,
+    liveCampaigns: 1,
+    paidCents: 149900,
+    paidTransactions: 1,
+    pendingApplications: 2,
+    pendingModeration: 3,
+    suspendedBusinesses: 0,
+  },
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.loadBusinessBootstrap.mockResolvedValue(activeBootstrap)
+  mocks.loadBusinessAdminOverview.mockResolvedValue(adminOverview)
+  mocks.setBusinessOrganizationStatus.mockResolvedValue({
+    changed: true,
+    overview: adminOverview,
+  })
   mocks.createBusinessPublication.mockResolvedValue({
     publication: activeBootstrap.publications[0],
     publications: activeBootstrap.publications,
@@ -161,6 +231,43 @@ describe('Trolley Scout for Business', () => {
     expect(screen.getByLabelText('Password')).toBeTruthy()
     expect(screen.getByText(/Subscribe and apply in Trolley Scout/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull()
+  })
+
+  it('opens the business admin console for the same platform admin account', async () => {
+    mocks.loadBusinessBootstrap.mockResolvedValue({
+      ...activeBootstrap,
+      gate: {
+        applicationStatus: null,
+        hasOrganization: false,
+        organization: null,
+      },
+      locations: [],
+      metrics: {
+        days: [],
+        rangeDays: 30,
+        totals: { impressions: 0, opens: 0, outboundVisits: 0, saves: 0 },
+      },
+      publications: [],
+      session: {
+        account: {
+          ...account,
+          email: 'admin@trolleyscout.co.za',
+          isAdmin: true,
+          planId: 'free',
+          planName: 'Free',
+          role: 'admin',
+        },
+        isAuthenticated: true,
+      },
+    })
+
+    render(<BusinessApp />)
+
+    expect(await screen.findByRole('heading', { name: 'Business control' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Business admin workspace' })).toBeTruthy()
+    expect(screen.getByText('Active businesses')).toBeTruthy()
+    expect(screen.getByText('Money received')).toBeTruthy()
+    expect(screen.queryByText('Business access is invitation-only')).toBeNull()
   })
 
   it('shows the application state instead of exposing portal navigation', async () => {

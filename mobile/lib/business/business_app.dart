@@ -7,6 +7,7 @@ import '../api_models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_mark.dart';
+import 'business_admin_app.dart';
 import 'business_controller.dart';
 import 'business_models.dart';
 
@@ -75,6 +76,12 @@ class _BusinessRoot extends StatelessWidget {
     if (bootstrap == null || !controller.isAuthenticated) {
       return _BusinessAuthScreen(controller: controller);
     }
+    if (bootstrap.session.account?.isAdmin == true) {
+      return BusinessAdminShell(
+        controller: controller,
+        bootstrap: bootstrap,
+      );
+    }
     if (!bootstrap.gate.hasOrganization ||
         bootstrap.gate.organization == null) {
       return _OrganizationGateScreen(
@@ -95,7 +102,7 @@ class _BusinessLoadingScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const AnimatedScoutMark(
+              const AnimatedScoutMark.business(
                 motion: ScoutMarkMotion.spin,
                 size: 58,
               ),
@@ -2174,7 +2181,7 @@ class _BusinessBrand extends StatelessWidget {
   Widget build(BuildContext context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedScoutMark(
+          AnimatedScoutMark.business(
             motion: ScoutMarkMotion.scout,
             size: compact ? 36 : 46,
           ),

@@ -51,4 +51,53 @@ void main() {
       contains('three'),
     );
   });
+
+  test('hides only deals explicitly marked sold out', () {
+    const availabilityDeals = [
+      Deal(
+        id: 'available',
+        title: 'Available shoe',
+        retailerName: 'Bathu',
+      ),
+      Deal(
+        id: 'sold-out',
+        title: 'Sold-out shoe',
+        retailerName: 'Bathu',
+        soldOut: true,
+      ),
+    ];
+
+    expect(
+      filterDeals(availabilityDeals, hideSoldOut: true).map((deal) => deal.id),
+      ['available'],
+    );
+  });
+
+  test('filters branch and parent feed labels through the canonical store', () {
+    const aliasedDeals = [
+      Deal(
+        id: 'usave-one',
+        title: 'Maize meal',
+        retailerId: 'shoprite',
+        retailerName: 'Shoprite Usave',
+        sourceLabel: 'Weekly specials',
+      ),
+      Deal(
+        id: 'spar-one',
+        title: 'Fresh milk',
+        retailerId: 'store-online:za:greenfields-spar.test',
+        retailerName: 'KwikSpar',
+        sourceLabel: 'Store scout',
+      ),
+    ];
+
+    expect(
+      filterDeals(aliasedDeals, retailerId: 'usave').map((deal) => deal.id),
+      ['usave-one'],
+    );
+    expect(
+      filterDeals(aliasedDeals, retailerId: 'spar').map((deal) => deal.id),
+      ['spar-one'],
+    );
+  });
 }

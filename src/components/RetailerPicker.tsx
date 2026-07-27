@@ -12,6 +12,7 @@ const MOST_DEALS_LIMIT = 6
 const DIACRITICS = /\p{Diacritic}/gu
 
 export interface RetailerPickerOption {
+  catalogueCount?: number
   count: number
   id: string
   name: string
@@ -66,7 +67,9 @@ function buildSections(options: RetailerPickerOption[], needle: string): Retaile
   }
 
   const mostDeals = [...matches]
-    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .sort((left, right) =>
+      optionContentCount(right) - optionContentCount(left) ||
+      left.name.localeCompare(right.name))
     .slice(0, MOST_DEALS_LIMIT)
   const featured = new Set(mostDeals.map((option) => option.id))
 
@@ -77,7 +80,29 @@ function buildSections(options: RetailerPickerOption[], needle: string): Retaile
 }
 
 function describeOption(option: RetailerPickerOption): string {
-  return `${option.name}, ${option.count} ${option.count === 1 ? 'deal' : 'deals'}`
+  return `${option.name}, ${optionCountLabels(option).join(', ')}`
+}
+
+function optionContentCount(option: RetailerPickerOption): number {
+  return option.count + (option.catalogueCount ?? 0)
+}
+
+function optionCountLabels(option: RetailerPickerOption): string[] {
+  const catalogueCount = option.catalogueCount ?? 0
+  const labels: string[] = []
+  if (option.count > 0 || catalogueCount === 0) {
+    labels.push(`${option.count} ${option.count === 1 ? 'deal' : 'deals'}`)
+  }
+  if (catalogueCount > 0) {
+    labels.push(`${catalogueCount} ${catalogueCount === 1 ? 'catalogue' : 'catalogues'}`)
+  }
+  return labels
+}
+
+function visibleOptionCount(option: RetailerPickerOption): string {
+  return option.catalogueCount
+    ? optionCountLabels(option).join(' · ')
+    : String(option.count)
 }
 
 /**
@@ -89,12 +114,14 @@ export function RetailerPicker({
   labelId,
   onChange,
   options,
+  totalCatalogueCount = 0,
   totalCount,
   value,
 }: {
   labelId?: string
   onChange: (retailerId: string) => void
   options: RetailerPickerOption[]
+  totalCatalogueCount?: number
   totalCount: number
   value: string
 }) {
@@ -118,6 +145,7 @@ export function RetailerPicker({
   // that turns a retailer id back into its position in that flat list.
   const { allOption, indexById, sections, showAllRow, visibleOptions } = useMemo(() => {
     const all: RetailerPickerOption = {
+      catalogueCount: totalCatalogueCount,
       count: totalCount,
       id: ALL_RETAILERS,
       name: 'All retailers',
@@ -133,13 +161,13 @@ export function RetailerPicker({
       showAllRow: showAll,
       visibleOptions: flat,
     }
-  }, [needle, options, totalCount])
+  }, [needle, options, totalCatalogueCount, totalCount])
 
   const activeOption = visibleOptions[Math.min(activeIndex, visibleOptions.length - 1)]
   const selected = value === ALL_RETAILERS
     ? allOption
     : options.find((option) => option.id === value)
-      ?? { count: 0, id: value, name: describeUnlistedRetailer(value) }
+      ?? { catalogueCount: 0, count: 0, id: value, name: describeUnlistedRetailer(value) }
 
   function openPicker() {
     // Query is always cleared on close, so the current index map is unfiltered
@@ -292,7 +320,7 @@ export function RetailerPicker({
         role="option"
       >
         <span className="retailer-picker-option-name">{option.name}</span>
-        <span className="retailer-picker-option-count">{option.count}</span>
+        <span className="retailer-picker-option-count">{visibleOptionCount(option)}</span>
         {isSelected && <Check aria-hidden="true" size={15} weight="bold" />}
       </div>
     )
@@ -313,8 +341,10 @@ export function RetailerPicker({
         type="button"
       >
         <span className="retailer-picker-trigger-name">{selected.name}</span>
-        <span className="retailer-picker-count">{selected.count}</span>
-        <span className="sr-only">{selected.count === 1 ? 'deal' : 'deals'}</span>
+        <span className="retailer-picker-count">{visibleOptionCount(selected)}</span>
+        {!selected.catalogueCount && (
+          <span className="sr-only">{selected.count === 1 ? 'deal' : 'deals'}</span>
+        )}
         <CaretDown aria-hidden="true" size={15} weight="bold" />
       </button>
 

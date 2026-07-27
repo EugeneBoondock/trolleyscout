@@ -5,9 +5,14 @@ import App from './App.tsx'
 import { BusinessApp } from './business/BusinessApp.tsx'
 import { isBusinessHost } from './business/host.ts'
 
-const RootApp = isBusinessHost(window.location.hostname, window.location.search)
-  ? BusinessApp
-  : App
+const businessPortal = isBusinessHost(window.location.hostname, window.location.search)
+const RootApp = businessPortal ? BusinessApp : App
+
+if (businessPortal) {
+  document.title = 'Trolley Scout for Business'
+  const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  favicon?.setAttribute('href', '/assets/scout-logo-business-v2.png')
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

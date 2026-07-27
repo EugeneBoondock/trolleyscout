@@ -50,16 +50,21 @@ const adminCountryCookieName = 'ts_admin_country'
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 30
 
 interface MemberAccountRow {
+  ban_reason?: string | null
+  banned_at?: string | null
   created_at: string
+  deal_view_count?: number | null
   display_name: string
   email: string
   email_lookup?: string | null
   id: string
+  last_seen_at?: string | null
   password_hash?: string | null
   plan_id: string
   plan_status: string
   properties_access?: number | null
   role?: string | null
+  status?: string | null
   updated_at: string
   billing_cycle?: string | null
   current_period_end?: string | null
@@ -77,7 +82,8 @@ const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
 
 const ACCOUNT_COLUMNS =
   `id, email, email_lookup, display_name, plan_id, plan_status, role, properties_access,
-    password_hash, country_code, country_name, currency_code, created_at, updated_at`
+    password_hash, country_code, country_name, currency_code, created_at, updated_at,
+    status, banned_at, ban_reason, last_seen_at`
 
 // The billing cycle lives on the subscription rather than the account, so any
 // read that feeds the member UI joins the active subscription to learn whether
@@ -89,6 +95,8 @@ const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, memb
   member_accounts.properties_access,
   member_accounts.country_code, member_accounts.country_name, member_accounts.currency_code,
   member_accounts.created_at, member_accounts.updated_at,
+  member_accounts.status, member_accounts.banned_at, member_accounts.ban_reason,
+  member_accounts.last_seen_at,
   billing_subscriptions.billing_cycle,
   billing_subscriptions.current_period_end,
   billing_subscriptions.pending_plan_id,
@@ -293,13 +301,110 @@ export async function getMemberSession(env: TrolleyScoutEnv, request: Request) {
     .bind(token, now)
     .first<MemberAccountRow>()
 
+  // A banned account still has rows and a live session cookie, but it resolves
+  // to nobody: every endpoint that reads session.account treats them as signed
+  // out, on every device, from the moment the ban lands.
+  if (row?.status === 'banned') {
+    return {
+      isAuthenticated: false,
+      isBanned: true,
+      banReason: row.ban_reason ?? undefined,
+    }
+  }
+
   const storedAccount = row ? await accountRowToMember(env, row) : undefined
   const account = applyAdminCountryOverride(storedAccount, request)
+
+  if (row) {
+    touchLastSeen(env, row)
+  }
 
   return {
     account,
     isAuthenticated: Boolean(row),
   }
+}
+
+// How stale a last_seen_at stamp may get before the next authenticated request
+// writes a fresh one. Five minutes keeps "last online" useful without turning
+// every read of the session into a write.
+const LAST_SEEN_REFRESH_MS = 5 * 60 * 1000
+
+// Fire-and-forget: presence is nice to have, and a failed stamp must never
+// fail the request that carried it.
+function touchLastSeen(env: TrolleyScoutEnv & { DB: D1Database }, row: MemberAccountRow): void {
+  const seenAt = row.last_seen_at ? Date.parse(row.last_seen_at) : Number.NaN
+  if (Number.isFinite(seenAt) && Date.now() - seenAt < LAST_SEEN_REFRESH_MS) {
+    return
+  }
+
+  try {
+    const update = env.DB.prepare('UPDATE member_accounts SET last_seen_at = ? WHERE id = ?')
+      .bind(new Date().toISOString(), row.id)
+      .run()
+    void Promise.resolve(update).catch(() => undefined)
+  } catch {
+    // Presence is a nice-to-have. Never let stamping it break a session read.
+  }
+}
+
+/// Closes or reopens an account. Banning also drops every live session so the
+/// member is signed out immediately rather than at their next token expiry.
+export async function setMemberBanned(
+  env: TrolleyScoutEnv,
+  accountId: string,
+  banned: boolean,
+  reason?: string,
+): Promise<{ account: MemberAccount } | { issues: string[] }> {
+  if (!hasMemberStore(env)) {
+    return { issues: ['Member storage is not configured.'] }
+  }
+
+  const existing = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+    .bind(accountId)
+    .first<MemberAccountRow>()
+
+  if (!existing) {
+    return { issues: ['That member could not be found.'] }
+  }
+
+  // The owner account must always be able to get back in, so it can never be
+  // banned — not by itself, and not by a second admin.
+  const email = await revealEmail(env, existing.email)
+  if (banned && (existing.role === 'admin' || isAdminEmail(email))) {
+    return { issues: ['An admin account cannot be banned.'] }
+  }
+
+  const trimmedReason = reason?.trim().slice(0, 280) || undefined
+  const timestamp = new Date().toISOString()
+
+  const statements = [
+    env.DB.prepare(
+      `UPDATE member_accounts
+        SET status = ?, banned_at = ?, ban_reason = ?, updated_at = ?
+        WHERE id = ?`,
+    ).bind(
+      banned ? 'banned' : 'active',
+      banned ? timestamp : null,
+      banned ? (trimmedReason ?? null) : null,
+      timestamp,
+      accountId,
+    ),
+  ]
+
+  if (banned) {
+    statements.push(env.DB.prepare('DELETE FROM member_sessions WHERE account_id = ?').bind(accountId))
+  }
+
+  await env.DB.batch(statements)
+
+  const row = await env.DB.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM member_accounts WHERE id = ?`)
+    .bind(accountId)
+    .first<MemberAccountRow>()
+
+  return row
+    ? { account: await accountRowToMember(env, row) }
+    : { issues: ['Account could not be loaded.'] }
 }
 
 function applyAdminCountryOverride(
@@ -474,6 +579,18 @@ export async function logInMember(env: TrolleyScoutEnv, input: MemberLogInInput)
 
   if (!row || !isValid) {
     return { issues: ['That email and password do not match an account.'] }
+  }
+
+  // Said plainly rather than as a wrong-password error: someone who has been
+  // closed out deserves to know that, and to know who to write to about it.
+  if (row.status === 'banned') {
+    return {
+      issues: [
+        row.ban_reason
+          ? `This account has been closed: ${row.ban_reason} Write to support if you think that is wrong.`
+          : 'This account has been closed. Write to support if you think that is wrong.',
+      ],
+    }
   }
 
   // Keep the owner's admin role correct even if the row predates roles.
@@ -695,8 +812,14 @@ export async function getAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA')
 
   const selectedCountry = countryFromCode(countryCode)
   const [accounts, planRows, storeStats, pendingEmailRow] = await Promise.all([
+    // The deal-view count rides along as a correlated subquery so the console
+    // gets "how many deals have they opened" without a second round trip or an
+    // N+1 per member.
     env.DB.prepare(
-      `SELECT ${ACCOUNT_COLUMNS}
+      `SELECT ${ACCOUNT_COLUMNS},
+        (SELECT COUNT(*) FROM member_deal_activity
+          WHERE member_deal_activity.account_id = member_accounts.id
+          AND member_deal_activity.event_type = 'deal_opened') AS deal_view_count
         FROM member_accounts
         WHERE country_code = ?
         ORDER BY created_at DESC
@@ -1692,6 +1815,13 @@ async function accountRowToMember(env: TrolleyScoutEnv, row: MemberAccountRow): 
     planStatus: normalizePlanStatus(row.plan_status),
     propertiesAccess: computePropertiesAccess(planId, role, row.properties_access),
     role,
+    status: row.status === 'banned' ? 'banned' : 'active',
+    ...(row.banned_at ? { bannedAt: row.banned_at } : {}),
+    ...(row.ban_reason ? { banReason: row.ban_reason } : {}),
+    ...(row.last_seen_at ? { lastSeenAt: row.last_seen_at } : {}),
+    ...(row.deal_view_count === undefined || row.deal_view_count === null
+      ? {}
+      : { dealViewCount: Number(row.deal_view_count) }),
     countryCode: country.code,
     countryName: row.country_name ?? country.name,
     currencyCode: row.currency_code ?? country.currencyCode,

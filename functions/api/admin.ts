@@ -3,6 +3,7 @@ import {
   getMemberSession,
   protectLegacyMemberEmails,
   setAdminCountryCookie,
+  setMemberBanned,
   setMemberPropertiesAccess,
   setMemberPlan,
 } from '../_shared/memberStore'
@@ -25,9 +26,11 @@ const privateHeaders = {
 interface AdminActionBody {
   action?: string
   accountId?: string
+  banned?: boolean
   granted?: boolean
   planId?: string
   messageId?: string
+  reason?: string
   status?: string
   countryCode?: string
 }
@@ -95,6 +98,39 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       }
       const overview = await buildAdminOverview(env, body.countryCode)
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
+    }
+
+    if (body.action === 'set_member_banned') {
+      if (!body.accountId || typeof body.banned !== 'boolean') {
+        return json(
+          { message: 'accountId and banned are required.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      // An admin cannot close their own account out from under themselves.
+      if (body.accountId === session.account.id) {
+        return json(
+          { message: 'You cannot ban your own account.' },
+          { headers: privateHeaders, status: 400 },
+        )
+      }
+      const result = await setMemberBanned(env, body.accountId, body.banned, body.reason)
+      if (!('account' in result) || !result.account) {
+        const message =
+          'issues' in result && result.issues?.length ? result.issues[0] : 'Could not update the account.'
+        return json({ message }, { headers: privateHeaders, status: 400 })
+      }
+      const overview = await buildAdminOverview(env, body.countryCode)
+      return json(
+        {
+          account: result.account,
+          ...(overview ?? {}),
+          message: body.banned
+            ? `${result.account.displayName} is banned and signed out everywhere.`
+            : `${result.account.displayName} can sign in again.`,
+        },
+        { headers: privateHeaders },
+      )
     }
 
     if (body.action === 'set_test_country') {

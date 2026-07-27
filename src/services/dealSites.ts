@@ -11,6 +11,7 @@ export type DealSiteId = 'onedayonly' | 'hyperli' | 'daddysdeals' | 'myrunway'
 export type WindowShoppingSource = DealSiteId | 'trolleyscout-business'
 
 export interface DealSiteItem {
+  capturedAt?: string
   id: string
   source: WindowShoppingSource
   retailerName: string
@@ -82,6 +83,11 @@ export function parseOneDayOnly(html: string): DealSiteItem[] {
     ])
 
     out.push({
+      capturedAt: sourceCapturedAt(
+        product.activeFromDate,
+        product.updatedAt,
+        product.createdAt,
+      ),
       category: firstString(product.topLevelCategories) ?? undefined,
       expiresAt: typeof product.activeToDate === 'string' ? product.activeToDate : undefined,
       id: `onedayonly-${realId}`,
@@ -160,6 +166,11 @@ export function parseHyperli(payload: unknown): DealSiteItem[] {
     if (variant.available === false) continue
 
     out.push({
+      capturedAt: sourceCapturedAt(
+        product.published_at,
+        product.updated_at,
+        product.created_at,
+      ),
       category: typeof product.product_type === 'string' ? product.product_type : undefined,
       id: `hyperli-${String(product.id ?? handle)}`,
       imageUrl: gallery[0],
@@ -203,6 +214,12 @@ export function parseDaddysDeals(payload: unknown): DealSiteItem[] {
     const price = firstRand(`${title} ${excerpt}`)
 
     out.push({
+      capturedAt: sourceCapturedAt(
+        post.modified_gmt,
+        post.date_gmt,
+        post.modified,
+        post.date,
+      ),
       category: embeddedTerm(post),
       id: `daddysdeals-${String(post.id ?? link)}`,
       imageUrl: image,
@@ -255,6 +272,11 @@ export function parseMyRunway(payload: unknown): DealSiteItem[] {
     const gallery = uniqueImageUrls([product.image_url, ...productImages])
 
     out.push({
+      capturedAt: sourceCapturedAt(
+        product.updated_at,
+        product.created_at,
+        product.start_date,
+      ),
       category: firstString(product.product_category_name) ??
         firstString(pathValue(product, ['product_category', 'name'])) ?? undefined,
       id: `myrunway-${id}`,
@@ -327,6 +349,21 @@ function uniqueImageUrls(values: unknown[]): string[] {
     urls.push(url)
   }
   return urls
+}
+
+function sourceCapturedAt(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string' || !value.trim()) continue
+    const raw = value.trim()
+    const normalized = /^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(raw)
+      ? `${raw}Z`
+      : raw
+    const parsed = Date.parse(normalized)
+    if (Number.isFinite(parsed)) {
+      return new Date(parsed).toISOString()
+    }
+  }
+  return undefined
 }
 
 // ---------- shared helpers ----------

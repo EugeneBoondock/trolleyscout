@@ -23,6 +23,23 @@ abstract interface class BusinessApiClient {
   Future<BusinessBootstrap> bootstrap();
   Future<MemberSession> authenticate(AuthDraft draft);
   Future<MemberSession> signOut();
+  Future<BusinessAdminOverview> adminOverview();
+  Future<BusinessAdminOverview> setBusinessStatus(
+    String businessId,
+    String status,
+  );
+  Future<List<BusinessAdminApplication>> adminApplications();
+  Future<List<BusinessAdminApplication>> reviewAdminApplication(
+    String applicationId,
+    String decision, {
+    String? note,
+  });
+  Future<List<BusinessPublication>> adminPublicationQueue();
+  Future<List<BusinessPublication>> reviewAdminPublication(
+    String publicationId,
+    String decision, {
+    String? note,
+  });
   Future<BusinessPublicationChange> savePublication(
     BusinessPublicationDraft draft, {
     String? publicationId,
@@ -64,6 +81,16 @@ class BusinessApi implements BusinessApiClient {
     final sessionData = await _request('GET', '/api/member-session');
     final session = MemberSession.fromJson(_map(sessionData['session']));
     if (!session.isAuthenticated || session.account == null) {
+      return BusinessBootstrap(
+        session: session,
+        gate: BusinessGate.signedOut,
+        publications: const [],
+        locations: const [],
+        metrics: BusinessMetrics.empty,
+      );
+    }
+
+    if (session.account!.isAdmin) {
       return BusinessBootstrap(
         session: session,
         gate: BusinessGate.signedOut,
@@ -118,6 +145,86 @@ class BusinessApi implements BusinessApiClient {
     } finally {
       await _cookieStore.clear();
     }
+  }
+
+  @override
+  Future<BusinessAdminOverview> adminOverview() async {
+    final data = await _request('GET', '/api/admin/business-overview');
+    return BusinessAdminOverview.fromJson(_map(data['overview']));
+  }
+
+  @override
+  Future<BusinessAdminOverview> setBusinessStatus(
+    String businessId,
+    String status,
+  ) async {
+    final data = await _request(
+      'PATCH',
+      '/api/admin/business-overview',
+      body: {
+        'businessId': businessId,
+        'status': status,
+      },
+    );
+    return BusinessAdminOverview.fromJson(_map(data['overview']));
+  }
+
+  @override
+  Future<List<BusinessAdminApplication>> adminApplications() async {
+    final data = await _request(
+      'GET',
+      '/api/admin/organization-applications',
+    );
+    return _mapList(data['applications'])
+        .map(BusinessAdminApplication.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<List<BusinessAdminApplication>> reviewAdminApplication(
+    String applicationId,
+    String decision, {
+    String? note,
+  }) async {
+    final data = await _request(
+      'PATCH',
+      '/api/admin/organization-applications',
+      body: {
+        'applicationId': applicationId,
+        'decision': decision,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return _mapList(data['applications'])
+        .map(BusinessAdminApplication.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<List<BusinessPublication>> adminPublicationQueue() async {
+    final data = await _request(
+      'GET',
+      '/api/admin/organization-publications?status=submitted',
+    );
+    return _publications(data['publications']);
+  }
+
+  @override
+  Future<List<BusinessPublication>> reviewAdminPublication(
+    String publicationId,
+    String decision, {
+    String? note,
+  }) async {
+    final data = await _request(
+      'PATCH',
+      '/api/admin/organization-publications?status=submitted',
+      body: {
+        'publicationId': publicationId,
+        'decision': decision,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return _publications(data['publications']);
   }
 
   @override

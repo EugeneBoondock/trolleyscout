@@ -39,6 +39,7 @@ const REQUEST_TIMEOUT_MS = 12_000
 const LEASE_TTL_MS = 5 * 60 * 1000
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const PUBLIC_CATALOGUE_PAGE_ORIGIN = 'https://trolleyscout.co.za'
 
 interface VisionChatResponse {
   choices?: Array<{ message?: { content?: string | null } }>
@@ -256,7 +257,10 @@ export function buildFlippingBookPages(
   const defaults = recordValue(pages, 'defaults')
   const sizes = numberArray(recordValue(defaults, 'substrateSizes'))
   const ready = readySubstrateIndexes(recordValue(defaults, 'substrateSizesReady'), sizes.length)
-  const selectedIndex = sizes.findIndex((size, index) => size >= 1350 && ready.has(index))
+  const selectedIndex = sizes.reduce(
+    (largest, size, index) => size >= 1350 && ready.has(index) ? index : largest,
+    -1,
+  )
 
   if (!pagerUrl || !Array.isArray(structure) || selectedIndex < 0) {
     return []
@@ -270,11 +274,12 @@ export function buildFlippingBookPages(
       `common/page-html5-substrates/page${pageNumber}_${slot + 1}.${extension}`,
       pagerUrl,
     ).toString()
-    const imageUrl = substrateUrl(selectedIndex, 'webp')
-    const fallbacks = [substrateUrl(selectedIndex, format)]
+    const selectedWebpReady = selectedIndex < webpCount
+    const imageUrl = substrateUrl(selectedIndex, selectedWebpReady ? 'webp' : format)
+    const fallbacks = selectedWebpReady ? [substrateUrl(selectedIndex, format)] : []
 
-    for (let slot = selectedIndex + 1; slot < sizes.length; slot += 1) {
-      if (!ready.has(slot)) {
+    for (let slot = selectedIndex - 1; slot >= 0; slot -= 1) {
+      if (!ready.has(slot) || sizes[slot] < 1350) {
         continue
       }
       if (slot < webpCount) {
@@ -295,6 +300,224 @@ export function buildFlippingBookPages(
       width: sizes[selectedIndex],
     }
   })
+}
+
+export interface ModernFlippingBookViewer {
+  contentRoot: string
+  keyPairId: string
+  policy: string
+  signature: string
+  totalPages: number
+}
+
+interface FlippingBookSubstratePlan {
+  format: string
+  ready: Set<number>
+  selectedIndex: number
+  sizes: number[]
+  webpCount: number
+}
+
+export function parseModernFlippingBookViewer(
+  html: string,
+): ModernFlippingBookViewer | undefined {
+  const contentRoot = html.match(
+    /\bContentRoot\s*:\s*(['"])(https:\/\/[^'"]+)\1/i,
+  )?.[2]
+  const totalPages = Number(html.match(/\bTotalPages\s*:\s*(\d{1,4})\b/i)?.[1])
+  const policyJson = html.match(
+    /\b(?:var|let|const)\s+initialPolicies\s*=\s*(\[[\s\S]*?\])\s*;/i,
+  )?.[1]
+
+  if (
+    !contentRoot ||
+    !Number.isSafeInteger(totalPages) ||
+    totalPages < 1 ||
+    totalPages > 500 ||
+    !policyJson
+  ) {
+    return undefined
+  }
+
+  let root: URL
+  let policies: unknown
+  try {
+    root = new URL(contentRoot)
+    policies = JSON.parse(policyJson)
+  } catch {
+    return undefined
+  }
+  if (
+    root.protocol !== 'https:' ||
+    !root.hostname.toLowerCase().endsWith('.cloudfront.net') ||
+    !Array.isArray(policies)
+  ) {
+    return undefined
+  }
+
+  const rootIdentity = `://${root.host}${root.pathname}`
+  const matched = policies.find((value) => {
+    const record = value && typeof value === 'object'
+      ? value as Record<string, unknown>
+      : undefined
+    return typeof record?.PathPrefix === 'string' &&
+      rootIdentity.startsWith(record.PathPrefix)
+  }) as Record<string, unknown> | undefined
+  const keyPairId = typeof matched?.KeyId === 'string' ? matched.KeyId : undefined
+  const policy = typeof matched?.Policy === 'string' ? matched.Policy : undefined
+  const signature = typeof matched?.Signature === 'string' ? matched.Signature : undefined
+
+  if (!keyPairId || !policy || !signature) {
+    return undefined
+  }
+
+  return {
+    contentRoot: root.toString(),
+    keyPairId,
+    policy,
+    signature,
+    totalPages,
+  }
+}
+
+export function modernFlippingBookPagerUrl(
+  viewer: ModernFlippingBookViewer | undefined,
+): string | undefined {
+  return viewer
+    ? signedModernFlippingBookUrl(viewer, 'common/pager.json')
+    : undefined
+}
+
+export function modernFlippingBookPageAssetUrls(
+  viewer: ModernFlippingBookViewer,
+  pager: unknown,
+  pageNumber: number,
+): string[] {
+  const plan = flippingBookSubstratePlan(pager)
+  const structure = recordValue(recordValue(pager, 'pages'), 'structure')
+  if (
+    !plan ||
+    !Number.isSafeInteger(pageNumber) ||
+    pageNumber < 1 ||
+    pageNumber > viewer.totalPages ||
+    !Array.isArray(structure) ||
+    pageNumber > structure.length
+  ) {
+    return []
+  }
+
+  const paddedPage = String(pageNumber).padStart(4, '0')
+  const asset = (slot: number, extension: string) =>
+    signedModernFlippingBookUrl(
+      viewer,
+      `common/pages/html5substrates/page${paddedPage}_${slot + 1}.${extension}`,
+    )
+  const urls: string[] = []
+
+  for (let slot = plan.selectedIndex; slot >= 0; slot -= 1) {
+    if (!plan.ready.has(slot) || plan.sizes[slot] < 1350) {
+      continue
+    }
+    if (slot < plan.webpCount) {
+      urls.push(asset(slot, 'webp'))
+    }
+    urls.push(asset(slot, plan.format))
+  }
+
+  return Array.from(new Set(urls))
+}
+
+export function buildModernFlippingBookPages(
+  leaflet: StoreLeaflet,
+  viewer: ModernFlippingBookViewer,
+  pager: unknown,
+  limit = MAX_PAGES_PER_CATALOGUE,
+  proxyOrigin = PUBLIC_CATALOGUE_PAGE_ORIGIN,
+): CataloguePage[] {
+  const pageCount = Math.min(
+    viewer.totalPages,
+    Math.max(0, limit),
+  )
+  const proxyPages = Array.from({ length: pageCount }, (_, index) => {
+    const pageNumber = index + 1
+    const query = new URLSearchParams()
+    query.set('page', String(pageNumber))
+    query.set('viewer', leaflet.url)
+    const knownPage = leaflet.pages?.find((page) => page.pageNumber === pageNumber)
+
+    return {
+      height: knownPage?.height ?? 2900,
+      imageUrl: `${proxyOrigin}/api/catalogue-page?${query.toString()}`,
+      pageNumber,
+      width: knownPage?.width ?? 2050,
+    }
+  })
+  const plan = flippingBookSubstratePlan(pager)
+  const structure = recordValue(recordValue(pager, 'pages'), 'structure')
+  if (!plan || !Array.isArray(structure)) {
+    return proxyPages
+  }
+
+  const resolvedPageCount = Math.min(
+    pageCount,
+    structure.length,
+  )
+  const bookSize = recordValue(pager, 'bookSize')
+  const bookWidth = numberValue(recordValue(bookSize, 'width'))
+  const bookHeight = numberValue(recordValue(bookSize, 'height'))
+  const aspectRatio = bookWidth && bookHeight
+    ? bookHeight / bookWidth
+    : Math.SQRT2
+
+  return proxyPages.slice(0, resolvedPageCount).map((page, index) => {
+    const pageNumber = index + 1
+
+    return {
+      height: Math.round(plan.sizes[plan.selectedIndex] * aspectRatio),
+      imageUrl: page.imageUrl,
+      pageNumber,
+      width: plan.sizes[plan.selectedIndex],
+    }
+  })
+}
+
+function flippingBookSubstratePlan(
+  pager: unknown,
+): FlippingBookSubstratePlan | undefined {
+  const pages = recordValue(pager, 'pages')
+  const defaults = recordValue(pages, 'defaults')
+  const sizes = numberArray(recordValue(defaults, 'substrateSizes'))
+  const ready = readySubstrateIndexes(
+    recordValue(defaults, 'substrateSizesReady'),
+    sizes.length,
+  )
+  const selectedIndex = sizes.reduce(
+    (largest, size, index) =>
+      size >= 1350 && ready.has(index) ? index : largest,
+    -1,
+  )
+  if (selectedIndex < 0) {
+    return undefined
+  }
+
+  return {
+    format: declaredSubstrateFormat(recordValue(defaults, 'substrateFormat')),
+    ready,
+    selectedIndex,
+    sizes,
+    webpCount: integerValue(recordValue(defaults, 'substrateWebPCount')) ?? 0,
+  }
+}
+
+function signedModernFlippingBookUrl(
+  viewer: ModernFlippingBookViewer,
+  path: string,
+) {
+  const url = new URL(path, viewer.contentRoot)
+  url.searchParams.set('Key-Pair-Id', viewer.keyPairId)
+  url.searchParams.set('Policy', viewer.policy)
+  url.searchParams.set('Signature', viewer.signature)
+  return url.toString()
 }
 
 export function parseFlippingBookPager(value: string): unknown {
@@ -460,6 +683,12 @@ function integerValue(value: unknown) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
+function numberValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined
+}
+
 export async function runCatalogueScout(
   env: TrolleyScoutEnv,
   leaflets: StoreLeaflet[],
@@ -490,11 +719,13 @@ export async function runCatalogueScout(
   // Give those first claim on every run, or the rotating queue spends its
   // whole budget on candidates that can never produce a deal.
   const pagerLeaflets = uniqueCatalogueLeaflets(
-    leaflets.filter((leaflet) => flippingBookPagerUrl(leaflet)),
+    leaflets.filter((leaflet) =>
+      Boolean(leaflet.pages?.length || flippingBookPagerUrl(leaflet))),
   )
   const candidates = uniqueCatalogueLeaflets([
     ...externalLeaflets,
-    ...leaflets.filter((leaflet) => !flippingBookPagerUrl(leaflet)),
+    ...leaflets.filter((leaflet) =>
+      !leaflet.pages?.length && !flippingBookPagerUrl(leaflet)),
   ])
   let queueStart = 0
   try {
@@ -505,7 +736,8 @@ export async function runCatalogueScout(
   } catch {
     // A rollout without cursor storage still scans the first bounded window.
   }
-  const priority = pagerLeaflets.slice(0, MAX_DOCUMENTS_PER_RUN)
+  const priority = roundRobinCataloguesByRetailer(pagerLeaflets)
+    .slice(0, MAX_DOCUMENTS_PER_RUN)
   const selected = [
     ...priority,
     ...selectCatalogueWindow(candidates, queueStart, MAX_DOCUMENTS_PER_RUN - priority.length),
@@ -594,6 +826,29 @@ function uniqueCatalogueLeaflets(leaflets: StoreLeaflet[]) {
   })
 }
 
+function roundRobinCataloguesByRetailer(leaflets: StoreLeaflet[]) {
+  const groups = new Map<string, StoreLeaflet[]>()
+  for (const leaflet of leaflets) {
+    const group = groups.get(leaflet.retailerId) ?? []
+    group.push(leaflet)
+    groups.set(leaflet.retailerId, group)
+  }
+
+  const ordered: StoreLeaflet[] = []
+  const longest = Array.from(groups.values()).reduce(
+    (length, group) => Math.max(length, group.length),
+    0,
+  )
+  for (let index = 0; index < longest; index += 1) {
+    for (const group of groups.values()) {
+      if (group[index]) {
+        ordered.push(group[index])
+      }
+    }
+  }
+  return ordered
+}
+
 async function scanResumableCatalogue(
   env: TrolleyScoutEnv & { DB: D1Database },
   leaflet: StoreLeaflet,
@@ -601,35 +856,60 @@ async function scanResumableCatalogue(
   dependencies: CatalogueScoutDependencies,
 ): Promise<CatalogueScanOutcome> {
   const scanStartedAt = dependencies.now()
-  const pagerUrl = flippingBookPagerUrl(leaflet)
-  if (!pagerUrl) {
-    return scanCatalogueEntry(env, leaflet, sourceKey, dependencies)
+  const suppliedPages = (leaflet.pages ?? [])
+    .filter((page) =>
+      Number.isSafeInteger(page.pageNumber) &&
+      page.pageNumber > 0 &&
+      page.width >= 1350 &&
+      isPublicDocumentUrl(page.imageUrl))
+    .sort((left, right) => left.pageNumber - right.pageNumber)
+    .slice(0, 250)
+  let pages: CataloguePage[]
+  let documentFingerprint: string
+
+  if (suppliedPages.length > 0) {
+    pages = suppliedPages
+    documentFingerprint = await fingerprintText(JSON.stringify(
+      pages.map((page) => ({
+        fallbacks: page.fallbacks,
+        height: page.height,
+        imageUrl: page.imageUrl,
+        pageNumber: page.pageNumber,
+        width: page.width,
+      })),
+    ))
+  } else {
+    const pagerUrl = flippingBookPagerUrl(leaflet)
+    if (!pagerUrl) {
+      return scanCatalogueEntry(env, leaflet, sourceKey, dependencies)
+    }
+
+    const manifestResponse = await fetchWithCatalogueTimeout(
+      dependencies.fetcher,
+      pagerUrl,
+      {
+        headers: {
+          accept: 'application/json,text/javascript',
+          'user-agent': BROWSER_USER_AGENT,
+        },
+        redirect: 'manual',
+      },
+    )
+    if (!manifestResponse.ok) {
+      throw new Error(`Pager manifest returned HTTP ${manifestResponse.status}`)
+    }
+    const manifestText = new TextDecoder().decode(await readBoundedBytes(
+      manifestResponse,
+      MAX_PAGER_BYTES,
+    ))
+    documentFingerprint = await fingerprintText(manifestText)
+    pages = buildFlippingBookPages(
+      leaflet,
+      parseFlippingBookPager(manifestText),
+      250,
+    )
   }
 
-  const manifestResponse = await fetchWithCatalogueTimeout(
-    dependencies.fetcher,
-    pagerUrl,
-    {
-      headers: {
-        accept: 'application/json,text/javascript',
-        'user-agent': BROWSER_USER_AGENT,
-      },
-      redirect: 'manual',
-    },
-  )
-  if (!manifestResponse.ok) {
-    throw new Error(`Pager manifest returned HTTP ${manifestResponse.status}`)
-  }
-  const manifestText = new TextDecoder().decode(await readBoundedBytes(
-    manifestResponse,
-    MAX_PAGER_BYTES,
-  ))
-  const documentFingerprint = await fingerprintText(manifestText)
-  const pages = buildFlippingBookPages(
-    leaflet,
-    parseFlippingBookPager(manifestText),
-    250,
-  )
   if (pages.length === 0) {
     throw new Error('Pager manifest has no ready high-resolution pages')
   }

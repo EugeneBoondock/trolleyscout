@@ -6,9 +6,11 @@ import 'package:trolley_scout/app_link_coordinator.dart';
 import 'package:trolley_scout/main.dart';
 import 'package:trolley_scout/screens/dashboard_screen.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
+import 'package:trolley_scout/screens/scout_chat_screen.dart';
 import 'package:trolley_scout/screens/stores_screen.dart';
 import 'package:trolley_scout/session_cookie_store.dart';
 import 'package:trolley_scout/theme.dart';
+import 'package:trolley_scout/widgets/scout_mark.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -86,6 +88,7 @@ void main() {
 
     for (final label in [
       'Dashboard',
+      'Mr Scout',
       'Stores',
       'Vouchers',
       'Properties',
@@ -129,7 +132,7 @@ void main() {
           .map((destination) => destination.label),
       // The marketplace sits directly after the dashboard: it is what the
       // app is for, and it used to be fourth behind two ways of browsing.
-      ['Home', 'Marketplace', 'Stores', 'Near me', 'Window'],
+      ['Home', 'Marketplace', 'Mr Scout', 'Stores', 'Window'],
     );
     expect(find.text('Money'), findsNothing);
 
@@ -152,6 +155,35 @@ void main() {
     expect(
       find.ancestor(of: find.text('Home'), matching: find.byType(ListTile)),
       findsNothing,
+    );
+  });
+
+  testWidgets('Mr Scout is the centre consumer navigation destination',
+      (tester) async {
+    await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final destinations = tester
+        .widgetList<NavigationDestination>(find.byType(NavigationDestination))
+        .toList(growable: false);
+    expect(destinations[2].label, 'Mr Scout');
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).indicatorColor,
+      Colors.transparent,
+    );
+    expect(destinations[2].selectedIcon, isA<AnimatedScoutMark>());
+    expect(
+      destinations[0].selectedIcon,
+      isNot(isA<AnimatedScoutMark>()),
+    );
+
+    await tester.tap(find.text('Mr Scout').last);
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.byType(ScoutChatScreen), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      2,
     );
   });
 
@@ -234,7 +266,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-        2);
+        3);
 
     await tester.binding.handlePopRoute();
     await tester.pump(const Duration(milliseconds: 300));

@@ -7,6 +7,16 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../theme.dart';
 
+Uri storeNavigationUri(double lat, double lon) => Uri.https(
+      'www.google.com',
+      '/maps/dir/',
+      {
+        'api': '1',
+        'destination': '$lat,$lon',
+        'travelmode': 'driving',
+      },
+    );
+
 /// In-app store map with keyless CARTO tiles and OSRM driving directions
 /// (proxied via /api/map-route). Mirrors the web StoreMap component.
 class StoreMapView extends StatefulWidget {
@@ -74,7 +84,8 @@ class _StoreMapViewState extends State<StoreMapView> {
       }
 
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
       );
       final here = LatLng(pos.latitude, pos.longitude);
       setState(() {
@@ -113,8 +124,7 @@ class _StoreMapViewState extends State<StoreMapView> {
 
   Future<void> _openExternal() async {
     await launchUrl(
-      Uri.parse(
-          'https://www.openstreetmap.org/directions?to=${widget.lat},${widget.lon}'),
+      storeNavigationUri(widget.lat, widget.lon),
       mode: LaunchMode.externalApplication,
     );
   }
@@ -129,7 +139,8 @@ class _StoreMapViewState extends State<StoreMapView> {
             : PreferredSize(
                 preferredSize: const Size.fromHeight(20),
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 6, left: 16, right: 16),
+                  padding:
+                      const EdgeInsets.only(bottom: 6, left: 16, right: 16),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(widget.storeAddress!,
@@ -155,7 +166,9 @@ class _StoreMapViewState extends State<StoreMapView> {
                 if (_route.length > 1)
                   PolylineLayer(polylines: [
                     Polyline(
-                        points: _route, color: TS.redOf(context), strokeWidth: 5),
+                        points: _route,
+                        color: TS.redOf(context),
+                        strokeWidth: 5),
                   ]),
                 MarkerLayer(markers: [
                   _pin(_store, TS.redOf(context), Icons.storefront),
@@ -168,7 +181,8 @@ class _StoreMapViewState extends State<StoreMapView> {
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: TS.lineOf(context), width: 2)),
+              border:
+                  Border(top: BorderSide(color: TS.lineOf(context), width: 2)),
             ),
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -202,7 +216,7 @@ class _StoreMapViewState extends State<StoreMapView> {
                               ? 'Finding you'
                               : _status == 'routing'
                                   ? 'Routing'
-                                  : 'Directions from me',
+                                  : 'Preview route',
                         ),
                       ),
                     ),
@@ -210,7 +224,7 @@ class _StoreMapViewState extends State<StoreMapView> {
                     OutlinedButton.icon(
                       onPressed: _openExternal,
                       icon: const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('Maps'),
+                      label: const Text('Navigate'),
                     ),
                   ],
                 ),

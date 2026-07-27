@@ -5,6 +5,11 @@ export interface TrolleyScoutEnv {
   ORGANIZATION_EMAIL?: Fetcher
   EMAIL_ENCRYPTION_KEY?: string
   APP_URL?: string
+  // Cloudflare's own traffic numbers for the admin analytics tab. The token
+  // needs the "Analytics:Read" zone permission and nothing else. Without both
+  // of these the tab still works — it just shows in-app numbers only.
+  CLOUDFLARE_ANALYTICS_TOKEN?: string
+  CLOUDFLARE_ZONE_ID?: string
   GEOAPIFY_API_KEY?: string
   // Optional: a free r.jina.ai key makes the search-proxy fallback reliable;
   // without it the keyless tier applies and scouts retry hourly.
@@ -18,6 +23,7 @@ export interface TrolleyScoutEnv {
   PAYFAST_NOTIFY_ORIGIN?: string
   PAYFAST_PASSPHRASE?: string
   SCOUT_DEBUG?: string
+  OPENAI_API_KEY?: string
 }
 
 export type TrolleyScoutD1Env = TrolleyScoutEnv & { DB: D1Database }

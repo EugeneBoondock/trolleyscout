@@ -55,8 +55,24 @@ describe('global country support', () => {
       'Sai Mart',
       'Greens Supermarket',
       'Nash Furnishers',
+      'Econet Wireless',
+      'NetOne',
+      'Telecel Zimbabwe',
     ]))
     expect(zimbabweRetailers.length).toBeGreaterThan(50)
+  })
+
+  it('registers local mobile networks in non-South-African retailer directories', () => {
+    expect(
+      buildRegisteredCountryRetailers(countryFromCode('GB')).map(
+        (retailer) => retailer.name,
+      ),
+    ).toEqual(['EE', 'O2', 'Three', 'Vodafone'])
+    expect(
+      buildRegisteredCountryRetailers(countryFromCode('US')).map(
+        (retailer) => retailer.name,
+      ),
+    ).toEqual(['AT&T', 'Google Fi Wireless', 'T-Mobile', 'Verizon'])
   })
 
   it('builds a country retailer directory from likely official results', () => {

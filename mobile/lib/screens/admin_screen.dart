@@ -109,14 +109,55 @@ class _AdminScreenState extends State<AdminScreen> {
               message: 'Admin data is unavailable.', onRetry: _reload);
         }
         final overview = snapshot.data!;
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const ScreenHeader(
-              eyebrow: 'Admin',
-              title: 'Admin console',
-              description: 'Accounts, plans, and scout status.',
-            ),
+        return DefaultTabController(
+          length: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: ScreenHeader(
+                  eyebrow: 'Admin',
+                  title: 'Admin console',
+                  description: 'Accounts, traffic, support, and scout status.',
+                ),
+              ),
+              TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelColor: TS.inkOf(context),
+                unselectedLabelColor: TS.mutedOf(context),
+                indicatorColor: TS.redOf(context),
+                tabs: [
+                  const Tab(text: 'Overview'),
+                  Tab(text: 'Members (${overview.accounts.length})'),
+                  const Tab(text: 'Analytics'),
+                  Tab(text: 'Support (${overview.supportOpenCount})'),
+                  const Tab(text: 'Business'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _overviewTab(overview),
+                    _membersTab(overview),
+                    AdminAnalyticsTab(api: widget.api),
+                    _supportTab(overview),
+                    _businessTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _overviewTab(AdminOverview overview) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
             PaperCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,35 +320,54 @@ class _AdminScreenState extends State<AdminScreen> {
                   Chip(label: Text('${entry.key}: ${entry.value}')),
               ],
             ),
-            const SizedBox(height: 20),
-            OrganizationApplicationReviewSection(api: widget.api),
-            const SizedBox(height: 20),
-            SupportInboxSection(
-              api: widget.api,
-              initialMessages: overview.support,
-              initialOpenCount: overview.supportOpenCount,
-            ),
-            const SizedBox(height: 20),
-            AdReviewSection(api: widget.api),
-            const SizedBox(height: 20),
-            Text('Recent accounts',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.merge(TS.display)),
-            const SizedBox(height: 8),
-            if (overview.accounts.isEmpty)
-              Text('No accounts yet.',
-                  style: TextStyle(color: TS.mutedOf(context)))
-            else
-              for (final account in overview.accounts)
-                _MemberAccessTile(
-                    key: ValueKey(account.id),
-                    api: widget.api,
-                    account: account),
-          ],
-        );
-      },
+      ],
+    );
+  }
+
+  Widget _membersTab(AdminOverview overview) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Recent accounts',
+            style: Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+        const SizedBox(height: 4),
+        Text(
+          'Deals opened is only counted while a member leaves deal learning on, '
+          'so a zero can mean they opted out rather than never looked.',
+          style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+        ),
+        const SizedBox(height: 12),
+        if (overview.accounts.isEmpty)
+          Text('No accounts yet.', style: TextStyle(color: TS.mutedOf(context)))
+        else
+          for (final account in overview.accounts)
+            _MemberAccessTile(
+                key: ValueKey(account.id), api: widget.api, account: account),
+      ],
+    );
+  }
+
+  Widget _supportTab(AdminOverview overview) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        SupportInboxSection(
+          api: widget.api,
+          initialMessages: overview.support,
+          initialOpenCount: overview.supportOpenCount,
+        ),
+      ],
+    );
+  }
+
+  Widget _businessTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        OrganizationApplicationReviewSection(api: widget.api),
+        const SizedBox(height: 20),
+        AdReviewSection(api: widget.api),
+      ],
     );
   }
 }
@@ -575,6 +635,75 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
 
   bool get _planBased => _account.planId == 'household' || _account.isAdmin;
 
+  Future<void> _toggleBan() async {
+    final account = _account;
+    final banning = !account.isBanned;
+    String reason = '';
+
+    if (banning) {
+      // Confirmed, and with a reason: the reason is what the member is shown
+      // the next time they try to sign in, so it is never left blank by accident.
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Ban ${account.displayName}?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'They are signed out on every device and cannot sign back in. '
+                'Their saved deals and history are kept.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Reason (shown to them)',
+                ),
+                maxLength: 280,
+                maxLines: 2,
+                onChanged: (value) => reason = value,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Ban'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      uxTap();
+      final updated = await widget.api
+          .setMemberBanned(account.id, banning, reason: reason);
+      if (!mounted) return;
+      setState(() => _account = updated);
+      showNotice(
+        context,
+        banning
+            ? '${updated.displayName} is banned and signed out everywhere.'
+            : '${updated.displayName} can sign in again.',
+      );
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } catch (_) {
+      if (mounted) showNotice(context, 'Could not update that account.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _toggle(bool value) async {
     setState(() => _busy = true);
     try {
@@ -616,6 +745,33 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
               ],
             ),
           ),
+          // The two numbers an admin actually asks for about a person: how much
+          // they use the app, and whether they are still around.
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Chip(
+                avatar: const Icon(Icons.local_offer_outlined, size: 16),
+                label: Text('${account.dealViewCount} deals opened'),
+              ),
+              Chip(
+                avatar: const Icon(Icons.schedule, size: 16),
+                label: Text(describeLastSeen(account.lastSeenAt)),
+              ),
+              if (account.isBanned)
+                Chip(
+                  avatar: Icon(Icons.block, size: 16, color: TS.redOf(context)),
+                  label: Text(
+                    account.banReason?.isNotEmpty == true
+                        ? 'Banned: ${account.banReason}'
+                        : 'Banned',
+                    style: TextStyle(color: TS.redOf(context)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Divider(height: 1, color: TS.lineSoftOf(context)),
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -646,6 +802,274 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
                     onChanged: _toggle,
                   ),
               ],
+            ),
+          ),
+          // The owner keeps their own way back in, so no ban control is offered
+          // for an admin account at all.
+          if (!account.isAdmin) ...[
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                key: ValueKey('ban-${account.id}'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor:
+                      account.isBanned ? TS.greenOf(context) : TS.redOf(context),
+                  side: BorderSide(
+                    color: account.isBanned
+                        ? TS.greenOf(context)
+                        : TS.redOf(context),
+                    width: 2,
+                  ),
+                ),
+                onPressed: _busy ? null : _toggleBan,
+                child: Text(account.isBanned ? 'Unban account' : 'Ban account'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "3 hours ago" answers "are they still around" better than a timestamp does.
+String describeLastSeen(String? lastSeenAt) {
+  if (lastSeenAt == null || lastSeenAt.isEmpty) return 'Never online';
+  final seenAt = DateTime.tryParse(lastSeenAt);
+  if (seenAt == null) return 'Never online';
+  final minutes = DateTime.now().difference(seenAt.toLocal()).inMinutes;
+  if (minutes < 5) return 'Online just now';
+  if (minutes < 60) return '$minutes min ago';
+  final hours = (minutes / 60).round();
+  if (hours < 24) return '$hours hr ago';
+  final days = (hours / 24).round();
+  if (days < 31) return '$days day${days == 1 ? '' : 's'} ago';
+  return lastSeenAt.split('T').first;
+}
+
+/// Analytics tab: member numbers from our own database, plus Cloudflare zone
+/// traffic when a read token is configured on the server.
+class AdminAnalyticsTab extends StatefulWidget {
+  const AdminAnalyticsTab({super.key, required this.api});
+
+  final Api api;
+
+  @override
+  State<AdminAnalyticsTab> createState() => _AdminAnalyticsTabState();
+}
+
+class _AdminAnalyticsTabState extends State<AdminAnalyticsTab> {
+  int _windowDays = 30;
+  late Future<AdminAnalyticsReport> _future =
+      widget.api.adminAnalytics(windowDays: _windowDays);
+
+  void _setWindow(int days) => setState(() {
+        _windowDays = days;
+        _future = widget.api.adminAnalytics(windowDays: days);
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AdminAnalyticsReport>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingPane();
+        }
+        if (snapshot.hasError || snapshot.data == null) {
+          return ErrorPane(
+            message: 'Analytics are unavailable.',
+            onRetry: () => _setWindow(_windowDays),
+          );
+        }
+        final report = snapshot.data!;
+        final traffic = report.traffic;
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 7, label: Text('7 days')),
+                ButtonSegment(value: 30, label: Text('30 days')),
+                ButtonSegment(value: 90, label: Text('90 days')),
+              ],
+              selected: {_windowDays},
+              onSelectionChanged: (selection) => _setWindow(selection.first),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _metric('Members', '${report.accountCount}', Icons.people_outline),
+                _metric('Online today', '${report.activeToday}',
+                    Icons.wifi_tethering),
+                _metric('Active this week', '${report.activeThisWeek}',
+                    Icons.calendar_today_outlined),
+                _metric('Deals opened', '${report.dealViewsInWindow}',
+                    Icons.local_offer_outlined),
+                _metric('Never signed in', '${report.neverSeenCount}',
+                    Icons.person_off_outlined),
+                _metric('Banned', '${report.bannedCount}', Icons.block),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _TrendCard(
+                label: 'New members', days: report.days, values: report.signups),
+            const SizedBox(height: 10),
+            _TrendCard(
+                label: 'Members online',
+                days: report.days,
+                values: report.activeMembers),
+            const SizedBox(height: 10),
+            _TrendCard(
+                label: 'Deals opened',
+                days: report.days,
+                values: report.dealViews),
+            const SizedBox(height: 20),
+            Text('Site traffic',
+                style:
+                    Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+            const SizedBox(height: 8),
+            if (!traffic.hasData)
+              PaperCard(
+                child: Text(
+                  traffic.issue ?? 'Cloudflare traffic is not connected yet.',
+                  style: TextStyle(color: TS.mutedOf(context), height: 1.4),
+                ),
+              )
+            else ...[
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _metric('Requests', _compact(traffic.requests),
+                      Icons.swap_vert_circle_outlined),
+                  _metric('Page views', _compact(traffic.pageViews),
+                      Icons.description_outlined),
+                  _metric('Unique visitors', _compact(traffic.uniques),
+                      Icons.person_outline),
+                  _metric(
+                      'Data served',
+                      '${_compact((traffic.bytes / 1048576).round())} MB',
+                      Icons.cloud_outlined),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _TrendCard(
+                label: 'Page views a day',
+                days: [for (final day in traffic.days) day.date],
+                values: [for (final day in traffic.days) day.pageViews],
+              ),
+              const SizedBox(height: 10),
+              _TrendCard(
+                label: 'Unique visitors a day',
+                days: [for (final day in traffic.days) day.date],
+                values: [for (final day in traffic.days) day.uniques],
+              ),
+            ],
+            const SizedBox(height: 20),
+            Text('What they searched for',
+                style:
+                    Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+            const SizedBox(height: 8),
+            if (report.topSearches.isEmpty)
+              Text('No searches recorded in this window.',
+                  style: TextStyle(color: TS.mutedOf(context)))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  for (final search in report.topSearches)
+                    Chip(label: Text('${search.term}: ${search.count}')),
+                ],
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _metric(String label, String value, IconData icon) => SizedBox(
+        width: 170,
+        child: MetricCard(label: label, value: value, icon: icon),
+      );
+
+  static String _compact(int value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    }
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}k';
+    return '$value';
+  }
+}
+
+/// A bar per day. Hand-drawn rather than pulled from a chart package: the
+/// console needs a shape, not a plotting library.
+class _TrendCard extends StatelessWidget {
+  const _TrendCard({
+    required this.label,
+    required this.days,
+    required this.values,
+  });
+
+  final String label;
+  final List<String> days;
+  final List<int> values;
+
+  @override
+  Widget build(BuildContext context) {
+    final peak = values.isEmpty
+        ? 1
+        : values.reduce((a, b) => a > b ? a : b).clamp(1, 1 << 30);
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+
+    return PaperCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 14)),
+              ),
+              Text('$total total · peak $peak',
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Semantics(
+            label: '$label: $total over ${values.length} days',
+            child: SizedBox(
+              height: 74,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final value in values)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 0.6),
+                        child: FractionallySizedBox(
+                          heightFactor: (value / peak).clamp(0.02, 1.0),
+                          alignment: Alignment.bottomCenter,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: TS.redOf(context),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -780,7 +1204,10 @@ class _AdReviewSectionState extends State<AdReviewSection> {
                             style: FilledButton.styleFrom(
                               backgroundColor: TS.green,
                               foregroundColor: Colors.white,
-                              shape: const RoundedRectangleBorder(),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(TS.controlRadius),
+                              ),
                             ),
                             onPressed: _busyId == ad.id
                                 ? null
@@ -795,7 +1222,10 @@ class _AdReviewSectionState extends State<AdReviewSection> {
                               foregroundColor: TS.redOf(context),
                               side: BorderSide(
                                   color: TS.redOf(context), width: 2),
-                              shape: const RoundedRectangleBorder(),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(TS.controlRadius),
+                              ),
                             ),
                             onPressed: _busyId == ad.id
                                 ? null
@@ -916,6 +1346,24 @@ class _SupportInboxSectionState extends State<SupportInboxSection> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
                   ),
+                  // The AI brief for a chat-filed report sits above the
+                  // member's own words, never in place of them.
+                  if (message.aiBrief != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: TS.surfaceSoftOf(context),
+                        border: Border.all(
+                            color: TS.lineSoftOf(context), width: 1.5),
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
+                      ),
+                      child: Text(
+                        message.aiBrief!,
+                        style: const TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Text(message.message),
                   const SizedBox(height: 10),

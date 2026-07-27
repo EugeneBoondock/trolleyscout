@@ -337,13 +337,54 @@ describe('parseVtexDeals', () => {
       },
     ]
 
-    expect(parseVtexDeals(payload, STORE_ORIGIN)).toEqual([{
-      imageUrl: `${STORE_ORIGIN}/arquivos/sneaker.jpg`,
-      previousPriceCents: 129_900,
-      priceCents: 77_900,
-      productUrl: `${STORE_ORIGIN}/mens-home-replica/p`,
-      title: 'MSFC Mens Home Replica',
-    }])
+    expect(parseVtexDeals(payload, STORE_ORIGIN)).toEqual([
+      {
+        imageUrl: `${STORE_ORIGIN}/arquivos/sneaker.jpg`,
+        previousPriceCents: 129_900,
+        priceCents: 77_900,
+        productUrl: `${STORE_ORIGIN}/mens-home-replica/p`,
+        title: 'MSFC Mens Home Replica',
+      },
+      {
+        imageUrl: undefined,
+        previousPriceCents: 79_900,
+        priceCents: 49_900,
+        productUrl: `${STORE_ORIGIN}/sold-out/p`,
+        soldOut: true,
+        title: 'Sold out item',
+      },
+    ])
+  })
+
+  it('prefers an available VTEX seller over a cheaper sold-out seller', () => {
+    const payload = [{
+      items: [{
+        sellers: [
+          {
+            commertialOffer: {
+              AvailableQuantity: 0,
+              ListPrice: 799,
+              Price: 399,
+            },
+          },
+          {
+            commertialOffer: {
+              AvailableQuantity: 3,
+              ListPrice: 799,
+              Price: 499,
+            },
+          },
+        ],
+      }],
+      link: '/multi-seller/p',
+      productName: 'Multi-seller item',
+    }]
+
+    expect(parseVtexDeals(payload, STORE_ORIGIN)[0]).toMatchObject({
+      priceCents: 49_900,
+      productUrl: `${STORE_ORIGIN}/multi-seller/p`,
+    })
+    expect(parseVtexDeals(payload, STORE_ORIGIN)[0]?.soldOut).toBeUndefined()
   })
 })
 

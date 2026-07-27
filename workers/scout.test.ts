@@ -527,6 +527,7 @@ describe('runScheduledScout', () => {
       discoveredLeafletCount: 0,
       scannedDocumentCount: 0,
     }))
+    const saveLeafletSnapshot = vi.fn(async () => undefined)
     const fetcher = vi.fn(async () => Response.json({
       data: {
         deals: [],
@@ -576,6 +577,7 @@ describe('runScheduledScout', () => {
       }]),
       runVoucherScout: async () => ({ expired: 0, sources: [] }),
       runCatalogueScout: runCatalogue,
+      saveLeafletSnapshot,
       runStructuredRetailerFeedScout: async () => ({
         acceptedDealCount: 0,
         catalogueCount: 1,
@@ -614,6 +616,14 @@ describe('runScheduledScout', () => {
           retailerId: 'spar',
         }),
       ],
+    )
+    expect(saveLeafletSnapshot).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({ id: 'structured-catalogue' }),
+        expect.objectContaining({ id: 'legacy-catalogue' }),
+      ],
+      expect.stringMatching(/^20\d\d-/),
     )
   })
 

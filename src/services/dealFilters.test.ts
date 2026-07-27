@@ -54,4 +54,16 @@ describe('filterDiscoveryDeals', () => {
       'metadata-food',
     )
   })
+
+  it('hides only deals whose source explicitly says they are sold out', () => {
+    const availabilityDeals = [
+      deals[0],
+      { ...deals[1], id: 'sold-out-milk', soldOut: true },
+      deals[2],
+    ]
+
+    expect(
+      filterDiscoveryDeals(availabilityDeals, { hideSoldOut: true }).map((deal) => deal.id),
+    ).toEqual(['rice', 'metadata-food'])
+  })
 })

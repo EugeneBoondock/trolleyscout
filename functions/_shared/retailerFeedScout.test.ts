@@ -142,6 +142,7 @@ describe('structured retailer source decoders', () => {
       'flipp::winn-dixie',
       'cape-union-mart::deals-everyone',
       'old-khaki::deals-offers',
+      'bathu::shopify-markdowns',
       'edgars::shopify-markdowns',
       'under-armour::shopify-markdowns',
       'cotton-on::sale',
@@ -149,10 +150,12 @@ describe('structured retailer source decoders', () => {
       'totalsports::sale',
       'archive::sale',
       'sneaker-factory::sale',
+      'jet::sale',
       'truworths::sale',
       'office-london::sale',
       'adidas::sale',
       'new-balance::clearance',
+      'asics::national-catalogue',
       'h-and-m::sale',
       'sportsmans-warehouse::yellow-ticket-sale',
       'zara::sale',
@@ -583,6 +586,7 @@ describe('runStructuredRetailerFeedScout', () => {
       checkedSourceCount: 1,
     })
     expect(result.catalogues).toEqual([expect.objectContaining({
+      countryCode: 'ZA',
       documentUrl: 'https://official.test/catalogues/catalogue-1.pdf',
       imageUrl: 'https://official.test/catalogues/catalogue-1.webp',
       name: 'Catalogue catalogue-1',
@@ -593,6 +597,30 @@ describe('runStructuredRetailerFeedScout', () => {
       url: 'https://official.test/catalogues/catalogue-1.pdf',
       validTo: '2026-07-20',
     })])
+  })
+
+  it('keeps a structured catalogue in its source country', async () => {
+    const storage = fakeStorage()
+    const source = {
+      ...testSource('alpha::deals', () => ({
+        candidates: [],
+        catalogues: [catalogue('alpha', 'catalogue-bw')],
+      })),
+      countryCode: 'BW',
+    }
+
+    const result = await runStructuredRetailerFeedScout(
+      { DB: {} as D1Database },
+      {
+        fetcher: async () => Response.json({ ok: true }),
+        sources: [source],
+        storage,
+      },
+    )
+
+    expect(result.catalogues).toEqual([
+      expect.objectContaining({ countryCode: 'BW' }),
+    ])
   })
 
   it('resumes a 205-candidate response as 100, 100, and 5 across three runs', async () => {

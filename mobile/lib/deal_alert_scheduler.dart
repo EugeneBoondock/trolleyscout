@@ -28,7 +28,10 @@ class WorkmanagerDealAlertTaskPlatform implements DealAlertTaskPlatform {
         networkType:
             networkRequired ? NetworkType.connected : NetworkType.notRequired,
       ),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+      // App restore runs this sync on every authenticated launch. Keep the
+      // existing OS job so frequent launches do not restart its three-hour
+      // clock and postpone a closed-app check.
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
   }
 

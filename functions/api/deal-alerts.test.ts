@@ -172,6 +172,7 @@ function account() {
     planName: 'Free',
     planStatus: 'active',
     propertiesAccess: false,
+    status: 'active' as const,
     role: 'member',
     updatedAt: '2026-07-19T10:00:00.000Z',
   }

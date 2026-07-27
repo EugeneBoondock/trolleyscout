@@ -331,6 +331,7 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               decoration: BoxDecoration(
                 color: TS.surfaceSoftOf(context),
                 border: Border.all(color: TS.lineOf(context), width: 2),
+                borderRadius: BorderRadius.circular(TS.cardRadius),
               ),
               padding: const EdgeInsets.all(14),
               child: Row(
@@ -357,7 +358,9 @@ class _AdvertiseScreenState extends State<AdvertiseScreen> {
               style: FilledButton.styleFrom(
                 backgroundColor: TS.yellow,
                 foregroundColor: TS.ink,
-                shape: const RoundedRectangleBorder(),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(TS.controlRadius),
+                ),
               ),
               onPressed: _submitting ? null : _submit,
               icon: const Icon(Icons.campaign_outlined),
@@ -433,7 +436,9 @@ class _AdRow extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: TS.green,
                   foregroundColor: Colors.white,
-                  shape: const RoundedRectangleBorder(),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(TS.controlRadius),
+                  ),
                 ),
                 onPressed: paying ? null : onPay,
                 icon: const Icon(Icons.lock_outline, size: 18),

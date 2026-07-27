@@ -57,6 +57,96 @@ void main() {
     expect(tester.getSize(actionsFinder).height, lessThanOrEqualTo(52));
     expect(tester.getSize(cardFinder).height, lessThanOrEqualTo(280));
   });
+
+  testWidgets('Marketplace labels a Bob Shop auction amount as a current bid',
+      (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(api: _BidLayoutApi(), isAuthenticated: true),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('deal-price-qualifier-bobshop-bid')),
+      findsOneWidget,
+    );
+    expect(find.text('Current bid'), findsOneWidget);
+  });
+
+  testWidgets('Marketplace can hide sold-out deals', (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(
+          api: _AvailabilityLayoutApi(),
+          isAuthenticated: true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('deal-card-sold-out')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('hide-sold-out-filter')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('deal-card-sold-out')), findsNothing);
+    expect(find.byKey(const Key('deal-card-available')), findsOneWidget);
+  });
+
+  testWidgets('Marketplace explains a reached Free viewing allowance',
+      (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(
+          api: _LimitedLayoutApi(),
+          isAuthenticated: true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('marketplace-access-limit')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Free plan: up to 10,000 deals and 50 catalogues. '
+        '12,000 deals and 72 catalogues are available.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('deal-card-access-discovery')), findsOneWidget);
+    expect(find.byKey(const Key('deal-card-access-site')), findsOneWidget);
+  });
+
+  testWidgets('Marketplace keeps its merged feed within the deal allowance',
+      (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(
+          api: _MergedLimitLayoutApi(),
+          isAuthenticated: true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('deal-card-access-discovery')), findsOneWidget);
+    expect(find.byKey(const Key('deal-card-access-site')), findsNothing);
+  });
 }
 
 Future<void> _usePhoneViewport(WidgetTester tester) async {
@@ -164,6 +254,129 @@ class _LayoutApi extends Api {
   @override
   Future<NotificationPreferences> notificationPreferences() async =>
       const NotificationPreferences.off();
+}
+
+class _BidLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [
+          Deal(
+            id: 'bobshop-bid',
+            retailerId: 'bobshop',
+            retailerName: 'Bob Shop',
+            sourceLabel: 'Featured listings',
+            sourceUrl: 'https://www.bobshop.co.za/',
+            productUrl: 'https://www.bobshop.co.za/camera/p/1',
+            title: 'Camera auction',
+            priceText: 'R250.00',
+            unitText: 'Current bid',
+          ),
+        ],
+        foundDealCount: 1,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
+}
+
+class _AvailabilityLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [
+          Deal(
+            id: 'available',
+            retailerId: 'bathu',
+            retailerName: 'Bathu',
+            sourceLabel: 'Sale',
+            title: 'Available shoe',
+          ),
+          Deal(
+            id: 'sold-out',
+            retailerId: 'bathu',
+            retailerName: 'Bathu',
+            sourceLabel: 'Sale',
+            title: 'Sold-out shoe',
+            soldOut: true,
+          ),
+        ],
+        foundDealCount: 2,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
+}
+
+class _LimitedLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        access: DiscoveryAccess(
+          availableCatalogueCount: 72,
+          availableDealCount: 12000,
+          catalogueLimit: 50,
+          dealLimit: 10000,
+          planId: 'free',
+        ),
+        deals: [
+          Deal(
+            id: 'access-discovery',
+            retailerId: 'access-market',
+            retailerName: 'Access Market',
+            sourceLabel: 'Official specials',
+            title: 'Discovery allowance deal',
+          ),
+        ],
+        foundDealCount: 12000,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 72,
+      );
+
+  @override
+  Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async => const [
+        ScrollDeal(
+          id: 'access-site',
+          title: 'Deal-site overflow',
+          retailerName: 'Deal Site',
+          sourceLabel: 'Deal Site',
+          source: 'deal-site',
+          productUrl: 'https://example.test/access-site',
+          imageUrl: 'https://example.test/access-site.jpg',
+        ),
+      ];
+}
+
+class _MergedLimitLayoutApi extends _LimitedLayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        access: DiscoveryAccess(
+          availableCatalogueCount: 0,
+          availableDealCount: 2,
+          catalogueLimit: 50,
+          dealLimit: 1,
+          planId: 'free',
+        ),
+        deals: [
+          Deal(
+            id: 'access-discovery',
+            retailerId: 'access-market',
+            retailerName: 'Access Market',
+            sourceLabel: 'Official specials',
+            title: 'Discovery allowance deal',
+          ),
+        ],
+        foundDealCount: 2,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
 }
 
 const _memberSession = MemberSession(

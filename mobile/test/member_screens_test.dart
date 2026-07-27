@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/app_controller.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/about_screen.dart';
 import 'package:trolley_scout/screens/admin_screen.dart';
 import 'package:trolley_scout/screens/basket_screen.dart';
@@ -82,12 +85,94 @@ void main() {
     );
   });
 
+  testWidgets('dashboard stories show catalogue pages before deals',
+      (tester) async {
+    final api = _FeatureApi();
+    await tester.pumpWidget(_wrap(DashboardScreen(
+      api: api,
+      session: _memberSession,
+      onNavigate: (_) {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Store stories'), findsOneWidget);
+    await tester.tap(find.byTooltip('View Example Market story'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.byKey(const Key('story-progress-0')), findsOneWidget);
+    expect(find.byKey(const Key('story-progress-1')), findsOneWidget);
+    expect(find.byKey(const Key('story-progress-2')), findsOneWidget);
+  });
+
+  testWidgets('dashboard content renders before the full story feed completes',
+      (tester) async {
+    final api = _DeferredStoriesApi();
+    await tester.pumpWidget(_wrap(DashboardScreen(
+      api: api,
+      session: _memberSession,
+      onNavigate: (_) {},
+    )));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Sam Shopper'), findsOneWidget);
+    expect(find.byKey(const Key('dashboard-stories-loading')), findsOneWidget);
+    expect(api.summaryCalls, 1);
+    expect(api.fullCalls, 1);
+
+    api.fullDiscovery.complete(const DiscoveryResult(
+      deals: [_deal],
+      foundDealCount: 1,
+      checkedSourceCount: 3,
+      unavailableSourceCount: 0,
+      leafletCount: 2,
+      catalogues: [_catalogue],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('View Example Market story'), findsOneWidget);
+  });
+
+  testWidgets('dashboard stories reuse a fresh discovery cache',
+      (tester) async {
+    await DiscoveryCache().save(
+      const DiscoveryResult(
+        deals: [_deal],
+        foundDealCount: 1,
+        checkedSourceCount: 3,
+        unavailableSourceCount: 0,
+        leafletCount: 1,
+        catalogues: [_catalogue],
+      ),
+      DateTime.now().subtract(const Duration(hours: 2)),
+    );
+    final api = _DeferredStoriesApi();
+
+    await tester.pumpWidget(_wrap(DashboardScreen(
+      api: api,
+      session: _memberSession,
+      onNavigate: (_) {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(api.summaryCalls, 1);
+    expect(api.fullCalls, 0);
+    expect(find.byTooltip('View Example Market story'), findsOneWidget);
+  });
+
   testWidgets('stores can save an official source', (tester) async {
     final api = _FeatureApi();
     await tester
         .pumpWidget(_wrap(StoresScreen(api: api, isAuthenticated: true)));
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Example Market'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Example Market'), findsOneWidget);
     final saveButton = find.widgetWithText(OutlinedButton, 'Save');
     tester.widget<OutlinedButton>(saveButton).onPressed!();
@@ -302,6 +387,7 @@ class _FeatureApi extends Api {
         checkedSourceCount: 3,
         unavailableSourceCount: 0,
         leafletCount: 2,
+        catalogues: [_catalogue],
       );
 
   @override
@@ -446,6 +532,23 @@ class _FeatureApi extends Api {
   }
 }
 
+class _DeferredStoriesApi extends _FeatureApi {
+  final fullDiscovery = Completer<DiscoveryResult>();
+  int summaryCalls = 0;
+  int fullCalls = 0;
+
+  @override
+  Future<DiscoveryResult> discovery(
+      {bool forceLive = false, bool summary = false}) {
+    if (summary) {
+      summaryCalls += 1;
+      return super.discovery(forceLive: forceLive, summary: true);
+    }
+    fullCalls += 1;
+    return fullDiscovery.future;
+  }
+}
+
 const _memberAccount = MemberAccount(
   id: 'member-1',
   email: 'sam@example.com',
@@ -477,6 +580,22 @@ const _deal = Deal(
   priceText: 'R123.45',
   previousPriceText: 'R133.45',
   savingText: 'Save R10',
+);
+
+const _catalogue = Catalogue(
+  name: 'Weekly catalogue',
+  url: 'https://example.test/catalogue',
+  retailerName: 'Example Market',
+  pages: [
+    CataloguePage(
+      pageNumber: 1,
+      imageUrl: 'https://images.example.test/catalogue-1.webp',
+    ),
+    CataloguePage(
+      pageNumber: 2,
+      imageUrl: 'https://images.example.test/catalogue-2.webp',
+    ),
+  ],
 );
 
 const _savedDeal = SavedDeal(

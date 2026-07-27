@@ -93,6 +93,10 @@ void main() {
     );
     expect(find.text('1 of 2'), findsOneWidget);
     expect(find.text('View product'), findsOneWidget);
+    expect(
+      find.byKey(const Key('marketplace-viewer-sold-out-gallery-deal')),
+      findsOneWidget,
+    );
 
     await tester.drag(
       find.byKey(const Key('marketplace-product-gallery')),
@@ -228,4 +232,5 @@ const _galleryDeal = Deal(
     'https://images.example.test/coffee-front.png',
     'https://images.example.test/coffee-side.png',
   ],
+  soldOut: true,
 );

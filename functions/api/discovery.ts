@@ -1,4 +1,5 @@
 import { dataPolicy } from '../../src/api/staticData'
+import { getMemberPlan } from '../../src/data/memberPlans'
 import { retailerById } from '../../src/data/retailers'
 import {
   buildClicksPromotionsApiUrl,
@@ -24,6 +25,20 @@ import {
   type LeafletTarget,
 } from '../../src/services/leafletDiscovery'
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
+import { selectCurrentCatalogues } from '../../src/services/catalogueSelection'
+import {
+  catalogueSpecialsDirectoryPageCount,
+  catalogueSpecialsDirectoryPageUrl,
+  extractCatalogueSpecialsLeaflets,
+} from '../../src/services/catalogueDirectory'
+import {
+  LATEST_SPECIALS_CATEGORY_URLS,
+  catalogueDirectoryProvider,
+  extractGuzzleLeaflets,
+  extractLatestSpecialsHtmlLeaflets,
+  extractLatestSpecialsLeaflets,
+  extractMyCatalogueLeaflets,
+} from '../../src/services/catalogueSources'
 import {
   buildVtexDealsRequest,
   parseCommonCommerceDeals,
@@ -33,6 +48,7 @@ import type {
   DiscoveredDeal,
   DiscoveryRun,
   DiscoverySourceResult,
+  MemberPlanId,
   RetailerId,
   StoreLeaflet,
 } from '../../src/types'
@@ -53,8 +69,11 @@ import type { TrolleyScoutEnv } from '../_shared/env'
 import { getStructuredRetailerSources } from '../_shared/retailerFeedScout'
 import {
   buildFlippingBookPages,
+  buildModernFlippingBookPages,
   flippingBookPagerUrl,
+  modernFlippingBookPagerUrl,
   parseFlippingBookPager,
+  parseModernFlippingBookViewer,
 } from '../_shared/catalogueScout'
 import {
   readAllDiscoveredStores,
@@ -120,6 +139,7 @@ const PAGER_PUBLIC_PAGE_LIMIT = 250
 const PNP_VIEWER_MAX_BYTES = 256 * 1024
 const PNP_VIEWER_TIMEOUT_MS = 8_000
 const PNP_VIEWER_CONCURRENCY = 3
+const CATALOGUE_DIRECTORY_MAX_BYTES = 2 * 1024 * 1024
 const DISCOVERY_EDGE_CACHE_SECONDS = 300
 const INTERNATIONAL_REFRESH_STORE_LIMIT = 3
 const STOREFRONT_SOURCE_MAX_BYTES = 4 * 1024 * 1024
@@ -156,6 +176,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const summaryOnly = new URL(request.url).searchParams.get('summary') === '1'
   const session = await getMemberSession(env, request)
   const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
+  const accessPlanId: MemberPlanId = session.account?.role === 'admin'
+    ? 'organization'
+    : session.account?.planId ?? 'free'
   const isSouthAfrica = countryCode === 'ZA'
   const summaryKey = summarySnapshotKey(countryCode)
   if (forceLive && session.account?.role !== 'admin') {
@@ -202,7 +225,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
         // topDeals field. Let those requests rebuild the row from source
         // snapshots once instead of returning an empty savings strip.
         if (Array.isArray(parsed.topDeals)) {
-          const businessPublications = await listLiveOrganizationPublications(env, 'marketplace')
+          const businessPublications = isSouthAfrica
+            ? await listLiveOrganizationPublications(env, 'marketplace')
+            : []
           const businessDeals = organizationPublicationsToDiscoveryDeals(businessPublications)
           return json(
             {
@@ -260,7 +285,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   if (!forceLive) {
     const newestCheckedAt = newestDiscoveryCacheTime(normalizedItems, snapshots)
     const mergedChecks = mergeNormalizedFirstChecks(normalizedChecks, buildSnapshotChecks(snapshots))
-    const leaflets = leafletSnapshot?.leaflets ?? []
+    const leaflets = cataloguesForCountry(
+      leafletSnapshot?.leaflets ?? [],
+      countryCode,
+    )
 
     const response = respond(
       mergedChecks,
@@ -270,6 +298,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       interests,
       storeDiscovery,
       summaryOnly,
+      countryCode,
+      accessPlanId,
     )
 
     // Compute summary and write back in background so subsequent summaryOnly hits get served instantly
@@ -332,6 +362,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       interests,
       storeDiscovery,
       summaryOnly,
+      countryCode,
+      accessPlanId,
     )
     const allDeals = dedupeDiscoveryDeals(storeDiscovery.deals)
 
@@ -378,6 +410,8 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     interests,
     storeDiscovery,
     summaryOnly,
+    countryCode,
+    accessPlanId,
   )
 
   // Update summary table for live updates
@@ -497,6 +531,8 @@ export async function refreshDiscoveryCache(
       businessPublications,
       nowIso,
     ),
+    false,
+    'ZA',
   )
 }
 
@@ -656,20 +692,20 @@ export async function refreshLeafletCache(
   const failedRetailers = new Set<string>(
     settled
       .filter((result) => !result.succeeded)
-      .map((result) => result.target.retailerId),
+      .map((result) => result.target.sourceId ?? result.target.retailerId),
   )
   const targetedRetailers = new Set<string>(
-    targets.map((target) => target.retailerId),
+    targets.map((target) => target.sourceId ?? target.retailerId),
   )
   const retainedLeaflets = (priorLeaflets ?? []).filter((leaflet) =>
-    failedRetailers.has(leaflet.retailerId) ||
-    !targetedRetailers.has(leaflet.retailerId),
+    failedRetailers.has(leafletDiscoverySourceId(leaflet)) ||
+    !targetedRetailers.has(leafletDiscoverySourceId(leaflet)),
   )
   const leaflets = dedupeLeaflets([...freshLeaflets, ...retainedLeaflets])
   const anyTargetSucceeded = settled.some((result) => result.succeeded)
 
   if (!anyTargetSucceeded || leaflets.length === 0) {
-    return priorLeaflets ?? []
+    return dedupeLeaflets(priorLeaflets ?? [])
   }
 
   await (options.saveSnapshot ?? saveLeafletSnapshot)(env, leaflets, checkedAt)
@@ -689,6 +725,49 @@ export async function enrichInteractiveLeaflets(
   let nextIndex = 0
 
   const loadPages = async (leaflet: StoreLeaflet): Promise<CataloguePage[]> => {
+    if (isModernFlippingBookViewerUrl(leaflet.url)) {
+      const { response: viewerResponse, text: viewerHtml } =
+        await fetchBoundedTextWithTimeout(fetcher, leaflet.url, {
+          headers: {
+            accept: 'text/html',
+            'user-agent': BROWSER_USER_AGENT,
+          },
+        }, timeoutMs, PNP_VIEWER_MAX_BYTES)
+      if (!viewerResponse.ok || !viewerHtml) {
+        return []
+      }
+
+      const viewer = parseModernFlippingBookViewer(viewerHtml)
+      const pagerUrl = modernFlippingBookPagerUrl(viewer)
+      if (!viewer || !pagerUrl) {
+        return []
+      }
+       const pagerResponse = await fetchWithTimeout(fetcher, pagerUrl, {
+        headers: {
+          accept: 'application/json,text/javascript',
+          'user-agent': BROWSER_USER_AGENT,
+        },
+       }, timeoutMs)
+       if (!pagerResponse.ok) {
+          return buildModernFlippingBookPages(
+            leaflet,
+            viewer,
+            {},
+            PAGER_PUBLIC_PAGE_LIMIT,
+          )
+       }
+      const pager = parseFlippingBookPager(await readBoundedText(
+        pagerResponse,
+        PAGER_MANIFEST_MAX_BYTES,
+      ))
+      return buildModernFlippingBookPages(
+        leaflet,
+        viewer,
+        pager,
+        PAGER_PUBLIC_PAGE_LIMIT,
+      )
+    }
+
     const pagerUrl = flippingBookPagerUrl(leaflet)
     if (!pagerUrl) {
       return []
@@ -779,6 +858,16 @@ function isProbablyHtmlUrl(value: string): boolean {
   }
 }
 
+function isModernFlippingBookViewerUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.hostname.toLowerCase() === 'online.flippingbook.com' &&
+      /^\/view\/[a-z0-9_-]+\/(?:index\.html)?$/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
 function absoluteHttpsImageUrl(
   value: string | undefined,
   baseUrl: string,
@@ -862,7 +951,11 @@ async function fetchLeaflets(
   fetcher: typeof fetch,
 ): Promise<LeafletFetchResult> {
   const success = (leaflets: StoreLeaflet[]): LeafletFetchResult => ({
-    leaflets,
+    leaflets: leaflets.map((leaflet) => ({
+      ...leaflet,
+      countryCode: leaflet.countryCode ?? target.countryCode ?? 'ZA',
+      sourceId: leaflet.sourceId ?? target.sourceId ?? target.retailerId,
+    })),
     succeeded: true,
     target,
   })
@@ -873,6 +966,15 @@ async function fetchLeaflets(
   })
 
   try {
+    if (target.kind === 'catalogue-directory' && target.pageUrl) {
+      const leaflets = await fetchCatalogueDirectoryLeaflets(
+        target,
+        checkedAt,
+        fetcher,
+      )
+      return leaflets.length > 0 ? success(leaflets) : failure()
+    }
+
     if (target.kind === 'pnp-cms' && target.pageUrl) {
       const response = await fetchWithTimeout(fetcher, target.pageUrl, {
         headers: {
@@ -948,6 +1050,100 @@ async function fetchLeaflets(
   }
 
   return failure()
+}
+
+async function fetchCatalogueDirectoryLeaflets(
+  target: LeafletTarget,
+  checkedAt: string,
+  fetcher: typeof fetch,
+): Promise<StoreLeaflet[]> {
+  if (!target.pageUrl) {
+    return []
+  }
+  const provider = catalogueDirectoryProvider(target.pageUrl)
+  if (!provider) {
+    return []
+  }
+  const readPage = async (url: string) => {
+    const response = await fetchWithTimeout(fetcher, url, {
+      headers: {
+        accept: provider === 'latest-specials'
+          ? 'application/rss+xml,application/xml,text/xml'
+          : 'text/html,application/xhtml+xml',
+        referer: directoryReferer(provider),
+        'user-agent': BROWSER_USER_AGENT,
+      },
+    }, PAGER_MANIFEST_TIMEOUT_MS)
+    if (response.status !== 200) {
+      return undefined
+    }
+    const text = await readBoundedText(response, CATALOGUE_DIRECTORY_MAX_BYTES)
+    return text.trim().length > 0 ? text : undefined
+  }
+
+  const firstHtml = await readPage(target.pageUrl)
+  if (!firstHtml) {
+    return []
+  }
+  const countryCode = target.countryCode ?? 'ZA'
+  if (provider === 'guzzle') {
+    return extractGuzzleLeaflets(firstHtml, checkedAt, countryCode)
+  }
+  if (provider === 'latest-specials') {
+    const categoryHtml = await Promise.all(
+      LATEST_SPECIALS_CATEGORY_URLS.map((url) => readPage(url)),
+    )
+    const seen = new Set<string>()
+    return [
+      ...extractLatestSpecialsLeaflets(firstHtml, checkedAt, countryCode),
+      ...categoryHtml
+        .filter((html): html is string => Boolean(html))
+        .flatMap((html) =>
+          extractLatestSpecialsHtmlLeaflets(html, checkedAt, countryCode)),
+    ].filter((leaflet) => {
+      if (seen.has(leaflet.id)) return false
+      seen.add(leaflet.id)
+      return true
+    })
+  }
+  if (provider === 'my-catalogue') {
+    return extractMyCatalogueLeaflets(firstHtml, checkedAt, countryCode)
+  }
+
+  const pageCount = catalogueSpecialsDirectoryPageCount(firstHtml)
+  const remainingHtml = await Promise.all(
+    Array.from(
+      { length: Math.max(0, pageCount - 1) },
+      (_, index) => readPage(catalogueSpecialsDirectoryPageUrl(index + 2)),
+    ),
+  )
+  const seen = new Set<string>()
+  return [firstHtml, ...remainingHtml.filter((html): html is string => Boolean(html))]
+    .flatMap((html) =>
+      extractCatalogueSpecialsLeaflets(html, checkedAt, countryCode))
+    .filter((leaflet) => {
+      if (seen.has(leaflet.id)) {
+        return false
+      }
+      seen.add(leaflet.id)
+      return true
+    })
+}
+
+function directoryReferer(provider: ReturnType<typeof catalogueDirectoryProvider>) {
+  if (provider === 'guzzle') return 'https://www.guzzle.co.za/'
+  if (provider === 'latest-specials') return 'https://www.latestspecials.co.za/'
+  if (provider === 'my-catalogue') return 'https://my-catalogue.co.za/'
+  return 'https://www.cataloguespecials.co.za/'
+}
+
+function leafletDiscoverySourceId(leaflet: StoreLeaflet): string {
+  if (leaflet.sourceId) return leaflet.sourceId
+  if (leaflet.sourceLabel === 'Catalogue Specials') return 'catalogue-specials-za'
+  if (leaflet.sourceLabel === 'Guzzle') return 'guzzle-za'
+  if (leaflet.sourceLabel === 'Latest Specials') return 'latest-specials-za'
+  if (leaflet.sourceLabel === 'My Catalogue') return 'my-catalogue-za'
+  return leaflet.retailerId
 }
 
 export async function resolvePnpHflipDocuments(
@@ -1060,7 +1256,7 @@ function trustedHeyzinePdfUrl(html: string): string | undefined {
 // A leaflet whose link is an HTML promotion page cannot be read or scanned.
 // Follow each one and, when it embeds a hosted FlippingBook viewer, point the
 // leaflet at the viewer's index.html so its pages can be built and scanned.
-async function resolveEmbeddedViewers(
+export async function resolveEmbeddedViewers(
   leaflets: StoreLeaflet[],
   fetcher: typeof fetch = fetch,
 ): Promise<StoreLeaflet[]> {
@@ -1085,9 +1281,24 @@ async function resolveEmbeddedViewers(
           return leaflet
         }
 
-        // Its pages are signed and unreadable, so carry the public cover.
-        const cover = leaflet.imageUrl ?? (await fetchViewerCover(viewerUrl, fetcher))
-        return { ...leaflet, imageUrl: cover, url: viewerUrl }
+        const viewerDetails = await fetchViewerDetails(viewerUrl, fetcher)
+        const resolvedLeaflet = {
+          ...leaflet,
+          imageUrl: leaflet.imageUrl ?? viewerDetails.cover,
+          url: viewerUrl,
+        }
+        const pages = viewerDetails.viewer
+          ? buildModernFlippingBookPages(
+              resolvedLeaflet,
+              viewerDetails.viewer,
+              {},
+              PAGER_PUBLIC_PAGE_LIMIT,
+            )
+          : []
+
+        return pages.length > 0
+          ? { ...resolvedLeaflet, pages }
+          : resolvedLeaflet
       } catch {
         return leaflet
       }
@@ -1095,18 +1306,29 @@ async function resolveEmbeddedViewers(
   )
 }
 
-async function fetchViewerCover(
+async function fetchViewerDetails(
   viewerUrl: string,
   fetcher: typeof fetch = fetch,
-): Promise<string | undefined> {
+): Promise<{
+  cover?: string
+  viewer?: ReturnType<typeof parseModernFlippingBookViewer>
+}> {
   try {
     const response = await fetcher(viewerUrl, {
       headers: { accept: 'text/html', 'user-agent': BROWSER_USER_AGENT },
     })
 
-    return response.ok ? extractViewerCoverImage(await response.text()) : undefined
+    if (!response.ok) {
+      return {}
+    }
+
+    const html = await response.text()
+    return {
+      cover: extractViewerCoverImage(html),
+      viewer: parseModernFlippingBookViewer(html),
+    }
   } catch {
-    return undefined
+    return {}
   }
 }
 
@@ -1237,6 +1459,8 @@ function respond(
   interests: DealInterestWeight[],
   storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
   summaryOnly?: boolean,
+  countryCode = 'ZA',
+  planId: MemberPlanId = 'free',
 ) {
   const headers = summaryOnly
     ? {
@@ -1254,6 +1478,8 @@ function respond(
       interests,
       storeDiscovery,
       summaryOnly,
+      countryCode,
+      planId,
     ),
     { headers },
   )
@@ -1267,20 +1493,34 @@ function buildDiscoveryRun(
   interests: DealInterestWeight[],
   storeDiscovery: ReturnType<typeof storePromotionsToDiscovery>,
   summaryOnly?: boolean,
+  countryCode = 'ZA',
+  planId: MemberPlanId = 'organization',
 ): DiscoveryRun {
   const allDeals = dedupeDiscoveryDeals([
     ...settled.flatMap((result) => result.deals),
     ...storeDiscovery.deals,
   ])
+  const limits = getMemberPlan(planId).limits
+  const rankedDeals = rankDealsForMember(allDeals, interests)
   const deals = summaryOnly
     ? summaryPreviewDeals(allDeals)
-    : rankDealsForMember(allDeals, interests)
+    : rankedDeals.slice(0, limits.visibleDeals)
   const sources = [...settled.map((result) => result.source), ...storeDiscovery.sources]
-  const mergedLeaflets = dedupeLeaflets([...leaflets, ...storeDiscovery.leaflets])
+  const mergedLeaflets = dedupeLeaflets(cataloguesForCountry(
+    [...leaflets, ...storeDiscovery.leaflets],
+    countryCode,
+  ))
 
   return {
+    access: {
+      availableCatalogueCount: mergedLeaflets.length,
+      availableDealCount: allDeals.length,
+      catalogueLimit: limits.visibleCatalogues,
+      dealLimit: limits.visibleDeals,
+      planId,
+    },
     deals,
-    leaflets: summaryOnly ? [] : mergedLeaflets,
+    leaflets: summaryOnly ? [] : mergedLeaflets.slice(0, limits.visibleCatalogues),
     refreshedAt,
     served: fromCache ? 'snapshot' : 'live',
     sources,
@@ -1340,6 +1580,13 @@ export function storePromotionsToDiscovery(
   const byStore = new Map<string, { name: string; sourceUrl: string; count: number }>()
 
   for (const promotion of promotions) {
+    if (
+      promotion.kind === 'catalogue' &&
+      !isUsefulStoreCataloguePromotion(promotion)
+    ) {
+      continue
+    }
+
     const promotionCapturedAt = promotion.capturedAt ?? capturedAt
     const retailerId = (promotion.retailerId ?? `store-${promotion.placeId}`) as DiscoveredDeal['retailerId']
     const source = byStore.get(promotion.placeId) ?? {
@@ -1353,6 +1600,7 @@ export function storePromotionsToDiscovery(
     if (promotion.kind === 'catalogue') {
       leaflets.push({
         capturedAt: promotionCapturedAt,
+        countryCode: promotion.countryCode ?? 'ZA',
         documentUrl: promotion.productUrl ?? promotion.sourceUrl,
         id: promotion.id,
         imageUrl: promotion.imageUrl,
@@ -1402,11 +1650,41 @@ export function storePromotionsToDiscovery(
   return { deals, leaflets, sources }
 }
 
+export function cataloguesForCountry(
+  leaflets: StoreLeaflet[],
+  countryCode: string,
+): StoreLeaflet[] {
+  const selected = countryCode.trim().toUpperCase()
+  return leaflets.filter((leaflet) =>
+    catalogueCountryCode(leaflet) === selected)
+}
+
+const CATALOGUE_COUNTRY_NAMES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bbotswana\b/i, 'BW'],
+  [/\b(?:eswatini|swaziland)\b/i, 'SZ'],
+  [/\blesotho\b/i, 'LS'],
+  [/\bmalawi\b/i, 'MW'],
+  [/\bmozambique\b/i, 'MZ'],
+  [/\bnamibia\b/i, 'NA'],
+  [/\bzambia\b/i, 'ZM'],
+  [/\bzimbabwe\b/i, 'ZW'],
+]
+
+function catalogueCountryCode(leaflet: StoreLeaflet): string {
+  const labelledCountry = CATALOGUE_COUNTRY_NAMES.find(([pattern]) =>
+    pattern.test(`${leaflet.retailerName} ${leaflet.name}`))
+  if (labelledCountry) {
+    return labelledCountry[1]
+  }
+  return (leaflet.countryCode ?? 'ZA').trim().toUpperCase()
+}
+
 export function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
-  const hasOfficialPnpViewer = leaflets.some((leaflet) =>
+  const selected = selectCurrentCatalogues(leaflets)
+  const hasOfficialPnpViewer = selected.some((leaflet) =>
     leaflet.retailerId === 'pick-n-pay' && isTrustedPnpViewerUrl(leaflet.url))
   const seen = new Set<string>()
-  return leaflets.filter((leaflet) => {
+  return selected.filter((leaflet) => {
     if (hasOfficialPnpViewer && isGenericPnpCatalogue(leaflet)) {
       return false
     }
@@ -1417,6 +1695,80 @@ export function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
     seen.add(key)
     return true
   })
+}
+
+const CATALOGUE_FILE_PATTERN =
+  /\.pdf(?:$|[/?#=&])|(?:^|[/?#._-])(?:catalog(?:ue|o)|katalog|leaflet|brochure|flyer|folheto|folleto|circular)s?(?:[/?#._-]|$)/i
+const CATALOGUE_TITLE_PATTERN =
+  /\b(?:catalog(?:ue|o)|katalog|leaflet|brochure|flyer|folheto|folleto|circular|digital\s+ad)s?\b/i
+const NON_CATALOGUE_TITLE_PATTERN =
+  /\b(?:logo|icon|background|bg[-\s]?image|hero|teaser|thumbnail|badge|product\s+image|image\s+\d+)\b/i
+const IMAGE_FILE_PATTERN = /\.(?:avif|gif|jpe?g|png|webp)(?:$|[?#])/i
+const TRUSTED_CATALOGUE_VIEWER_HOSTS = new Set([
+  'anyflip.com',
+  'cdnc.heyzine.com',
+  'cdn.heyzine.com',
+  'fliphtml5.com',
+  'issuu.com',
+  'online.flippingbook.com',
+  'publitas.com',
+])
+
+function isUsefulStoreCataloguePromotion(
+  promotion: StorePromotion,
+): boolean {
+  return isUsefulCatalogueRecord({
+    imageUrl: promotion.imageUrl,
+    title: promotion.title,
+    url: promotion.productUrl ?? promotion.sourceUrl,
+    sourceUrl: promotion.sourceUrl,
+  })
+}
+
+function isUsefulCatalogueRecord(record: {
+  imageUrl?: string
+  sourceUrl: string
+  title: string
+  url: string
+}): boolean {
+  if (isTrustedCatalogueDocumentUrl(record.url)) {
+    return true
+  }
+  if (
+    !record.imageUrl ||
+    !IMAGE_FILE_PATTERN.test(safeUrlPath(record.imageUrl)) ||
+    NON_CATALOGUE_TITLE_PATTERN.test(record.title)
+  ) {
+    return false
+  }
+
+  return CATALOGUE_TITLE_PATTERN.test(record.title) &&
+    CATALOGUE_FILE_PATTERN.test(
+      `${safeUrlPath(record.imageUrl)} ${safeUrlPath(record.sourceUrl)}`,
+    )
+}
+
+function isTrustedCatalogueDocumentUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
+    return url.protocol === 'https:' && (
+      CATALOGUE_FILE_PATTERN.test(`${url.pathname}${url.search}`) ||
+      TRUSTED_CATALOGUE_VIEWER_HOSTS.has(hostname) ||
+      hostname.endsWith('.hflip.co')
+    )
+  } catch {
+    return false
+  }
+}
+
+function safeUrlPath(value: string): string {
+  try {
+    const url = new URL(value)
+    return `${url.pathname}${url.search}`
+  } catch {
+    return ''
+  }
 }
 
 function isGenericPnpCatalogue(leaflet: StoreLeaflet): boolean {
@@ -1605,6 +1957,7 @@ function storedItemToDiscovery(
     sourceLabel,
     sourceUrl: item.sourceUrl,
     title: item.title,
+    unitText: item.unitText,
     validFrom: item.validFrom,
     validTo: item.validTo,
   }

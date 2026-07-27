@@ -1,6 +1,7 @@
 import type { MemberSession, MemberSessionDraft } from '../types'
 import type {
   BusinessBootstrap,
+  BusinessAdminOverview,
   BusinessLocationDraft,
   BusinessLocationResult,
   BusinessMetrics,
@@ -46,6 +47,16 @@ export async function loadBusinessBootstrap(signal?: AbortSignal): Promise<Busin
   )
   const session = sessionData.session
   if (!session.isAuthenticated || !session.account) {
+    return {
+      gate: emptyGate,
+      locations: [],
+      metrics: emptyMetrics,
+      publications: [],
+      session,
+    }
+  }
+
+  if (session.account.role === 'admin') {
     return {
       gate: emptyGate,
       locations: [],
@@ -106,6 +117,26 @@ export async function signInBusiness(
 
 export async function signOutBusiness(): Promise<void> {
   await request<{ session: MemberSession }>('/api/member-session', { method: 'DELETE' })
+}
+
+export async function loadBusinessAdminOverview(
+  signal?: AbortSignal,
+): Promise<BusinessAdminOverview> {
+  const data = await request<{ overview: BusinessAdminOverview }>(
+    '/api/admin/business-overview',
+    { signal },
+  )
+  return data.overview
+}
+
+export async function setBusinessOrganizationStatus(
+  businessId: string,
+  status: 'active' | 'suspended',
+): Promise<{ changed: boolean; overview: BusinessAdminOverview; issues?: string[] }> {
+  return request(
+    '/api/admin/business-overview',
+    mutation('PATCH', { businessId, status }),
+  )
 }
 
 export async function createBusinessPublication(

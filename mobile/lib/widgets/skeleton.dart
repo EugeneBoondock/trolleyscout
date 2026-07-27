@@ -85,6 +85,10 @@ class _SkeletonCard extends StatelessWidget {
 
     final decoration = BoxDecoration(
       border: Border.all(color: TS.lineSoftOf(context), width: 2),
+      // Matches the card radius so the placeholder has the same silhouette as
+      // the card it stands in for — otherwise loading squares snap into
+      // rounded cards.
+      borderRadius: BorderRadius.circular(TS.cardRadius),
       gradient: LinearGradient(
         begin: Alignment.centerLeft,
         end: Alignment.centerRight,

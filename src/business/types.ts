@@ -1,6 +1,7 @@
 import type { MemberSession } from '../types'
 
 export type BusinessView = 'overview' | 'content' | 'create' | 'locations' | 'insights' | 'account'
+export type BusinessAdminView = 'overview' | 'businesses' | 'moderation' | 'campaigns' | 'payments'
 export type PublicationKind = 'deal' | 'special' | 'promotion' | 'post'
 export type PublicationPlacement = 'marketplace' | 'window' | 'both'
 export type PublicationStatus =
@@ -103,6 +104,84 @@ export interface BusinessBootstrap {
   publications: BusinessPublication[]
   locations: BusinessLocation[]
   metrics: BusinessMetrics
+}
+
+export interface BusinessAdminTotals {
+  activeBusinesses: number
+  businesses: number
+  campaigns: number
+  completedCampaigns: number
+  liveCampaigns: number
+  paidCents: number
+  paidTransactions: number
+  pendingApplications: number
+  pendingModeration: number
+  suspendedBusinesses: number
+}
+
+export interface BusinessAdminOrganization {
+  activeCampaigns: number
+  campaigns: number
+  category?: string
+  completedCampaigns: number
+  createdAt: string
+  id: string
+  impressions: number
+  lastCampaignAt?: string
+  locations: number
+  name: string
+  opens: number
+  ownerName: string
+  paidCents: number
+  paidTransactions: number
+  planId: string
+  planStatus: string
+  saves: number
+  slug: string
+  status: 'active' | 'suspended'
+  updatedAt: string
+  visits: number
+}
+
+export interface BusinessAdminCampaign {
+  createdAt: string
+  endsAt?: string
+  id: string
+  imageAlt?: string
+  imageUrl?: string
+  impressions: number
+  kind: string
+  opens: number
+  organizationId: string
+  organizationName: string
+  placement: string
+  saves: number
+  soldOut: boolean
+  startsAt?: string
+  status: string
+  targetUrl?: string
+  title: string
+  updatedAt: string
+  visits: number
+}
+
+export interface BusinessAdminPayment {
+  amountCents: number
+  businessId: string
+  businessName: string
+  createdAt: string
+  id: string
+  paymentId: string
+  planId: string
+  status: string
+}
+
+export interface BusinessAdminOverview {
+  businesses: BusinessAdminOrganization[]
+  campaigns: BusinessAdminCampaign[]
+  generatedAt: string
+  payments: BusinessAdminPayment[]
+  totals: BusinessAdminTotals
 }
 
 export interface BusinessMutationResult {

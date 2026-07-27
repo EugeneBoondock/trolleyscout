@@ -26,6 +26,7 @@ import 'screens/rules_screen.dart';
 import 'screens/saved_deals_screen.dart';
 import 'screens/saved_sources_screen.dart';
 import 'screens/scanner_screen.dart';
+import 'screens/scout_chat_screen.dart';
 import 'screens/stores_screen.dart';
 import 'screens/window_shopping_screen.dart';
 import 'screens/subscription_screen.dart';
@@ -138,6 +139,7 @@ class _RootShellState extends State<RootShell> {
   String? _authIntent;
   String? _dealsRetailerId;
   String? _dealsQuery;
+  String? _dealsCatalogueId;
   bool? _bioEnabled;
   bool _unlocked = false;
   late bool _introComplete;
@@ -178,6 +180,7 @@ class _RootShellState extends State<RootShell> {
   void _openAppLink(AppLinkRequest request) {
     final destination = switch (request.destination) {
       'deals' => AppDestination.deals,
+      'chat' => AppDestination.chat,
       'near' => AppDestination.near,
       'stores' => AppDestination.stores,
       'tools' => AppDestination.tools,
@@ -192,6 +195,7 @@ class _RootShellState extends State<RootShell> {
       _ => AppDestination.dashboard,
     };
     if (destination == AppDestination.deals) {
+      _dealsCatalogueId = request.catalogueId;
       _dealsQuery = request.query;
       _dealsRetailerId = request.retailerId;
     }
@@ -244,8 +248,8 @@ class _RootShellState extends State<RootShell> {
   static const _primaryDestinations = [
     AppDestination.dashboard,
     AppDestination.deals,
+    AppDestination.chat,
     AppDestination.stores,
-    AppDestination.near,
     AppDestination.scroll,
   ];
 
@@ -337,6 +341,11 @@ class _RootShellState extends State<RootShell> {
         AppDestination.deals => const _ScoutTip(
             'A quicker deal search',
             'Open Advanced to narrow deals by retailer, source, images, and savings.',
+            ScoutMascotPose.search,
+          ),
+        AppDestination.chat => const _ScoutTip(
+            'Ask Mr Scout',
+            'Describe a product, budget, store, or catalogue and Mr Scout will return verified shopping cards.',
             ScoutMascotPose.search,
           ),
         AppDestination.near => const _ScoutTip(
@@ -671,7 +680,7 @@ class _RootShellState extends State<RootShell> {
                           height: largeText ? 72 : 64,
                           backgroundColor: TS.surfaceOf(context),
                           elevation: 0,
-                          indicatorColor: TS.yellow,
+                          indicatorColor: Colors.transparent,
                           labelBehavior: largeText
                               ? NavigationDestinationLabelBehavior
                                   .onlyShowSelected
@@ -682,27 +691,41 @@ class _RootShellState extends State<RootShell> {
                           destinations: const [
                             NavigationDestination(
                               icon: Icon(Icons.dashboard_outlined),
-                              selectedIcon: Icon(Icons.dashboard),
+                              selectedIcon: _SelectedNavIcon(
+                                icon: Icons.dashboard,
+                              ),
                               label: 'Home',
                             ),
                             NavigationDestination(
                               icon: Icon(Icons.local_offer_outlined),
-                              selectedIcon: Icon(Icons.local_offer),
+                              selectedIcon: _SelectedNavIcon(
+                                icon: Icons.local_offer,
+                              ),
                               label: 'Marketplace',
                             ),
                             NavigationDestination(
+                              icon: AnimatedScoutMark(
+                                motion: ScoutMarkMotion.scout,
+                                size: 30,
+                              ),
+                              selectedIcon: AnimatedScoutMark(
+                                motion: ScoutMarkMotion.scout,
+                                size: 32,
+                              ),
+                              label: 'Mr Scout',
+                            ),
+                            NavigationDestination(
                               icon: Icon(Icons.storefront_outlined),
-                              selectedIcon: Icon(Icons.storefront),
+                              selectedIcon: _SelectedNavIcon(
+                                icon: Icons.storefront,
+                              ),
                               label: 'Stores',
                             ),
                             NavigationDestination(
-                              icon: Icon(Icons.near_me_outlined),
-                              selectedIcon: Icon(Icons.near_me),
-                              label: 'Near me',
-                            ),
-                            NavigationDestination(
                               icon: Icon(Icons.window_outlined),
-                              selectedIcon: Icon(Icons.window),
+                              selectedIcon: _SelectedNavIcon(
+                                icon: Icons.window,
+                              ),
                               label: 'Window',
                             ),
                           ],
@@ -732,7 +755,9 @@ class _RootShellState extends State<RootShell> {
           onWantsAuth: () => _showAuth('login'),
           initialRetailerId: _dealsRetailerId,
           initialQuery: _dealsQuery,
+          initialCatalogueId: _dealsCatalogueId,
         ),
+      AppDestination.chat => ScoutChatScreen(api: api),
       AppDestination.tools => ToolsScreen(api: api),
       AppDestination.scroll => WindowShoppingScreen(api: api),
       AppDestination.properties => PropertiesScreen(
@@ -781,6 +806,27 @@ class _RootShellState extends State<RootShell> {
       AppDestination.rules => const RulesScreen(),
       AppDestination.admin => AdminScreen(api: api),
     };
+  }
+}
+
+class _SelectedNavIcon extends StatelessWidget {
+  const _SelectedNavIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: TS.yellow,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: SizedBox(
+        width: 64,
+        height: 32,
+        child: Icon(icon, color: TS.ink),
+      ),
+    );
   }
 }
 

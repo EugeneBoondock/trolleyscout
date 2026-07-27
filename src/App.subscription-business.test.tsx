@@ -53,6 +53,7 @@ const account: MemberAccount = {
   planName: 'Free',
   planStatus: 'active',
   propertiesAccess: false,
+  status: 'active' as const,
   role: 'member',
   updatedAt: '2026-07-26T00:00:00.000Z',
 }
@@ -76,7 +77,13 @@ const subscription: ResourceState<SubscriptionResource> = {
       features: ['Business workspace'],
       id: 'organization',
       isPaid: true,
-      limits: { basketItems: 1000, savedDeals: 1000, savedSources: 1000 },
+      limits: {
+        basketItems: 1000,
+        savedDeals: 1000,
+        savedSources: 1000,
+        visibleCatalogues: 5_000,
+        visibleDeals: 1_000_000,
+      },
       name: 'Organisation',
       prices: { annual: 499000, monthly: 49900 },
       statusText: 'Application required',

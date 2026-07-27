@@ -2,12 +2,14 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'member_state_sync.dart';
+
 /// Recent Properties Scout text searches, newest first. Powers the
 /// recognition-over-recall suggestion chips under the search field so a shopper
 /// can tap where they left off instead of retyping. On-device only (small and
 /// device-specific), deduped case-insensitively and capped so chips stay glanceable.
 class RecentPropertySearchesStore {
-  static const _key = 'recent_property_searches_v1';
+  static const _key = MemberStateSync.recentPropertySearchesKey;
   static const _maxEntries = 6;
 
   Future<List<String>> load() async {
@@ -39,6 +41,7 @@ class RecentPropertySearchesStore {
     } catch (_) {
       // Best-effort; chips simply won't persist this time.
     }
+    MemberStateSync.instance.push(_key, next);
     return next;
   }
 
@@ -49,6 +52,7 @@ class RecentPropertySearchesStore {
     } catch (_) {
       // ignore
     }
+    MemberStateSync.instance.push(_key, const <String>[]);
     return const [];
   }
 }

@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
-import { MagnifyingGlass, Plus, Trash } from '@phosphor-icons/react'
+import { MagnifyingGlass } from '@phosphor-icons/react'
 import clsx from 'clsx'
-import { compareShops, formatCents, parsePriceInput } from '../services/shopCompare'
 import {
   loadRetailers,
   readMemberState,
@@ -23,21 +21,14 @@ export function ToolkitView({ preferenceOwnerId }: { preferenceOwnerId?: string 
           <p className="eyebrow">Tools</p>
           <h1>Compare before you buy</h1>
           <p className="section-lede">
-            Search the same product across selected stores, or compare a full shopping list side
-            by side.
+            Search the same product across as many stores as you like and see what each one
+            charges, from live prices where we have them.
           </p>
         </div>
       </section>
       <AutoShopCompare preferenceOwnerId={preferenceOwnerId} />
-      <ShopCompare />
     </div>
   )
-}
-
-interface CompareRow {
-  id: string
-  name: string
-  prices: string[]
 }
 
 interface CompareRetailerSelection {
@@ -375,178 +366,4 @@ function formatCountryMoney(cents: number, country: CountryOption): string {
   } catch {
     return `${country.currencyCode} ${(cents / 100).toFixed(2)}`
   }
-}
-
-const DEFAULT_SHOPS = ['Shop A', 'Shop B']
-let compareCounter = 0
-
-function blankCompareRow(shopCount: number): CompareRow {
-  compareCounter += 1
-  return { id: `row-${compareCounter}`, name: '', prices: Array.from({ length: shopCount }, () => '') }
-}
-
-function ShopCompare() {
-  const [shops, setShops] = useState<string[]>(DEFAULT_SHOPS)
-  const [rows, setRows] = useState<CompareRow[]>(() => [
-    blankCompareRow(2),
-    blankCompareRow(2),
-    blankCompareRow(2),
-  ])
-
-  const comparison = compareShops(
-    rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      priceCents: row.prices.map((price) => parsePriceInput(price)),
-    })),
-    shops.length,
-  )
-
-  function updateShopName(index: number, value: string) {
-    setShops((current) => current.map((name, i) => (i === index ? value : name)))
-  }
-
-  function updatePrice(rowId: string, shopIndex: number, value: string) {
-    setRows((current) =>
-      current.map((row) =>
-        row.id === rowId
-          ? { ...row, prices: row.prices.map((price, i) => (i === shopIndex ? value : price)) }
-          : row,
-      ),
-    )
-  }
-
-  function updateName(rowId: string, value: string) {
-    setRows((current) => current.map((row) => (row.id === rowId ? { ...row, name: value } : row)))
-  }
-
-  function addRow() {
-    setRows((current) => [...current, blankCompareRow(shops.length)])
-  }
-
-  function removeRow(rowId: string) {
-    setRows((current) => (current.length > 1 ? current.filter((row) => row.id !== rowId) : current))
-  }
-
-  function addShop() {
-    if (shops.length >= 4) {
-      return
-    }
-    setShops((current) => [...current, `Shop ${String.fromCharCode(65 + current.length)}`])
-    setRows((current) => current.map((row) => ({ ...row, prices: [...row.prices, ''] })))
-  }
-
-  function clearAll() {
-    setShops(DEFAULT_SHOPS)
-    setRows([blankCompareRow(2), blankCompareRow(2), blankCompareRow(2)])
-  }
-
-  return (
-    <section className="shop-compare" aria-label="Shop price comparison">
-      <div className="member-section-head">
-        <div>
-          <p className="eyebrow">Tools</p>
-          <h1>Which shop is cheapest?</h1>
-          <p className="section-lede">
-            Punch in the same items at each shop and see which one is cheapest for your whole
-            list, plus who has the best price on each item. Nothing is saved, it clears when you
-            leave.
-          </p>
-        </div>
-        <button className="ghost-button" onClick={clearAll} type="button">
-          Clear
-        </button>
-      </div>
-
-      <div className="compare-grid" style={{ '--shop-count': shops.length } as CSSProperties}>
-        <div className="compare-head">Item</div>
-        {shops.map((shop, index) => (
-          <input
-            aria-label={`Shop ${index + 1} name`}
-            className={clsx('compare-shop-name', comparison.cheapestShopIndex === index && 'is-cheapest')}
-            key={index}
-            onChange={(event) => updateShopName(index, event.target.value)}
-            value={shop}
-          />
-        ))}
-
-        {rows.map((row) => (
-          <div className="compare-row-contents" key={row.id}>
-            <div className="compare-item-cell">
-              <input
-                aria-label="Item name"
-                onChange={(event) => updateName(row.id, event.target.value)}
-                placeholder="e.g. Milk 2L"
-                value={row.name}
-              />
-              {rows.length > 1 && (
-                <button aria-label="Remove item" className="icon-button" onClick={() => removeRow(row.id)} type="button">
-                  <Trash size={14} />
-                </button>
-              )}
-            </div>
-            {shops.map((_, shopIndex) => {
-              const isCheapest = rowsCheapest(rows, row.id, shopIndex, comparison.cheapestShopByItem)
-
-              return (
-                <input
-                  aria-label={`${row.name || 'Item'} price at shop ${shopIndex + 1}`}
-                  className={clsx('compare-price', isCheapest && 'is-cheapest')}
-                  inputMode="decimal"
-                  key={shopIndex}
-                  onChange={(event) => updatePrice(row.id, shopIndex, event.target.value)}
-                  placeholder="R 0,00"
-                  value={row.prices[shopIndex] ?? ''}
-                />
-              )
-            })}
-          </div>
-        ))}
-
-        <div className="compare-totals-label">Total</div>
-        {comparison.shopTotals.map((shop) => (
-          <div
-            className={clsx('compare-total', comparison.cheapestShopIndex === shop.shopIndex && 'is-cheapest')}
-            key={shop.shopIndex}
-          >
-            {shop.totalCents > 0 ? formatCents(shop.totalCents) : '·'}
-            {shop.missingItemCount > 0 && <small>{shop.missingItemCount} missing</small>}
-          </div>
-        ))}
-      </div>
-
-      <div className="compare-actions">
-        <button className="ghost-button" onClick={addRow} type="button">
-          <Plus size={16} /> Add item
-        </button>
-        {shops.length < 4 && (
-          <button className="ghost-button" onClick={addShop} type="button">
-            <Plus size={16} /> Add shop
-          </button>
-        )}
-      </div>
-
-      {comparison.cheapestShopIndex !== undefined && comparison.savingsCents > 0 && (
-        <div className="compare-verdict" role="status">
-          <strong>{shops[comparison.cheapestShopIndex] || `Shop ${comparison.cheapestShopIndex + 1}`}</strong>{' '}
-          is cheapest for this list, saving you {formatCents(comparison.savingsCents)}
-          {comparison.hasCompleteShop ? '' : ' (some items are not priced everywhere)'}.
-        </div>
-      )}
-    </section>
-  )
-}
-
-function rowsCheapest(
-  rows: CompareRow[],
-  rowId: string,
-  shopIndex: number,
-  cheapestByItem: Array<number | undefined>,
-): boolean {
-  // cheapestByItem is aligned to the *priced* rows in draft order.
-  const pricedRowIds = rows
-    .filter((row) => row.prices.some((price) => parsePriceInput(price) !== undefined))
-    .map((row) => row.id)
-  const pricedIndex = pricedRowIds.indexOf(rowId)
-  return pricedIndex >= 0 && cheapestByItem[pricedIndex] === shopIndex
 }

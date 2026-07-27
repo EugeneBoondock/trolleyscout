@@ -4,6 +4,7 @@ import type { Retailer, RetailerGroup, SourceKind } from '../../src/types'
 import type { CountryOption } from '../../src/types'
 import { looksLikePromotionSignal } from '../../src/services/scoutSources'
 import { getSadcRetailSources } from '../../src/services/sadcSourceRegistry'
+import { getNetworkProviderSources } from '../../src/services/networkProviderRegistry'
 import type { TrolleyScoutEnv } from './env'
 import { searchWeb } from './searchWeb'
 
@@ -283,14 +284,24 @@ const REGISTERED_RETAILER_LIMIT = 200
 export function buildRegisteredCountryRetailers(country: CountryOption): Retailer[] {
   return buildCountryRetailers(
     country,
-    getSadcRetailSources(country.code).map((source) => ({
-      sourceKind: source.kind,
-      sourceLabel: source.label,
-      title: source.retailerName,
-      trusted: true,
-      url: source.url,
-      verifiedBrand: true,
-    })),
+    [
+      ...getSadcRetailSources(country.code).map((source) => ({
+        sourceKind: source.kind,
+        sourceLabel: source.label,
+        title: source.retailerName,
+        trusted: true,
+        url: source.url,
+        verifiedBrand: true,
+      })),
+      ...getNetworkProviderSources(country.code).map((source) => ({
+        sourceKind: 'specials' as const,
+        sourceLabel: 'Official plans and offers',
+        title: source.name,
+        trusted: true,
+        url: source.url,
+        verifiedBrand: true,
+      })),
+    ],
     REGISTERED_RETAILER_LIMIT,
   )
 }

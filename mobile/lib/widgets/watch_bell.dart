@@ -186,6 +186,7 @@ class _WatchesSheetState extends State<_WatchesSheet> {
                       color: TS.surfaceOf(context),
                       border:
                           Border.all(color: TS.lineSoftOf(context), width: 2),
+                      borderRadius: BorderRadius.circular(TS.cardRadius),
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Text(
@@ -283,7 +284,7 @@ class _WatchCard extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(right: 10),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(8),
                           child: Image.network(
                             match.imageUrl!,
                             semanticLabel: match.title,

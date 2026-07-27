@@ -14,6 +14,7 @@ import {
   loadBusinessBootstrap,
   signInBusiness,
 } from './api'
+import { BusinessAdminShell } from './BusinessAdminShell'
 import { BusinessShell } from './BusinessShell'
 import { IssueList } from './BusinessFeedback'
 import type { BusinessBootstrap } from './types'
@@ -74,6 +75,16 @@ export function BusinessApp() {
     )
   }
 
+  if (current.session.account.role === 'admin') {
+    return (
+      <BusinessAdminShell
+        bootstrap={current}
+        onTheme={setTheme}
+        theme={theme}
+      />
+    )
+  }
+
   if (!current.gate.hasOrganization || !current.gate.organization) {
     return (
       <OrganizationAccess
@@ -99,7 +110,7 @@ function BusinessLoading() {
   return (
     <main className="biz-gate biz-gate-loading" aria-busy="true">
       <div className="biz-brand-lockup">
-        <ScoutMark motion="scout" size={52} />
+        <ScoutMark motion="scout" size={52} variant="business" />
         <div>
           <strong>TROLLEY SCOUT</strong>
           <span>FOR BUSINESS</span>
@@ -314,7 +325,7 @@ function GateHeader({
   return (
     <header className="biz-gate-header">
       <a className="biz-brand-lockup" href="/">
-        <ScoutMark size={42} />
+        <ScoutMark size={42} variant="business" />
         <div>
           <strong>TROLLEY SCOUT</strong>
           <span>FOR BUSINESS</span>

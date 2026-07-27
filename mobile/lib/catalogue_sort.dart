@@ -8,8 +8,25 @@ int _dateTime(String? value) {
       _missingCatalogueTime;
 }
 
-List<Catalogue> sortCataloguesMostRecent(Iterable<Catalogue> catalogues) {
-  final sorted = catalogues.toList();
+List<Catalogue> sortCataloguesMostRecent(
+  Iterable<Catalogue> catalogues, {
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final sorted = catalogues.where((catalogue) {
+    final validTo = DateTime.tryParse(catalogue.validTo ?? '');
+    if (validTo == null) return true;
+    final endOfDay = DateTime(
+      validTo.year,
+      validTo.month,
+      validTo.day,
+      23,
+      59,
+      59,
+      999,
+    );
+    return !endOfDay.isBefore(today);
+  }).toList();
   sorted.sort((left, right) {
     final leftCaptured = _dateTime(left.capturedAt);
     final rightCaptured = _dateTime(right.capturedAt);

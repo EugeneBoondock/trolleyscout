@@ -22,6 +22,21 @@ describe('memberPlans', () => {
     }
   })
 
+  it('gives every higher plan a much larger deal and catalogue viewing allowance', () => {
+    expect(
+      memberPlans.map((plan) => ({
+        catalogues: plan.limits.visibleCatalogues,
+        deals: plan.limits.visibleDeals,
+        id: plan.id,
+      })),
+    ).toEqual([
+      { catalogues: 50, deals: 10_000, id: 'free' },
+      { catalogues: 250, deals: 50_000, id: 'scout' },
+      { catalogues: 1_000, deals: 250_000, id: 'household' },
+      { catalogues: 5_000, deals: 1_000_000, id: 'organization' },
+    ])
+  })
+
   it('maps billing cycles to PayFast frequencies and trusted amounts', () => {
     expect(getPlanBillingOption('scout', 'monthly')).toMatchObject({
       amountCents: 2900,

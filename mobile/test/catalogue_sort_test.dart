@@ -65,4 +65,27 @@ void main() {
       ['Zulu captured new', 'Alpha captured old'],
     );
   });
+
+  test('removes catalogues after their last valid day', () {
+    const catalogues = [
+      Catalogue(
+        name: 'Expired',
+        url: 'https://example.test/expired.pdf',
+        validTo: '2026-07-26',
+      ),
+      Catalogue(
+        name: 'Current',
+        url: 'https://example.test/current.pdf',
+        validTo: '2026-07-27',
+      ),
+    ];
+
+    expect(
+      sortCataloguesMostRecent(
+        catalogues,
+        now: DateTime.utc(2026, 7, 27, 12),
+      ).map((item) => item.name),
+      ['Current'],
+    );
+  });
 }

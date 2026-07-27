@@ -66,6 +66,31 @@ describe('RetailerPicker', () => {
     expect(within(listbox).getByRole('option', { name: 'Café Fresh, 1 deal' })).toBeTruthy()
   })
 
+  it('shows catalogue counts for stores that have no priced deals', () => {
+    renderPicker({
+      options: [
+        ...options,
+        { catalogueCount: 2, count: 0, id: 'boxer', name: 'Boxer' },
+      ],
+      totalCatalogueCount: 2,
+      value: 'boxer',
+    })
+
+    const trigger = screen.getByRole('button', { name: /Boxer/i })
+    expect(within(trigger).getByText('2 catalogues')).toBeTruthy()
+
+    fireEvent.click(trigger)
+    const listbox = screen.getByRole('listbox')
+    expect(
+      within(listbox).getByRole('option', { name: 'Boxer, 2 catalogues' }),
+    ).toBeTruthy()
+    expect(
+      within(listbox).getByRole('option', {
+        name: `All retailers, ${totalCount} deals, 2 catalogues`,
+      }),
+    ).toBeTruthy()
+  })
+
   it('groups the busiest stores first and the rest under A-Z headings', () => {
     renderPicker()
     const listbox = openPanelListbox()

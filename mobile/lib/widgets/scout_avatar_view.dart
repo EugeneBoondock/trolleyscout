@@ -244,6 +244,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                             selected ? TS.redOf(context) : TS.lineOf(context),
                         width: selected ? 4 : 2,
                       ),
+                      borderRadius: BorderRadius.circular(TS.tileRadius),
                     ),
                     child: selected
                         ? PhosphorIcon(PhosphorIconsFill.check,
@@ -293,6 +294,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                           selected ? TS.redOf(context) : TS.lineSoftOf(context),
                       width: selected ? 3 : 1.5,
                     ),
+                    borderRadius: BorderRadius.circular(TS.tileRadius),
                   ),
                   child: PhosphorIcon(
                     ScoutAvatarCatalog.iconFor(key),

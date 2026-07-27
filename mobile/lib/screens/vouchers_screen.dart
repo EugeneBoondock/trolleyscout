@@ -254,6 +254,7 @@ class _VoucherCard extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border.all(color: TS.lineOf(context), width: 2),
                 color: TS.bgOf(context),
+                borderRadius: BorderRadius.circular(TS.controlRadius),
               ),
               child: Row(
                 children: [

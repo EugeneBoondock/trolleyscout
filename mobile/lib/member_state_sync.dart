@@ -23,12 +23,16 @@ class MemberStateSync {
   static const savedPropertiesKey = 'saved_properties_v1';
   static const scoutAvatarKey = 'scout_avatar_v1';
   static const compareRetailersKey = 'compare_retailers_v1';
+  static const favouriteStoresKey = 'favourite_stores_v1';
+  static const recentPropertySearchesKey = 'recent_property_searches_v1';
   static const syncedKeys = [
     nearbyHistoryKey,
     savedAddressesKey,
     savedPropertiesKey,
     scoutAvatarKey,
     compareRetailersKey,
+    favouriteStoresKey,
+    recentPropertySearchesKey,
   ];
 
   Api? _api;

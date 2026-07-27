@@ -177,7 +177,7 @@ export function BusinessShell({
             <X size={20} />
           </button>
           <button className="biz-brand-lockup" onClick={() => go('overview')} type="button">
-            <ScoutMark size={42} />
+            <ScoutMark size={42} variant="business" />
             <div>
               <strong>TROLLEY SCOUT</strong>
               <span>FOR BUSINESS</span>
@@ -243,7 +243,7 @@ export function BusinessShell({
             <List size={23} />
           </button>
           <div className="biz-mobile-brand">
-            <ScoutMark size={34} />
+            <ScoutMark size={34} variant="business" />
             <span>FOR BUSINESS</span>
           </div>
           <div className="biz-topbar-context">

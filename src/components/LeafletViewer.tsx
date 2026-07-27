@@ -1,11 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, LinkSimple, Minus, Plus, X } from '@phosphor-icons/react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  LinkSimple,
+  Minus,
+  Plus,
+  ShareNetwork,
+  X,
+} from '@phosphor-icons/react'
 
-import { catalogueFileUrl, leafletPdfUrl, withProxiedFallbacks } from '../services/catalogueFiles'
+import {
+  catalogueFileUrl,
+  leafletPdfUrl,
+  loadCataloguePages,
+  withProxiedFallbacks,
+} from '../services/catalogueFiles'
+import { catalogueShareUrl } from '../services/catalogueShare'
 import type { CataloguePage, StoreLeaflet } from '../types'
 
 const MIN_ZOOM = 0.75
-const MAX_ZOOM = 2.5
+const MAX_ZOOM = 5
 const ZOOM_STEP = 0.25
 
 export function LeafletViewer({
@@ -19,10 +33,18 @@ export function LeafletViewer({
   // cover — each rendered with same-origin relay fallbacks so one blocked
   // CDN never turns into "preview unavailable".
   const pdfUrl = leafletPdfUrl(leaflet)
+  const [loadedPages, setLoadedPages] = useState<CataloguePage[]>()
+  const [loadingPages, setLoadingPages] = useState(false)
+  const [pageLoadFailed, setPageLoadFailed] = useState(false)
   const pages = useMemo(
     () => {
-      const publishedPages = [...(leaflet.pages ?? [])]
+      const publishedPages = [...(loadedPages ?? leaflet.pages ?? [])]
         .sort((left, right) => left.pageNumber - right.pageNumber)
+      // A single generated image is commonly only a PDF cover. Use the full
+      // document so every published page remains readable and zoomable.
+      if (pdfUrl && publishedPages.length <= 1) {
+        return []
+      }
       if (publishedPages.length > 0 || pdfUrl || !leaflet.imageUrl) {
         return publishedPages
       }
@@ -33,12 +55,13 @@ export function LeafletViewer({
         width: 0,
       }]
     },
-    [leaflet.imageUrl, leaflet.pages, pdfUrl],
+    [leaflet.imageUrl, leaflet.pages, loadedPages, pdfUrl],
   )
   const [pageIndex, setPageIndex] = useState(0)
   const [zoom, setZoom] = useState(1)
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0)
   const [imageFailed, setImageFailed] = useState(false)
+  const [shareStatus, setShareStatus] = useState('')
   const currentPage = pages[pageIndex]
   const imageCandidates = useMemo(
     () => currentPage ? uniqueImageUrls(currentPage) : [],
@@ -49,6 +72,38 @@ export function LeafletViewer({
     setPageIndex(0)
     setZoom(1)
   }, [leaflet.id])
+
+  useEffect(() => {
+    setLoadedPages(undefined)
+    setPageLoadFailed(false)
+    if (!leaflet.pagesUrl || (leaflet.pages?.length ?? 0) > 1) {
+      setLoadingPages(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setLoadingPages(true)
+    loadCataloguePages(leaflet.pagesUrl, controller.signal)
+      .then((nextPages) => {
+        if (nextPages.length === 0) {
+          setPageLoadFailed(true)
+          return
+        }
+        setLoadedPages(nextPages)
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setPageLoadFailed(true)
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadingPages(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [leaflet.id, leaflet.pages, leaflet.pagesUrl])
 
   useEffect(() => {
     setPageIndex((current) => pages.length === 0 ? 0 : Math.min(current, pages.length - 1))
@@ -110,6 +165,27 @@ export function LeafletViewer({
     setImageFailed(true)
   }
 
+  async function shareCatalogue() {
+    const url = catalogueShareUrl(leaflet)
+    const shareData = {
+      text: `Read ${cleanUiText(leaflet.name)} from ${cleanUiText(leaflet.retailerName)} on Trolley Scout.`,
+      title: `${cleanUiText(leaflet.retailerName)} catalogue`,
+      url,
+    }
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share(shareData)
+        setShareStatus('Catalogue shared.')
+        return
+      }
+      await navigator.clipboard.writeText(url)
+      setShareStatus('Catalogue link copied.')
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setShareStatus('The catalogue link could not be shared.')
+    }
+  }
+
   return (
     <div
       className="leaflet-modal-backdrop"
@@ -149,7 +225,13 @@ export function LeafletViewer({
         </header>
 
         <div className="leaflet-modal-body">
-          {pages.length > 0 && currentPage ? (
+          {loadingPages ? (
+            <div className="leaflet-page-loading" role="status">
+              <span aria-hidden="true" />
+              <strong>Loading every catalogue page</strong>
+              <p>The high-quality reader will open in a moment.</p>
+            </div>
+          ) : pages.length > 0 && currentPage ? (
             <div className="leaflet-reader">
               <div className="leaflet-reader-toolbar">
                 <div className="leaflet-page-controls" aria-label="Catalogue page controls">
@@ -207,7 +289,7 @@ export function LeafletViewer({
                 {imageFailed ? (
                   <div className="leaflet-image-failure" role="status">
                     <strong>Page image unavailable</strong>
-                    <p>This page could not be loaded. You can still use the official source link.</p>
+                    <p>This page could not be loaded. You can still use the catalogue source link.</p>
                   </div>
                 ) : (
                   <img
@@ -276,23 +358,45 @@ export function LeafletViewer({
           ) : (
             <div className="leaflet-image-failure" role="status">
               <strong>Catalogue preview unavailable</strong>
-              <p>You can still check the official source.</p>
+              <p>
+                {pageLoadFailed
+                  ? 'The page list could not be loaded. You can still check the catalogue source.'
+                  : 'You can still check the catalogue source.'}
+              </p>
             </div>
           )}
         </div>
 
         <footer className="leaflet-modal-foot">
+          <span aria-live="polite" className="leaflet-share-status">
+            {shareStatus}
+          </span>
+          <button className="ghost-button" onClick={shareCatalogue} type="button">
+            Share
+            <ShareNetwork size={16} />
+          </button>
           <button className="primary-button" onClick={onClose} type="button">
             Close
           </button>
           <a className="ghost-button" href={leaflet.url} rel="noreferrer" target="_blank">
-            Official source
+            {isCatalogueDirectoryLeaflet(leaflet)
+              ? 'Catalogue source'
+              : 'Official source'}
             <LinkSimple size={16} />
           </a>
         </footer>
       </div>
     </div>
   )
+}
+
+function isCatalogueDirectoryLeaflet(leaflet: StoreLeaflet): boolean {
+  return new Set([
+    'Catalogue Specials',
+    'Guzzle',
+    'Latest Specials',
+    'My Catalogue',
+  ]).has(leaflet.sourceLabel ?? '')
 }
 
 function uniqueImageUrls(page: CataloguePage): string[] {

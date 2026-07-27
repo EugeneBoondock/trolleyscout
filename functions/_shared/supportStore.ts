@@ -24,6 +24,10 @@ interface SupportMessageRow {
   message: string
   status: string
   admin_note: string | null
+  channel?: string | null
+  ai_brief?: string | null
+  category?: string | null
+  severity?: string | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +38,12 @@ export interface SupportMessageInput {
   email: string
   topic: string
   message: string
+  // Set by the AI help chat. The brief is written by the model from the
+  // member's own words; it sits beside `message`, never in place of it.
+  aiBrief?: string
+  category?: string
+  channel?: 'form' | 'chat'
+  severity?: string
 }
 
 const NAME_MAX = 120
@@ -109,8 +119,9 @@ export async function createSupportMessage(
 
   await env.DB.prepare(
     `INSERT INTO support_messages (
-        id, account_id, name, email, email_lookup, topic, message, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+        id, account_id, name, email, email_lookup, topic, message, status,
+        channel, ai_brief, category, severity, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -120,6 +131,10 @@ export async function createSupportMessage(
       lookup,
       topic,
       message,
+      input.channel ?? 'form',
+      input.aiBrief?.trim() || null,
+      input.category?.trim() || null,
+      input.severity?.trim() || null,
       timestamp,
       timestamp,
     )
@@ -139,7 +154,8 @@ export async function listSupportMessages(
   // Open messages first so anything still needing a reply sits at the top, then
   // most recent within each status.
   const rows = await env.DB.prepare(
-    `SELECT id, account_id, name, email, email_lookup, topic, message, status, admin_note, created_at, updated_at
+    `SELECT id, account_id, name, email, email_lookup, topic, message, status, admin_note,
+        channel, ai_brief, category, severity, created_at, updated_at
       FROM support_messages
       ORDER BY (status = 'open') DESC, created_at DESC
       LIMIT ?`,
@@ -195,6 +211,10 @@ async function supportMessageFromRow(env: TrolleyScoutEnv, row: SupportMessageRo
     message: row.message,
     status: row.status === 'resolved' ? 'resolved' : 'open',
     adminNote: row.admin_note ?? undefined,
+    channel: row.channel === 'chat' ? 'chat' : 'form',
+    aiBrief: row.ai_brief ?? undefined,
+    category: row.category ?? undefined,
+    severity: row.severity ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

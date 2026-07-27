@@ -438,6 +438,324 @@ class BusinessBootstrap {
       );
 }
 
+class BusinessAdminTotals {
+  const BusinessAdminTotals({
+    required this.activeBusinesses,
+    required this.businesses,
+    required this.campaigns,
+    required this.completedCampaigns,
+    required this.liveCampaigns,
+    required this.paidCents,
+    required this.paidTransactions,
+    required this.pendingApplications,
+    required this.pendingModeration,
+    required this.suspendedBusinesses,
+  });
+
+  factory BusinessAdminTotals.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminTotals(
+        activeBusinesses: _int(json['activeBusinesses']),
+        businesses: _int(json['businesses']),
+        campaigns: _int(json['campaigns']),
+        completedCampaigns: _int(json['completedCampaigns']),
+        liveCampaigns: _int(json['liveCampaigns']),
+        paidCents: _int(json['paidCents']),
+        paidTransactions: _int(json['paidTransactions']),
+        pendingApplications: _int(json['pendingApplications']),
+        pendingModeration: _int(json['pendingModeration']),
+        suspendedBusinesses: _int(json['suspendedBusinesses']),
+      );
+
+  static const empty = BusinessAdminTotals(
+    activeBusinesses: 0,
+    businesses: 0,
+    campaigns: 0,
+    completedCampaigns: 0,
+    liveCampaigns: 0,
+    paidCents: 0,
+    paidTransactions: 0,
+    pendingApplications: 0,
+    pendingModeration: 0,
+    suspendedBusinesses: 0,
+  );
+
+  final int activeBusinesses;
+  final int businesses;
+  final int campaigns;
+  final int completedCampaigns;
+  final int liveCampaigns;
+  final int paidCents;
+  final int paidTransactions;
+  final int pendingApplications;
+  final int pendingModeration;
+  final int suspendedBusinesses;
+}
+
+class BusinessAdminOrganization {
+  const BusinessAdminOrganization({
+    required this.activeCampaigns,
+    required this.campaigns,
+    required this.completedCampaigns,
+    required this.createdAt,
+    required this.id,
+    required this.impressions,
+    required this.locations,
+    required this.name,
+    required this.opens,
+    required this.ownerName,
+    required this.paidCents,
+    required this.paidTransactions,
+    required this.planId,
+    required this.planStatus,
+    required this.saves,
+    required this.slug,
+    required this.status,
+    required this.updatedAt,
+    required this.visits,
+    this.category,
+    this.lastCampaignAt,
+  });
+
+  factory BusinessAdminOrganization.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminOrganization(
+        activeCampaigns: _int(json['activeCampaigns']),
+        campaigns: _int(json['campaigns']),
+        category: _optionalString(json['category']),
+        completedCampaigns: _int(json['completedCampaigns']),
+        createdAt: _string(json['createdAt']),
+        id: _string(json['id']),
+        impressions: _int(json['impressions']),
+        lastCampaignAt: _optionalString(json['lastCampaignAt']),
+        locations: _int(json['locations']),
+        name: _string(json['name']),
+        opens: _int(json['opens']),
+        ownerName: _string(json['ownerName']),
+        paidCents: _int(json['paidCents']),
+        paidTransactions: _int(json['paidTransactions']),
+        planId: _string(json['planId']),
+        planStatus: _string(json['planStatus']),
+        saves: _int(json['saves']),
+        slug: _string(json['slug']),
+        status: _string(json['status'], 'active'),
+        updatedAt: _string(json['updatedAt']),
+        visits: _int(json['visits']),
+      );
+
+  final int activeCampaigns;
+  final int campaigns;
+  final String? category;
+  final int completedCampaigns;
+  final String createdAt;
+  final String id;
+  final int impressions;
+  final String? lastCampaignAt;
+  final int locations;
+  final String name;
+  final int opens;
+  final String ownerName;
+  final int paidCents;
+  final int paidTransactions;
+  final String planId;
+  final String planStatus;
+  final int saves;
+  final String slug;
+  final String status;
+  final String updatedAt;
+  final int visits;
+
+  bool get isActive => status == 'active';
+}
+
+class BusinessAdminCampaign {
+  const BusinessAdminCampaign({
+    required this.createdAt,
+    required this.id,
+    required this.impressions,
+    required this.kind,
+    required this.opens,
+    required this.organizationId,
+    required this.organizationName,
+    required this.placement,
+    required this.saves,
+    required this.soldOut,
+    required this.status,
+    required this.title,
+    required this.updatedAt,
+    required this.visits,
+    this.endsAt,
+    this.imageAlt,
+    this.imageUrl,
+    this.startsAt,
+    this.targetUrl,
+  });
+
+  factory BusinessAdminCampaign.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminCampaign(
+        createdAt: _string(json['createdAt']),
+        endsAt: _optionalString(json['endsAt']),
+        id: _string(json['id']),
+        imageAlt: _optionalString(json['imageAlt']),
+        imageUrl: _optionalString(json['imageUrl']),
+        impressions: _int(json['impressions']),
+        kind: _string(json['kind']),
+        opens: _int(json['opens']),
+        organizationId: _string(json['organizationId']),
+        organizationName: _string(json['organizationName']),
+        placement: _string(json['placement']),
+        saves: _int(json['saves']),
+        soldOut: json['soldOut'] == true,
+        startsAt: _optionalString(json['startsAt']),
+        status: _string(json['status']),
+        targetUrl: _optionalString(json['targetUrl']),
+        title: _string(json['title']),
+        updatedAt: _string(json['updatedAt']),
+        visits: _int(json['visits']),
+      );
+
+  final String createdAt;
+  final String? endsAt;
+  final String id;
+  final String? imageAlt;
+  final String? imageUrl;
+  final int impressions;
+  final String kind;
+  final int opens;
+  final String organizationId;
+  final String organizationName;
+  final String placement;
+  final int saves;
+  final bool soldOut;
+  final String? startsAt;
+  final String status;
+  final String? targetUrl;
+  final String title;
+  final String updatedAt;
+  final int visits;
+}
+
+class BusinessAdminPayment {
+  const BusinessAdminPayment({
+    required this.amountCents,
+    required this.businessId,
+    required this.businessName,
+    required this.createdAt,
+    required this.id,
+    required this.paymentId,
+    required this.planId,
+    required this.status,
+  });
+
+  factory BusinessAdminPayment.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminPayment(
+        amountCents: _int(json['amountCents']),
+        businessId: _string(json['businessId']),
+        businessName: _string(json['businessName']),
+        createdAt: _string(json['createdAt']),
+        id: _string(json['id']),
+        paymentId: _string(json['paymentId']),
+        planId: _string(json['planId']),
+        status: _string(json['status']),
+      );
+
+  final int amountCents;
+  final String businessId;
+  final String businessName;
+  final String createdAt;
+  final String id;
+  final String paymentId;
+  final String planId;
+  final String status;
+}
+
+class BusinessAdminOverview {
+  const BusinessAdminOverview({
+    required this.businesses,
+    required this.campaigns,
+    required this.generatedAt,
+    required this.payments,
+    required this.totals,
+  });
+
+  factory BusinessAdminOverview.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminOverview(
+        businesses: _mapList(json['businesses'])
+            .map(BusinessAdminOrganization.fromJson)
+            .toList(),
+        campaigns: _mapList(json['campaigns'])
+            .map(BusinessAdminCampaign.fromJson)
+            .toList(),
+        generatedAt: _string(json['generatedAt']),
+        payments: _mapList(json['payments'])
+            .map(BusinessAdminPayment.fromJson)
+            .toList(),
+        totals: BusinessAdminTotals.fromJson(_map(json['totals'])),
+      );
+
+  final List<BusinessAdminOrganization> businesses;
+  final List<BusinessAdminCampaign> campaigns;
+  final String generatedAt;
+  final List<BusinessAdminPayment> payments;
+  final BusinessAdminTotals totals;
+}
+
+class BusinessAdminApplication {
+  const BusinessAdminApplication({
+    required this.businessSubscriptionActive,
+    required this.contactEmail,
+    required this.contactName,
+    required this.createdAt,
+    required this.description,
+    required this.id,
+    required this.organisationName,
+    required this.status,
+    this.category,
+    this.city,
+    this.contactPhone,
+    this.province,
+    this.registrationNumber,
+    this.reviewNote,
+    this.tradingName,
+    this.websiteUrl,
+  });
+
+  factory BusinessAdminApplication.fromJson(Map<String, dynamic> json) =>
+      BusinessAdminApplication(
+        businessSubscriptionActive: json['businessSubscriptionActive'] == true,
+        category: _optionalString(json['category']),
+        city: _optionalString(json['city']),
+        contactEmail: _string(json['contactEmail']),
+        contactName: _string(json['contactName']),
+        contactPhone: _optionalString(json['contactPhone']),
+        createdAt: _string(json['createdAt']),
+        description: _string(json['description']),
+        id: _string(json['id']),
+        organisationName: _string(json['organisationName']),
+        province: _optionalString(json['province']),
+        registrationNumber: _optionalString(json['registrationNumber']),
+        reviewNote: _optionalString(json['reviewNote']),
+        status: _string(json['status']),
+        tradingName: _optionalString(json['tradingName']),
+        websiteUrl: _optionalString(json['websiteUrl']),
+      );
+
+  final bool businessSubscriptionActive;
+  final String? category;
+  final String? city;
+  final String contactEmail;
+  final String contactName;
+  final String? contactPhone;
+  final String createdAt;
+  final String description;
+  final String id;
+  final String organisationName;
+  final String? province;
+  final String? registrationNumber;
+  final String? reviewNote;
+  final String status;
+  final String? tradingName;
+  final String? websiteUrl;
+}
+
 class BusinessOrganizationApplicationDraft {
   const BusinessOrganizationApplicationDraft({
     required this.organisationName,

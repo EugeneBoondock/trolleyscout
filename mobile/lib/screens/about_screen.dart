@@ -6,6 +6,7 @@ import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_mascot.dart';
+import '../widgets/support_chat_card.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({
@@ -94,6 +95,13 @@ class AboutScreen extends StatelessWidget {
           ),
         ),
         if (api != null) ...[
+          // The chat first: for most people "tell someone what went wrong" is
+          // faster spoken than filled in. The form stays right below it for
+          // anyone signed out, or who would rather write it all at once.
+          if (account != null) ...[
+            SupportChatCard(api: api!),
+            const SizedBox(height: 18),
+          ],
           SupportFormCard(api: api!, account: account),
           const SizedBox(height: 18),
         ],

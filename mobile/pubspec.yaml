@@ -1,7 +1,7 @@
 name: trolley_scout
 description: Find grocery deals, compare store prices, and search properties.
 publish_to: 'none'
-version: 1.14.1+35
+version: 1.15.3+39
 
 environment:
   sdk: ^3.5.0
@@ -38,6 +38,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/scout-logo.png
+    - assets/scout-logo-business-v2.png
     - assets/mascots/
     - assets/onboarding/
     - assets/intro/

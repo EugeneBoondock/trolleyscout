@@ -42,6 +42,7 @@ export function organizationPublicationsToWindowItems(
       publication.placement === 'window' || publication.placement === 'both',
     )
     .map((publication) => ({
+      capturedAt: publication.updatedAt,
       category: publication.kind === 'post' ? 'Business post' : labelForKind(publication.kind),
       expiresAt: publication.endsAt,
       id: publication.id,

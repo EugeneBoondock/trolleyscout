@@ -7,7 +7,15 @@ import type { RetailerId, StoreLeaflet } from '../types'
 export interface LeafletTarget {
   retailerId: RetailerId
   retailerName: string
-  kind: 'sixty60-api' | 'html-list' | 'html-pdf' | 'sitebuilder-pdf' | 'pnp-cms'
+  kind:
+    | 'catalogue-directory'
+    | 'sixty60-api'
+    | 'html-list'
+    | 'html-pdf'
+    | 'sitebuilder-pdf'
+    | 'pnp-cms'
+  countryCode?: string
+  sourceId?: string
   // For sixty60-api: the leaflet API base + a representative national store id.
   apiBase?: string
   storeId?: string
@@ -20,6 +28,38 @@ export interface LeafletTarget {
 }
 
 export const leafletTargets: LeafletTarget[] = [
+  {
+    countryCode: 'ZA',
+    kind: 'catalogue-directory',
+    pageUrl: 'https://www.latestspecials.co.za/rss/',
+    retailerId: 'latest-specials-za',
+    retailerName: 'Latest Specials South Africa',
+    sourceId: 'latest-specials-za',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'catalogue-directory',
+    pageUrl: 'https://www.guzzle.co.za/specials/latest-online-catalogues/',
+    retailerId: 'guzzle-za',
+    retailerName: 'Guzzle South Africa',
+    sourceId: 'guzzle-za',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'catalogue-directory',
+    pageUrl: 'https://my-catalogue.co.za/',
+    retailerId: 'my-catalogue-za',
+    retailerName: 'My Catalogue South Africa',
+    sourceId: 'my-catalogue-za',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'catalogue-directory',
+    pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues?page=1',
+    retailerId: 'catalogue-specials-za',
+    retailerName: 'South African catalogue directory',
+    sourceId: 'catalogue-specials-za',
+  },
   {
     kind: 'pnp-cms',
     pageUrl:

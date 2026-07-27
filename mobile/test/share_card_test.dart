@@ -9,6 +9,22 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('ShareCardData', () {
+    test('builds an exact Trolley Scout link for a catalogue', () {
+      final data = ShareCardData.fromCatalogue(const Catalogue(
+        id: 'latest-specials-123130',
+        retailerId: 'food-lovers',
+        name: 'Winter savings',
+        url: 'https://catalogues.example.test/winter',
+        retailerName: 'Food Lover’s Market',
+      ));
+
+      expect(
+        data.link,
+        'https://trolleyscout.co.za/deals?catalogue=latest-specials-123130&retailer=food-lovers',
+      );
+      expect(data.noun, 'catalogue');
+    });
+
     test('maps a deal, keeping only a meaningful was price', () {
       const deal = Deal(
         title: 'Clover Fresh Milk 2L',
@@ -88,7 +104,8 @@ void main() {
       expect(data.shareText, contains('on Property24'));
     });
 
-    test('falls back to price on application when a portal hides the price', () {
+    test('falls back to price on application when a portal hides the price',
+        () {
       const listing = PropertyListing(
         id: 'p-2',
         portal: 'privateproperty',
@@ -260,6 +277,4 @@ Future<void> _pumpCard(
     home: Scaffold(body: Center(child: DealShareCard(data: data))),
   ));
   await tester.pumpAndSettle();
-
-
 }

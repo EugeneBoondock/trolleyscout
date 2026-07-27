@@ -28,6 +28,10 @@ export interface NearbyStore {
   // Records that the website was matched from a country retailer directory,
   // allowing a chain-level offers page to be verified without a branch address.
   websiteSource?: 'country-retailer'
+  // National carrier offer pages contain plans rather than supermarket-style
+  // product markdowns. This opt-in lets the shared parser accept a current plan
+  // price as an offer without weakening proof rules for ordinary shops.
+  sourceCategory?: 'network-provider'
   distanceM?: number
   countryCode?: string
   countryName?: string

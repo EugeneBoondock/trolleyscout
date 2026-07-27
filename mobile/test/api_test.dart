@@ -9,6 +9,94 @@ import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/session_cookie_store.dart';
 
 void main() {
+  test('Mr Scout sends recent conversation turns and parses trusted cards',
+      () async {
+    final requests = <http.Request>[];
+    final api = Api(
+      client: MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'answer': {
+                'reply': 'The cereal offer saves the most.',
+                'deals': [
+                  {
+                    'id': 'deal-1',
+                    'retailerName': 'Fresh Market',
+                    'title': 'Family cereal',
+                    'priceText': r'$4.99',
+                    'previousPriceText': r'$6.99',
+                    'savingText': r'Save $2',
+                    'imageUrl': 'https://img.example.test/cereal.jpg',
+                    'productUrl': 'https://shop.example.test/cereal',
+                  }
+                ],
+                'catalogues': [
+                  {
+                    'id': 'catalogue-1',
+                    'retailerName': 'Fresh Market',
+                    'name': 'Weekly savings',
+                    'url': 'https://shop.example.test/catalogue',
+                    'imageUrl': 'https://img.example.test/cover.jpg',
+                    'pageCount': 0,
+                    'pagesUrl':
+                        'https://example.test/api/catalogue-pages?flyer=1',
+                    'pageImageUrls': [
+                      'https://img.example.test/page-1.jpg',
+                    ],
+                  }
+                ],
+                'followUps': ['Show breakfast deals'],
+              },
+            },
+          }),
+          200,
+        );
+      }),
+      cookieStore: MemorySessionCookieStore(
+        'ts_member_session=secret-token',
+      ),
+      useBrowserCookies: false,
+      baseUrl: 'https://example.test',
+    );
+
+    final answer = await api.scoutChat(
+      'Find breakfast savings',
+      const [
+        ScoutChatTurn(role: ScoutChatRole.user, text: 'I have a small budget'),
+        ScoutChatTurn(
+          role: ScoutChatRole.assistant,
+          text: 'Which meal are you planning?',
+        ),
+      ],
+    );
+
+    expect(answer.reply, 'The cereal offer saves the most.');
+    expect(answer.deals.single.priceText, r'$4.99');
+    expect(answer.catalogues.single.pageImageUrls, hasLength(1));
+    expect(
+      answer.catalogues.single.toCatalogue().pagesUrl,
+      'https://example.test/api/catalogue-pages?flyer=1',
+    );
+    expect(answer.followUps, ['Show breakfast deals']);
+    expect(requests.single.method, 'POST');
+    expect(requests.single.url.path, '/api/scout-chat');
+    expect(
+      jsonDecode(requests.single.body),
+      {
+        'message': 'Find breakfast savings',
+        'history': [
+          {'role': 'user', 'text': 'I have a small budget'},
+          {
+            'role': 'assistant',
+            'text': 'Which meal are you planning?',
+          },
+        ],
+      },
+    );
+  });
+
   test('saving a discovery deal to basket performs both operations', () async {
     final api = _SaveBasketApi();
     const deal = Deal(
@@ -283,6 +371,35 @@ void main() {
       final result = await api.discovery();
 
       expect(result.foundDealCount, 0);
+    });
+
+    test('keeps marketplace plan allowances in the on-device discovery cache',
+        () async {
+      final result = DiscoveryResult.fromJson({
+        'access': {
+          'availableCatalogueCount': 72,
+          'availableDealCount': 12000,
+          'catalogueLimit': 50,
+          'dealLimit': 10000,
+          'planId': 'free',
+        },
+        'deals': [],
+        'leaflets': [],
+        'summary': {
+          'checkedSourceCount': 0,
+          'foundDealCount': 12000,
+          'leafletCount': 72,
+          'unavailableSourceCount': 0,
+        },
+      });
+
+      expect(result.toJson()['access'], {
+        'availableCatalogueCount': 72,
+        'availableDealCount': 12000,
+        'catalogueLimit': 50,
+        'dealLimit': 10000,
+        'planId': 'free',
+      });
     });
 
     test('uses the server refresh flag for a forced deal-site run', () async {

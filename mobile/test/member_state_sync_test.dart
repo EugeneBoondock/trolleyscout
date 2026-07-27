@@ -19,7 +19,10 @@ void main() {
         MemberStateSync.instance.hydrate(MemberStateSync.syncedKeys);
     await api.allRequestsStarted.future;
 
-    expect(api.maxInFlight, 4);
+    expect(
+      api.maxInFlight,
+      MemberStateSync.syncedKeys.length - 1,
+    );
     api.completeAll({'saved': true});
     await hydration;
 
@@ -66,7 +69,8 @@ class _DelayedStateApi extends Api {
     requests[key] = completer;
     _inFlight += 1;
     if (_inFlight > maxInFlight) maxInFlight = _inFlight;
-    if (requests.length == 4 && !allRequestsStarted.isCompleted) {
+    if (requests.length == MemberStateSync.syncedKeys.length - 1 &&
+        !allRequestsStarted.isCompleted) {
       allRequestsStarted.complete();
     }
     final value = await completer.future;

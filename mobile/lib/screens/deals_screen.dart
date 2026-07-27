@@ -12,6 +12,7 @@ import '../discovery_cache.dart';
 import '../notification_prefs_store.dart';
 import '../notifications.dart';
 import '../price_display.dart';
+import '../retailer_identity.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
@@ -34,6 +35,7 @@ class DealsScreen extends StatefulWidget {
     this.onWantsAuth,
     this.initialRetailerId,
     this.initialQuery,
+    this.initialCatalogueId,
     this.alertScheduler,
     this.requestNotificationPermission,
     this.openNotificationSettings,
@@ -45,6 +47,7 @@ class DealsScreen extends StatefulWidget {
   // When arriving from a Near-me store card, pre-filter to that store's deals.
   final String? initialRetailerId;
   final String? initialQuery;
+  final String? initialCatalogueId;
   final DealAlertScheduler? alertScheduler;
   final Future<bool> Function()? requestNotificationPermission;
   final Future<bool> Function()? openNotificationSettings;
@@ -68,11 +71,14 @@ class _DealsScreenState extends State<DealsScreen> {
   // it without the plumbing having to be rebuilt.
   final bool _imagesOnly = false;
   final bool _savingsOnly = false;
+  bool _hideSoldOut = false;
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
   Timer? _searchDebounce;
   final _searchController = TextEditingController();
+  final _catalogueSearchController = TextEditingController();
+  String _catalogueQuery = '';
   bool _creatingWatch = false;
   final _cacheStore = DiscoveryCache();
   CachedDiscovery? _cached;
@@ -80,6 +86,7 @@ class _DealsScreenState extends State<DealsScreen> {
   static const _sampleLimit = 6;
   List<PublicAd> _ads = const [];
   List<Deal> _siteDeals = const [];
+  bool _handledInitialCatalogue = false;
 
   // Every shop we scout, so the picker can list one that happens to have
   // nothing on today rather than dropping it and reading as "not covered".
@@ -284,6 +291,7 @@ class _DealsScreenState extends State<DealsScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
+    _catalogueSearchController.dispose();
     super.dispose();
   }
 
@@ -396,10 +404,17 @@ class _DealsScreenState extends State<DealsScreen> {
     String? staleNote,
     bool staleIsRefreshing = false,
   }) {
-    final allDeals = _sortByPage([...result.deals, ..._siteDeals]);
+    final mergedDeals = _sortByPage([...result.deals, ..._siteDeals]);
+    final dealLimit = result.access?.dealLimit;
+    final allDeals =
+        dealLimit == null ? mergedDeals : mergedDeals.take(dealLimit).toList();
     // The picker lists the shops in these deals plus every shop we scout, so a
     // shop with nothing on today still appears, saying so.
-    final retailers = retailerOptionsFromDeals(allDeals, catalog: _catalog);
+    final retailers = retailerOptionsFromDeals(
+      allDeals,
+      catalog: _catalog,
+      catalogues: result.catalogues,
+    );
     final sources = allDeals
         .map((deal) => deal.sourceLabel)
         .where((source) => source.isNotEmpty)
@@ -414,6 +429,7 @@ class _DealsScreenState extends State<DealsScreen> {
         sourceLabel: _sourceLabel,
         imagesOnly: _imagesOnly,
         savingsOnly: _savingsOnly,
+        hideSoldOut: _hideSoldOut,
         category: _category,
         foodSubcategory: _foodSubcategory,
       ),
@@ -471,10 +487,26 @@ class _DealsScreenState extends State<DealsScreen> {
     bool staleIsRefreshing = false,
     bool sampled = false,
   }) {
-    final catalogueGroups = _groupCatalogues(result.catalogues);
+    final catalogueGroups = _groupCatalogues(
+      result.catalogues,
+      retailerId: _retailerId,
+    );
+    final catalogueCount = catalogueGroups.fold<int>(
+      0,
+      (total, group) => total + group.catalogues.length,
+    );
+    _openInitialCatalogue(result.catalogues);
+    RetailerOption? selectedRetailer;
+    for (final retailer in retailers) {
+      if (retailer.id == _retailerId) {
+        selectedRetailer = retailer;
+        break;
+      }
+    }
 
     return DefaultTabController(
       length: 2,
+      initialIndex: widget.initialCatalogueId == null ? 0 : 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -517,6 +549,10 @@ class _DealsScreenState extends State<DealsScreen> {
                       ],
                     ),
                   ),
+                if (result.access?.isLimited == true) ...[
+                  const SizedBox(height: 10),
+                  _accessLimitNotice(result.access!),
+                ],
               ],
             ),
           ),
@@ -526,14 +562,27 @@ class _DealsScreenState extends State<DealsScreen> {
             indicatorColor: TS.redOf(context),
             tabs: [
               Tab(text: 'Deals (${deals.length})'),
-              Tab(text: 'Catalogues (${catalogueGroups.length})'),
+              Tab(text: 'Catalogues ($catalogueCount)'),
             ],
           ),
           Expanded(
             child: TabBarView(
               children: [
-                _dealsTab(deals, retailers, sources, slice, page, pageCount,
-                    totalDealCount: totalDealCount, sampled: sampled),
+                Builder(
+                  builder: (tabContext) => _dealsTab(
+                    deals,
+                    retailers,
+                    sources,
+                    slice,
+                    page,
+                    pageCount,
+                    totalDealCount: totalDealCount,
+                    selectedRetailer: selectedRetailer,
+                    onOpenCatalogues: () =>
+                        DefaultTabController.of(tabContext).animateTo(1),
+                    sampled: sampled,
+                  ),
+                ),
                 _cataloguesTab(catalogueGroups),
               ],
             ),
@@ -541,6 +590,72 @@ class _DealsScreenState extends State<DealsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _accessLimitNotice(DiscoveryAccess access) {
+    final planName = switch (access.planId) {
+      'organization' => 'Organisation',
+      'household' => 'Household',
+      'scout' => 'Scout',
+      _ => 'Free',
+    };
+
+    return Container(
+      key: const Key('marketplace-access-limit'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: TS.yellow.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.workspace_premium_outlined, color: TS.ink, size: 19),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$planName plan: up to ${_wholeCount(access.dealLimit)} deals '
+              'and ${_wholeCount(access.catalogueLimit)} catalogues. '
+              '${_wholeCount(access.availableDealCount)} deals and '
+              '${_wholeCount(access.availableCatalogueCount)} catalogues '
+              'are available.',
+              style: const TextStyle(
+                color: TS.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _wholeCount(int value) {
+    final digits = value.toString();
+    final firstGroup = digits.length % 3;
+    final parts = <String>[];
+    if (firstGroup > 0) {
+      parts.add(digits.substring(0, firstGroup));
+    }
+    for (var index = firstGroup; index < digits.length; index += 3) {
+      parts.add(digits.substring(index, index + 3));
+    }
+    return parts.join(',');
+  }
+
+  void _openInitialCatalogue(List<Catalogue> catalogues) {
+    final catalogueId = widget.initialCatalogueId;
+    if (_handledInitialCatalogue || catalogueId == null) return;
+    for (final catalogue in catalogues) {
+      if (catalogue.id != catalogueId) continue;
+      _handledInitialCatalogue = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showCatalogueReader(context, catalogue);
+      });
+      return;
+    }
   }
 
   Widget _dealsTab(
@@ -551,6 +666,8 @@ class _DealsScreenState extends State<DealsScreen> {
     int page,
     int pageCount, {
     required int totalDealCount,
+    required VoidCallback onOpenCatalogues,
+    RetailerOption? selectedRetailer,
     bool sampled = false,
   }) {
     return RefreshIndicator(
@@ -610,7 +727,27 @@ class _DealsScreenState extends State<DealsScreen> {
                       size: 104,
                     ),
                   ),
-                  if (_query.trim().length < 3)
+                  if (_query.trim().length < 3 &&
+                      (selectedRetailer?.catalogueCount ?? 0) > 0) ...[
+                    Text(
+                      '${selectedRetailer!.name} has '
+                      '${selectedRetailer.catalogueCount} '
+                      'catalogue${selectedRetailer.catalogueCount == 1 ? '' : 's'} '
+                      'ready to browse.',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      key: const Key('open-store-catalogues'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: TS.yellow,
+                        foregroundColor: TS.ink,
+                      ),
+                      onPressed: onOpenCatalogues,
+                      icon: const Icon(Icons.menu_book_outlined),
+                      label: const Text('Open catalogues'),
+                    ),
+                  ] else if (_query.trim().length < 3)
                     const Text('No deals match those filters.')
                   else ...[
                     Text('No deal for “${_query.trim()}” yet.',
@@ -778,9 +915,11 @@ class _DealsScreenState extends State<DealsScreen> {
     );
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
         border: Border.all(color: TS.lineSoftOf(context), width: 2),
+        borderRadius: BorderRadius.circular(TS.cardRadius),
       ),
       child: Column(
         children: [
@@ -806,6 +945,21 @@ class _DealsScreenState extends State<DealsScreen> {
                     ],
                   ),
           ),
+          CheckboxListTile(
+            key: const Key('hide-sold-out-filter'),
+            dense: true,
+            contentPadding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text(
+              'Hide sold out',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+            value: _hideSoldOut,
+            onChanged: (value) => setState(() {
+              _hideSoldOut = value ?? false;
+              _page = 0;
+            }),
+          ),
         ],
       ),
     );
@@ -817,6 +971,7 @@ class _DealsScreenState extends State<DealsScreen> {
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
         border: Border.all(color: TS.lineSoftOf(context), width: 2),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -923,6 +1078,7 @@ class _DealsScreenState extends State<DealsScreen> {
           decoration: BoxDecoration(
             color: active ? TS.inkOf(context) : TS.surfaceOf(context),
             border: Border.all(color: TS.lineSoftOf(context), width: 2),
+            borderRadius: BorderRadius.circular(TS.pillRadius),
           ),
           child: Text(label,
               style: TextStyle(
@@ -948,69 +1104,138 @@ class _DealsScreenState extends State<DealsScreen> {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.72,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: groups.length,
-      itemBuilder: (context, index) => _CatalogueGroupCard(
-        group: groups[index],
-        onTap: () => _openCatalogueGroup(groups[index]),
-      ),
+    final query = _catalogueQuery.trim().toLowerCase();
+    final visibleGroups = groups
+        .map((group) {
+          if (query.isEmpty ||
+              group.retailerName.toLowerCase().contains(query)) {
+            return group;
+          }
+          final matchingCatalogues = group.catalogues
+              .where(
+                  (catalogue) => catalogue.name.toLowerCase().contains(query))
+              .toList();
+          if (matchingCatalogues.isEmpty) return null;
+          return _CatalogueGroup(
+            group.retailerId,
+            group.retailerName,
+            matchingCatalogues,
+            logoUrl: group.logoUrl,
+          );
+        })
+        .whereType<_CatalogueGroup>()
+        .toList();
+    final totalCatalogueCount = groups.fold<int>(
+      0,
+      (total, group) => total + group.catalogues.length,
+    );
+    final visibleCatalogueCount = visibleGroups.fold<int>(
+      0,
+      (total, group) => total + group.catalogues.length,
+    );
+
+    return CustomScrollView(
+      key: const Key('catalogue-directory-list'),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverToBoxAdapter(
+          child: _CatalogueDirectoryHeader(
+            controller: _catalogueSearchController,
+            query: _catalogueQuery,
+            totalCatalogueCount: totalCatalogueCount,
+            visibleCatalogueCount: visibleCatalogueCount,
+            onChanged: (value) => setState(() => _catalogueQuery = value),
+            onClear: () {
+              _catalogueSearchController.clear();
+              setState(() => _catalogueQuery = '');
+            },
+          ),
+        ),
+        if (visibleGroups.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _CatalogueSearchEmpty(
+              query: _catalogueQuery,
+              onClear: () {
+                _catalogueSearchController.clear();
+                setState(() => _catalogueQuery = '');
+              },
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final group = visibleGroups[index];
+                  final letter = group.retailerName.isEmpty
+                      ? '#'
+                      : group.retailerName.characters.first.toUpperCase();
+                  final previousLetter = index == 0
+                      ? null
+                      : visibleGroups[index - 1]
+                          .retailerName
+                          .characters
+                          .first
+                          .toUpperCase();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 18),
+                    child: _CatalogueStoreSection(
+                      group: group,
+                      sectionLetter: letter == previousLetter ? null : letter,
+                      onOpen: (catalogue) =>
+                          showCatalogueReader(context, catalogue),
+                    ),
+                  );
+                },
+                childCount: visibleGroups.length,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
   // One entry per retailer; multiple branch catalogues collapse into it.
-  List<_CatalogueGroup> _groupCatalogues(List<Catalogue> catalogues) {
+  List<_CatalogueGroup> _groupCatalogues(
+    List<Catalogue> catalogues, {
+    String retailerId = allRetailersId,
+  }) {
     final byRetailer = <String, _CatalogueGroup>{};
     for (final catalogue in sortCataloguesMostRecent(catalogues)) {
       final name = catalogue.retailerName ?? catalogue.name;
-      final key = name.toLowerCase();
-      byRetailer.putIfAbsent(key, () => _CatalogueGroup(name, []));
+      var key = canonicalRetailerId(catalogue.retailerId ?? '', name);
+      Retailer? knownRetailer;
+      for (final retailer in _catalog) {
+        final exactName =
+            retailerNameKey(retailer.name) == retailerNameKey(name);
+        final exactShortName =
+            retailerNameKey(retailer.shortName) == retailerNameKey(name);
+        if (retailer.id == key || exactName || exactShortName) {
+          knownRetailer = retailer;
+          key = retailer.id;
+          break;
+        }
+      }
+      if (key.isEmpty) key = retailerNameKey(name);
+      if (retailerId != allRetailersId && key != retailerId) continue;
+      byRetailer.putIfAbsent(
+        key,
+        () => _CatalogueGroup(
+          key,
+          knownRetailer?.name ?? name,
+          [],
+          logoUrl: knownRetailer?.logoUrl,
+        ),
+      );
       byRetailer[key]!.catalogues.add(catalogue);
     }
-    return byRetailer.values.toList();
-  }
-
-  void _openCatalogueGroup(_CatalogueGroup group) {
-    if (group.catalogues.length == 1) {
-      showCatalogueReader(context, group.catalogues.first);
-      return;
-    }
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: TS.bgOf(context),
-      shape: Border(top: BorderSide(color: TS.lineOf(context), width: 3)),
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text('${group.retailerName} catalogues',
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 12),
-            for (final catalogue in group.catalogues)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading:
-                    Icon(Icons.menu_book_outlined, color: TS.redOf(context)),
-                title: Text(catalogue.name),
-                subtitle: _catalogueValidToSubtitle(context, catalogue),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  showCatalogueReader(context, catalogue);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
+    final groups = byRetailer.values.toList()
+      ..sort((left, right) => left.retailerName
+          .toLowerCase()
+          .compareTo(right.retailerName.toLowerCase()));
+    return groups;
   }
 
   Future<void> _save(Deal deal) async {
@@ -1065,19 +1290,6 @@ class _DealsScreenState extends State<DealsScreen> {
       ),
     );
   }
-}
-
-/// The catalogue-group sheet's "valid until" subtitle — flags an expired
-/// catalogue instead of quietly showing a date that has already passed.
-Widget? _catalogueValidToSubtitle(BuildContext context, Catalogue catalogue) {
-  final info = validUntilInfo(catalogue.validTo);
-  if (info == null) return null;
-  return Text(
-    info.label,
-    style: info.isExpired
-        ? TextStyle(color: TS.redOf(context), fontWeight: FontWeight.w700)
-        : null,
-  );
 }
 
 class _DealRow extends StatelessWidget {
@@ -1190,6 +1402,26 @@ class _DealRow extends StatelessWidget {
               spacing: 8,
               runSpacing: 2,
               children: [
+                if (deal.unitText != null)
+                  Container(
+                    key: Key('deal-price-qualifier-${deal.id}'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: TS.yellow.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(7),
+                      border:
+                          Border.all(color: TS.lineSoftOf(context), width: 1),
+                    ),
+                    child: Text(
+                      deal.unitText!,
+                      style: TextStyle(
+                        color: TS.inkOf(context),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 if (deal.priceText != null)
                   Text(
                     deal.priceText!,
@@ -1225,7 +1457,7 @@ class _DealRow extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: TS.mutedOf(context).withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     'SOLD OUT',
@@ -1281,10 +1513,16 @@ class _DealRow extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         visualDensity: VisualDensity.compact,
                       ),
-                      onPressed: isAddingToBasket ? null : onAddToBasket,
+                      onPressed: deal.soldOut || isAddingToBasket
+                          ? null
+                          : onAddToBasket,
                       icon: const Icon(Icons.add_shopping_cart, size: 18),
                       label: Text(
-                        isAddingToBasket ? 'Adding' : 'Add to basket',
+                        deal.soldOut
+                            ? 'Sold out'
+                            : isAddingToBasket
+                                ? 'Adding'
+                                : 'Add to basket',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1486,6 +1724,30 @@ class _MarketplaceProductViewerState extends State<_MarketplaceProductViewer> {
                     ),
                   ),
                 ),
+                if (deal.soldOut)
+                  Positioned(
+                    key: Key('marketplace-viewer-sold-out-${deal.id}'),
+                    left: 14,
+                    top: 14,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: TS.inkOf(context),
+                        border: Border.all(color: TS.lineOf(context), width: 2),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'SOLD OUT',
+                        style: TextStyle(
+                          color: TS.surfaceOf(context),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.7,
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   right: 14,
                   bottom: 14,
@@ -1561,62 +1823,520 @@ class _MarketplaceProductViewerState extends State<_MarketplaceProductViewer> {
 }
 
 class _CatalogueGroup {
-  _CatalogueGroup(this.retailerName, this.catalogues);
+  _CatalogueGroup(
+    this.retailerId,
+    this.retailerName,
+    this.catalogues, {
+    this.logoUrl,
+  });
+
+  final String retailerId;
   final String retailerName;
   final List<Catalogue> catalogues;
+  final String? logoUrl;
 }
 
-class _CatalogueGroupCard extends StatelessWidget {
-  const _CatalogueGroupCard({required this.group, required this.onTap});
+class _CatalogueDirectoryHeader extends StatelessWidget {
+  const _CatalogueDirectoryHeader({
+    required this.controller,
+    required this.query,
+    required this.totalCatalogueCount,
+    required this.visibleCatalogueCount,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final String query;
+  final int totalCatalogueCount;
+  final int visibleCatalogueCount;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSearching = query.trim().isNotEmpty;
+    return Container(
+      key: const Key('catalogue-directory-header'),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            TS.surfaceOf(context),
+            TS.surfaceSoftOf(context),
+          ],
+        ),
+        border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
+        borderRadius: BorderRadius.circular(TS.panelRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Fresh from stores', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Current catalogues',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.merge(TS.display),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Open a cover to read every available page in order.',
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: TS.yellow,
+                  border: Border.all(color: TS.ink, width: 1.5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isSearching
+                      ? '$visibleCatalogueCount shown'
+                      : '$totalCatalogueCount available',
+                  style: const TextStyle(
+                    color: TS.ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('catalogue-search-field'),
+            controller: controller,
+            onChanged: onChanged,
+            textInputAction: TextInputAction.search,
+            autocorrect: false,
+            decoration: InputDecoration(
+              labelText: 'Search catalogues',
+              hintText: 'Store or catalogue name',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: isSearching
+                  ? IconButton(
+                      tooltip: 'Clear catalogue search',
+                      onPressed: onClear,
+                      icon: const Icon(Icons.close),
+                    )
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CatalogueSearchEmpty extends StatelessWidget {
+  const _CatalogueSearchEmpty({
+    required this.query,
+    required this.onClear,
+  });
+
+  final String query;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.menu_book_outlined,
+                size: 52,
+                color: TS.mutedOf(context),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'No matching catalogues',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'No store or catalogue matches “${query.trim()}”.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: TS.mutedOf(context)),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.close),
+                label: const Text('Clear search'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _CatalogueStoreSection extends StatelessWidget {
+  const _CatalogueStoreSection({
+    required this.group,
+    required this.sectionLetter,
+    required this.onOpen,
+  });
+
   final _CatalogueGroup group;
+  final String? sectionLetter;
+  final ValueChanged<Catalogue> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = group.catalogues.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (sectionLetter != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 9),
+            child: Text(
+              sectionLetter!,
+              style: TextStyle(
+                color: TS.redOf(context),
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        Container(
+          key: Key('catalogue-group-${group.retailerId}'),
+          padding: const EdgeInsets.all(14),
+          decoration: TS.card(context, width: 1.5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _CatalogueStoreLogo(
+                    name: group.retailerName,
+                    logoUrl: group.logoUrl,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.retailerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          count == 1
+                              ? '1 current catalogue'
+                              : '$count current catalogues',
+                          style: TextStyle(
+                            color: TS.mutedOf(context),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final tileWidth = count == 1
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - 12) / 2;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final catalogue in group.catalogues)
+                        SizedBox(
+                          key: Key(
+                            'catalogue-tile-${catalogue.id ?? catalogue.name}',
+                          ),
+                          width: tileWidth,
+                          child: _CatalogueTile(
+                            catalogue: catalogue,
+                            onTap: () => onOpen(catalogue),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CatalogueStoreLogo extends StatelessWidget {
+  const _CatalogueStoreLogo({
+    required this.name,
+    required this.logoUrl,
+  });
+
+  final String name;
+  final String? logoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Center(
+      child: Text(
+        name.trim().isEmpty ? '#' : name.trim().characters.first.toUpperCase(),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+      ),
+    );
+    return Container(
+      width: 48,
+      height: 48,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: TS.surfaceSoftOf(context),
+        border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: logoUrl == null
+          ? fallback
+          : Image.network(
+              logoUrl!,
+              cacheWidth: 120,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
+    );
+  }
+}
+
+class _CatalogueTile extends StatelessWidget {
+  const _CatalogueTile({
+    required this.catalogue,
+    required this.onTap,
+  });
+
+  final Catalogue catalogue;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final cover = group.catalogues
-        .map((catalogue) => catalogue.imageUrl)
-        .firstWhere((url) => url != null, orElse: () => null);
-    final count = group.catalogues.length;
+    final cover = catalogue.coverImageUrl;
+    final validInfo = validUntilInfo(catalogue.validTo);
+    final format = catalogue.pages.length > 1
+        ? '${catalogue.pages.length} pages'
+        : catalogue.pagesUrl != null
+            ? 'Multi-page'
+            : catalogue.isDirectPdf
+                ? 'Full PDF'
+                : 'Catalogue';
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        decoration: TS.card(context, width: 2),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: SizedBox(
-                width: double.infinity,
-                child: cover == null
-                    ? ColoredBox(
+    Widget coverImage(BorderRadius borderRadius) => AspectRatio(
+          aspectRatio: 0.76,
+          child: ClipRRect(
+            borderRadius: borderRadius,
+            child: cover == null
+                ? ColoredBox(
+                    color: TS.surfaceOf(context),
+                    child: Icon(
+                      Icons.menu_book_outlined,
+                      size: 38,
+                      color: TS.mutedOf(context),
+                    ),
+                  )
+                : Image.network(
+                    cover,
+                    cacheWidth: 440,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return ColoredBox(
                         color: TS.surfaceOf(context),
-                        child: const Icon(Icons.menu_book_outlined, size: 34),
-                      )
-                    : Image.network(cover,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => ColoredBox(
-                              color: TS.surfaceOf(context),
-                              child: const Icon(Icons.menu_book_outlined,
-                                  size: 34),
-                            )),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: TS.redOf(context),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => ColoredBox(
+                      color: TS.surfaceOf(context),
+                      child: Icon(
+                        Icons.menu_book_outlined,
+                        size: 38,
+                        color: TS.mutedOf(context),
+                      ),
+                    ),
+                  ),
+          ),
+        );
+
+    Widget details({
+      required EdgeInsets padding,
+      required int titleLines,
+    }) =>
+        Padding(
+          padding: padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                catalogue.name,
+                maxLines: titleLines,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  height: 1.2,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(group.retailerName,
+              const SizedBox(height: 7),
+              Text(
+                validInfo?.label ?? format,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w900)),
-            Text(
-              count == 1 ? group.catalogues.first.name : '$count catalogues',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: TS.mutedOf(context)),
+                style: TextStyle(
+                  color: validInfo?.isExpired == true
+                      ? TS.redOf(context)
+                      : TS.mutedOf(context),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      format,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: TS.yellow,
+                      border: Border.all(color: TS.ink, width: 1),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Read',
+                      style: TextStyle(
+                        color: TS.ink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useWideLayout = constraints.maxWidth >= 260;
+        final proportionalCoverWidth = constraints.maxWidth * 0.42;
+        final wideCoverWidth =
+            proportionalCoverWidth > 180 ? 180.0 : proportionalCoverWidth;
+        return Semantics(
+          button: true,
+          label: 'Read ${catalogue.name}',
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: TS.surfaceSoftOf(context),
+                border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: useWideLayout
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: wideCoverWidth,
+                          child: coverImage(
+                            const BorderRadius.horizontal(
+                              left: Radius.circular(12),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: details(
+                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                            titleLines: 3,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        coverImage(
+                          const BorderRadius.vertical(
+                            top: Radius.circular(12),
+                          ),
+                        ),
+                        details(
+                          padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
+                          titleLines: 2,
+                        ),
+                      ],
+                    ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -102,6 +102,11 @@ describe('buildBashSaleUrl', () => {
         retailerId: 'sneaker-factory',
         storeKey: 'sneaker-factory',
       }),
+      expect.objectContaining({
+        path: '/jet/sale',
+        retailerId: 'jet',
+        storeKey: 'jet',
+      }),
     ])
   })
 

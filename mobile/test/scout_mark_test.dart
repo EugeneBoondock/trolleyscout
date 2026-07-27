@@ -5,8 +5,7 @@ import 'package:trolley_scout/widgets/scout_mark.dart';
 import 'package:trolley_scout/widgets/skeleton.dart';
 
 void main() {
-  testWidgets('scouting motion changes the Scout badge angle',
-      (tester) async {
+  testWidgets('scouting motion changes the Scout badge angle', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -68,6 +67,23 @@ void main() {
         .transform;
 
     expect(after, equals(before));
+  });
+
+  testWidgets('business constructor uses the dedicated business logo',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AnimatedScoutMark.business(),
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(
+      (image.image as AssetImage).assetName,
+      'assets/scout-logo-business-v2.png',
+    );
   });
 
   testWidgets('shared content loading shows shimmer skeletons, not a spinner',

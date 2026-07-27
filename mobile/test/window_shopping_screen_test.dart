@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
@@ -62,6 +63,20 @@ void main() {
 
     expect(find.byKey(const Key('scroll-sold-out-deal-stocked')), findsNothing);
     expect(find.text('40% off'), findsOneWidget);
+  });
+
+  testWidgets('labels a Bob Shop auction amount as a current bid in the reel',
+      (tester) async {
+    final api = _WindowApi(initialDeals: const [_bidDeal]);
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('window-price-qualifier-bobshop-bid')),
+      findsOneWidget,
+    );
+    expect(find.text('Current bid'), findsOneWidget);
   });
 
   testWidgets('saves a window item to the member saved-deals list',
@@ -139,6 +154,28 @@ void main() {
     expect(find.text('That’s the whole window'), findsOneWidget);
     expect(
         find.text('You’ve seen all 2 deals in this window.'), findsOneWidget);
+  });
+
+  testWidgets('keeps the full window inside the member deal allowance',
+      (tester) async {
+    final api = _WindowApi(
+      initialDeals: const [_deal1, _deal2],
+      discoveryAccess: const DiscoveryAccess(
+        availableCatalogueCount: 0,
+        availableDealCount: 2,
+        catalogueLimit: 50,
+        dealLimit: 1,
+        planId: 'free',
+      ),
+    );
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).childrenDelegate,
+      _reelDealCount(1),
+    );
   });
 
   testWidgets('pulling down on the first deal asks the server for what is live',
@@ -233,6 +270,88 @@ void main() {
     expect(
       tester.widget<PageView>(horizontalPager).controller?.page,
       closeTo(0, 0.01),
+    );
+  });
+
+  testWidgets('opens a distraction-free showcase with swipe and zoom controls',
+      (tester) async {
+    final api = _WindowApi(initialDeals: const [_galleryDeal]);
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      platformCalls.add(call);
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(_wrap(_window(api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('View product full screen'));
+    await tester.pumpAndSettle();
+
+    final showcase =
+        find.byKey(const ValueKey('window-product-showcase-gallery-deal'));
+    expect(showcase, findsOneWidget);
+    expect(
+      find.descendant(of: showcase, matching: find.byType(InteractiveViewer)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: showcase,
+        matching: find.byKey(const ValueKey('window-showcase-page-0')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Close full screen'), findsOneWidget);
+    expect(find.byTooltip('Zoom out'), findsOneWidget);
+    expect(find.byTooltip('Reset zoom'), findsOneWidget);
+    expect(find.byTooltip('Zoom in'), findsOneWidget);
+    expect(
+      platformCalls.any(
+        (call) =>
+            call.method == 'SystemChrome.setEnabledSystemUIMode' &&
+            call.arguments == 'SystemUiMode.immersiveSticky',
+      ),
+      isTrue,
+    );
+
+    final showcasePager =
+        find.descendant(of: showcase, matching: find.byType(PageView));
+    await tester.drag(showcasePager, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: showcase,
+        matching: find.byKey(const ValueKey('window-showcase-page-1')),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pumpAndSettle();
+    final firstViewer = tester.widget<InteractiveViewer>(
+      find
+          .descendant(of: showcase, matching: find.byType(InteractiveViewer))
+          .first,
+    );
+    expect(firstViewer.transformationController!.value.getMaxScaleOnAxis(),
+        greaterThan(1));
+
+    await tester.tap(find.byTooltip('Close full screen'));
+    await tester.pumpAndSettle();
+    expect(showcase, findsNothing);
+    expect(
+      platformCalls.any(
+        (call) =>
+            call.method == 'SystemChrome.setEnabledSystemUIMode' &&
+            call.arguments == 'SystemUiMode.edgeToEdge',
+      ),
+      isTrue,
     );
   });
 
@@ -524,6 +643,7 @@ Widget _wrap(
 class _WindowApi extends Api {
   _WindowApi({
     required this.initialDeals,
+    this.discoveryAccess,
     this.refreshedDeals = const [],
     this.failDealSitesAfterFirst = false,
     this.failDiscoveryAfterFirst = false,
@@ -534,6 +654,7 @@ class _WindowApi extends Api {
         super(baseUrl: 'https://example.test');
 
   final List<ScrollDeal> initialDeals;
+  final DiscoveryAccess? discoveryAccess;
   final List<ScrollDeal> refreshedDeals;
   final bool failDealSitesAfterFirst;
   final bool failDiscoveryAfterFirst;
@@ -573,7 +694,8 @@ class _WindowApi extends Api {
     if (failDiscoveryAfterFirst && discoveryForceLiveCalls.length > 1) {
       throw StateError('discovery unavailable');
     }
-    return const DiscoveryResult(
+    return DiscoveryResult(
+      access: discoveryAccess,
       deals: [],
       foundDealCount: 0,
       checkedSourceCount: 0,
@@ -643,6 +765,18 @@ const _soldOutDeal = ScrollDeal(
   imageUrl: 'https://example.test/deal-gone.jpg',
   savingText: '40% off',
   soldOut: true,
+);
+
+const _bidDeal = ScrollDeal(
+  id: 'bobshop-bid',
+  title: 'Camera auction',
+  retailerName: 'Bob Shop',
+  sourceLabel: 'Featured listings',
+  source: 'bobshop',
+  productUrl: 'https://www.bobshop.co.za/camera/p/1',
+  imageUrl: 'https://img.bobshop.co.za/camera.jpg',
+  priceText: 'R250.00',
+  unitText: 'Current bid',
 );
 
 const _deal2 = ScrollDeal(

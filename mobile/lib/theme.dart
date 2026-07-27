@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
 class TS {
-  static const cardRadius = 16.0;
-  static const controlRadius = 12.0;
-  static const panelRadius = 22.0;
+  static const cardRadius = 20.0;
+  static const controlRadius = 16.0;
+  static const panelRadius = 28.0;
+  // Chips and badges that read as pills — category filters, plan tags. Kept as
+  // a token so a chip never ends up with a hand-picked radius of its own.
+  static const pillRadius = 999.0;
+  // Small tiles that sit inside a card: swatches, thumbnails, stat chips.
+  static const tileRadius = 12.0;
 
   static const bg = Color(0xFFF4EEDD);
   static const surface = Color(0xFFFDFAF1);
@@ -195,6 +200,17 @@ class TS {
         labelStyle: TextStyle(color: mutedColor),
         hintStyle: TextStyle(color: mutedColor),
       ),
+      checkboxTheme: CheckboxThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(pillRadius),
+          side: BorderSide(color: outlineSoftColor, width: 1.5),
+        ),
+      ),
       dividerColor: outlineSoftColor,
       snackBarTheme: SnackBarThemeData(
         backgroundColor: inkColor,
@@ -234,6 +250,7 @@ class TS {
         ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.85)
         : faint;
   }
+
   static Color lineOf(BuildContext context) =>
       Theme.of(context).colorScheme.outline;
   static Color lineSoftOf(BuildContext context) =>

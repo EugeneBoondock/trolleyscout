@@ -1,0 +1,106 @@
+The user wants me to take an innovative approach—use the browser to inspect network requests, identify the actual APIs these stores are using, and implement proper rate limiting and backoff strategies to fix them. I should start systematically with the stores that returned "home=200 no public feed": Cape Union Mart, Cotton On, Old Khaki, Sportscene, Totalsports, Truworths, and Office London.
+
+I'm also noting the 403 errors from Adidas, H&M, and New Balance—these are likely protected by Akamai or similar bot detection, but worth checking via browser. I'm realizing that some of these stores share infrastructure: Old Khaki and Cape Union Mart are part of the same group, while Totalsports and Sportscene are both TFG-owned, so cracking one API could unlock several stores.
+
+My plan is to start with Sportscene since the TFG stores likely share infrastructure, then commit my current work quickly before diving into the browser investigation.
+Let me bank the tested work first, then go hunting with the browser:
+
+Committed the Food Lovers and alarm fixes
+Now the hunt. Let me watch what these sites actually call — starting with Sportscene, since TFG runs Totalsports and Sportscene on shared infrastructure:
+
+Captured Sportscene network requests
+Sportscene is built on Next.js with Sentry integration, and the products aren't coming from an obvious API endpoint—they're likely embedded in the server-rendered `__NEXT_DATA__` or fetched server-side. I notice `api-mktg.bash.com` in the network requests, which points to Bash, TFG's e-commerce platform that powers Sportscene and Totalsports. Let me check the page source for the `__NEXT_DATA__` object to see if the product data is there.
+Next.js, and note bash.com — TFG's platform, which would cover Sportscene and Totalsports. Let me look for embedded product data:
+
+
+Ran 2 commands
+I'm noticing that Sportscene is protected by Cloudflare's Turnstile bot challenge, which means a Worker fetch can't get past it—similar to what I found with Wootware. This is revealing a broader pattern where many South African retailers are using Cloudflare bot protection, which blocks automated requests. I should quickly check the remaining sites to see which ones have this protection versus which ones are accessible.
+
+The key distinction here is that I can't and shouldn't try to bypass bot-detection systems like Cloudflare challenges—that crosses an ethical line. But for sites that are rate-limited or have WAF blocks, I can help with legitimate approaches like backoffs and better headers. So my strategy is to classify each retailer by their protection type, then focus on finding legitimate public APIs for the ones that aren't behind challenges.
+
+Let me write a probe to check each site for Cloudflare or Akamai challenge markers, then run it to get a clean classification.
+challenges.cloudflare.com — Sportscene is behind a Cloudflare bot challenge; the page rendered 29 bytes. Let me classify all of them properly, because that distinction decides what's fixable:
+
+Classify each store: challenge vs readable
+The fetch requests are working much better than the browser suggested—most sites have proper headers. I'm noticing that Cape Union Mart, Cotton On, and Old Khaki all run on Salesforce Commerce Cloud, which exposes a public API for search queries and the more powerful OCAPI endpoint.
+
+More importantly, Truworths, Office London, OK Foods, and Usave are all Magento stores, and Magento typically exposes GraphQL at `/graphql`—the exact same pattern already proven with Mr Price and Fair Price. Testing GraphQL on these four retailers would give me a high-leverage win with a reusable adapter, so I'm going to probe that endpoint now.
+Much better than the browser suggested — the Sportscene challenge was triggered by headless Chromium, not by plain fetch. And there's a real pattern here: four are Magento, which is exactly the open-GraphQL trick already proven on Mr Price and Fair Price. Let me test it:
+
+Tested Magento GraphQL on the readable stores
+I'm going to skip GraphQL and focus on Salesforce Commerce Cloud sites instead, since they have predictable search endpoints. The better approach here is to actually watch what Cape Union Mart's sale page requests in the browser — that'll show me the real XHR calls these SFCC sites make, which is more in line with what the user is looking for. One solid discovery there could be the key to unlocking the pattern across all these sites.
+No GraphQL. Let me watch what the Salesforce Commerce Cloud group actually calls — one find there could unlock Cape Union Mart, Old Khaki and Cotton On together:
+
+Watch Cape Union Mart network calls
+I've confirmed the SFCC site structure and found that the `/sale/` path returns a 404, so that's not the right endpoint. The actual search functionality uses `/on/demandware.store/Sites-CUM-Site/en_ZA/Search-Show?cgid=<category>` to fetch product pages as HTML, with a separate grid update endpoint that handles pagination cleanly. Now I need to locate the actual product data source.
+
+Given the time I've spent on this, I'm going to focus on getting Cape Union Mart working through the Search-UpdateGrid endpoint, which should generalize to the other sites in the group like Old Khaki and Poetry since they're all on the same platform. Let me check the homepage navigation to find the sale category ID.
+Confirmed SFCC (Sites-CUM-Site/en_ZA). That platform has a clean paginated grid endpoint. Let me find the real sale category:
+
+
+Ran 2 commands
+I've identified the URL pattern for categories as `/c/{category-slug}/` which maps to the `cgid` parameter in SFCC. The main deals category is at `/c/deals-everyone/`, so I'm going to test the Search-UpdateGrid endpoint with that to see if it returns products with pricing information. This same approach should work for other retailers like Cape Union Mart, Old Khaki, and Poetry.
+/c/deals-everyone/ — SFCC maps those to cgid. Let me test the grid endpoint:
+
+Tested the SFCC grid endpoint for products
+The fetch is working perfectly—I'm getting all the product data including 48 tiles, 64 prices, and struck-through markers with actual product names. I notice "Old Khaki Women's Presley Denim" shows up in Cape Union Mart's feed, confirming they're part of the same group. The endpoint pattern uses a standard SFCC grid structure with the host and site identifier.
+
+Now I'm building a shared Demandware adapter to parse the grid HTML and extract product candidates with names, prices, original prices, URLs, and images. I'll register Cape Union Mart and Old Khaki first, then test against Cotton On if I can confirm its site ID. I need to move quickly but carefully given the session length—let me probe for those site identifiers now.
+That works. 48 product tiles, 48 struck-through prices, real names — Cape Union Mart's SFCC grid is fully readable with a plain fetch. Let me confirm the sibling sites so one adapter covers several:
+
+Found the sibling SFCC site ids
+I've identified that Old Khaki uses the SFCC marker `Sites-OK-Site`, so I can build a single adapter to handle both Cape Union Mart and Old Khaki. Now I'm ready to implement it once I verify Old Khaki's grid structure and locate its deals category.
+Old Khaki is Sites-OK-Site — same platform. Let me get its deals category, then build one adapter for both:
+
+Found Old Khaki deals category and tested its grid
+I'm checking that Old Khaki's deals category endpoint returns the right tiles, then I'll write the adapter for parsing the Demandware feed. I need to examine the tile structure in the saved HTML to build an accurate parser.
+Inspected one SFCC product tile's markup
+The `data-gtm-impression` attribute gives me clean structured data with price, but I need to find the original price too since that field only contains the current price. I'm looking through the tile markup to locate the struck-through price section.
+The tile carries a clean data-gtm-impression JSON with id, name, brand and price. Let me find the was-price markup:
+
+
+Ran 2 commands
+I can see the HTML structure for the price section now—there's a current price displayed in a sales span with a content attribute of 399.00, and a was-price that's hidden in a list span with strike-through styling that's currently null.
+
+The key insight is that most of these "deals" tiles actually have null values for the was-price, which means they're not real markdowns at all. These are likely promotional bundles or multi-buy offers rather than per-item discounts, similar to what I'd see at PEP or Mr Price. I need to count how many tiles actually have a numeric list price to determine if this category contains genuine markdowns.
+Now I have the exact shape — but note this tile's was-price is literally null, so my earlier "48 struck markers" was just the CSS class. Let me count real markdowns:
+
+Counted real markdowns in the SFCC grid
+So I've confirmed that 16 of the 48 products shown are genuine markdowns, which validates the pricing data I'm seeing. Now I can construct the adapter with the endpoint pattern for paginated search results, extract product details from the GTM impression data to get IDs, names, brands, and prices, and parse the original prices from the strikethrough span elements.
+
+I'm setting up the TypeScript interfaces and configuration for both Cape Union Mart and Old Khaki, defining the shop metadata with their respective hosts, site IDs, and category paths, then implementing the URL builder and HTML parser functions to fetch and process the grid data.
+
+Writing the adapter implementation...
+16 of 48 are real markdowns — R399 was R1,199. That's genuine, and the endpoint is a plain GET. Let me build the adapter:
+
+Created
+demandware.ts
++243
+-0
+when you're done fixing all those stores please fix the image fetching for Mr price, all product show a white screen with an error
+
+Let me verify the adapter against live data before going further:
+
+Ran the Demandware adapter against live data
+Cape Union Mart is delivering 17 legitimate markdowns with proper pricing and product links, while Old Khaki's offerings are bundle deals rather than actual markdowns, so realistically I'm looking at 17 deals from Cape Union Mart and zero from Old Khaki today.
+
+Now I need to register these sources and test them, but the user's Mr Price image white-screen bug is a live issue affecting customers. They said to fix it when I'm done with the stores, so I'll wrap up the Demandware registration and testing first, then pivot to the Mr Price image fetching problem before reporting back comprehensively.
+Cape Union Mart: 17 real markdowns with correct was-prices and working product links. Old Khaki genuinely has none today — its deals aisle is bundle offers, not markdowns, so 0 is the truthful answer there and the source will catch markdowns when they run. Let me register both:
+
+Register the Demandware sources
+I need to fix the reference to `readableSourceKey` since it's not available in this file, and I'll replace it with a simple inline label instead. I also need to import `DEMANDWARE_PAGE_SIZE` to complete the changes.
+readableSourceKey lives in discovery.ts, not here. Let me fix that and the missing import:
+
+Fixed the label and verified coverage
+I've found a few more Shopify-based retailers to add — Under Armour, Edgars, and Sportsmans Warehouse — though the last one doesn't return products on the default endpoint. Now I'm looking at the generic Shopify source builder in `commonCommerceDeals.ts` to see if I can leverage it for these named retailers.
+Now the Shopify ones — Under Armour (5 on sale) and Edgars (3). Let me check if I can reuse the existing Shopify parser:
+
+
+Ran 2 commands
+I see that `parseShopifyDeals` already exists and returns `PlatformDeal[]`, so I need to check its signature and create a bridge to map those results into `RetailerDealCandidate` format. I'm planning to build a compact Shopify retailer source that fetches products in batches of 250, uses the existing parser, and transforms the output into the candidate structure.
+
+Ran 3 commands, created shopifyRetailers.ts
++110
+-0
+I've got 286 new deals live across three retailers—Cape Union Mart, Edgars, and Under Armour—with real pricing data. Now I need to run the full test suite to verify the source count stays within limits, then commit and deploy before moving on to the Mr Price image fix.
+Edgars 42 markdowns, Under Armour 227 — both live with real was-prices. Let me check the budget and run everything:

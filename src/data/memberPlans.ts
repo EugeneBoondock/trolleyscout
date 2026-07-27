@@ -17,6 +17,7 @@ export const memberPlans: MemberPlan[] = [
     description: 'Everything a household needs to stretch the month, free forever.',
     features: [
       'Price tools and live deals',
+      'Browse up to 10,000 deals and 50 catalogues',
       '10 saved deals',
       'Basket planner with 15 items',
       'No card, no trial, no catch',
@@ -27,6 +28,8 @@ export const memberPlans: MemberPlan[] = [
       basketItems: 15,
       savedDeals: 10,
       savedSources: 10,
+      visibleCatalogues: 50,
+      visibleDeals: 10_000,
     },
     name: 'Free',
     prices: {
@@ -40,6 +43,7 @@ export const memberPlans: MemberPlan[] = [
     description: 'For one serious saver tracking deals across many stores every week.',
     features: [
       'Everything in Free',
+      'Browse up to 50,000 deals and 250 catalogues',
       '100 saved deals',
       'Basket planner with 150 items',
       'More room for weekly shopping plans',
@@ -50,6 +54,8 @@ export const memberPlans: MemberPlan[] = [
       basketItems: 150,
       savedDeals: 100,
       savedSources: 100,
+      visibleCatalogues: 250,
+      visibleDeals: 50_000,
     },
     name: 'Scout',
     prices: randPrices('scout'),
@@ -60,6 +66,7 @@ export const memberPlans: MemberPlan[] = [
     description: 'Plan a large household’s spend with room for everyone’s lists.',
     features: [
       'Everything in Scout',
+      'Browse up to 250,000 deals and 1,000 catalogues',
       '250 saved deals',
       'Basket planner with 400 items',
       'More room for large household lists',
@@ -70,6 +77,8 @@ export const memberPlans: MemberPlan[] = [
       basketItems: 400,
       savedDeals: 250,
       savedSources: 250,
+      visibleCatalogues: 1_000,
+      visibleDeals: 250_000,
     },
     name: 'Household',
     prices: randPrices('household'),
@@ -81,6 +90,7 @@ export const memberPlans: MemberPlan[] = [
       'For shops and brands: list your store, post your own specials, and reach shoppers near you.',
     features: [
       'Everything in Household, including Properties',
+      'Browse up to 1,000,000 deals and 5,000 catalogues',
       'Your own shop profile on Near me',
       'Publish your specials straight to the deals board',
       '3 sponsored campaigns included every month',
@@ -91,6 +101,8 @@ export const memberPlans: MemberPlan[] = [
       basketItems: 1000,
       savedDeals: 1000,
       savedSources: 1000,
+      visibleCatalogues: 5_000,
+      visibleDeals: 1_000_000,
     },
     merchant: {
       includedAdsPerMonth: 3,

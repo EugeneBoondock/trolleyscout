@@ -16,6 +16,9 @@ class BusinessController extends ChangeNotifier {
   final BusinessApiClient api;
   BusinessLoadState state = BusinessLoadState.loading;
   BusinessBootstrap? bootstrap;
+  BusinessAdminOverview? adminOverview;
+  List<BusinessAdminApplication>? adminApplications;
+  List<BusinessPublication>? adminPublicationQueue;
   ThemeMode themeMode = ThemeMode.system;
   String? error;
   String? notice;
@@ -25,6 +28,8 @@ class BusinessController extends ChangeNotifier {
       bootstrap?.session.isAuthenticated == true &&
       bootstrap?.session.account != null;
 
+  bool get isAdmin => bootstrap?.session.account?.isAdmin == true;
+
   Future<void> restore() async {
     state = BusinessLoadState.loading;
     error = null;
@@ -32,6 +37,13 @@ class BusinessController extends ChangeNotifier {
     await _loadTheme();
     try {
       bootstrap = await api.bootstrap();
+      if (isAdmin) {
+        adminOverview = await api.adminOverview();
+      } else {
+        adminOverview = null;
+        adminApplications = null;
+        adminPublicationQueue = null;
+      }
       state = BusinessLoadState.ready;
     } on ApiException catch (caught) {
       error = caught.message;
@@ -47,6 +59,9 @@ class BusinessController extends ChangeNotifier {
     return _run(() async {
       await api.authenticate(draft);
       bootstrap = await api.bootstrap();
+      if (isAdmin) {
+        adminOverview = await api.adminOverview();
+      }
       state = BusinessLoadState.ready;
       notice = 'Welcome to Trolley Scout for Business.';
     });
@@ -62,6 +77,9 @@ class BusinessController extends ChangeNotifier {
         locations: const [],
         metrics: BusinessMetrics.empty,
       );
+      adminOverview = null;
+      adminApplications = null;
+      adminPublicationQueue = null;
       notice = null;
     });
   }
@@ -73,6 +91,75 @@ class BusinessController extends ChangeNotifier {
         'Apply from the Organisation subscription in the Trolley Scout consumer app.';
     notifyListeners();
     return false;
+  }
+
+  Future<bool> refreshAdminOverview() async {
+    return _run(() async {
+      adminOverview = await api.adminOverview();
+    }, clearNotice: false);
+  }
+
+  Future<bool> setBusinessStatus(
+    BusinessAdminOrganization business,
+    String status,
+  ) async {
+    return _run(() async {
+      adminOverview = await api.setBusinessStatus(business.id, status);
+      notice = status == 'suspended'
+          ? '${business.name} is suspended.'
+          : '${business.name} is active again.';
+    });
+  }
+
+  Future<bool> loadAdminModeration() async {
+    return _run(() async {
+      final results = await Future.wait([
+        api.adminApplications(),
+        api.adminPublicationQueue(),
+      ]);
+      adminApplications =
+          results[0].whereType<BusinessAdminApplication>().toList();
+      adminPublicationQueue =
+          results[1].whereType<BusinessPublication>().toList();
+    }, clearNotice: false);
+  }
+
+  Future<bool> reviewAdminApplication(
+    BusinessAdminApplication application,
+    String decision, {
+    String? note,
+  }) async {
+    return _run(() async {
+      adminApplications = await api.reviewAdminApplication(
+        application.id,
+        decision,
+        note: note,
+      );
+      adminOverview = await api.adminOverview();
+      notice = decision == 'approved'
+          ? '${application.organisationName} is approved.'
+          : '${application.organisationName} was rejected.';
+    });
+  }
+
+  Future<bool> reviewAdminPublication(
+    BusinessPublication publication,
+    String decision, {
+    String? note,
+  }) async {
+    return _run(() async {
+      adminPublicationQueue = await api.reviewAdminPublication(
+        publication.id,
+        decision,
+        note: note,
+      );
+      adminOverview = await api.adminOverview();
+      notice = switch (decision) {
+        'approved' => '${publication.title} is approved.',
+        'changes_requested' => 'Changes were requested from the business.',
+        _ => '${publication.title} was rejected.',
+      };
+    });
   }
 
   Future<BusinessPublication?> savePublication(

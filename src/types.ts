@@ -88,6 +88,44 @@ export interface Retailer {
   logoUrl?: string
 }
 
+export type ScoutChatRole = 'assistant' | 'user'
+
+export interface ScoutChatTurn {
+  role: ScoutChatRole
+  text: string
+}
+
+export interface ScoutChatDealCard {
+  id: string
+  imageUrl?: string
+  previousPriceText?: string
+  priceText: string
+  productUrl: string
+  retailerName: string
+  savingText?: string
+  soldOut?: boolean
+  title: string
+}
+
+export interface ScoutChatCatalogueCard {
+  id: string
+  imageUrl?: string
+  name: string
+  pageCount: number
+  pageImageUrls: string[]
+  pagesUrl?: string
+  retailerName: string
+  url: string
+  validTo?: string
+}
+
+export interface ScoutChatAnswer {
+  catalogues: ScoutChatCatalogueCard[]
+  deals: ScoutChatDealCard[]
+  followUps: string[]
+  reply: string
+}
+
 export interface VerifiedOffer {
   id: string
   retailerId: RetailerId
@@ -141,6 +179,7 @@ export interface DiscoveredDeal {
   priceText?: string
   previousPriceText?: string
   savingText?: string
+  unitText?: string
   // True only when the shop states every way of buying this is gone. Absent
   // when the shop says nothing, since a wrong sold-out badge sends a shopper
   // away from something they could have had.
@@ -210,10 +249,15 @@ export interface StoreLeaflet {
   retailerId: DiscoveryRetailerId
   retailerName: string
   name: string
+  countryCode?: string
   imageUrl?: string
   documentUrl?: string
   pages?: CataloguePage[]
+  pagesUrl?: string
   priceScope?: RetailerDealScope
+  retailerLogoUrl?: string
+  retailerUrl?: string
+  sourceId?: string
   sourceLabel?: string
   validFrom?: string
   validTo?: string
@@ -230,6 +274,13 @@ export interface CataloguePage {
 }
 
 export interface DiscoveryRun {
+  access?: {
+    availableCatalogueCount: number
+    availableDealCount: number
+    catalogueLimit: number
+    dealLimit: number
+    planId: MemberPlanId
+  }
   deals: DiscoveredDeal[]
   leaflets?: StoreLeaflet[]
   refreshedAt?: string
@@ -307,6 +358,8 @@ export interface MemberPlanLimits {
   savedSources: number
   savedDeals: number
   basketItems: number
+  visibleCatalogues: number
+  visibleDeals: number
 }
 
 // What a business on the Organisation plan may do. Absent on shopper plans,
@@ -347,6 +400,8 @@ export interface MemberPlan {
 
 export type MemberRole = 'member' | 'admin'
 
+export type MemberAccountStatus = 'active' | 'banned'
+
 export interface MemberAccount {
   id: string
   email: string
@@ -364,6 +419,14 @@ export interface MemberAccount {
   propertiesAccess: boolean
   createdAt: string
   updatedAt: string
+  // Moderation and presence. A banned account keeps all of its data but no
+  // session resolves for it, so the person is signed out of every device.
+  status: MemberAccountStatus
+  banReason?: string
+  bannedAt?: string
+  lastSeenAt?: string
+  // Only populated on admin reads — how many deals this member has opened.
+  dealViewCount?: number
   billingCycle?: BillingCycle
   // End of the period already paid for, and the downgrade queued to land on it.
   // Both are absent unless the member has an active paid subscription; the
@@ -487,8 +550,80 @@ export interface SupportMessage {
   message: string
   status: 'open' | 'resolved'
   adminNote?: string
+  // Where it came from: the support form, or the AI help chat. A chat message
+  // carries a brief the model wrote from the member's own words — the brief
+  // sits beside `message`, it never replaces it.
+  channel?: 'form' | 'chat'
+  aiBrief?: string
+  category?: string
+  severity?: string
   createdAt: string
   updatedAt: string
+}
+
+export type SupportChatRole = 'user' | 'assistant'
+
+export interface SupportChatTurn {
+  role: SupportChatRole
+  text: string
+}
+
+/// One reply from the help chat. When the model has heard enough it also
+/// returns [filed], the brief it sent to the admin.
+export interface SupportChatAnswer {
+  reply: string
+  filed?: {
+    category: string
+    severity: string
+    summary: string
+    topic: string
+  }
+}
+
+/// Member-side numbers, straight out of our own database. Every series is
+/// aligned to [days], one value per day, oldest first.
+export interface AdminAnalytics {
+  activeMembers: number[]
+  days: string[]
+  dealViews: number[]
+  signups: number[]
+  topSearches: Array<{ count: number; term: string }>
+  totals: {
+    accountCount: number
+    activeThisWeek: number
+    activeToday: number
+    bannedCount: number
+    dealViewsInWindow: number
+    neverSeenCount: number
+  }
+}
+
+export interface AdminTrafficDay {
+  bytes: number
+  date: string
+  pageViews: number
+  requests: number
+  uniques: number
+}
+
+/// Cloudflare zone traffic. [configured] is false when the read token is not
+/// set, in which case [issue] explains what to set.
+export interface AdminTrafficReport {
+  configured: boolean
+  days: AdminTrafficDay[]
+  issue?: string
+  totals?: {
+    bytes: number
+    pageViews: number
+    requests: number
+    uniques: number
+  }
+}
+
+export interface AdminAnalyticsReport {
+  members: AdminAnalytics
+  traffic: AdminTrafficReport
+  windowDays: number
 }
 
 export interface AdminOverview {

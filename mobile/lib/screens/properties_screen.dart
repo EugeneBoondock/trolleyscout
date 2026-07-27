@@ -510,7 +510,9 @@ class _SearchBar extends StatelessWidget {
                     style: IconButton.styleFrom(
                       foregroundColor: TS.inkOf(context),
                       side: BorderSide(color: TS.lineOf(context), width: 2),
-                      shape: const RoundedRectangleBorder(),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
+                      ),
                       minimumSize: const Size.square(48),
                       padding: EdgeInsets.zero,
                     ),
@@ -548,7 +550,9 @@ class _SearchBar extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: TS.red,
                       foregroundColor: Colors.white,
-                      shape: const RoundedRectangleBorder(),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
+                      ),
                       padding: const EdgeInsets.symmetric(
                           vertical: 16, horizontal: 18),
                     ),
@@ -564,7 +568,9 @@ class _SearchBar extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: TS.inkOf(context),
                     side: BorderSide(color: TS.lineOf(context), width: 2),
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(TS.controlRadius),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: (loading || locating) ? null : onNearMe,
@@ -1127,6 +1133,7 @@ class _UpsellCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: TS.yellow,
                   border: Border.all(color: TS.lineOf(context), width: 2),
+                  borderRadius: BorderRadius.circular(TS.controlRadius),
                 ),
                 child: const Icon(Icons.lock, color: TS.ink, size: 28),
               ),
@@ -1148,7 +1155,9 @@ class _UpsellCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: TS.yellow,
                     foregroundColor: TS.ink,
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(TS.controlRadius),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: onUpgrade,
@@ -1206,7 +1215,9 @@ class _GateCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: TS.yellow,
                     foregroundColor: TS.ink,
-                    shape: const RoundedRectangleBorder(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(TS.controlRadius),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: onAction,
@@ -1294,7 +1305,9 @@ class _StartSuggestions extends StatelessWidget {
             label: Text(item),
             onPressed: () => onPick(item),
             side: BorderSide(color: TS.lineOf(context), width: 1.5),
-            shape: const RoundedRectangleBorder(),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(TS.controlRadius),
+            ),
           ),
       ],
     );

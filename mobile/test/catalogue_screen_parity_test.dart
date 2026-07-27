@@ -45,6 +45,92 @@ void main() {
     expect(find.text('Page 1 of 2'), findsOneWidget);
   });
 
+  testWidgets('catalogue stores are ordered alphabetically', (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      DealsScreen(api: _CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    final storeOrder = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((widget) => widget.data)
+        .where((label) =>
+            label == 'Alpha Market' ||
+            label == 'Bravo Shop' ||
+            label == 'Zulu Store')
+        .toList();
+    expect(storeOrder, ['Alpha Market', 'Bravo Shop', 'Zulu Store']);
+  });
+
+  testWidgets('catalogue directory shows every catalogue without another tap',
+      (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      DealsScreen(api: _CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Current catalogues'), findsOneWidget);
+    expect(find.text('4 available'), findsOneWidget);
+    expect(find.text('Alpha weekly'), findsOneWidget);
+    expect(find.text('Alpha home event'), findsOneWidget);
+    expect(find.text('Bravo month-end'), findsOneWidget);
+    expect(find.text('Zulu weekly'), findsOneWidget);
+  });
+
+  testWidgets('a single catalogue uses the full store shelf width',
+      (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      DealsScreen(api: _CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Bravo month-end'));
+    await tester.pumpAndSettle();
+
+    final group = find.byKey(const Key('catalogue-group-bravo'));
+    final tile = find.byKey(const Key('catalogue-tile-bravo-month-end'));
+    expect(group, findsOneWidget);
+    expect(tile, findsOneWidget);
+    expect(
+      tester.getSize(tile).width,
+      greaterThan(tester.getSize(group).width * 0.85),
+    );
+  });
+
+  testWidgets('catalogue search matches store and catalogue names',
+      (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      DealsScreen(api: _CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    final search = find.byKey(const Key('catalogue-search-field'));
+    expect(search, findsOneWidget);
+    await tester.enterText(search, 'home event');
+    await tester.pump();
+
+    expect(find.text('Alpha Market'), findsOneWidget);
+    expect(find.text('Alpha home event'), findsOneWidget);
+    expect(find.text('Alpha weekly'), findsNothing);
+    expect(find.text('Bravo Shop'), findsNothing);
+    expect(find.text('Zulu Store'), findsNothing);
+  });
+
   testWidgets('Near Me history opens catalogues inside Trolley Scout',
       (tester) async {
     await NearbyHistoryStore().save(
@@ -264,7 +350,7 @@ void main() {
     expect(find.text('Pick n Pay Rosebank'), findsNothing);
     expect(find.text('PnP Sandton'), findsNothing);
 
-    await tester.tap(find.text('View 2 locations'));
+    await tester.tap(find.text('Enter store'));
     await tester.pumpAndSettle();
 
     expect(find.text('Pick n Pay Rosebank'), findsOneWidget);
@@ -291,7 +377,7 @@ void main() {
       StoresScreen(api: _CatalogueApi(), isAuthenticated: false),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('View 2 locations'));
+    await tester.tap(find.text('Enter store'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Pick n Pay Rosebank'));
@@ -310,6 +396,15 @@ Widget _wrap(Widget child) => MaterialApp(
       darkTheme: TS.darkTheme(),
       home: Scaffold(body: child),
     );
+
+void _useTallPhoneViewport(WidgetTester tester) {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(390, 2200);
+  addTearDown(() {
+    tester.view.resetDevicePixelRatio();
+    tester.view.resetPhysicalSize();
+  });
+}
 
 class _CatalogueApi extends Api {
   _CatalogueApi() : super(baseUrl: 'https://example.test');
@@ -366,6 +461,20 @@ class _CatalogueApi extends Api {
   }
 }
 
+class _CatalogueDirectoryApi extends _CatalogueApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [],
+        foundDealCount: 0,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 4,
+        catalogues: _directoryCatalogues,
+      );
+}
+
 const _winterCatalogue = Catalogue(
   name: 'Winter savings',
   url: 'https://catalogues.example.test/winter',
@@ -390,6 +499,41 @@ const _cataloguePages = [
     pageNumber: 2,
     imageUrl: 'https://cdn.example.test/page-2.webp',
     fallbacks: ['https://cdn.example.test/page-2.jpg'],
+  ),
+];
+
+const _directoryCatalogues = [
+  Catalogue(
+    id: 'zulu-weekly',
+    retailerId: 'zulu',
+    name: 'Zulu weekly',
+    url: 'https://catalogues.example.test/zulu',
+    retailerName: 'Zulu Store',
+    validFrom: '2026-07-27',
+  ),
+  Catalogue(
+    id: 'bravo-month-end',
+    retailerId: 'bravo',
+    name: 'Bravo month-end',
+    url: 'https://catalogues.example.test/bravo',
+    retailerName: 'Bravo Shop',
+    validFrom: '2026-07-26',
+  ),
+  Catalogue(
+    id: 'alpha-weekly',
+    retailerId: 'alpha',
+    name: 'Alpha weekly',
+    url: 'https://catalogues.example.test/alpha-weekly',
+    retailerName: 'Alpha Market',
+    validFrom: '2026-07-25',
+  ),
+  Catalogue(
+    id: 'alpha-home-event',
+    retailerId: 'alpha',
+    name: 'Alpha home event',
+    url: 'https://catalogues.example.test/alpha-home',
+    retailerName: 'Alpha Market',
+    validFrom: '2026-07-24',
   ),
 ];
 

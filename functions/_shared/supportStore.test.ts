@@ -17,6 +17,10 @@ const supportMigrationUrl = new NodeUrl(
   '../../migrations/0024_support_and_billing_cleanup.sql',
   import.meta.url,
 )
+const supportChatMigrationUrl = new NodeUrl(
+  '../../migrations/0040_support_chat_briefs.sql',
+  import.meta.url,
+)
 
 const validInput = {
   email: 'shopper@example.co.za',
@@ -39,7 +43,11 @@ describe('support store', () => {
     db = (await miniflare.getD1Database('DB')) as unknown as D1Database
     env = { DB: db, EMAIL_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }
 
-    for (const migrationUrl of [membershipMigrationUrl, supportMigrationUrl]) {
+    for (const migrationUrl of [
+      membershipMigrationUrl,
+      supportMigrationUrl,
+      supportChatMigrationUrl,
+    ]) {
       const migration = (await readFile(migrationUrl, 'utf8')).replace(/^--.*$/gm, '').trim()
       for (const statement of splitMigrationStatements(migration)) {
         await db.prepare(statement).run()

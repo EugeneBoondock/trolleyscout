@@ -183,6 +183,38 @@ void main() {
     expect(ScrollDeal.fromJson(deal.toJson()).gallery, deal.gallery);
   });
 
+  test('scroll deals keep source time and sold-out state in Marketplace', () {
+    final scrollDeal = ScrollDeal.fromJson({
+      'id': 'daddysdeals-88',
+      'title': 'Massage voucher',
+      'retailerName': 'Daddy’s Deals',
+      'sourceLabel': 'Daddy’s Deals',
+      'source': 'daddysdeals',
+      'productUrl': 'https://daddysdeals.test/deal/88',
+      'capturedAt': '2026-07-20T08:15:00.000Z',
+      'soldOut': true,
+    });
+
+    final marketplaceDeal = scrollDeal.toDeal();
+    expect(marketplaceDeal.capturedAt, '2026-07-20T08:15:00.000Z');
+    expect(marketplaceDeal.soldOut, isTrue);
+    expect(ScrollDeal.fromJson(scrollDeal.toJson()).capturedAt,
+        '2026-07-20T08:15:00.000Z');
+  });
+
+  test('deal price qualifiers round-trip from the discovery API', () {
+    final deal = Deal.fromJson({
+      'id': 'bobshop-auction',
+      'title': 'Camera auction',
+      'retailerName': 'Bob Shop',
+      'priceText': 'R250.00',
+      'unitText': 'Current bid',
+    });
+
+    expect(deal.unitText, 'Current bid');
+    expect(Deal.fromJson(deal.toJson()).unitText, 'Current bid');
+  });
+
   test('scroll deal gallery falls back to its single cover image', () {
     const deal = ScrollDeal(
       id: 'window-2',

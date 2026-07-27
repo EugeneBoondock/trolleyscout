@@ -82,6 +82,10 @@ function accountRow(role: 'admin' | 'member') {
     plan_status: 'active',
     properties_access: 1,
     role,
+    status: 'active',
+    banned_at: null,
+    ban_reason: null,
+    last_seen_at: null,
     updated_at: '2026-07-01T00:00:00.000Z',
   }
 }
@@ -92,6 +96,8 @@ function mockEnv(row: ReturnType<typeof accountRow>): TrolleyScoutEnv {
       prepare: () => ({
         bind: () => ({
           first: async () => row,
+          // getMemberSession stamps last_seen_at on the way past.
+          run: async () => ({ meta: { changes: 1 } }),
         }),
       }),
     } as unknown as D1Database,
