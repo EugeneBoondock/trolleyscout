@@ -27,6 +27,47 @@ export function buildTmpnpSectionsUrl(): string {
   return `${TMPNP_API_BASE}/products/sections`
 }
 
+export function buildTmpnpSpecialsUrl(page = 1): string {
+  const safePage = Math.max(1, Math.floor(page))
+  return `${TMPNP_API_BASE}/products/search-product-on-sale?page=${safePage}`
+}
+
+// The dedicated specials endpoint uses `price` for the current red price and
+// `sale_price` for the crossed-out former price. This is the reverse of the
+// older sections feed, so it has its own parser to keep prices accurate.
+export function parseTmpnpSpecialDeals(
+  payload: unknown,
+  nowMs: number,
+  limit = MAX_TMPNP_DEALS,
+): PlatformDeal[] {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    return []
+  }
+
+  const deals: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const today = new Date(nowMs).toISOString().slice(0, 10)
+  const maximum = Math.max(0, Math.min(MAX_TMPNP_DEALS, Math.floor(limit)))
+
+  for (const row of payload.data) {
+    if (deals.length >= maximum) {
+      break
+    }
+    const deal = tmpnpSpecialDeal(row, today)
+    if (!deal) {
+      continue
+    }
+    const key = deal.productUrl ?? deal.title.toLowerCase()
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    deals.push(deal)
+  }
+
+  return deals
+}
+
 // Parses the sections feed into real, in-date discounts. Deduplicates the
 // curated groups (a discounted product can appear in several of them).
 export function parseTmpnpSectionDeals(
@@ -66,6 +107,45 @@ export function parseTmpnpSectionDeals(
   }
 
   return deals
+}
+
+function tmpnpSpecialDeal(row: unknown, today: string): PlatformDeal | undefined {
+  if (!isRecord(row)) {
+    return undefined
+  }
+
+  const title = textValue(row.name)
+  const priceCents = moneyToCents(row.price)
+  const previousPriceCents = moneyToCents(row.sale_price)
+
+  if (
+    !title ||
+    priceCents === undefined ||
+    previousPriceCents === undefined ||
+    priceCents <= 0 ||
+    previousPriceCents <= priceCents
+  ) {
+    return undefined
+  }
+
+  const validFrom = dateValue(row.start_sale_date)
+  const validTo = dateValue(row.end_sale_date)
+  if ((validFrom && validFrom > today) || (validTo && validTo < today)) {
+    return undefined
+  }
+
+  const slug = textValue(row.slug)
+
+  return {
+    currencyCode: TMPNP_CURRENCY,
+    imageUrl: tmpnpImageUrl(row.image),
+    previousPriceCents,
+    priceCents,
+    productUrl: slug ? `${TMPNP_PRODUCT_BASE}${encodeURIComponent(slug)}` : undefined,
+    title,
+    validFrom,
+    validTo,
+  }
 }
 
 function tmpnpDeal(row: unknown, today: string): PlatformDeal | undefined {

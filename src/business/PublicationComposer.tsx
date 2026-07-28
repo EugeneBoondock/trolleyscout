@@ -16,6 +16,7 @@ import type {
   BusinessMutationResult,
   BusinessPublication,
   PublicationDraft,
+  PublicationDestination,
   PublicationKind,
   PublicationPlacement,
 } from './types'
@@ -29,6 +30,7 @@ interface PublicationComposerProps {
 }
 
 interface EditorState {
+  destinations: PublicationDestination[]
   kind: PublicationKind
   placement: PublicationPlacement
   title: string
@@ -65,8 +67,8 @@ export function PublicationComposer({
   onSubmit,
 }: PublicationComposerProps) {
   const [editor, setEditor] = useState<EditorState>(() => stateFromPublication(publication))
-  const [preview, setPreview] = useState<'marketplace' | 'window'>(
-    publication?.placement === 'window' ? 'window' : 'marketplace',
+  const [preview, setPreview] = useState<PublicationDestination>(
+    publication?.destinations?.[0] ?? (publication?.placement === 'window' ? 'window' : 'marketplace'),
   )
   const [issues, setIssues] = useState<string[]>([])
   const [notice, setNotice] = useState<string>()
@@ -86,9 +88,18 @@ export function PublicationComposer({
     setEditor((current) => ({
       ...current,
       kind,
-      placement: kind === 'post' ? 'window' : current.placement,
     }))
-    if (kind === 'post') setPreview('window')
+  }
+
+  function toggleDestination(destination: PublicationDestination) {
+    setEditor((current) => {
+      const selected = current.destinations.includes(destination)
+      const destinations = selected
+        ? current.destinations.filter((value) => value !== destination)
+        : [...current.destinations, destination]
+      return { ...current, destinations }
+    })
+    setPreview(destination)
   }
 
   function toggleLocation(locationId: string) {
@@ -384,23 +395,19 @@ export function PublicationComposer({
               <fieldset>
                 <legend>Where should this appear?</legend>
                 <div className="biz-segmented-control">
-                  {(['marketplace', 'window', 'both'] as const).map((placement) => (
+                  {(['marketplace', 'window', 'stories'] as const).map((destination) => (
                     <button
-                      className={editor.placement === placement ? 'is-selected' : ''}
-                      disabled={editor.kind === 'post' && placement !== 'window'}
-                      key={placement}
-                      onClick={() => {
-                        update('placement', placement)
-                        if (placement === 'window') setPreview('window')
-                        if (placement === 'marketplace') setPreview('marketplace')
-                      }}
+                      aria-pressed={editor.destinations.includes(destination)}
+                      className={editor.destinations.includes(destination) ? 'is-selected' : ''}
+                      key={destination}
+                      onClick={() => toggleDestination(destination)}
                       type="button"
                     >
-                      {placement === 'marketplace'
+                      {destination === 'marketplace'
                         ? 'Marketplace'
-                        : placement === 'window'
+                        : destination === 'window'
                           ? 'Window Shopping'
-                          : 'Both'}
+                          : 'Stories'}
                     </button>
                   ))}
                 </div>
@@ -497,7 +504,7 @@ export function PublicationComposer({
             <div className="biz-preview-tabs">
               <button
                 className={preview === 'marketplace' ? 'is-active' : ''}
-                disabled={editor.kind === 'post' || editor.placement === 'window'}
+                disabled={!editor.destinations.includes('marketplace')}
                 onClick={() => setPreview('marketplace')}
                 type="button"
               >
@@ -505,16 +512,24 @@ export function PublicationComposer({
               </button>
               <button
                 className={preview === 'window' ? 'is-active' : ''}
-                disabled={editor.placement === 'marketplace'}
+                disabled={!editor.destinations.includes('window')}
                 onClick={() => setPreview('window')}
                 type="button"
               >
                 Window Shopping preview
               </button>
+              <button
+                className={preview === 'stories' ? 'is-active' : ''}
+                disabled={!editor.destinations.includes('stories')}
+                onClick={() => setPreview('stories')}
+                type="button"
+              >
+                Stories preview
+              </button>
             </div>
-            {preview === 'marketplace'
-              ? <MarketplacePreview draft={draft} />
-              : <WindowPreview draft={draft} />}
+            {preview === 'marketplace' && <MarketplacePreview draft={draft} />}
+            {preview === 'window' && <WindowPreview draft={draft} />}
+            {preview === 'stories' && <StoriesPreview draft={draft} />}
             <div className="biz-preview-note">
               <WarningCircle size={18} />
               <span>Preview uses the same field order shoppers receive after approval.</span>
@@ -578,11 +593,36 @@ function WindowPreview({ draft }: { draft: PublicationDraft }) {
   )
 }
 
+function StoriesPreview({ draft }: { draft: PublicationDraft }) {
+  return (
+    <article className="biz-window-preview biz-stories-preview">
+      <div className="biz-window-image">
+        {draft.imageUrl
+          ? <img alt={draft.imageAlt ?? ''} src={draft.imageUrl} />
+          : <Storefront size={74} weight="duotone" />}
+      </div>
+      <div className="biz-window-scrim" />
+      <div className="biz-window-copy">
+        <span>Sponsored story</span>
+        <p>Fresh Market</p>
+        <h3>{draft.title || 'Your Stories title'}</h3>
+        <p>{draft.offerText || draft.bodyText || 'Your campaign will appear as a story frame.'}</p>
+      </div>
+    </article>
+  )
+}
+
 function stateFromPublication(publication?: BusinessPublication): EditorState {
   return {
     bodyText: publication?.bodyText ?? '',
     couponCode: publication?.couponCode ?? '',
     currencyCode: publication?.currencyCode ?? 'ZAR',
+    destinations: publication?.destinations ??
+      (publication?.placement === 'marketplace'
+        ? ['marketplace']
+        : publication?.placement === 'window'
+          ? ['window']
+          : ['marketplace', 'window']),
     endsAt: toLocalDateTime(publication?.endsAt),
     imageAlt: publication?.imageAlt ?? '',
     imageUrl: publication?.imageUrl ?? '',
@@ -603,19 +643,25 @@ function draftFromEditor(editor: EditorState): PublicationDraft {
     bodyText: editor.bodyText.trim(),
     couponCode: editor.couponCode.trim() || undefined,
     currencyCode: editor.price ? editor.currencyCode : undefined,
+    destinations: editor.destinations,
     endsAt: editor.endsAt || undefined,
     imageAlt: editor.imageAlt.trim() || undefined,
     imageUrl: editor.imageUrl.trim() || undefined,
     kind: editor.kind,
     locationIds: editor.locationIds,
     offerText: editor.offerText.trim() || undefined,
-    placement: editor.placement,
+    placement: legacyPlacement(editor.destinations),
     previousPriceCents: moneyToCents(editor.previousPrice),
     priceCents: moneyToCents(editor.price),
     startsAt: editor.startsAt || undefined,
     targetUrl: editor.targetUrl.trim() || undefined,
     title: editor.title.trim(),
   }
+}
+
+function legacyPlacement(destinations: PublicationDestination[]): PublicationPlacement {
+  if (destinations.includes('marketplace') && destinations.includes('window')) return 'both'
+  return destinations.includes('marketplace') ? 'marketplace' : 'window'
 }
 
 function moneyToCents(value: string): number | undefined {

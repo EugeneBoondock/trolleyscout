@@ -51,4 +51,35 @@ describe('buildRetailerPickerOptions', () => {
       name: 'Jet',
     }])
   })
+
+  it('keeps every registered store visible before its first successful fetch', () => {
+    expect(buildRetailerPickerOptions(
+      [deal({
+        retailerId: 'store-online:zw:tmpnponline.co.zw',
+        retailerName: 'TM Pick n Pay',
+      })],
+      [],
+      [{
+        id: 'country:zw:tmpnponline-co-zw',
+        name: 'TM Pick n Pay',
+        offerStatus: 'available',
+      }, {
+        id: 'country:zw:zimoco-co-zw',
+        name: 'ZIMOCO',
+        offerStatus: 'temporarily-unavailable',
+      }],
+    )).toEqual([{
+      catalogueCount: 0,
+      count: 1,
+      id: 'country:zw:tmpnponline-co-zw',
+      name: 'TM Pick n Pay',
+      offerStatus: 'available',
+    }, {
+      catalogueCount: 0,
+      count: 0,
+      id: 'country:zw:zimoco-co-zw',
+      name: 'ZIMOCO',
+      offerStatus: 'temporarily-unavailable',
+    }])
+  })
 })

@@ -4,6 +4,14 @@ export interface TrolleyScoutEnv {
   MEDIA?: R2Bucket
   ORGANIZATION_EMAIL?: Fetcher
   EMAIL_ENCRYPTION_KEY?: string
+  BREVO_API_KEY?: string
+  BREVO_SENDER_EMAIL?: string
+  BREVO_SENDER_NAME?: string
+  KAPSO_API_KEY?: string
+  KAPSO_PHONE_NUMBER_ID?: string
+  KAPSO_META_API_BASE_URL?: string
+  KAPSO_OTP_TEMPLATE_NAME?: string
+  KAPSO_BROADCAST_TEMPLATE_NAME?: string
   APP_URL?: string
   // Cloudflare's own traffic numbers for the admin analytics tab. The token
   // needs the "Analytics:Read" zone permission and nothing else. Without both

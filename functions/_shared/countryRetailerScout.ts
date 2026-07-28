@@ -5,6 +5,7 @@ import type { CountryOption } from '../../src/types'
 import { looksLikePromotionSignal } from '../../src/services/scoutSources'
 import { getSadcRetailSources } from '../../src/services/sadcSourceRegistry'
 import { getNetworkProviderSources } from '../../src/services/networkProviderRegistry'
+import { getOnlineStoreSources } from '../../src/services/onlineStoreRegistry'
 import type { TrolleyScoutEnv } from './env'
 import { searchWeb } from './searchWeb'
 
@@ -120,7 +121,7 @@ export function buildCountryRetailers(
         (sourceKind === 'specials' ? 'Offers and catalogues' : 'Official website'),
       url: url.toString(),
     } as const
-    const brandKey = slug(name)
+    const brandKey = retailerBrandKey(name, country)
     const existing = byBrand.get(brandKey)
     if (existing) {
       if (!existing.sources.some((item) => safeHost(item.url) === host)) {
@@ -228,6 +229,15 @@ export function resolveCountryRetailerWebsite(
   country: CountryOption,
   retailers: Retailer[],
 ): string | undefined {
+  const retailer = resolveCountryRetailer(storeName, country, retailers)
+  return retailer ? preferredRetailerSource(retailer)?.url : undefined
+}
+
+export function resolveCountryRetailer(
+  storeName: string,
+  country: CountryOption,
+  retailers: Retailer[],
+): Retailer | undefined {
   const storeTokens = new Set(words(storeName))
   if (storeTokens.size === 0) return undefined
 
@@ -261,7 +271,7 @@ export function resolveCountryRetailerWebsite(
     return undefined
   }
 
-  return preferredRetailerSource(matches[0]!.retailer)?.url
+  return matches[0]!.retailer
 }
 
 export function applyCountryRetailerWebsites(
@@ -279,7 +289,7 @@ export function applyCountryRetailerWebsites(
 // Curated registry entries are all trusted, so the generic discovery cap that
 // keeps a noisy live search in check must not hide them — a country with a
 // large verified list (Zimbabwe) should surface all of it.
-const REGISTERED_RETAILER_LIMIT = 200
+const REGISTERED_RETAILER_LIMIT = 500
 
 export function buildRegisteredCountryRetailers(country: CountryOption): Retailer[] {
   return buildCountryRetailers(
@@ -301,6 +311,16 @@ export function buildRegisteredCountryRetailers(country: CountryOption): Retaile
         url: source.url,
         verifiedBrand: true,
       })),
+      ...(country.code === 'ZW'
+        ? getOnlineStoreSources(country.code).map((source) => ({
+            sourceKind: 'store-finder' as const,
+            sourceLabel: 'Online store',
+            title: source.name,
+            trusted: true,
+            url: source.url,
+            verifiedBrand: true,
+          }))
+        : []),
     ],
     REGISTERED_RETAILER_LIMIT,
   )
@@ -418,15 +438,29 @@ const RETAILER_NAME_STOP_WORDS = new Set([
   'fresh',
   'grocer',
   'grocery',
+  'group',
   'local',
   'market',
   'online',
+  'retail',
+  'retailer',
+  'retailers',
   'shop',
   'store',
   'stores',
   'supermarket',
   'supermarkets',
+  'wholesaler',
+  'wholesalers',
 ])
+
+function retailerBrandKey(value: string, country: CountryOption): string {
+  const countryTokens = new Set(words(country.name))
+  const tokens = words(value).filter((token) =>
+    !countryTokens.has(token) && !RETAILER_NAME_STOP_WORDS.has(token),
+  )
+  return tokens.join('-') || slug(value)
+}
 
 function words(value: string): string[] {
   return value

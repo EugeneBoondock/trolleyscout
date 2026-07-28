@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildTmpnpSectionsUrl, parseTmpnpSectionDeals } from './tmpnpDeals'
+import {
+  buildTmpnpSectionsUrl,
+  buildTmpnpSpecialsUrl,
+  parseTmpnpSectionDeals,
+  parseTmpnpSpecialDeals,
+} from './tmpnpDeals'
 
 // 2026-07-24, matching the browser reconnaissance date.
 const NOW = Date.parse('2026-07-24T00:00:00Z')
@@ -7,6 +12,72 @@ const NOW = Date.parse('2026-07-24T00:00:00Z')
 describe('buildTmpnpSectionsUrl', () => {
   it('points at the custom commerce API, not the bot-walled storefront', () => {
     expect(buildTmpnpSectionsUrl()).toBe('https://api.tmpnponline.co.zw/api/v1/products/sections')
+  })
+})
+
+describe('TM Pick n Pay specials endpoint', () => {
+  it('builds a bounded page URL', () => {
+    expect(buildTmpnpSpecialsUrl(3)).toBe(
+      'https://api.tmpnponline.co.zw/api/v1/products/search-product-on-sale?page=3',
+    )
+    expect(buildTmpnpSpecialsUrl(-20)).toContain('page=1')
+  })
+
+  it('uses the same current and former prices shown by the official specials page', () => {
+    const payload = {
+      current_page: 1,
+      last_page: 22,
+      data: [
+        {
+          id: 689,
+          name: 'Arenel Butter Cookies 500g',
+          price: '1.20',
+          sale_price: 1.4,
+          on_sale: 1,
+          slug: 'arenel-butter-cookies-500g',
+          image: '2022/03/arenel.png',
+          start_sale_date: '2026-07-20',
+          end_sale_date: '2026-08-02',
+        },
+      ],
+    }
+
+    expect(parseTmpnpSpecialDeals(payload, NOW)).toEqual([
+      {
+        currencyCode: 'USD',
+        imageUrl: 'https://cdn-s7m8bx8sebjz.vultrcdn.com/product_images/2022/03/arenel.png',
+        previousPriceCents: 140,
+        priceCents: 120,
+        productUrl: 'https://tmpnponline.co.zw/products/arenel-butter-cookies-500g',
+        title: 'Arenel Butter Cookies 500g',
+        validFrom: '2026-07-20',
+        validTo: '2026-08-02',
+      },
+    ])
+  })
+
+  it('rejects inverted, upcoming, expired, and malformed specials', () => {
+    const payload = {
+      data: [
+        { name: 'Inverted', price: '2.00', sale_price: 1.5 },
+        {
+          name: 'Upcoming',
+          price: '1.00',
+          sale_price: 2,
+          start_sale_date: '2026-08-01',
+        },
+        {
+          name: 'Expired',
+          price: '1.00',
+          sale_price: 2,
+          end_sale_date: '2026-07-01',
+        },
+        null,
+      ],
+    }
+
+    expect(parseTmpnpSpecialDeals(payload, NOW)).toEqual([])
+    expect(parseTmpnpSpecialDeals({ data: 'invalid' }, NOW)).toEqual([])
   })
 })
 

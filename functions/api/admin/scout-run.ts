@@ -12,6 +12,7 @@
 // exactly the way the scheduled run advances it.
 
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from '../../_shared/env'
+import { readLeafletSnapshot } from '../../_shared/dealSnapshotStore'
 import { getMemberSession } from '../../_shared/memberStore'
 import { countryFromCode } from '../../_shared/countryContext'
 import { buildRegistryOnlineStores } from '../../_shared/registryOnlineScout'
@@ -23,12 +24,15 @@ import {
   type RetailerFeedSource,
 } from '../../_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../../_shared/storeScout'
+import { leafletTargets } from '../../../src/services/leafletDiscovery'
+import type { StoreLeaflet } from '../../../src/types'
+import { refreshLeafletCache } from '../discovery'
 
 const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
-const SCOUT_LANES = ['all', 'feeds', 'stores'] as const
+const SCOUT_LANES = ['all', 'catalogues', 'feeds', 'stores'] as const
 
 // Opts a press out of country scoping and back into every registered country.
 const ALL_COUNTRIES = 'ALL'
@@ -45,6 +49,7 @@ interface LaneBounds {
 // own gets the larger slice; "all" splits the budget across both.
 const LANE_BOUNDS: Record<ScoutLane, LaneBounds> = {
   all: { feedRequestCap: 6, storeLimit: 10 },
+  catalogues: { feedRequestCap: 0, storeLimit: 0 },
   feeds: { feedRequestCap: 10, storeLimit: 0 },
   stores: { feedRequestCap: 0, storeLimit: 24 },
 }
@@ -94,6 +99,14 @@ interface StoreLaneSummary {
   storesScouted: number
 }
 
+interface CatalogueLaneSummary {
+  catalogueCount: number
+  failed: boolean
+  message?: string
+  ran: boolean
+  sourceCount: number
+}
+
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   // A scout run has side effects (writes deals, claims shops), so it is POST
   // only — never reachable by a link or a prefetch.
@@ -137,7 +150,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   if (!lane) {
     return json(
-      { issues: ['Provide a lane of all, feeds, or stores.'] },
+      { issues: ['Provide a lane of all, catalogues, feeds, or stores.'] },
       { headers: privateHeaders, status: 422 },
     )
   }
@@ -157,6 +170,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const feedSources = wholeWorld
     ? getStructuredRetailerSources()
     : sourcesForCountry(country)
+  const wantsFeeds = lane === 'all' || lane === 'feeds'
   const feedsApply = feedSources.length > 0
   const bounds = feedsApply
     ? LANE_BOUNDS[lane]
@@ -179,21 +193,76 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       wholeWorld ? undefined : [country],
     )
     : skippedStoreLane()
+  const catalogues = lane === 'all' || lane === 'catalogues'
+    ? await runCatalogueLane(env, wholeWorld ? undefined : country)
+    : skippedCatalogueLane()
 
   return json(
     {
+      catalogues,
       country,
       databaseAvailable,
       durationMs: Date.now() - startedAtMs,
       feeds,
       finishedAt: new Date().toISOString(),
       lane,
-      message: summaryMessage(feeds, stores, databaseAvailable, feedsApply ? undefined : country),
+      message: summaryMessage(
+        catalogues,
+        feeds,
+        stores,
+        databaseAvailable,
+        wantsFeeds && !feedsApply ? country : undefined,
+      ),
       startedAt,
       stores,
     },
     { headers: privateHeaders },
   )
+}
+
+async function runCatalogueLane(
+  env: TrolleyScoutEnv,
+  countryCode?: string,
+): Promise<CatalogueLaneSummary> {
+  const targets = leafletTargets.filter((target) =>
+    !countryCode || (target.countryCode ?? 'ZA') === countryCode)
+
+  if (targets.length === 0) {
+    return {
+      catalogueCount: 0,
+      failed: false,
+      ran: true,
+      sourceCount: 0,
+    }
+  }
+
+  try {
+    const prior = await readLeafletSnapshot(env)
+    const leaflets = await refreshLeafletCache(env, prior?.leaflets, {
+      targets,
+    })
+    return {
+      catalogueCount: countryCode
+        ? leaflets.filter((leaflet) =>
+          catalogueCountryCode(leaflet) === countryCode).length
+        : leaflets.length,
+      failed: false,
+      ran: true,
+      sourceCount: targets.length,
+    }
+  } catch (error) {
+    return {
+      ...skippedCatalogueLane(),
+      failed: true,
+      message: describeError(error),
+      ran: true,
+      sourceCount: targets.length,
+    }
+  }
+}
+
+function catalogueCountryCode(leaflet: StoreLeaflet): string {
+  return (leaflet.countryCode ?? 'ZA').trim().toUpperCase()
 }
 
 /// The country a press sweeps: what was asked for, else wherever the admin is
@@ -434,7 +503,17 @@ function skippedStoreLane(): StoreLaneSummary {
   }
 }
 
+function skippedCatalogueLane(): CatalogueLaneSummary {
+  return {
+    catalogueCount: 0,
+    failed: false,
+    ran: false,
+    sourceCount: 0,
+  }
+}
+
 function summaryMessage(
+  catalogues: CatalogueLaneSummary,
   feeds: FeedLaneSummary,
   stores: StoreLaneSummary,
   databaseAvailable: boolean,
@@ -459,6 +538,10 @@ function summaryMessage(
     }
   }
 
+  if (catalogues.ran) {
+    done.push(`${count(catalogues.catalogueCount, 'catalogue')} refreshed`)
+  }
+
   const problems: string[] = []
 
   if (feeds.failed) {
@@ -469,6 +552,10 @@ function summaryMessage(
 
   if (stores.failed) {
     problems.push('the store sweep could not run')
+  }
+
+  if (catalogues.failed) {
+    problems.push('the catalogue sweep could not run')
   }
 
   const summary = done.length ? `${done.join(', ')}.` : 'Nothing ran.'

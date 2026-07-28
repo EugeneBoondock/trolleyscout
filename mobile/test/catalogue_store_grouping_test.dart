@@ -108,6 +108,35 @@ void main() {
       expect(group.nearestDistanceM, 850);
     });
 
+    test('counts a shared national offer once across several branches', () {
+      const shared = Deal(
+        id: 'tm-rice',
+        title: 'Long grain rice',
+        retailerName: 'TM Pick n Pay',
+        productUrl: 'https://tmpnponline.co.zw/products/rice',
+      );
+      const group = StoreGroup(
+        id: 'brand:tm-pick-n-pay',
+        displayName: 'TM Pick n Pay',
+        branches: [
+          NearbyStore(
+            placeId: 'tm-msasa',
+            name: 'TM Pick n Pay Msasa',
+            promotionCount: 1,
+            deals: [shared],
+          ),
+          NearbyStore(
+            placeId: 'tm-avondale',
+            name: 'TM Pick n Pay Avondale',
+            promotionCount: 1,
+            deals: [shared],
+          ),
+        ],
+      );
+
+      expect(group.offerCount, 1);
+    });
+
     test('groups unknown stores by a verified host', () {
       final groups = groupNearbyStores(const [
         NearbyStore(

@@ -1,6 +1,6 @@
 import 'api_models.dart';
 
-enum DashboardStoryFrameKind { catalogue, deal }
+enum DashboardStoryFrameKind { catalogue, deal, business }
 
 class DashboardStoryFrame {
   const DashboardStoryFrame({
@@ -14,6 +14,7 @@ class DashboardStoryFrame {
     this.pageNumber,
     this.catalogue,
     this.deal,
+    this.businessPublication,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class DashboardStoryFrame {
   final int? pageNumber;
   final Catalogue? catalogue;
   final Deal? deal;
+  final BusinessStoryPublication? businessPublication;
 }
 
 class DashboardStory {
@@ -49,12 +51,14 @@ class _MutableStory {
   final String retailerName;
   final catalogues = <DashboardStoryFrame>[];
   final deals = <DashboardStoryFrame>[];
+  final business = <DashboardStoryFrame>[];
 }
 
 List<DashboardStory> buildDashboardStories({
   required List<Catalogue> catalogues,
   required List<Deal> deals,
   required List<Retailer> retailers,
+  List<BusinessStoryPublication> businessStories = const [],
   int maxStories = 16,
   int maxFramesPerStory = 40,
 }) {
@@ -76,6 +80,24 @@ List<DashboardStory> buildDashboardStories({
       order.add(id);
       return _MutableStory(id: id, retailerName: name);
     });
+  }
+
+  for (final publication in businessStories) {
+    final story = storyFor(
+      'organization:${publication.organizationSlug}',
+      publication.organizationName,
+    );
+    if (story == null || story.business.length >= maxFramesPerStory) continue;
+    story.business.add(DashboardStoryFrame(
+      id: 'publication:${publication.id}',
+      kind: DashboardStoryFrameKind.business,
+      imageUrl: publication.imageUrl,
+      imageUrls: [publication.imageUrl],
+      title: publication.title,
+      sourceUrl: publication.targetUrl,
+      subtitle: publication.offerText ?? publication.priceText,
+      businessPublication: publication,
+    ));
   }
 
   for (final catalogue in catalogues) {
@@ -152,7 +174,7 @@ List<DashboardStory> buildDashboardStories({
           id: id,
           retailerName: retailer?.name ?? group.retailerName,
           logoUrl: retailer?.logoUrl,
-          frames: [...group.catalogues, ...group.deals]
+          frames: [...group.business, ...group.catalogues, ...group.deals]
               .take(maxFramesPerStory)
               .toList(growable: false),
         );

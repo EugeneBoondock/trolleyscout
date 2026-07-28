@@ -12,6 +12,7 @@ const MIGRATIONS = [
   '../../migrations/0006_payfast_billing.sql',
   '../../migrations/0008_auth_roles.sql',
   '../../migrations/0025_scheduled_plan_changes.sql',
+  '../../migrations/0041_member_identity_verification.sql',
 ]
 
 // The columns the moderation path needs, declared exactly as the migrations

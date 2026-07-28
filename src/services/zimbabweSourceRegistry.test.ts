@@ -1,0 +1,86 @@
+import { describe, expect, it } from 'vitest'
+import { getSadcRetailSources } from './sadcSourceRegistry'
+import {
+  getZimbabweAutomatedRetailSources,
+  getZimbabweCatalogueSourcePages,
+  getZimbabweDiscoverySources,
+  getZimbabweSocialReferenceSources,
+  ZIMBABWE_SOURCE_DIRECTORY,
+} from './zimbabweSourceRegistry'
+
+describe('Zimbabwe source directory', () => {
+  it('keeps all 353 supplied records with stable unique ids', () => {
+    expect(ZIMBABWE_SOURCE_DIRECTORY).toHaveLength(353)
+    expect(new Set(ZIMBABWE_SOURCE_DIRECTORY.map((source) => source.id)).size)
+      .toBe(353)
+    expect(ZIMBABWE_SOURCE_DIRECTORY[0]?.id).toBe('001')
+    expect(ZIMBABWE_SOURCE_DIRECTORY.at(-1)?.id).toBe('353')
+  })
+
+  it('separates direct sites from directories, social pages and old domains', () => {
+    const direct = getZimbabweAutomatedRetailSources()
+    const discovery = getZimbabweDiscoverySources()
+    const social = getZimbabweSocialReferenceSources()
+
+    expect(direct).toHaveLength(290)
+    expect(discovery).toHaveLength(13)
+    expect(social).toHaveLength(36)
+    expect(
+      direct.every((source) =>
+        !/(?:facebook|instagram|linkedin|tiktok|whatsapp|youtube)\.com/i.test(
+          source.url,
+        ),
+      ),
+    ).toBe(true)
+    expect(direct.map((source) => source.retailerName)).not.toContain(
+      'Pelhams Zimbabwe',
+    )
+  })
+
+  it('prefers the supplied specials and catalogue pages over generic home pages', () => {
+    const byName = new Map(
+      getZimbabweAutomatedRetailSources().map((source) => [
+        source.retailerName,
+        source,
+      ]),
+    )
+
+    expect(byName.get('TM Pick n Pay Zimbabwe')?.url).toBe(
+      'https://tmpnponline.co.zw/specials',
+    )
+    expect(byName.get('N. Richards Wholesalers')?.url).toBe(
+      'https://nrichards.co.zw/promotions/',
+    )
+    expect(byName.get('BAMM Stationers')?.url).toBe(
+      'https://www.bamm.co.zw/store/catalogue/',
+    )
+  })
+
+  it('exposes catalogue source pages for the catalogue scout', () => {
+    const catalogues = getZimbabweCatalogueSourcePages()
+    const names = catalogues.map((source) => source.retailerName)
+
+    expect(names).toEqual(expect.arrayContaining([
+      'TM Pick n Pay Zimbabwe',
+      'BAMM Stationers',
+      'College Press Zimbabwe',
+      'Union Hardware',
+    ]))
+    expect(catalogues.every((source) => source.sourceId.startsWith('zw-directory-')))
+      .toBe(true)
+  })
+
+  it('registers direct entries only for Zimbabwe', () => {
+    const zwNames = getSadcRetailSources('ZW').map((source) => source.retailerName)
+    const zaNames = getSadcRetailSources('ZA').map((source) => source.retailerName)
+
+    expect(zwNames).toEqual(expect.arrayContaining([
+      'BAMM Stationers',
+      'TelOne Zimbabwe',
+      'ZIMOCO',
+    ]))
+    expect(zaNames).not.toContain('BAMM Stationers')
+    expect(zaNames).not.toContain('TelOne Zimbabwe')
+    expect(zaNames).not.toContain('ZIMOCO')
+  })
+})

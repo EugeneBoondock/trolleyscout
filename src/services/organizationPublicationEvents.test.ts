@@ -13,12 +13,16 @@ describe('organization publication event client', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
 
-    await recordOrganizationPublicationEvent('org-pub-1', 'outbound')
+    await recordOrganizationPublicationEvent('org-pub-1', 'marketplace', 'link_click')
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/organization-publication-events',
       expect.objectContaining({
-        body: JSON.stringify({ event: 'outbound', publicationId: 'org-pub-1' }),
+        body: JSON.stringify({
+          destination: 'marketplace',
+          event: 'link_click',
+          publicationId: 'org-pub-1',
+        }),
         method: 'POST',
       }),
     )

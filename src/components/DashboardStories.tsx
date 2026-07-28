@@ -11,12 +11,12 @@ import {
   loadCataloguePages,
   withProxiedFallbacks,
 } from '../services/catalogueFiles'
-import { loadDiscovery } from '../services/apiClient'
+import { loadDiscovery, recordOrganizationPublicationEvent } from '../services/apiClient'
 import {
   buildDashboardStories,
   type DashboardStory,
 } from '../services/dashboardStories'
-import type { DiscoveredDeal, Retailer, StoreLeaflet } from '../types'
+import type { BusinessStoryPublication, DiscoveredDeal, Retailer, StoreLeaflet } from '../types'
 import { LeafletViewer } from './LeafletViewer'
 
 export function DeferredDashboardStories({
@@ -27,6 +27,7 @@ export function DeferredDashboardStories({
   const [storyData, setStoryData] = useState<{
     catalogues: StoreLeaflet[]
     deals: DiscoveredDeal[]
+    businessStories: BusinessStoryPublication[]
   }>()
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function DeferredDashboardStories({
           setStoryData({
             catalogues: state.data.discovery.leaflets ?? [],
             deals: state.data.discovery.deals,
+            businessStories: state.data.discovery.businessStories ?? [],
           })
         })
         .catch(() => undefined)
@@ -95,6 +97,7 @@ export function DeferredDashboardStories({
     <DashboardStories
       catalogues={storyData.catalogues}
       deals={storyData.deals}
+      businessStories={storyData.businessStories}
       retailers={retailers}
     />
   )
@@ -103,10 +106,12 @@ export function DeferredDashboardStories({
 export function DashboardStories({
   catalogues,
   deals,
+  businessStories = [],
   retailers,
 }: {
   catalogues: StoreLeaflet[]
   deals: DiscoveredDeal[]
+  businessStories?: BusinessStoryPublication[]
   retailers: Retailer[]
 }) {
   const [loadedCataloguePages, setLoadedCataloguePages] = useState<
@@ -123,8 +128,8 @@ export function DashboardStories({
     [catalogues, loadedCataloguePages],
   )
   const stories = useMemo(
-    () => buildDashboardStories(hydratedCatalogues, deals, retailers),
-    [deals, hydratedCatalogues, retailers],
+    () => buildDashboardStories(hydratedCatalogues, deals, retailers, businessStories),
+    [businessStories, deals, hydratedCatalogues, retailers],
   )
   const [visibleStoryCount, setVisibleStoryCount] = useState(4)
   const [storyId, setStoryId] = useState<string>()
@@ -132,6 +137,13 @@ export function DashboardStories({
   const [openCatalogue, setOpenCatalogue] = useState<StoreLeaflet>()
   const story = stories.find((item) => item.id === storyId)
   const frame = story?.frames[frameIndex]
+
+  useEffect(() => {
+    const publication = frame?.businessPublication
+    if (!publication) return
+    void recordOrganizationPublicationEvent(publication.id, 'stories', 'impression')
+      .catch(() => undefined)
+  }, [frame?.businessPublication])
 
   useEffect(() => {
     setVisibleStoryCount(Math.min(4, stories.length))
@@ -182,6 +194,11 @@ export function DashboardStories({
   function openStory(selected: DashboardStory) {
     setStoryId(selected.id)
     setFrameIndex(0)
+    const publication = selected.frames[0]?.businessPublication
+    if (publication) {
+      void recordOrganizationPublicationEvent(publication.id, 'stories', 'image_view')
+        .catch(() => undefined)
+    }
   }
 
   function closeStory() {
@@ -317,7 +334,7 @@ export function DashboardStories({
             <footer className="story-viewer-foot">
               <div>
                 <span className="story-frame-kind">
-                  {frame.kind === 'catalogue' ? 'Catalogue' : 'Deal'}
+                  {frame.kind === 'catalogue' ? 'Catalogue' : frame.kind === 'business' ? 'Sponsored story' : 'Deal'}
                 </span>
                 <h3>{cleanText(frame.title)}</h3>
                 {frame.subtitle && <p>{cleanText(frame.subtitle)}</p>}
@@ -334,10 +351,17 @@ export function DashboardStories({
                 <a
                   className="primary-button"
                   href={frame.sourceUrl}
+                  onClick={() => {
+                    const publication = frame.businessPublication
+                    if (publication) {
+                      void recordOrganizationPublicationEvent(publication.id, 'stories', 'link_click')
+                        .catch(() => undefined)
+                    }
+                  }}
                   rel="noreferrer"
                   target="_blank"
                 >
-                  View deal
+                  {frame.kind === 'business' ? 'Visit business' : 'View deal'}
                   <LinkSimple size={16} />
                 </a>
               )}

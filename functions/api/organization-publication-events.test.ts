@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../_shared/organizationPublicationStore', () => ({
   isPublicationEvent: (value: unknown) =>
-    value === 'impression' || value === 'open' || value === 'save' || value === 'outbound',
+    value === 'impression' || value === 'image_view' ||
+    value === 'save' || value === 'link_click',
   recordOrganizationPublicationEvent: mocks.recordOrganizationPublicationEvent,
 }))
 
@@ -22,7 +23,8 @@ describe('/api/organization-publication-events', () => {
 
   it('records a supported event against a visible business publication', async () => {
     const response = await invoke(write({
-      event: 'open',
+      destination: 'marketplace',
+      event: 'image_view',
       publicationId: 'org-pub-1',
     }))
 
@@ -31,18 +33,21 @@ describe('/api/organization-publication-events', () => {
     expect(mocks.recordOrganizationPublicationEvent).toHaveBeenCalledWith(
       expect.anything(),
       'org-pub-1',
-      'open',
+      'marketplace',
+      'image_view',
     )
   })
 
   it('rejects malformed events and unknown publications without exposing details', async () => {
     const malformed = await invoke(write({
       event: 'purchase',
+      destination: 'marketplace',
       publicationId: 'org-pub-1',
     }))
     mocks.recordOrganizationPublicationEvent.mockResolvedValue(false)
     const missing = await invoke(write({
       event: 'impression',
+      destination: 'marketplace',
       publicationId: 'org-pub-missing',
     }))
 
@@ -53,7 +58,11 @@ describe('/api/organization-publication-events', () => {
   it('supports a mobile preflight and refuses cross-site browser posts', async () => {
     const preflight = await invoke(new Request(ENDPOINT, { method: 'OPTIONS' }))
     const crossSite = await invoke(new Request(ENDPOINT, {
-      body: JSON.stringify({ event: 'save', publicationId: 'org-pub-1' }),
+      body: JSON.stringify({
+        destination: 'marketplace',
+        event: 'save',
+        publicationId: 'org-pub-1',
+      }),
       headers: {
         'content-type': 'application/json',
         origin: 'https://evil.example',

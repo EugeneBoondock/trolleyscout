@@ -1,50 +1,49 @@
-# Trolley Scout — authentication for agents
+# Trolley Scout developer authentication
 
-This document describes how software agents authenticate with Trolley Scout's
-APIs. It is intentionally honest about what exists today: Trolley Scout does
-**not** run an OAuth 2.0 / OpenID Connect authorization server, and it does not
-offer programmatic agent/client registration. Most of what agents want is
-available with **no authentication at all**.
+Trolley Scout has two developer authentication methods. Direct REST API calls
+use API keys. MCP clients use OAuth 2.0 with Authorization Code and PKCE.
+Both require an active Developers subscription.
 
-## Public, no-auth endpoints (recommended for agents)
+## REST API keys
 
-These return JSON and require no credentials. They are the intended surface for
-autonomous agents:
+Create and revoke keys from the Developer access panel in your Trolley Scout
+profile. The secret is shown once. Store it in a secret manager and send it as:
 
-- `GET /api/discovery` — this week's verified grocery specials.
-- `GET /api/nearby-stores?lat={lat}&lon={lon}` — nearby supermarkets and their specials.
-- `GET /api/retailers` — the official retailer/source directory.
-- `GET /api/vouchers` — verified retailer vouchers.
-- `GET /api/deal-sites` — aggregated flash/daily deals (OneDayOnly, Hyperli, Daddy's Deals, MyRunway).
-- `GET /api/public-ads?placement={feed|near_me}` — live sponsored listings.
-- `GET /api/geocode?q={address}` — geocode a South African address to coordinates.
+```http
+Authorization: Bearer ts_dev_your_key
+```
 
-An MCP server exposes the same read capabilities as tools:
+Keys are stored as SHA-256 hashes. A key can have an expiry date and any subset
+of these scopes:
 
-- Streamable HTTP endpoint: `https://trolleyscout.co.za/mcp`
-- Server Card: `https://trolleyscout.co.za/.well-known/mcp/server-card.json`
+- `shopping:read`
+- `trends:read`
+- `campaigns:read`
+- `campaigns:write`
 
-See also the machine-readable catalog at
-`https://trolleyscout.co.za/.well-known/api-catalog` and
-`https://trolleyscout.co.za/llms.txt`.
+The Developers plan includes 25,000 requests per calendar month and a
+120 requests-per-minute limit. Responses include `X-Request-Id`. Error bodies
+use a stable `error.code`, message, request ID, and optional validation issues.
 
-## Member (write) actions
+## MCP OAuth
 
-Member features — saving deals, baskets, watches, submitting an advert — belong
-to a **human-owned account** and use a first-party session cookie, not OAuth:
+Use the Streamable HTTP endpoint at `https://trolleyscout.co.za/mcp`.
+The server publishes:
 
-1. `POST /api/member-session` with a JSON body `{ "intent": "login", "email": "...", "password": "..." }`.
-2. On success the server sets an `HttpOnly` cookie `ts_member_session`; send it on
-   subsequent member requests.
-3. `DELETE /api/member-session` ends the session.
+- Authorization server metadata: `/.well-known/oauth-authorization-server`
+- Protected resource metadata: `/.well-known/oauth-protected-resource`
+- Dynamic client registration: `/oauth/register`
+- Authorization endpoint: `/oauth/authorize`
+- Token endpoint: `/oauth/token`
+- Revocation endpoint: `/oauth/revoke`
 
-There is currently **no client-credentials or dynamic client-registration flow**
-for autonomous agents to obtain a member session on their own. An agent acting
-for a person should use that person's browser session. If first-class agent
-authentication is added in future, this document and a real
-`/.well-known/oauth-protected-resource` will be published — they are
-deliberately omitted today rather than pointing at endpoints that do not exist.
+Public MCP clients register a redirect URI, then use Authorization Code with
+S256 PKCE. Authorization codes expire after 5 minutes and can be used once.
+Access tokens expire after 1 hour. Refresh tokens expire after 30 days and
+rotate whenever they are used.
 
-## Contact
+The connected Trolley Scout account must have an active Developers subscription.
+Campaign tools only access the connected account’s own approved business.
 
-Trolley Scout is a product of Boondock Labs (Pty) Ltd — https://boondocklabs.co.za
+See [the developer guide](https://trolleyscout.co.za/developers.md) for routes,
+tools, scopes, campaign destinations, and examples.

@@ -95,12 +95,24 @@ function toPublicGroup(group: MutableStoreGroup): DiscoveredStoreGroup {
           : Math.min(nearest, branch.distanceM),
       undefined,
     ),
-    promotionCount: group.branches.reduce(
-      (total, branch) => total + (branch.promotionCount ?? branch.promotions?.length ?? 0),
-      0,
-    ),
+    promotionCount: uniqueGroupPromotionCount(group.branches),
     retailerId: group.retailerId,
   }
+}
+
+function uniqueGroupPromotionCount(branches: NearbyStoreResult[]): number {
+  const promotions = branches.flatMap((branch) => branch.promotions ?? [])
+  if (promotions.length === 0) {
+    return branches.reduce(
+      (total, branch) => total + (branch.promotionCount ?? 0),
+      0,
+    )
+  }
+
+  return new Set(promotions.map((promotion) =>
+    promotion.id ||
+    `${promotion.kind}:${promotion.productUrl ?? promotion.sourceUrl}:${promotion.title}`,
+  )).size
 }
 
 function cleanIndependentName(branches: NearbyStoreResult[]): string {

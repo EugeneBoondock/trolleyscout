@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../api_models.dart';
+import '../app_update_prompt.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_mark.dart';
@@ -12,9 +13,16 @@ import 'business_controller.dart';
 import 'business_models.dart';
 
 class TrolleyScoutBusinessApp extends StatefulWidget {
-  const TrolleyScoutBusinessApp({super.key, this.controller});
+  const TrolleyScoutBusinessApp({
+    super.key,
+    this.appUpdateService,
+    this.controller,
+    this.updateCheckDelay = const Duration(milliseconds: 800),
+  });
 
+  final AppUpdateService? appUpdateService;
   final BusinessController? controller;
+  final Duration updateCheckDelay;
 
   @override
   State<TrolleyScoutBusinessApp> createState() =>
@@ -25,6 +33,11 @@ class _TrolleyScoutBusinessAppState extends State<TrolleyScoutBusinessApp> {
   late final BusinessController _controller =
       widget.controller ?? BusinessController();
   late final bool _ownsController = widget.controller == null;
+  late final AppUpdateService _appUpdateService =
+      widget.appUpdateService ??
+      GooglePlayAppUpdateService(
+        packageName: trolleyScoutBusinessAndroidPackage,
+      );
 
   @override
   void initState() {
@@ -47,7 +60,11 @@ class _TrolleyScoutBusinessAppState extends State<TrolleyScoutBusinessApp> {
           theme: TS.lightTheme(),
           darkTheme: TS.darkTheme(),
           themeMode: _controller.themeMode,
-          home: _BusinessRoot(controller: _controller),
+          home: AppUpdatePromptHost(
+            checkDelay: widget.updateCheckDelay,
+            service: _appUpdateService,
+            child: _BusinessRoot(controller: _controller),
+          ),
         ),
       );
 }
@@ -77,7 +94,7 @@ class _BusinessRoot extends StatelessWidget {
       return _BusinessAuthScreen(controller: controller);
     }
     if (bootstrap.session.account?.isAdmin == true) {
-      return BusinessAdminShell(
+      return _AdminModeHost(
         controller: controller,
         bootstrap: bootstrap,
       );
@@ -91,6 +108,358 @@ class _BusinessRoot extends StatelessWidget {
     }
     return _BusinessShell(controller: controller, bootstrap: bootstrap);
   }
+}
+
+class _AdminModeHost extends StatefulWidget {
+  const _AdminModeHost({
+    required this.bootstrap,
+    required this.controller,
+  });
+
+  final BusinessBootstrap bootstrap;
+  final BusinessController controller;
+
+  @override
+  State<_AdminModeHost> createState() => _AdminModeHostState();
+}
+
+class _AdminModeHostState extends State<_AdminModeHost> {
+  bool _businessView = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_businessView) {
+      return _AdminBusinessView(
+        controller: widget.controller,
+        onViewAdmin: () => setState(() => _businessView = false),
+      );
+    }
+    return BusinessAdminShell(
+      bootstrap: widget.bootstrap,
+      controller: widget.controller,
+      onViewBusiness: () => setState(() => _businessView = true),
+    );
+  }
+}
+
+class _AdminBusinessView extends StatefulWidget {
+  const _AdminBusinessView({
+    required this.controller,
+    required this.onViewAdmin,
+  });
+
+  final BusinessController controller;
+  final VoidCallback onViewAdmin;
+
+  @override
+  State<_AdminBusinessView> createState() => _AdminBusinessViewState();
+}
+
+class _AdminBusinessViewState extends State<_AdminBusinessView> {
+  String? _businessId;
+
+  @override
+  Widget build(BuildContext context) {
+    final overview = widget.controller.adminOverview;
+    final businesses = overview?.businesses
+            .where((business) => business.isActive)
+            .toList(growable: false) ??
+        const <BusinessAdminOrganization>[];
+    final selectedId = businesses.any((business) => business.id == _businessId)
+        ? _businessId
+        : businesses.firstOrNull?.id;
+    final selected =
+        businesses.where((business) => business.id == selectedId).firstOrNull;
+    final campaigns = overview?.campaigns
+            .where((campaign) => campaign.organizationId == selectedId)
+            .toList(growable: false) ??
+        const <BusinessAdminCampaign>[];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const _BusinessBrand(compact: true),
+        actions: [
+          IconButton(
+            tooltip: 'Admin view',
+            onPressed: widget.onViewAdmin,
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+          IconButton(
+            tooltip: Theme.of(context).brightness == Brightness.dark
+                ? 'Use light theme'
+                : 'Use dark theme',
+            onPressed: () =>
+                widget.controller.toggleTheme(Theme.of(context).brightness),
+            icon: Icon(
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+            ),
+          ),
+        ],
+      ),
+      body: overview == null
+          ? ErrorPane(
+              message: 'Business view is unavailable.',
+              detail: widget.controller.error,
+              onRetry: widget.controller.refreshAdminOverview,
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(18),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ScreenHeader(
+                        eyebrow: 'BUSINESS VIEW',
+                        title: selected?.name ?? 'Business workspace',
+                        description:
+                            'Preview campaigns, promotions, deals, posts, and shopper results for an approved business.',
+                        action: businesses.isEmpty
+                            ? null
+                            : SizedBox(
+                                width: 280,
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: selectedId,
+                                  decoration: const InputDecoration(
+                                    labelText: 'View business',
+                                    prefixIcon: Icon(Icons.storefront_outlined),
+                                  ),
+                                  items: businesses
+                                      .map(
+                                        (business) => DropdownMenuItem(
+                                          value: business.id,
+                                          child: Text(
+                                            business.name,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: (value) =>
+                                      setState(() => _businessId = value),
+                                ),
+                              ),
+                      ),
+                      if (selected == null)
+                        const EmptyCard(
+                          icon: Icons.storefront_outlined,
+                          message:
+                              'Approve a business to open its business view.',
+                        )
+                      else ...[
+                        _AdminBusinessViewNotice(
+                          businessName: selected.name,
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            _AdminBusinessMetric(
+                              icon: Icons.campaign_outlined,
+                              label: 'Active campaigns',
+                              value: '${selected.activeCampaigns}',
+                            ),
+                            _AdminBusinessMetric(
+                              icon: Icons.visibility_outlined,
+                              label: 'Impressions',
+                              value: _adminPreviewCount(
+                                selected.impressions,
+                              ),
+                            ),
+                            _AdminBusinessMetric(
+                              icon: Icons.bookmark_outline,
+                              label: 'Saves',
+                              value: _adminPreviewCount(selected.saves),
+                            ),
+                            _AdminBusinessMetric(
+                              icon: Icons.open_in_new,
+                              label: 'Visits',
+                              value: _adminPreviewCount(selected.visits),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Campaigns and promotions',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.merge(TS.display),
+                        ),
+                        const SizedBox(height: 10),
+                        if (campaigns.isEmpty)
+                          const EmptyCard(
+                            icon: Icons.campaign_outlined,
+                            message:
+                                'This business has not created a campaign yet.',
+                          )
+                        else
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final width = constraints.maxWidth >= 760
+                                  ? (constraints.maxWidth - 12) / 2
+                                  : constraints.maxWidth;
+                              return Wrap(
+                                spacing: 12,
+                                runSpacing: 12,
+                                children: campaigns
+                                    .map(
+                                      (campaign) => SizedBox(
+                                        width: width,
+                                        child: _AdminBusinessCampaignPreview(
+                                          campaign: campaign,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                              );
+                            },
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _AdminBusinessViewNotice extends StatelessWidget {
+  const _AdminBusinessViewNotice({required this.businessName});
+
+  final String businessName;
+
+  @override
+  Widget build(BuildContext context) => PaperCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.visibility_outlined),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'You are viewing $businessName as a business. This owner preview is read-only, so campaign changes stay with the approved business account.',
+                style: TextStyle(color: TS.mutedOf(context), height: 1.45),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _AdminBusinessMetric extends StatelessWidget {
+  const _AdminBusinessMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 210,
+        child: PaperCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: TS.red),
+              const SizedBox(height: 10),
+              Text(
+                value,
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              Text(label, style: TextStyle(color: TS.faintOf(context))),
+            ],
+          ),
+        ),
+      );
+}
+
+class _AdminBusinessCampaignPreview extends StatelessWidget {
+  const _AdminBusinessCampaignPreview({required this.campaign});
+
+  final BusinessAdminCampaign campaign;
+
+  @override
+  Widget build(BuildContext context) => PaperCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: TS.surfaceSoftOf(context),
+                borderRadius: BorderRadius.circular(TS.controlRadius),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: campaign.imageUrl == null
+                  ? const Icon(Icons.campaign_outlined)
+                  : Image.network(
+                      campaign.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.image_not_supported_outlined),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    campaign.title,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${_adminPreviewLabel(campaign.kind)}, ${_adminPreviewLabel(campaign.placement)}, ${_adminPreviewLabel(campaign.status)}',
+                    style: TextStyle(
+                      color: TS.faintOf(context),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Text(
+                    '${_adminPreviewCount(campaign.impressions)} impressions  ${_adminPreviewCount(campaign.saves)} saves  ${_adminPreviewCount(campaign.visits)} visits',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+String _adminPreviewCount(int value) {
+  if (value >= 1000000) {
+    return '${(value / 1000000).toStringAsFixed(value >= 10000000 ? 0 : 1)}M';
+  }
+  if (value >= 1000) {
+    return '${(value / 1000).toStringAsFixed(value >= 10000 ? 0 : 1)}K';
+  }
+  return '$value';
+}
+
+String _adminPreviewLabel(String value) {
+  final text = value.replaceAll('_', ' ');
+  return text.isEmpty ? text : '${text[0].toUpperCase()}${text.substring(1)}';
 }
 
 class _BusinessLoadingScreen extends StatelessWidget {

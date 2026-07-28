@@ -13,13 +13,15 @@ export type OrganizationPublicationStatus =
   | 'rejected'
   | 'archived'
 export type OrganizationPublicationPlacement = 'marketplace' | 'window' | 'both'
+export type OrganizationPublicationDestination = 'marketplace' | 'window' | 'stories'
 export type OrganizationPublicationDecision = 'approved' | 'changes_requested' | 'rejected'
-export type OrganizationPublicationEvent = 'impression' | 'open' | 'save' | 'outbound'
+export type OrganizationPublicationEvent = 'impression' | 'image_view' | 'save' | 'link_click'
 export type OrganizationLocationStatus = 'active' | 'closed'
 
 export interface OrganizationPublicationInput {
+  destinations?: OrganizationPublicationDestination[]
   kind: OrganizationPublicationKind
-  placement: OrganizationPublicationPlacement
+  placement?: OrganizationPublicationPlacement
   title: string
   bodyText: string
   targetUrl?: string
@@ -37,10 +39,12 @@ export interface OrganizationPublicationInput {
 }
 
 export interface OrganizationPublication extends OrganizationPublicationInput {
+  destinations?: OrganizationPublicationDestination[]
   id: string
   organizationId: string
   organizationName: string
   organizationSlug: string
+  placement: OrganizationPublicationPlacement
   createdBy: string
   status: OrganizationPublicationStatus
   reviewNote?: string
@@ -71,9 +75,9 @@ export interface OrganizationLocation extends OrganizationLocationInput {
 
 export interface OrganizationMetricTotals {
   impressions: number
-  opens: number
+  imageViews: number
   saves: number
-  outboundVisits: number
+  linkClicks: number
 }
 
 export interface OrganizationMetricDay extends OrganizationMetricTotals {
@@ -81,8 +85,10 @@ export interface OrganizationMetricDay extends OrganizationMetricTotals {
 }
 
 export interface OrganizationMetrics {
+  destinations: Array<OrganizationMetricTotals & { destination: OrganizationPublicationDestination }>
   days: OrganizationMetricDay[]
   rangeDays: number
+  rankings: Array<OrganizationMetricTotals & { id: string; title: string }>
   totals: OrganizationMetricTotals
 }
 
@@ -131,6 +137,7 @@ interface LocationRow {
 }
 
 interface ValidPublication {
+  destinations: OrganizationPublicationDestination[]
   kind: OrganizationPublicationKind
   placement: OrganizationPublicationPlacement
   title: string
@@ -221,6 +228,7 @@ export async function createOrganizationPublication(
       now,
     ).run()
     await replacePublicationLocations(env, id, value.locationIds)
+    await replacePublicationDestinations(env, id, value.destinations)
     await attachPublicationMedia(env, access.id, id, value.imageUrl, value.imageAlt)
   } catch {
     return { issues: ['The publication could not be saved. Try again.'] }
@@ -288,6 +296,7 @@ export async function updateOrganizationPublication(
       current.organizationId,
     ).run()
     await replacePublicationLocations(env, publicationId, value.locationIds)
+    await replacePublicationDestinations(env, publicationId, value.destinations)
     await attachPublicationMedia(
       env,
       current.organizationId,
@@ -389,7 +398,7 @@ export async function listOrganizationPublications(
           ORDER BY publication.updated_at DESC LIMIT ?`,
       ).bind(access.id, OWNER_LIST_LIMIT)
     const result = await statement.all<PublicationRow>()
-    return attachPublicationLocations(env, result.results.map(rowToPublication))
+    return attachPublicationMetadata(env, result.results.map(rowToPublication))
   } catch {
     return []
   }
@@ -411,7 +420,7 @@ export async function getOrganizationPublication(
         WHERE publication.id = ? AND publication.organization_id = ?`,
     ).bind(publicationId, access.id).first<PublicationRow>()
     if (!row) return undefined
-    return (await attachPublicationLocations(env, [rowToPublication(row)]))[0]
+    return (await attachPublicationMetadata(env, [rowToPublication(row)]))[0]
   } catch {
     return undefined
   }
@@ -431,7 +440,7 @@ export async function listOrganizationPublicationsForReview(
         WHERE publication.status = ?
         ORDER BY publication.updated_at ASC LIMIT ?`,
     ).bind(safeStatus, REVIEW_QUEUE_LIMIT).all<PublicationRow>()
-    return attachPublicationLocations(env, result.results.map(rowToPublication))
+    return attachPublicationMetadata(env, result.results.map(rowToPublication))
   } catch {
     return []
   }
@@ -531,7 +540,7 @@ export async function reviewOrganizationPublication(
 
 export async function listLiveOrganizationPublications(
   env: TrolleyScoutEnv,
-  placement: 'marketplace' | 'window',
+  placement: OrganizationPublicationDestination,
   nowIso = new Date().toISOString(),
 ): Promise<OrganizationPublication[]> {
   if (!hasTrolleyScoutDatabase(env)) return []
@@ -540,15 +549,17 @@ export async function listLiveOrganizationPublications(
       `SELECT ${PUBLICATION_SELECT}
         FROM organization_publications AS publication
         INNER JOIN organizations AS organization ON organization.id = publication.organization_id
+        INNER JOIN organization_publication_destinations AS destination
+          ON destination.publication_id = publication.id
         WHERE organization.status = 'active'
           AND publication.status IN ('scheduled', 'live')
-          AND (publication.placement = ? OR publication.placement = 'both')
+          AND destination.destination = ?
           AND (publication.starts_at IS NULL OR publication.starts_at <= ?)
           AND (publication.ends_at IS NULL OR publication.ends_at > ?)
         ORDER BY publication.reviewed_at DESC, publication.created_at DESC
         LIMIT 500`,
     ).bind(placement, nowIso, nowIso).all<PublicationRow>()
-    return attachPublicationLocations(env, result.results.map(rowToPublication))
+    return attachPublicationMetadata(env, result.results.map(rowToPublication))
   } catch {
     return []
   }
@@ -674,35 +685,39 @@ export async function listOrganizationLocations(
 export async function recordOrganizationPublicationEvent(
   env: TrolleyScoutEnv,
   publicationId: string,
+  destination: OrganizationPublicationDestination,
   event: OrganizationPublicationEvent,
   nowIso = new Date().toISOString(),
 ): Promise<boolean> {
-  if (!hasTrolleyScoutDatabase(env) || !safeId(publicationId) || !isPublicationEvent(event)) {
+  if (!hasTrolleyScoutDatabase(env) || !safeId(publicationId) ||
+      !isPublicationDestination(destination) || !isPublicationEvent(event)) {
     return false
   }
   const visible = await env.DB!.prepare(
-    `SELECT id FROM organization_publications
-      WHERE id = ? AND status IN ('scheduled', 'live')
+    `SELECT publication.id FROM organization_publications AS publication
+      INNER JOIN organization_publication_destinations AS destination
+        ON destination.publication_id = publication.id AND destination.destination = ?
+      WHERE publication.id = ? AND publication.status IN ('scheduled', 'live')
         AND (starts_at IS NULL OR starts_at <= ?)
         AND (ends_at IS NULL OR ends_at > ?)`,
-  ).bind(publicationId, nowIso, nowIso).first<{ id: string }>()
+  ).bind(destination, publicationId, nowIso, nowIso).first<{ id: string }>()
   if (!visible) return false
 
   const column = {
     impression: 'impressions',
-    open: 'opens',
+    image_view: 'image_views',
     save: 'saves',
-    outbound: 'outbound_visits',
+    link_click: 'link_clicks',
   }[event]
   const date = nowIso.slice(0, 10)
   try {
     await env.DB!.prepare(
-      `INSERT INTO organization_publication_events_daily (
-        publication_id, event_date, ${column}
-      ) VALUES (?, ?, 1)
-      ON CONFLICT(publication_id, event_date)
+      `INSERT INTO organization_publication_metrics_daily (
+        publication_id, event_date, destination, ${column}
+      ) VALUES (?, ?, ?, 1)
+      ON CONFLICT(publication_id, event_date, destination)
       DO UPDATE SET ${column} = ${column} + 1`,
-    ).bind(publicationId, date).run()
+    ).bind(publicationId, date, destination).run()
     return true
   } catch {
     return false
@@ -714,49 +729,70 @@ export async function readOrganizationMetrics(
   accountId: string,
   rangeDays = 30,
   nowIso = new Date().toISOString(),
+  publicationId?: string,
 ): Promise<OrganizationMetrics> {
   const access = await activeOrganization(env, accountId)
-  const safeRange = rangeDays === 7 || rangeDays === 90 ? rangeDays : 30
+  const safeRange = rangeDays === 1 || rangeDays === 7 ? rangeDays : 30
   if (!access) return emptyMetrics(safeRange)
   const start = new Date(nowIso)
   start.setUTCDate(start.getUTCDate() - safeRange + 1)
   const startDate = start.toISOString().slice(0, 10)
   try {
-    const result = await env.DB!.prepare(
-      `SELECT event.event_date, SUM(event.impressions) AS impressions,
-          SUM(event.opens) AS opens, SUM(event.saves) AS saves,
-          SUM(event.outbound_visits) AS outbound_visits
-        FROM organization_publication_events_daily AS event
+    const publicationFilter = safeId(publicationId)
+      ? ' AND publication.id = ?'
+      : ''
+    const statement = env.DB!.prepare(
+      `SELECT event.event_date, event.destination,
+          publication.id, publication.title,
+          SUM(event.impressions) AS impressions,
+          SUM(event.image_views) AS image_views, SUM(event.saves) AS saves,
+          SUM(event.link_clicks) AS link_clicks
+        FROM organization_publication_metrics_daily AS event
         INNER JOIN organization_publications AS publication
           ON publication.id = event.publication_id
-        WHERE publication.organization_id = ? AND event.event_date >= ?
-        GROUP BY event.event_date ORDER BY event.event_date`,
-    ).bind(access.id, startDate).all<{
+        WHERE publication.organization_id = ? AND event.event_date >= ?${publicationFilter}
+        GROUP BY event.event_date, event.destination, publication.id, publication.title
+        ORDER BY event.event_date`,
+    )
+    const result = await (safeId(publicationId)
+      ? statement.bind(access.id, startDate, publicationId)
+      : statement.bind(access.id, startDate)).all<{
       event_date: string
       impressions: number
-      opens: number
+      destination: OrganizationPublicationDestination
+      id: string
+      title: string
+      image_views: number
       saves: number
-      outbound_visits: number
+      link_clicks: number
     }>()
-    const days = result.results.map((row) => ({
-      date: row.event_date,
-      impressions: Number(row.impressions ?? 0),
-      opens: Number(row.opens ?? 0),
-      saves: Number(row.saves ?? 0),
-      outboundVisits: Number(row.outbound_visits ?? 0),
+    const summarize = (rows: typeof result.results): OrganizationMetricTotals =>
+      rows.reduce((total, row) => ({
+        impressions: total.impressions + Number(row.impressions ?? 0),
+        imageViews: total.imageViews + Number(row.image_views ?? 0),
+        saves: total.saves + Number(row.saves ?? 0),
+        linkClicks: total.linkClicks + Number(row.link_clicks ?? 0),
+      }), emptyMetricTotals())
+    const dates = [...new Set(result.results.map((row) => row.event_date))]
+    const days = dates.map((date) => ({ date, ...summarize(result.results.filter((row) => row.event_date === date)) }))
+    const destinationIds: OrganizationPublicationDestination[] = ['marketplace', 'window', 'stories']
+    const destinations = destinationIds.map((destination) => ({
+      destination,
+      ...summarize(result.results.filter((row) => row.destination === destination)),
     }))
+    const publicationIds = [...new Set(result.results.map((row) => row.id))]
+    const rankings = publicationIds.map((id) => {
+      const rows = result.results.filter((row) => row.id === id)
+      return { id, title: rows[0]?.title ?? 'Campaign', ...summarize(rows) }
+    }).sort((left, right) =>
+      (right.imageViews + right.saves + right.linkClicks) -
+      (left.imageViews + left.saves + left.linkClicks))
     return {
+      destinations,
       days,
       rangeDays: safeRange,
-      totals: days.reduce<OrganizationMetricTotals>(
-        (total, day) => ({
-          impressions: total.impressions + day.impressions,
-          opens: total.opens + day.opens,
-          saves: total.saves + day.saves,
-          outboundVisits: total.outboundVisits + day.outboundVisits,
-        }),
-        { impressions: 0, opens: 0, saves: 0, outboundVisits: 0 },
-      ),
+      rankings,
+      totals: summarize(result.results),
     }
   } catch {
     return emptyMetrics(safeRange)
@@ -767,7 +803,8 @@ function validatePublicationInput(
   input: OrganizationPublicationInput,
 ): { issues: string[]; value?: ValidPublication } {
   const kind = input.kind
-  const placement = input.placement
+  const destinations = normalizePublicationDestinations(input.destinations, input.placement)
+  const placement = legacyPlacement(destinations)
   const title = trimmed(input.title)
   const bodyText = trimmed(input.bodyText)
   const targetUrl = trimmed(input.targetUrl)
@@ -784,7 +821,7 @@ function validatePublicationInput(
   const issues: string[] = []
 
   if (!isPublicationKind(kind)) issues.push('Choose a publication type.')
-  if (!isPublicationPlacement(placement)) issues.push('Choose where this publication should appear.')
+  if (destinations.length === 0) issues.push('Choose at least one shopper destination.')
   if (title.length < 3 || title.length > 120) {
     issues.push('Keep the title between 3 and 120 characters.')
   }
@@ -793,9 +830,6 @@ function validatePublicationInput(
   }
   if ([title, bodyText, offerText, couponCode, imageAlt].some(containsMarkup)) {
     issues.push('Remove < and > from publication text.')
-  }
-  if (kind === 'post' && placement !== 'window') {
-    issues.push('Posts can appear in Window Shopping only.')
   }
   if (kind !== 'post' && !isHttpsUrl(targetUrl)) {
     issues.push('Use a valid HTTPS destination link.')
@@ -843,6 +877,7 @@ function validatePublicationInput(
       bodyText,
       couponCode: couponCode || undefined,
       currencyCode: priceCents ? currencyCode : undefined,
+      destinations,
       endsAt,
       imageAlt: imageAlt || undefined,
       imageUrl: imageUrl || undefined,
@@ -918,7 +953,7 @@ async function getPublicationById(
         WHERE publication.id = ?`,
     ).bind(publicationId).first<PublicationRow>()
     if (!row) return undefined
-    return (await attachPublicationLocations(env, [rowToPublication(row)]))[0]
+    return (await attachPublicationMetadata(env, [rowToPublication(row)]))[0]
   } catch {
     return undefined
   }
@@ -998,7 +1033,7 @@ async function attachPublicationMedia(
   }
 }
 
-async function attachPublicationLocations(
+async function attachPublicationMetadata(
   env: TrolleyScoutEnv,
   publications: OrganizationPublication[],
 ): Promise<OrganizationPublication[]> {
@@ -1015,10 +1050,47 @@ async function attachPublicationLocations(
     ids.push(row.location_id)
     byPublication.set(row.publication_id, ids)
   }
+  let destinationRows: Array<{ destination: string; publication_id: string }> = []
+  try {
+    destinationRows = (await env.DB!.prepare(
+      `SELECT publication_id, destination FROM organization_publication_destinations
+        WHERE publication_id IN (${placeholders}) ORDER BY destination`,
+    ).bind(...publications.map((publication) => publication.id))
+      .all<{ destination: string; publication_id: string }>()).results
+  } catch {
+    destinationRows = []
+  }
+  const destinationsByPublication = new Map<string, OrganizationPublicationDestination[]>()
+  for (const row of destinationRows) {
+    if (!isPublicationDestination(row.destination)) continue
+    const destinations = destinationsByPublication.get(row.publication_id) ?? []
+    destinations.push(row.destination)
+    destinationsByPublication.set(row.publication_id, destinations)
+  }
   return publications.map((publication) => ({
     ...publication,
+    destinations:
+      destinationsByPublication.get(publication.id) ??
+      normalizePublicationDestinations(undefined, publication.placement),
     locationIds: byPublication.get(publication.id) ?? [],
   }))
+}
+
+async function replacePublicationDestinations(
+  env: TrolleyScoutEnv,
+  publicationId: string,
+  destinations: OrganizationPublicationDestination[],
+): Promise<void> {
+  await env.DB!.batch([
+    env.DB!.prepare(
+      'DELETE FROM organization_publication_destinations WHERE publication_id = ?',
+    ).bind(publicationId),
+    ...destinations.map((destination) =>
+      env.DB!.prepare(
+        `INSERT INTO organization_publication_destinations (publication_id, destination)
+          VALUES (?, ?)`,
+      ).bind(publicationId, destination)),
+  ])
 }
 
 async function countLivePublications(
@@ -1039,6 +1111,7 @@ function rowToPublication(row: PublicationRow): OrganizationPublication {
     createdAt: row.created_at,
     createdBy: row.created_by,
     currencyCode: row.currency_code ?? undefined,
+    destinations: normalizePublicationDestinations(undefined, row.placement),
     endsAt: row.ends_at ?? undefined,
     id: row.id,
     imageAlt: row.image_alt ?? undefined,
@@ -1095,12 +1168,16 @@ function isPublicationPlacement(value: unknown): value is OrganizationPublicatio
   return value === 'marketplace' || value === 'window' || value === 'both'
 }
 
+function isPublicationDestination(value: unknown): value is OrganizationPublicationDestination {
+  return value === 'marketplace' || value === 'window' || value === 'stories'
+}
+
 function isPublicationDecision(value: unknown): value is OrganizationPublicationDecision {
   return value === 'approved' || value === 'changes_requested' || value === 'rejected'
 }
 
 export function isPublicationEvent(value: unknown): value is OrganizationPublicationEvent {
-  return value === 'impression' || value === 'open' || value === 'save' || value === 'outbound'
+  return value === 'impression' || value === 'image_view' || value === 'save' || value === 'link_click'
 }
 
 function normalizePublicationKind(value: string): OrganizationPublicationKind {
@@ -1113,6 +1190,25 @@ function normalizePublicationStatus(value: string): OrganizationPublicationStatu
 
 function normalizePublicationPlacement(value: string): OrganizationPublicationPlacement {
   return isPublicationPlacement(value) ? value : 'window'
+}
+
+function normalizePublicationDestinations(
+  values: unknown,
+  placement: unknown,
+): OrganizationPublicationDestination[] {
+  if (Array.isArray(values)) {
+    return [...new Set(values.filter(isPublicationDestination))]
+  }
+  if (placement === 'both') return ['marketplace', 'window']
+  if (placement === 'marketplace' || placement === 'window') return [placement]
+  return []
+}
+
+function legacyPlacement(
+  destinations: OrganizationPublicationDestination[],
+): OrganizationPublicationPlacement {
+  if (destinations.includes('marketplace') && destinations.includes('window')) return 'both'
+  return destinations.includes('marketplace') ? 'marketplace' : 'window'
 }
 
 function uniqueIds(values: string[] | undefined): string[] {
@@ -1169,8 +1265,14 @@ function boundedText(value: string | undefined, maximum: number): string | undef
 
 function emptyMetrics(rangeDays: number): OrganizationMetrics {
   return {
+    destinations: [],
     days: [],
     rangeDays,
-    totals: { impressions: 0, opens: 0, saves: 0, outboundVisits: 0 },
+    rankings: [],
+    totals: emptyMetricTotals(),
   }
+}
+
+function emptyMetricTotals(): OrganizationMetricTotals {
+  return { impressions: 0, imageViews: 0, saves: 0, linkClicks: 0 }
 }

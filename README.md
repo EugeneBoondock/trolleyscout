@@ -49,6 +49,11 @@ Suggested domain: `trolleyscout.co.za`
 - `GET /api/subscription`: returns plan state and billing readiness.
 - `POST /api/subscription`: starts Stripe Checkout when billing keys are configured.
 - `POST /api/stripe-webhook`: verifies Stripe events and updates member plan state.
+- `/api/developer/v1/*`: scoped developer API using API-key Bearer authentication.
+- `/mcp`: OAuth-protected MCP server for shopping data and owned business campaigns.
+
+Developer setup, scopes, limits, and route examples are documented in
+[`public/developers.md`](public/developers.md).
 
 ## Data policy
 

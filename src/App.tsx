@@ -65,6 +65,7 @@ import {
   type DiscoveredStoresResource,
   type NearbyStoreResult,
   createVerifiedOffer,
+  createDeveloperKey,
   deleteVerifiedOffer,
   deleteBasketItemForMember,
   deleteSavedDeal,
@@ -78,6 +79,7 @@ import {
   getInitialSubscriptionState,
   getInitialCountryState,
   loadMemberSession,
+  loadDeveloperKeys,
   changeAccountPassword,
   loadAdminAnalytics,
   loadAdminOverview,
@@ -107,6 +109,7 @@ import {
   loadDealWatches,
   markDealWatchSeen,
   recordOrganizationPublicationEvent,
+  revokeDeveloperKey,
 } from './services/apiClient'
 import { openPayFastOnsite } from './services/payfastOnsite'
 import { useWebMcpTools } from './webmcp'
@@ -123,6 +126,8 @@ import type {
   DealActivity,
   DealLearningState,
   DealWatch,
+  DeveloperKeyResource,
+  DeveloperScope,
   MemberAccount,
   MemberSession,
   MemberPlanId,
@@ -1557,6 +1562,7 @@ function App() {
               setMemberReturnView(undefined)
               setMemberMode(true)
             }}
+            retailerCatalog={retailerState.data.retailers}
             sampleLimit={10}
             state={discoveryState}
           />
@@ -2134,6 +2140,7 @@ function MemberShell({
             onRunDiscovery={onRunDiscovery}
             onSaveDeal={onSaveDeal}
             onAddDealToBasket={onAddDealToBasket}
+            retailerCatalog={retailerState.data.retailers}
             savedDealUrls={savedDealUrls}
             savingDealUrl={savingDealUrl}
             state={discoveryState}
@@ -2228,7 +2235,9 @@ function MemberShell({
           />
         )}
 
-        {activeView === 'admin' && account.role === 'admin' && <AdminConsole />}
+        {activeView === 'admin' && account.role === 'admin' && (
+          <AdminConsole retailerState={retailerState} />
+        )}
 
         {activeView === 'rules' && <RulesPanel />}
       </main>
@@ -3372,7 +3381,7 @@ export function SubscriptionPanel({
             monthlyEquivalent(plan.id, billingCycle) <
             monthlyEquivalent(billingAccount.planId, planCycle ?? billingCycle)
           const isComingSoon = plan.comingSoon === true
-          const isBusinessPlan = plan.id === 'organization'
+          const isBusinessPlan = plan.id === 'organization' || plan.id === 'developers'
           const needsBusinessApplication =
             isBusinessPlan &&
             (!businessApplication || businessApplication.status === 'rejected')
@@ -3528,6 +3537,7 @@ function MemberProfilePanel({
         <ProfileRow label="Member since" value={account.createdAt.slice(0, 10)} />
       </div>
       <AccountSettings account={account} />
+      {(account.planId === 'developers' || account.role === 'admin') && <DeveloperAccessPanel />}
       <DealLearningControls />
       <button className="ghost-button" onClick={onSignOut} type="button">
         <SignOut size={18} />
@@ -3714,6 +3724,177 @@ function AccountSettings({ account }: { account: NonNullable<MemberSession['acco
   )
 }
 
+const developerScopeLabels: Record<DeveloperScope, string> = {
+  'campaigns:read': 'Read business campaigns',
+  'campaigns:write': 'Create and manage business campaigns',
+  'shopping:read': 'Read deals, catalogues, stores, and stories',
+  'trends:read': 'Read shopping trends',
+}
+
+function DeveloperAccessPanel() {
+  const [resource, setResource] = useState<DeveloperKeyResource>()
+  const [name, setName] = useState('')
+  const [scopes, setScopes] = useState<DeveloperScope[]>(['shopping:read', 'trends:read'])
+  const [secret, setSecret] = useState<string>()
+  const [notice, setNotice] = useState('Loading developer access.')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    loadDeveloperKeys()
+      .then((next) => {
+        if (!active) return
+        setResource(next)
+        setNotice('')
+      })
+      .catch(() => {
+        if (active) setNotice('Developer access could not be loaded.')
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  function toggleScope(scope: DeveloperScope) {
+    setScopes((current) =>
+      current.includes(scope)
+        ? current.filter((candidate) => candidate !== scope)
+        : [...current, scope],
+    )
+  }
+
+  async function createKey(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setNotice('')
+    try {
+      const next = await createDeveloperKey({ name, scopes })
+      setResource(next)
+      setSecret(next.secret)
+      setName('')
+      setNotice('API key created. Copy it now because it will not be shown again.')
+    } catch {
+      setNotice('The API key could not be created. Check the name and scopes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revokeKey(keyId: string) {
+    setBusy(true)
+    try {
+      setResource(await revokeDeveloperKey(keyId))
+      setNotice('API key revoked.')
+    } catch {
+      setNotice('The API key could not be revoked.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="developer-access-panel" aria-labelledby="developer-access-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Developer access</p>
+          <h2 id="developer-access-title">MCP and API credentials</h2>
+          <p>
+            Connect MCP clients through OAuth. Use API keys only for direct requests to
+            <code> /api/developer/v1</code>.
+          </p>
+        </div>
+        {resource && (
+          <span className="developer-usage">
+            {resource.usage.toLocaleString()} of {resource.allowance.callsPerMonth.toLocaleString()} calls
+          </span>
+        )}
+      </div>
+
+      <form className="developer-key-form" onSubmit={(event) => void createKey(event)}>
+        <label className="field">
+          Key name
+          <input
+            maxLength={80}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Production app"
+            required
+            value={name}
+          />
+        </label>
+        <fieldset>
+          <legend>Scopes</legend>
+          <div className="developer-scope-grid">
+            {(Object.keys(developerScopeLabels) as DeveloperScope[]).map((scope) => (
+              <label key={scope}>
+                <input
+                  checked={scopes.includes(scope)}
+                  onChange={() => toggleScope(scope)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{scope}</strong>
+                  <small>{developerScopeLabels[scope]}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button
+          className="primary-button"
+          disabled={busy || name.trim().length < 2 || scopes.length === 0}
+          type="submit"
+        >
+          Create API key
+        </button>
+      </form>
+
+      {secret && (
+        <div className="developer-secret" role="status">
+          <strong>Copy this key now</strong>
+          <code>{secret}</code>
+          <button
+            className="ghost-button"
+            onClick={() => void navigator.clipboard?.writeText(secret)}
+            type="button"
+          >
+            Copy key
+          </button>
+          <button className="text-button" onClick={() => setSecret(undefined)} type="button">
+            I saved it
+          </button>
+        </div>
+      )}
+
+      {notice && <p className="account-notice" role="status">{notice}</p>}
+
+      <div className="developer-key-list">
+        {resource?.keys.map((key) => (
+          <article className={key.revokedAt ? 'is-revoked' : ''} key={key.id}>
+            <div>
+              <strong>{key.name}</strong>
+              <code>{key.keyPrefix}••••••••</code>
+              <small>{key.scopes.join(', ')}</small>
+            </div>
+            {key.revokedAt ? (
+              <span>Revoked</span>
+            ) : (
+              <button
+                className="ghost-button"
+                disabled={busy}
+                onClick={() => void revokeKey(key.id)}
+                type="button"
+              >
+                <Trash size={16} />
+                Revoke
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function DealLearningControls() {
   const [learning, setLearning] = useState<DealLearningState>({ activities: [], enabled: true })
   const [isLoading, setIsLoading] = useState(true)
@@ -3893,7 +4074,7 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
 // The lanes the on-demand scout endpoint understands. "feeds" is the structured
 // retailer feed sweep, "stores" the online-storefront sweep over the country
 // registries — the two lanes the legacy deal refresh never reached.
-type ScoutLane = 'all' | 'feeds' | 'stores'
+type ScoutLane = 'all' | 'catalogues' | 'feeds' | 'stores'
 
 // Admin-only: run one bounded slice of those lanes now instead of waiting for
 // the 3-hourly cron. The server enforces the admin role and answers with what
@@ -3922,7 +4103,11 @@ async function runScoutLane(lane: ScoutLane): Promise<{ message: string; ok: boo
 
 // Admin-only operations view. The API enforces the role server-side; this
 // component only renders what that endpoint returns.
-function AdminConsole() {
+function AdminConsole({
+  retailerState,
+}: {
+  retailerState: ResourceState<RetailerResource>
+}) {
   const [overview, setOverview] = useState<AdminOverview | undefined>()
   const [message, setMessage] = useState('Loading admin data.')
   const [pendingId, setPendingId] = useState<string | undefined>()
@@ -4172,7 +4357,14 @@ function AdminConsole() {
               value={`${overview.summary.accountCount}`}
             />
             <Metric icon={<Tag size={22} />} label="Stored deals" value={`${overview.scout.dealCount}`} />
-            <Metric icon={<Storefront size={22} />} label="Stores" value={`${overview.scout.storeCount}`} />
+            <Metric
+              icon={<Storefront size={22} />}
+              label="Stores"
+              value={`${Math.max(
+                overview.scout.storeCount,
+                retailerState.data.summary.retailerCount,
+              )}`}
+            />
             <Metric
               icon={<Lifebuoy size={22} />}
               label="Open support"
@@ -4229,12 +4421,13 @@ function AdminConsole() {
               <h2>Run the scout now</h2>
               <p>
                 {scoutNotice ??
-                  'Retailer feeds and the online-store sweep otherwise only run on the 3-hourly cron. Each press does a bounded slice and continues where the last one stopped.'}
+                  'Catalogue sources refresh hourly. Retailer feeds and online stores refresh every three hours. Each press runs one bounded pass now.'}
               </p>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               {([
-                ['all', 'Both lanes'],
+                ['all', 'All lanes'],
+                ['catalogues', 'Catalogues'],
                 ['feeds', 'Retailer feeds'],
                 ['stores', 'Online stores'],
               ] as Array<[ScoutLane, string]>).map(([lane, label]) => (
@@ -4326,6 +4519,7 @@ function AdminConsole() {
                       <option value="scout">Scout</option>
                       <option value="household">Household</option>
                       <option value="organization">Organisation</option>
+                      <option value="developers">Developers</option>
                     </select>
                   </span>
                   <span role="cell">
@@ -5499,10 +5693,10 @@ function isBusinessPublicationDeal(deal: DiscoveredDeal) {
 
 function recordBusinessPublicationEvent(
   deal: DiscoveredDeal,
-  event: 'impression' | 'open' | 'save' | 'outbound',
+  event: 'impression' | 'image_view' | 'save' | 'link_click',
 ) {
   if (!isBusinessPublicationDeal(deal)) return
-  void recordOrganizationPublicationEvent(deal.id, event).catch(() => undefined)
+  void recordOrganizationPublicationEvent(deal.id, 'marketplace', event).catch(() => undefined)
 }
 
 function discoveryDealImages(deal: DiscoveredDeal) {
@@ -5640,8 +5834,8 @@ function MarketplaceImageViewer({
             className="primary-button marketplace-viewer-product"
             href={withReferralSource(deal.productUrl)}
             onClick={() => {
-              recordBusinessPublicationEvent(deal, 'open')
-              recordBusinessPublicationEvent(deal, 'outbound')
+              recordBusinessPublicationEvent(deal, 'image_view')
+              recordBusinessPublicationEvent(deal, 'link_click')
             }}
             rel="noreferrer"
             target="_blank"
@@ -5664,6 +5858,7 @@ function DiscoveryPanel({
   onRunDiscovery,
   onSaveDeal,
   onSignIn,
+  retailerCatalog = [],
   sampleLimit,
   savedDealUrls = new Set<string>(),
   savingDealUrl,
@@ -5679,6 +5874,7 @@ function DiscoveryPanel({
   // When set, only the first N deals are shown (logged-out sample), the pager is
   // hidden, and a sign-in call-to-action invites the shopper to see them all.
   onSignIn?: () => void
+  retailerCatalog?: Retailer[]
   sampleLimit?: number
   savedDealUrls?: Set<string>
   savingDealUrl?: string
@@ -5741,7 +5937,7 @@ function DiscoveryPanel({
     savingsOnly,
     sourceLabel,
   })
-  const retailers = buildRetailerPickerOptions(allDeals, leaflets)
+  const retailers = buildRetailerPickerOptions(allDeals, leaflets, retailerCatalog)
   const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
   const catalogueRetailerCount = new Set(
     leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
@@ -5941,7 +6137,7 @@ function DiscoveryPanel({
                     className="deal-product-image-button"
                     onClick={() => {
                       setPreviewDeal(deal)
-                      recordBusinessPublicationEvent(deal, 'open')
+                      recordBusinessPublicationEvent(deal, 'image_view')
                     }}
                     type="button"
                   >
@@ -5989,8 +6185,8 @@ function DiscoveryPanel({
                 <a
                   href={withReferralSource(deal.productUrl)}
                   onClick={() => {
-                    recordBusinessPublicationEvent(deal, 'open')
-                    recordBusinessPublicationEvent(deal, 'outbound')
+                    recordBusinessPublicationEvent(deal, 'image_view')
+                    recordBusinessPublicationEvent(deal, 'link_click')
                   }}
                   rel="noreferrer"
                   target="_blank"
@@ -6122,6 +6318,7 @@ function DiscoveryPanel({
 }
 
 function memberPlanLabel(planId: MemberPlanId): string {
+  if (planId === 'developers') return 'Developers'
   if (planId === 'organization') return 'Organisation'
   if (planId === 'household') return 'Household'
   if (planId === 'scout') return 'Scout'

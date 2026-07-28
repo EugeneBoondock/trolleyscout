@@ -110,4 +110,32 @@ describe('external retailer scouting', () => {
       }),
     ])
   })
+
+  it('captures linked promotion posters used as lightbox catalogue pages', () => {
+    const target = {
+      retailerId: 'country:zw:n-richards',
+      retailerName: 'N. Richards Wholesalers',
+      sourceUrl: 'https://nrichards.co.zw/promotions/',
+    }
+    const html = `
+      <h2>The Big Cash Promotion is on</h2>
+      <a class="elementor-gallery-item"
+         href="https://nrichards.co.zw/wp-content/uploads/2026/07/Posters-1.jpg">
+        <div data-thumbnail="/wp-content/uploads/2026/07/Posters-1-1448x2048.jpg"></div>
+      </a>
+      <a href="/images/logo.png">Logo</a>
+    `
+
+    expect(
+      extractRetailerLeafletsFromHtml(target, html, '2026-07-28T00:00:00.000Z'),
+    ).toEqual([
+      expect.objectContaining({
+        documentUrl:
+          'https://nrichards.co.zw/wp-content/uploads/2026/07/Posters-1.jpg',
+        imageUrl:
+          'https://nrichards.co.zw/wp-content/uploads/2026/07/Posters-1.jpg',
+        name: 'The Big Cash Promotion is on',
+      }),
+    ])
+  })
 })

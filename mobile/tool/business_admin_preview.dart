@@ -21,29 +21,44 @@ class _PreviewBusinessApi implements BusinessApiClient {
   BusinessAdminOverview _overview = BusinessAdminOverview.fromJson(
     _overviewJson,
   );
+  List<BusinessPublication> _publications = _businessPublicationsJson
+      .map(BusinessPublication.fromJson)
+      .toList(growable: false);
+  final List<BusinessLocation> _locations = _businessLocationsJson
+      .map(BusinessLocation.fromJson)
+      .toList(growable: false);
 
   @override
-  Future<BusinessBootstrap> bootstrap() async => const BusinessBootstrap(
-        session: MemberSession(
+  Future<BusinessBootstrap> bootstrap() async => BusinessBootstrap(
+        session: const MemberSession(
           isAuthenticated: true,
           account: MemberAccount(
-            id: 'admin-preview',
-            email: 'admin@trolleyscout.co.za',
-            displayName: 'Trolley Scout Admin',
-            initials: 'TS',
-            planId: 'free',
-            planName: 'Free',
+            id: 'owner-jet',
+            email: 'marketing@jet.example',
+            displayName: 'Naledi Mokoena',
+            initials: 'NM',
+            planId: 'business-growth',
+            planName: 'Organisation Growth',
             planStatus: 'active',
-            role: 'admin',
+            role: 'member',
             propertiesAccess: true,
-            createdAt: '2026-01-01T08:00:00.000Z',
+            createdAt: '2026-02-14T08:00:00.000Z',
             updatedAt: '2026-07-26T14:00:00.000Z',
           ),
         ),
-        gate: BusinessGate.signedOut,
-        publications: [],
-        locations: [],
-        metrics: BusinessMetrics.empty,
+        gate: const BusinessGate(
+          applicationStatus: 'approved',
+          hasOrganization: true,
+          organization: BusinessOrganization(
+            id: 'org-jet',
+            name: 'Jet',
+            slug: 'jet',
+            status: 'active',
+          ),
+        ),
+        publications: _publications,
+        locations: _locations,
+        metrics: _businessMetrics,
       );
 
   @override
@@ -107,25 +122,64 @@ class _PreviewBusinessApi implements BusinessApiClient {
   Future<BusinessPublicationChange> changePublication(
     String publicationId,
     String operation,
-  ) async =>
-      const BusinessPublicationChange(publications: []);
+  ) async {
+    return BusinessPublicationChange(publications: _publications);
+  }
 
   @override
-  Future<BusinessMetrics> metrics(int days) async => BusinessMetrics.empty;
+  Future<BusinessMetrics> metrics(int days) async => BusinessMetrics(
+        days: _businessMetrics.days,
+        rangeDays: days,
+        totals: _businessMetrics.totals,
+      );
 
   @override
   Future<BusinessPublicationChange> savePublication(
     BusinessPublicationDraft draft, {
     String? publicationId,
-  }) async =>
-      const BusinessPublicationChange(publications: []);
+  }) async {
+    final saved = BusinessPublication(
+      id: publicationId ?? 'campaign-preview-new',
+      organizationId: 'org-jet',
+      organizationName: 'Jet',
+      organizationSlug: 'jet',
+      createdBy: 'owner-jet',
+      status: BusinessPublicationStatus.draft,
+      createdAt: '2026-07-28T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+      kind: draft.kind,
+      placement: draft.placement,
+      title: draft.title,
+      bodyText: draft.bodyText,
+      targetUrl: draft.targetUrl,
+      imageUrl: draft.imageUrl,
+      imageAlt: draft.imageAlt,
+      priceCents: draft.priceCents,
+      previousPriceCents: draft.previousPriceCents,
+      currencyCode: draft.currencyCode,
+      offerText: draft.offerText,
+      couponCode: draft.couponCode,
+      startsAt: draft.startsAt,
+      endsAt: draft.endsAt,
+      locationIds: draft.locationIds,
+      soldOut: draft.soldOut,
+    );
+    _publications = [
+      saved,
+      ..._publications.where((publication) => publication.id != saved.id),
+    ];
+    return BusinessPublicationChange(
+      publication: saved,
+      publications: _publications,
+    );
+  }
 
   @override
   Future<List<BusinessLocation>> saveLocation(
     BusinessLocationDraft draft, {
     String? locationId,
   }) async =>
-      const [];
+      _locations;
 
   @override
   Future<BusinessImageUpload> uploadImage(
@@ -134,6 +188,156 @@ class _PreviewBusinessApi implements BusinessApiClient {
   }) =>
       throw UnsupportedError('Image upload is disabled in preview mode.');
 }
+
+const _businessPublicationsJson = <Map<String, dynamic>>[
+  {
+    'id': 'campaign-jet-1',
+    'organizationId': 'org-jet',
+    'organizationName': 'Jet',
+    'organizationSlug': 'jet',
+    'createdBy': 'owner-jet',
+    'kind': 'promotion',
+    'status': 'live',
+    'placement': 'both',
+    'title': 'Winter layers up to 40% off',
+    'bodyText':
+        'Save on selected jackets, knitwear, and winter essentials in stores and online.',
+    'targetUrl': 'https://www.jetonline.co.za/',
+    'imageUrl':
+        'https://images.unsplash.com/photo-1445205170230-053b83016050?w=1200',
+    'imageAlt': 'Winter fashion collection',
+    'currencyCode': 'ZAR',
+    'locationIds': <String>[],
+    'soldOut': false,
+    'startsAt': '2026-07-24T08:00:00.000Z',
+    'endsAt': '2026-08-10T20:00:00.000Z',
+    'createdAt': '2026-07-23T08:00:00.000Z',
+    'updatedAt': '2026-07-28T12:40:00.000Z',
+  },
+  {
+    'id': 'campaign-jet-2',
+    'organizationId': 'org-jet',
+    'organizationName': 'Jet',
+    'organizationSlug': 'jet',
+    'createdBy': 'owner-jet',
+    'kind': 'deal',
+    'status': 'scheduled',
+    'placement': 'marketplace',
+    'title': 'Kids denim from R129',
+    'bodyText':
+        'New-season denim for kids, available at participating Jet stores.',
+    'targetUrl': 'https://www.jetonline.co.za/',
+    'imageUrl':
+        'https://images.unsplash.com/photo-1519238263530-99bdd11df2ea?w=1200',
+    'imageAlt': 'Children wearing denim outfits',
+    'priceCents': 12900,
+    'previousPriceCents': 17900,
+    'currencyCode': 'ZAR',
+    'locationIds': <String>['location-sandton', 'location-soweto'],
+    'soldOut': false,
+    'startsAt': '2026-08-01T08:00:00.000Z',
+    'endsAt': '2026-08-14T20:00:00.000Z',
+    'createdAt': '2026-07-27T09:20:00.000Z',
+    'updatedAt': '2026-07-28T09:20:00.000Z',
+  },
+  {
+    'id': 'campaign-jet-3',
+    'organizationId': 'org-jet',
+    'organizationName': 'Jet',
+    'organizationSlug': 'jet',
+    'createdBy': 'owner-jet',
+    'kind': 'post',
+    'status': 'draft',
+    'placement': 'window',
+    'title': 'New store opening in Polokwane',
+    'bodyText':
+        'Meet the team and explore our newest Jet store opening this Saturday.',
+    'imageUrl':
+        'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200',
+    'imageAlt': 'Bright fashion store interior',
+    'currencyCode': 'ZAR',
+    'locationIds': <String>[],
+    'soldOut': false,
+    'createdAt': '2026-07-28T07:40:00.000Z',
+    'updatedAt': '2026-07-28T07:40:00.000Z',
+  },
+];
+
+const _businessLocationsJson = <Map<String, dynamic>>[
+  {
+    'id': 'location-sandton',
+    'organizationId': 'org-jet',
+    'name': 'Jet Sandton City',
+    'addressLine': '83 Rivonia Road',
+    'city': 'Sandton',
+    'province': 'Gauteng',
+    'countryCode': 'ZA',
+    'websiteUrl': 'https://www.jetonline.co.za/',
+    'status': 'active',
+    'createdAt': '2026-02-14T08:00:00.000Z',
+    'updatedAt': '2026-07-28T08:00:00.000Z',
+  },
+  {
+    'id': 'location-soweto',
+    'organizationId': 'org-jet',
+    'name': 'Jet Maponya Mall',
+    'addressLine': '2127 Chris Hani Road',
+    'city': 'Soweto',
+    'province': 'Gauteng',
+    'countryCode': 'ZA',
+    'websiteUrl': 'https://www.jetonline.co.za/',
+    'status': 'active',
+    'createdAt': '2026-02-14T08:00:00.000Z',
+    'updatedAt': '2026-07-28T08:00:00.000Z',
+  },
+];
+
+const _businessMetrics = BusinessMetrics(
+  rangeDays: 30,
+  totals: BusinessMetricTotals(
+    impressions: 484200,
+    opens: 132800,
+    saves: 28600,
+    outboundVisits: 19400,
+  ),
+  days: [
+    BusinessMetricDay(
+      date: '2026-07-24',
+      impressions: 68200,
+      opens: 18100,
+      saves: 3900,
+      outboundVisits: 2400,
+    ),
+    BusinessMetricDay(
+      date: '2026-07-25',
+      impressions: 79400,
+      opens: 21600,
+      saves: 4700,
+      outboundVisits: 3200,
+    ),
+    BusinessMetricDay(
+      date: '2026-07-26',
+      impressions: 92300,
+      opens: 25800,
+      saves: 5600,
+      outboundVisits: 3900,
+    ),
+    BusinessMetricDay(
+      date: '2026-07-27',
+      impressions: 108100,
+      opens: 30100,
+      saves: 6500,
+      outboundVisits: 4500,
+    ),
+    BusinessMetricDay(
+      date: '2026-07-28',
+      impressions: 136200,
+      opens: 37200,
+      saves: 7900,
+      outboundVisits: 5400,
+    ),
+  ],
+);
 
 const _overviewJson = <String, dynamic>{
   'generatedAt': '2026-07-26T14:00:00.000Z',

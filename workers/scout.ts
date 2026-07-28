@@ -99,6 +99,41 @@ export interface ScheduledScoutOptions {
 // page plus up to six catalogue pages, so a hundred shops leaves room for the
 // feed, catalogue and discovery lanes in the same run.
 const ONLINE_RETAILER_SCOUT_LIMIT = 100
+const ZIMBABWE_ONLINE_RETAILER_QUOTA = 40
+const ONLINE_RETAILER_SCOUT_INTERVAL_MS = 3 * 60 * 60 * 1000
+const ONLINE_RETAILER_SCOUT_DEADLINE_MS = 50_000
+
+export function buildScheduledOnlineStoreBatch(nowMs: number) {
+  const stores = buildRegistryOnlineStores()
+  const runBucket = Math.floor(nowMs / ONLINE_RETAILER_SCOUT_INTERVAL_MS)
+  const zimbabweStores = stores.filter((store) => store.countryCode === 'ZW')
+  const otherStores = stores.filter((store) => store.countryCode !== 'ZW')
+
+  return [
+    ...rotatingWindow(
+      zimbabweStores,
+      ZIMBABWE_ONLINE_RETAILER_QUOTA,
+      runBucket,
+    ),
+    ...rotatingWindow(
+      otherStores,
+      ONLINE_RETAILER_SCOUT_LIMIT - ZIMBABWE_ONLINE_RETAILER_QUOTA,
+      runBucket,
+    ),
+  ]
+}
+
+function rotatingWindow<T>(items: readonly T[], limit: number, bucket: number): T[] {
+  if (items.length <= limit) {
+    return [...items]
+  }
+
+  const start = (bucket * limit) % items.length
+  return Array.from(
+    { length: limit },
+    (_, index) => items[(start + index) % items.length] as T,
+  )
+}
 
 const defaultDependencies: ScheduledScoutDependencies = {
   advanceOrganizationPublicationStatuses,
@@ -198,9 +233,10 @@ export async function runScheduledScout(
     try {
       await dependencies.scoutNearbyStores(
         env,
-        buildRegistryOnlineStores(),
+        buildScheduledOnlineStoreBatch(nowMs),
         nowMs,
         ONLINE_RETAILER_SCOUT_LIMIT,
+        nowMs + ONLINE_RETAILER_SCOUT_DEADLINE_MS,
       )
     } catch {
       onlineRetailerScoutFailed = true
@@ -222,6 +258,7 @@ export async function runScheduledScout(
   let catalogue: CatalogueScoutResult = {
     dealCount: 0,
     discoveredLeafletCount: 0,
+    discoveredLeaflets: [],
     scannedDocumentCount: 0,
   }
   let catalogueScoutFailed = false
@@ -229,6 +266,19 @@ export async function runScheduledScout(
     catalogue = await dependencies.runCatalogueScout(env, catalogueLeaflets)
   } catch {
     catalogueScoutFailed = true
+  }
+  const onlineCatalogueLeaflets = catalogue.discoveredLeaflets ?? []
+  if (onlineCatalogueLeaflets.length > 0) {
+    await (
+      dependencies.saveLeafletSnapshot ?? saveLeafletSnapshot
+    )(
+      env,
+      dedupeCatalogueLeaflets([
+        ...catalogueLeaflets,
+        ...onlineCatalogueLeaflets,
+      ]),
+      nowIso,
+    ).catch(() => undefined)
   }
 
   let voucherExpiredCount = 0

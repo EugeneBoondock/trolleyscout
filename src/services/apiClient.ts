@@ -48,6 +48,8 @@ import type {
   Retailer,
   DiscoveryRun,
   DiscoveredDeal,
+  DeveloperKeyResource,
+  DeveloperScope,
   SavedSource,
   SavedSourceDraft,
   SavedDeal,
@@ -61,6 +63,56 @@ import type {
   SupportMessage,
   VerifiedOffer,
 } from '../types'
+
+export async function loadDeveloperKeys(): Promise<DeveloperKeyResource> {
+  const response = await fetch('/api/developer-keys', {
+    headers: { accept: 'application/json' },
+  })
+  const envelope = await response.json() as {
+    data?: DeveloperKeyResource
+    error?: { message?: string }
+  }
+  if (!response.ok || !envelope.data) {
+    throw new Error(envelope.error?.message ?? `Developer key API returned ${response.status}`)
+  }
+  return envelope.data
+}
+
+export async function createDeveloperKey(input: {
+  expiresAt?: string
+  name: string
+  scopes: DeveloperScope[]
+}): Promise<DeveloperKeyResource & { secret: string }> {
+  const response = await fetch('/api/developer-keys', {
+    body: JSON.stringify(input),
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    method: 'POST',
+  })
+  const envelope = await response.json() as {
+    data?: DeveloperKeyResource & { secret: string }
+    error?: { message?: string }
+  }
+  if (!response.ok || !envelope.data) {
+    throw new Error(envelope.error?.message ?? `Developer key API returned ${response.status}`)
+  }
+  return envelope.data
+}
+
+export async function revokeDeveloperKey(keyId: string): Promise<DeveloperKeyResource> {
+  const response = await fetch('/api/developer-keys', {
+    body: JSON.stringify({ keyId }),
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    method: 'DELETE',
+  })
+  const envelope = await response.json() as {
+    data?: DeveloperKeyResource
+    error?: { message?: string }
+  }
+  if (!response.ok || !envelope.data) {
+    throw new Error(envelope.error?.message ?? `Developer key API returned ${response.status}`)
+  }
+  return envelope.data
+}
 
 type LoadStatus = 'loading' | 'ready' | 'error'
 
@@ -113,7 +165,8 @@ export interface SubscriptionResource {
   plans: MemberPlan[]
 }
 
-export type OrganizationPublicationEvent = 'impression' | 'open' | 'save' | 'outbound'
+export type OrganizationPublicationEvent = 'impression' | 'image_view' | 'save' | 'link_click'
+export type OrganizationPublicationDestination = 'marketplace' | 'window' | 'stories'
 
 const defaultMeta: ApiEnvelope<unknown>['meta'] = {
   generatedAt: new Date(0).toISOString(),
@@ -122,10 +175,11 @@ const defaultMeta: ApiEnvelope<unknown>['meta'] = {
 
 export async function recordOrganizationPublicationEvent(
   publicationId: string,
+  destination: OrganizationPublicationDestination,
   event: OrganizationPublicationEvent,
 ): Promise<void> {
   const response = await fetch('/api/organization-publication-events', {
-    body: JSON.stringify({ event, publicationId }),
+    body: JSON.stringify({ destination, event, publicationId }),
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',

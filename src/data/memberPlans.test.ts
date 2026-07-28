@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getDeveloperAllowance,
   getLocalisedMemberPlans,
   getMemberPlan,
   getPlanBillingOption,
@@ -12,6 +13,7 @@ describe('memberPlans', () => {
     expect(getMemberPlan('scout').prices).toEqual({ annual: 29000, monthly: 2900 })
     expect(getMemberPlan('household').prices).toEqual({ annual: 59000, monthly: 5900 })
     expect(getMemberPlan('organization').prices).toEqual({ annual: 499000, monthly: 49900 })
+    expect(getMemberPlan('developers').prices).toEqual({ annual: 999000, monthly: 99900 })
   })
 
   // The annual price is advertised as "save 2 months" on the billing toggle, so
@@ -34,6 +36,7 @@ describe('memberPlans', () => {
       { catalogues: 250, deals: 50_000, id: 'scout' },
       { catalogues: 1_000, deals: 250_000, id: 'household' },
       { catalogues: 5_000, deals: 1_000_000, id: 'organization' },
+      { catalogues: 5_000, deals: 1_000_000, id: 'developers' },
     ])
   })
 
@@ -109,5 +112,17 @@ describe('memberPlans', () => {
     expect(getPlanMerchantAllowance('household')).toBeUndefined()
     expect(getPlanMerchantAllowance('scout')).toBeUndefined()
     expect(getPlanMerchantAllowance('free')).toBeUndefined()
+  })
+
+  it('grants developer and organization capacity to Developers', () => {
+    expect(getDeveloperAllowance('developers')).toEqual({
+      callsPerMinute: 120,
+      callsPerMonth: 25_000,
+    })
+    expect(getPlanMerchantAllowance('developers')).toEqual({
+      includedAdsPerMonth: 3,
+      livePromos: 25,
+      shopProfiles: 1,
+    })
   })
 })

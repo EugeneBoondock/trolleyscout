@@ -1,4 +1,5 @@
 import type { SourceKind } from '../types'
+import { getZimbabweAutomatedRetailSources } from './zimbabweSourceRegistry'
 
 export interface SadcRetailSource {
   kind: SourceKind
@@ -241,10 +242,14 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
     retailSources: [
       // National chains and grocers (TM serves live specials via its custom API).
       specials('TM Pick n Pay', 'https://tmpnponline.co.zw/', 'Online specials'),
+      specials('TM Pick n Pay', 'https://tmpnponline.co.zw/catalog', 'Current multi-page catalogues'),
       store('TM Pick n Pay', 'https://tmpnponline.co.zw/', 'Online store'),
       specials('SPAR Zimbabwe', 'https://www.spar.co.zw/promos'),
+      store('SPAR Zimbabwe', 'https://online-spar.co.zw/', 'Online store'),
       store('Sai Mart', 'https://saimartzim.co.zw/', 'Online store'),
+      specials('TV Sales & Home', 'https://www.tvsales.co.zw/promotions/', 'Current promotions'),
       specials('TV Sales & Home', 'https://www.tvsales.co.zw/', 'On-sale products'),
+      specials('Union Hardware', 'https://unionhardware.co.zw/msasa/catalogues/', 'Product catalogues and current sale'),
       specials('N. Richards Group', 'https://nrichards.co.zw/', 'On-sale products'),
       store('Halsteds', 'https://www.halsteds.co.zw/', 'Online store'),
       store('Food Basket', 'https://www.foodbasket.co.zw/', 'Online store'),
@@ -257,12 +262,16 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       store('ShopAtZim', 'https://shopatzim.co.zw/', 'Online store'),
       store('Zimall', 'https://www.zimall.co.zw/', 'Online marketplace'),
       store('Edgars Zimbabwe', 'https://www.edgarsstores.co.zw/', 'Fashion store'),
+      specials('Edgars Zimbabwe', 'https://edgarsstores.co.zw/', 'Current multi-page catalogue'),
       store('Hitech Electronics', 'https://www.hitechelectronics.co.zw/', 'Online store'),
       store('National Seeds FarmShop', 'https://natseeds.co.zw/farmshop/', 'Farm supplies catalogue'),
       store('Malaicha', 'https://malaicha.com/', 'Diaspora groceries'),
       store('Carson Stores', 'https://carsonstores.co.zw/', 'Wholesale store'),
       store('Platinum Pharmacy', 'https://platinumpharmacy.co.zw/', 'Online pharmacy'),
-      specials('Jet Stores', 'https://jetstores.co.zw/', 'On-sale products'),
+      specials('Jet Stores', 'https://jetstores.shop/', 'Current campaigns and on-sale products'),
+      specials('OK Zimbabwe', 'https://promo.co.zw/', 'Current rewards promotions'),
+      store('OK Mart', 'https://promo.co.zw/', 'Current rewards promotions'),
+      store('Bon Marché Zimbabwe', 'https://promo.co.zw/', 'Current rewards promotions'),
       // Groceries, food & butchers
       specials('4 Harvests', 'https://4harvests.co.zw/', 'On-sale products'),
       specials('Budget Meat Shop', 'https://budgetmeatshop.co.zw/', 'On-sale products'),
@@ -276,11 +285,22 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       specials('Vegetable Basket', 'https://www.vegetablebasket.co.zw/', 'On-sale products'),
       specials('Z-Store', 'https://zstore.co.zw/', 'On-sale products'),
       specials('ZimBasket', 'https://www.zimbasket.co.zw/', 'On-sale products'),
+      specials('Fresh Select Market', 'https://freshselect.co.zw/', 'Online groceries'),
+      specials('ZIM Essentials', 'https://zim-essentials.com/', 'Online groceries'),
+      specials('Pantry Master Zimbabwe', 'https://pantrymasterzim.shop/', 'Online groceries'),
+      specials('First Source Distributors', 'https://www.firstsourcedistributors.co.zw/', 'Products and promotions'),
       // General retail & marketplaces
       specials('Ownai Marketplace', 'https://ownai.co.zw/marketplace/', 'On-sale products'),
       specials('Zambezi Cart', 'https://zambezicart.com/', 'On-sale products'),
       specials('ZikiMall', 'https://shop.zikimall.com/', 'On-sale products'),
       specials('ZimbabweMall/Post', 'https://zimbabwemall.post/', 'On-sale products'),
+      specials('Avenues Virtual Mall', 'https://avenuesmall.co.zw/', 'Store promotions and vouchers'),
+      specials('Raely', 'https://www.raely.co.zw/', 'On-sale products'),
+      specials('Zimexapp', 'https://zimexapp.co.zw/', 'Latest marketplace deals'),
+      specials('Zim Shops', 'https://www.zim-shops.com/', 'Online marketplace'),
+      specials('Snap Sale', 'https://www.snapsale.co.zw/', 'Online marketplace'),
+      specials('MADEALS', 'https://www.madealsapp.com/', 'Live marketplace listings'),
+      specials('OneStop', 'https://onestopstore.co.zw/', 'Online store'),
       // Furniture, home & appliances
       specials('Beta Home Appliance', 'https://betahomeappliance.co.zw/', 'On-sale products'),
       specials('Checkers Office & Home', 'https://checkers.co.zw/shop/', 'On-sale products'),
@@ -297,6 +317,10 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       specials('Magnet E-Store', 'https://magnet.co.zw/', 'On-sale products'),
       specials('Micro Man', 'https://microman.co.zw/', 'On-sale products'),
       specials('Zelpac', 'https://zelpac.co.zw/', 'On-sale products'),
+      specials('Econet Online Store', 'https://onlineshop.econet.co.zw/', 'Devices and promotions'),
+      specials('Tatima Tech Store', 'https://tatimatechstore.co.zw/', 'Flash sales and devices'),
+      specials('Metric Electronics', 'https://craftmetric.co.zw/', 'On-sale products'),
+      specials('TruTech', 'https://www.trutech.co.zw/', 'On-sale products'),
       // Hardware, building, pools & solar
       specials('Ace Hardware Zimbabwe', 'https://acehardware.co.zw/', 'On-sale products'),
       specials('CTM Zimbabwe', 'https://www.ctm.co.zw/', 'On-sale products'),
@@ -312,6 +336,8 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       specials('The Poolman', 'https://thepoolman.co.zw/shop/', 'On-sale products'),
       specials('World of Sun & Wind Power', 'https://worldofsunandwindpower.co.zw/', 'On-sale products'),
       specials('Zimbabwe Building Materials Suppliers (ZBMS)', 'https://www.zbms.co.zw/shop/', 'On-sale products'),
+      specials('Tech Africa', 'https://techafrica.co.zw/', 'Products and multi-page catalogues'),
+      specials('Sona Solar Zimbabwe', 'https://www.sonasolar.co.zw/p/promotions.html', 'Current promotions'),
       // Pharmacy, health & medical supplies
       specials('Bestzone Pharmacies', 'https://bestzonepharmacies.co.zw/', 'On-sale products'),
       specials('Bumblebee Pharmacy', 'https://bumblebeepharmacy.co.zw/shop-2/', 'On-sale products'),
@@ -321,6 +347,9 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       specials('Emergency Pharmacy', 'https://emergencypharmacy.co.zw/', 'On-sale products'),
       specials('Lady Becky Medical', 'https://ladybecky.co.zw/', 'On-sale products'),
       specials('Pentafam', 'https://pentafam.co.zw/', 'On-sale products'),
+      specials('HealthLink Pharmacy', 'https://www.healthlink.co.zw/', 'Online pharmacy'),
+      specials('MedOrange Pharmacies', 'https://www.medorange.com/', 'Online pharmacy'),
+      store('Dial a Med', 'https://dialamed.co.zw/', 'Pharmacy marketplace'),
       // Books, stationery, office & school
       specials('Denmut Bookstore', 'https://denmutbookstore.co.zw/', 'On-sale products'),
       specials('Macedonia Projects', 'https://macedoniaprojects.co.zw/shop/', 'On-sale products'),
@@ -339,8 +368,15 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
       specials('3way Auto Parts', 'https://www.3way.co.zw/', 'On-sale products'),
       specials('Kopje Spares', 'https://kopjespares.co.zw/', 'On-sale products'),
       specials('Zim Midas', 'https://www.zimmidas.co.zw/', 'On-sale products'),
+      specials('Rossi Tyres', 'https://rossityres.co.zw/shop/', 'Weekly promotions'),
+      specials('Autoworld Zimbabwe', 'https://www.autoworld.co.zw/promotions/', 'Vehicle promotions'),
       // Pet supplies
       specials('Dog Lovers Zimbabwe', 'https://doglovers.co.zw/', 'On-sale products'),
+      // Broad Zimbabwe directory import. Direct public retailer and marketplace
+      // sources join the automated queue here. Social-only, directory-only and
+      // verify-first records remain available in zimbabweSourceRegistry.ts
+      // without being fetched as storefronts.
+      ...getZimbabweAutomatedRetailSources(),
     ],
     retailStatus: 'public-web',
   },

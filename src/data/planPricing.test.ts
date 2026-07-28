@@ -110,9 +110,11 @@ describe('resolvePlanPrice', () => {
       const scout = getLocalPlanPrice('scout', 'monthly', currencyCode)!
       const household = getLocalPlanPrice('household', 'monthly', currencyCode)!
       const organization = getLocalPlanPrice('organization', 'monthly', currencyCode)!
+      const developers = getLocalPlanPrice('developers', 'monthly', currencyCode)!
 
       expect(household).toBeGreaterThan(scout)
       expect(organization).toBeGreaterThan(household)
+      expect(developers).toBeGreaterThan(organization)
     }
   })
 
@@ -143,7 +145,7 @@ describe('resolvePlanPrice', () => {
     expect(us).toMatchObject({ currencyCode: 'USD', localAmount: 5 })
     expect(zw!.amountCents).toBeLessThan(us!.amountCents)
 
-    for (const planId of ['scout', 'household', 'organization'] as const) {
+    for (const planId of ['scout', 'household', 'organization', 'developers'] as const) {
       expect(
         getLocalPlanPrice(planId, 'monthly', 'USD', 'ZW')!,
         planId,
@@ -157,7 +159,7 @@ describe('resolvePlanPrice', () => {
 
       expect(listPricedCurrencies(), countryCode).toContain(currencyCode)
 
-      for (const planId of ['scout', 'household', 'organization'] as const) {
+      for (const planId of ['scout', 'household', 'organization', 'developers'] as const) {
         const price = getLocalPlanPrice(planId, 'monthly', currencyCode, countryCode)
 
         expect(Number.isInteger(price), `${countryCode} ${planId}`).toBe(true)

@@ -512,8 +512,8 @@ function OverviewView({
               <div className="biz-result-breakdown">
                 <MetricLine
                   label="Opened"
-                  rate={rate(bootstrap.metrics.totals.opens, bootstrap.metrics.totals.impressions)}
-                  value={bootstrap.metrics.totals.opens}
+                  rate={rate(bootstrap.metrics.totals.imageViews, bootstrap.metrics.totals.impressions)}
+                  value={bootstrap.metrics.totals.imageViews}
                 />
                 <MetricLine
                   label="Saved"
@@ -522,8 +522,8 @@ function OverviewView({
                 />
                 <MetricLine
                   label="Visited your link"
-                  rate={rate(bootstrap.metrics.totals.outboundVisits, bootstrap.metrics.totals.impressions)}
-                  value={bootstrap.metrics.totals.outboundVisits}
+                  rate={rate(bootstrap.metrics.totals.linkClicks, bootstrap.metrics.totals.impressions)}
+                  value={bootstrap.metrics.totals.linkClicks}
                 />
               </div>
             </div>
@@ -843,14 +843,14 @@ function InsightsView({
   bootstrap: BusinessBootstrap
   onBootstrap: (bootstrap: BusinessBootstrap) => void
 }) {
-  const [range, setRange] = useState<7 | 30 | 90>(
-    bootstrap.metrics.rangeDays === 7 || bootstrap.metrics.rangeDays === 90
+  const [range, setRange] = useState<1 | 7 | 30>(
+    bootstrap.metrics.rangeDays === 1 || bootstrap.metrics.rangeDays === 7
       ? bootstrap.metrics.rangeDays
       : 30,
   )
   const [loading, setLoading] = useState(false)
 
-  async function changeRange(days: 7 | 30 | 90) {
+  async function changeRange(days: 1 | 7 | 30) {
     setRange(days)
     setLoading(true)
     try {
@@ -869,12 +869,12 @@ function InsightsView({
         <div>
           <p className="biz-kicker">Shopper results</p>
           <h1>Insights</h1>
-          <p>See how people find, open, save, and visit your published offers.</p>
+          <p>See what shoppers viewed, saved, and clicked across each campaign destination.</p>
         </div>
         <div className="biz-range-switch" aria-label="Insight date range">
-          {([7, 30, 90] as const).map((days) => (
+          {([1, 7, 30] as const).map((days) => (
             <button className={range === days ? 'is-active' : ''} key={days} onClick={() => void changeRange(days)} type="button">
-              {days} days
+              {days === 1 ? 'Today' : days === 7 ? 'This week' : 'This month'}
             </button>
           ))}
         </div>
@@ -882,9 +882,9 @@ function InsightsView({
 
       <section className="biz-insight-grid" aria-busy={loading}>
         <InsightCard icon={<Eye size={23} />} label="Impressions" value={metrics.totals.impressions} />
-        <InsightCard icon={<ArrowRight size={23} />} label="Opened" value={metrics.totals.opens} />
+        <InsightCard icon={<ArrowRight size={23} />} label="Image views" value={metrics.totals.imageViews} />
         <InsightCard icon={<BookmarkSimple size={23} />} label="Saved" value={metrics.totals.saves} />
-        <InsightCard icon={<LinkSimple size={23} />} label="Outbound visits" value={metrics.totals.outboundVisits} />
+        <InsightCard icon={<LinkSimple size={23} />} label="Link clicks" value={metrics.totals.linkClicks} />
       </section>
 
       <section className="biz-insight-detail">
@@ -899,23 +899,67 @@ function InsightsView({
           <div className="biz-empty-chart">
             <ChartLineUp size={45} weight="duotone" />
             <h3>Results will appear after shoppers see your content</h3>
-            <p>Impressions, opens, saves, and outbound visits are counted without exposing shopper identity.</p>
+            <p>Impressions, image views, saves, and link clicks are counted without exposing shopper identity.</p>
           </div>
         ) : (
           <div className="biz-daily-table">
-            <div><span>Date</span><span>Impressions</span><span>Opened</span><span>Saved</span><span>Visits</span></div>
+            <div><span>Date</span><span>Impressions</span><span>Image views</span><span>Saved</span><span>Link clicks</span></div>
             {metrics.days.map((day) => (
               <div key={day.date}>
                 <strong>{formatShortDate(day.date)}</strong>
                 <span>{formatCount(day.impressions)}</span>
-                <span>{formatCount(day.opens)}</span>
+                <span>{formatCount(day.imageViews)}</span>
                 <span>{formatCount(day.saves)}</span>
-                <span>{formatCount(day.outboundVisits)}</span>
+                <span>{formatCount(day.linkClicks)}</span>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      <section className="biz-insight-detail">
+        <div className="biz-section-heading">
+          <div>
+            <p className="biz-kicker">Destination results</p>
+            <h2>Where shoppers responded</h2>
+          </div>
+        </div>
+        <div className="biz-daily-table">
+          <div><span>Destination</span><span>Impressions</span><span>Image views</span><span>Saved</span><span>Link clicks</span></div>
+          {metrics.destinations.map((item) => (
+            <div key={item.destination}>
+              <strong>{item.destination === 'window' ? 'Window Shopping' : item.destination[0].toUpperCase() + item.destination.slice(1)}</strong>
+              <span>{formatCount(item.impressions)}</span>
+              <span>{formatCount(item.imageViews)}</span>
+              <span>{formatCount(item.saves)}</span>
+              <span>{formatCount(item.linkClicks)}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {metrics.rankings.length > 0 && (
+        <section className="biz-insight-detail">
+          <div className="biz-section-heading">
+            <div>
+              <p className="biz-kicker">Top campaigns</p>
+              <h2>Most viewed, saved, and clicked</h2>
+            </div>
+          </div>
+          <div className="biz-daily-table">
+            <div><span>Campaign</span><span>Impressions</span><span>Image views</span><span>Saved</span><span>Link clicks</span></div>
+            {metrics.rankings.slice(0, 10).map((item) => (
+              <div key={item.id}>
+                <strong>{item.title}</strong>
+                <span>{formatCount(item.impressions)}</span>
+                <span>{formatCount(item.imageViews)}</span>
+                <span>{formatCount(item.saves)}</span>
+                <span>{formatCount(item.linkClicks)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
@@ -1106,18 +1150,19 @@ function PublicationRow({ onEdit, publication }: { onEdit: () => void; publicati
 }
 
 function PlacementIcon({ publication }: { publication: BusinessPublication }) {
+  const destinations = publication.destinations ??
+    (publication.placement === 'both'
+      ? ['marketplace', 'window']
+      : [publication.placement])
   return (
     <span className="biz-placement-label">
-      {publication.placement === 'window'
-        ? <Storefront size={17} />
-        : publication.placement === 'both'
-          ? <Buildings size={17} />
-          : <Tag size={17} />}
-      {publication.placement === 'marketplace'
-        ? 'Marketplace'
-        : publication.placement === 'window'
-          ? 'Window Shopping'
-          : 'Both surfaces'}
+      {destinations.length > 1 ? <Buildings size={17} /> : <Tag size={17} />}
+      {destinations.map((destination) =>
+        destination === 'marketplace'
+          ? 'Marketplace'
+          : destination === 'window'
+            ? 'Window Shopping'
+            : 'Stories').join(', ')}
     </span>
   )
 }

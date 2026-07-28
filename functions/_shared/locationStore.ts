@@ -850,7 +850,9 @@ export async function claimStoreScout(
 
   try {
     const updated = await env.DB.prepare(
-      "UPDATE store_scout_log SET next_scout_at = ? WHERE place_id = ? AND next_scout_at < ?",
+      `UPDATE store_scout_log
+        SET next_scout_at = ?, outcome_status = 'checking'
+        WHERE place_id = ? AND next_scout_at < ?`,
     )
       .bind(holdUntil, placeId, nowIso)
       .run();
@@ -861,14 +863,40 @@ export async function claimStoreScout(
     // No row yet (never scouted): the first inserter wins the claim.
     const inserted = await env.DB.prepare(
       `INSERT OR IGNORE INTO store_scout_log
-        (place_id, store_name, website, retailer_id, scouted_at, next_scout_at, promotion_count)
-        VALUES (?, '', NULL, NULL, ?, ?, 0)`,
+        (
+          place_id, store_name, website, retailer_id, scouted_at,
+          next_scout_at, promotion_count, outcome_status
+        )
+        VALUES (?, '', NULL, NULL, ?, ?, 0, 'checking')`,
     )
       .bind(placeId, nowIso, holdUntil)
       .run();
     return (inserted.meta.changes ?? 0) > 0;
   } catch {
-    return false;
+    // A rolling deployment can briefly run against a database where migration
+    // 0042 is not present yet. Keep the atomic claim working during that
+    // window; the next completed attempt will write the typed status.
+    try {
+      const updated = await env.DB.prepare(
+        "UPDATE store_scout_log SET next_scout_at = ? WHERE place_id = ? AND next_scout_at < ?",
+      )
+        .bind(holdUntil, placeId, nowIso)
+        .run();
+      if ((updated.meta.changes ?? 0) > 0) {
+        return true;
+      }
+
+      const inserted = await env.DB.prepare(
+        `INSERT OR IGNORE INTO store_scout_log
+          (place_id, store_name, website, retailer_id, scouted_at, next_scout_at, promotion_count)
+          VALUES (?, '', NULL, NULL, ?, ?, 0)`,
+      )
+        .bind(placeId, nowIso, holdUntil)
+        .run();
+      return (inserted.meta.changes ?? 0) > 0;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -902,17 +930,23 @@ export async function recordStoreScout(
   const preservePromotionCount =
     outcomeOrDelay === "transient_failure" ||
     outcomeOrDelay === "permanent_unverified";
+  const outcomeStatus =
+    typeof outcomeOrDelay === "number" ? "empty" : outcomeOrDelay;
 
   try {
     await env.DB.prepare(
-      `INSERT INTO store_scout_log (place_id, store_name, website, retailer_id, scouted_at, next_scout_at, promotion_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO store_scout_log (
+          place_id, store_name, website, retailer_id, scouted_at,
+          next_scout_at, promotion_count, outcome_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (place_id) DO UPDATE SET
           store_name = excluded.store_name,
           website = excluded.website,
           retailer_id = excluded.retailer_id,
           scouted_at = excluded.scouted_at,
           next_scout_at = excluded.next_scout_at,
+          outcome_status = excluded.outcome_status,
           promotion_count = CASE
             WHEN ? = 1 THEN store_scout_log.promotion_count
             ELSE excluded.promotion_count
@@ -926,6 +960,7 @@ export async function recordStoreScout(
         new Date(nowMs).toISOString(),
         nextScoutAt,
         promotionCount,
+        outcomeStatus,
         preservePromotionCount ? 1 : 0,
       )
       .run();
@@ -948,7 +983,58 @@ export async function recordStoreScout(
       )
       .run();
   } catch {
-    // Best-effort.
+    // Backward-compatible write for the short migration window and old test
+    // fixtures. The outcome becomes available as soon as migration 0042 lands.
+    try {
+      await env.DB.prepare(
+        `INSERT INTO store_scout_log (
+            place_id, store_name, website, retailer_id, scouted_at,
+            next_scout_at, promotion_count
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (place_id) DO UPDATE SET
+            store_name = excluded.store_name,
+            website = excluded.website,
+            retailer_id = excluded.retailer_id,
+            scouted_at = excluded.scouted_at,
+            next_scout_at = excluded.next_scout_at,
+            promotion_count = CASE
+              WHEN ? = 1 THEN store_scout_log.promotion_count
+              ELSE excluded.promotion_count
+            END`,
+      )
+        .bind(
+          store.placeId,
+          store.name,
+          store.website ?? null,
+          store.retailerId ?? null,
+          new Date(nowMs).toISOString(),
+          nextScoutAt,
+          promotionCount,
+          preservePromotionCount ? 1 : 0,
+        )
+        .run();
+      await env.DB.prepare(
+        `UPDATE discovered_stores
+          SET website = COALESCE(?, website),
+            last_scout_at = ?, next_scout_at = ?, promotion_count = CASE
+            WHEN ? = 1 THEN promotion_count
+            ELSE ?
+          END
+          WHERE place_id = ?`,
+      )
+        .bind(
+          store.website ?? null,
+          new Date(nowMs).toISOString(),
+          nextScoutAt,
+          preservePromotionCount ? 1 : 0,
+          promotionCount,
+          store.placeId,
+        )
+        .run();
+    } catch {
+      // Best-effort.
+    }
   }
 }
 

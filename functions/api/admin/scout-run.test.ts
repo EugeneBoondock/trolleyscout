@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getStructuredRetailerSources: vi.fn(
     (): Array<{ countryCode?: string; key: string }> => [],
   ),
+  readLeafletSnapshot: vi.fn(),
+  refreshLeafletCache: vi.fn(),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
 }))
@@ -25,6 +27,14 @@ vi.mock('../../_shared/storeScout', () => ({
 
 vi.mock('../../_shared/registryOnlineScout', () => ({
   buildRegistryOnlineStores: mocks.buildRegistryOnlineStores,
+}))
+
+vi.mock('../../_shared/dealSnapshotStore', () => ({
+  readLeafletSnapshot: mocks.readLeafletSnapshot,
+}))
+
+vi.mock('../discovery', () => ({
+  refreshLeafletCache: mocks.refreshLeafletCache,
 }))
 
 import { onRequest } from './scout-run'
@@ -47,10 +57,33 @@ const registryStores = [
   { countryCode: 'ZW', name: 'Gain Cash & Carry', placeId: 'online:zw:gaincash.co.zw' },
 ]
 
+const currentCatalogues = [
+  {
+    capturedAt: '2026-07-27T10:00:00.000Z',
+    countryCode: 'ZA',
+    id: 'boxer-current',
+    name: 'Boxer catalogue',
+    retailerId: 'boxer',
+    retailerName: 'Boxer',
+    url: 'https://www.boxer.co.za/promotions/current',
+  },
+  {
+    capturedAt: '2026-07-27T10:00:00.000Z',
+    countryCode: 'ZA',
+    id: 'shoprite-current',
+    name: 'Shoprite catalogue',
+    retailerId: 'shoprite',
+    retailerName: 'Shoprite',
+    url: 'https://www.shoprite.co.za/catalogues/current',
+  },
+]
+
 describe('/api/admin/scout-run', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
+    mocks.readLeafletSnapshot.mockResolvedValue(undefined)
+    mocks.refreshLeafletCache.mockResolvedValue(currentCatalogues)
     mocks.runStructuredRetailerFeedScout.mockResolvedValue(feedResult)
     mocks.scoutNearbyStores.mockResolvedValue(undefined)
     mocks.buildRegistryOnlineStores.mockReturnValue(registryStores)
@@ -114,10 +147,45 @@ describe('/api/admin/scout-run', () => {
 
     expect(response.status).toBe(422)
     expect(await response.json()).toMatchObject({
-      data: { issues: ['Provide a lane of all, feeds, or stores.'] },
+      data: { issues: ['Provide a lane of all, catalogues, feeds, or stores.'] },
     })
     expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
     expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('refreshes online catalogue sources without running the deal lanes', async () => {
+    signedInAs('admin-1', 'admin', 'ZA')
+
+    const response = await invoke(run({ lane: 'catalogues' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
+    expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+    expect(mocks.readLeafletSnapshot).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshLeafletCache).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      {
+        targets: expect.arrayContaining([
+          expect.objectContaining({ retailerId: 'boxer' }),
+          expect.objectContaining({ sourceId: 'catalogue-specials-za' }),
+        ]),
+      },
+    )
+    expect(await response.json()).toMatchObject({
+      data: {
+        catalogues: {
+          catalogueCount: 2,
+          failed: false,
+          ran: true,
+          sourceCount: expect.any(Number),
+        },
+        feeds: { ran: false },
+        lane: 'catalogues',
+        message: '2 catalogues refreshed.',
+        stores: { ran: false },
+      },
+    })
   })
 
   it('runs only the structured retailer feeds for the feeds lane, with a bounded request cap', async () => {
@@ -195,7 +263,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         lane: 'all',
-        message: '10 sources checked, 240 deals added, 2 stores swept, 1 still to sweep.',
+        message: '10 sources checked, 240 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed.',
       },
     })
   })
@@ -339,7 +407,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         feeds: { failed: true, message: 'Takealot refused the request.', ran: true },
-        message: '0 sources checked, 0 deals added, 2 stores swept, 1 still to sweep. The retailer feeds could not run.',
+        message: '0 sources checked, 0 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed. The retailer feeds could not run.',
         stores: { failed: false, ran: true },
       },
     })

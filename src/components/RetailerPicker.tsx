@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { CaretDown, Check, MagnifyingGlass, X } from '@phosphor-icons/react'
 import clsx from 'clsx'
+import type { RetailerOfferStatus } from '../types'
 
 export const ALL_RETAILERS = 'all'
 
@@ -16,6 +17,7 @@ export interface RetailerPickerOption {
   count: number
   id: string
   name: string
+  offerStatus?: RetailerOfferStatus
 }
 
 interface RetailerPickerSection {
@@ -90,19 +92,38 @@ function optionContentCount(option: RetailerPickerOption): number {
 function optionCountLabels(option: RetailerPickerOption): string[] {
   const catalogueCount = option.catalogueCount ?? 0
   const labels: string[] = []
-  if (option.count > 0 || catalogueCount === 0) {
+  if (option.count > 0) {
     labels.push(`${option.count} ${option.count === 1 ? 'deal' : 'deals'}`)
   }
   if (catalogueCount > 0) {
     labels.push(`${catalogueCount} ${catalogueCount === 1 ? 'catalogue' : 'catalogues'}`)
   }
+  if (labels.length === 0) {
+    labels.push(offerStatusLabel(option.offerStatus))
+  }
   return labels
 }
 
 function visibleOptionCount(option: RetailerPickerOption): string {
-  return option.catalogueCount
-    ? optionCountLabels(option).join(' · ')
-    : String(option.count)
+  return optionCountLabels(option).join(' · ')
+}
+
+function offerStatusLabel(status?: RetailerOfferStatus): string {
+  switch (status) {
+    case 'available':
+      return 'Offers found'
+    case 'checking':
+      return 'Checking source'
+    case 'not-checked':
+      return 'Queued for checking'
+    case 'temporarily-unavailable':
+      return 'Source unavailable'
+    case 'unverified':
+      return 'Source needs verification'
+    case 'no-current-offers':
+    default:
+      return 'No current offers'
+  }
 }
 
 /**
@@ -342,7 +363,7 @@ export function RetailerPicker({
       >
         <span className="retailer-picker-trigger-name">{selected.name}</span>
         <span className="retailer-picker-count">{visibleOptionCount(selected)}</span>
-        {!selected.catalogueCount && (
+        {!selected.catalogueCount && selected.count > 0 && (
           <span className="sr-only">{selected.count === 1 ? 'deal' : 'deals'}</span>
         )}
         <CaretDown aria-hidden="true" size={15} weight="bold" />

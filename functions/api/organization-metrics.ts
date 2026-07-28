@@ -23,7 +23,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
   const requestedDays = Number(new URL(request.url).searchParams.get('days'))
-  const rangeDays = requestedDays === 7 || requestedDays === 90 ? requestedDays : 30
+  const rangeDays = requestedDays === 1 || requestedDays === 7 ? requestedDays : 30
   return json(
     { metrics: await readOrganizationMetrics(env, account.id, rangeDays) },
     { headers: privateHeaders },

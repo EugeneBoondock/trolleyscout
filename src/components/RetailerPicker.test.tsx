@@ -58,7 +58,7 @@ describe('RetailerPicker', () => {
     renderPicker()
     const trigger = screen.getByRole('button', { name: /All retailers/i })
 
-    expect(within(trigger).getByText(String(totalCount))).toBeTruthy()
+    expect(within(trigger).getByText(`${totalCount} deals`)).toBeTruthy()
 
     const listbox = openPanelListbox()
     expect(within(listbox).getByRole('option', { name: `All retailers, ${totalCount} deals` })).toBeTruthy()
@@ -89,6 +89,30 @@ describe('RetailerPicker', () => {
         name: `All retailers, ${totalCount} deals, 2 catalogues`,
       }),
     ).toBeTruthy()
+  })
+
+  it('shows the source state instead of a misleading zero deal count', () => {
+    renderPicker({
+      options: [
+        ...options,
+        {
+          count: 0,
+          id: 'zimoco',
+          name: 'ZIMOCO',
+          offerStatus: 'temporarily-unavailable',
+        },
+      ],
+      value: 'zimoco',
+    })
+
+    const trigger = screen.getByRole('button', { name: /ZIMOCO/i })
+    expect(within(trigger).getByText('Source unavailable')).toBeTruthy()
+
+    fireEvent.click(trigger)
+    expect(
+      screen.getByRole('option', { name: 'ZIMOCO, Source unavailable' }),
+    ).toBeTruthy()
+    expect(screen.queryByText('0 deals')).toBeNull()
   })
 
   it('groups the busiest stores first and the rest under A-Z headings', () => {

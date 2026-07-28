@@ -113,12 +113,49 @@ export const memberPlans: MemberPlan[] = [
     prices: randPrices('organization'),
     statusText: 'Application required',
   },
+  {
+    badge: 'For developers',
+    description:
+      'Build with Trolley Scout shopping data and manage your business campaigns programmatically.',
+    developer: {
+      callsPerMinute: 120,
+      callsPerMonth: 25_000,
+    },
+    features: [
+      'Everything in Organisation',
+      'OAuth access to the Trolley Scout MCP server',
+      'API keys for the developer REST API',
+      '25,000 authenticated calls every month',
+      'Create and manage campaigns for your approved business',
+    ],
+    id: 'developers',
+    isPaid: true,
+    limits: {
+      basketItems: 1000,
+      savedDeals: 1000,
+      savedSources: 1000,
+      visibleCatalogues: 5_000,
+      visibleDeals: 1_000_000,
+    },
+    merchant: {
+      includedAdsPerMonth: 3,
+      livePromos: 25,
+      shopProfiles: 1,
+    },
+    name: 'Developers',
+    prices: randPrices('developers'),
+    statusText: 'Application required',
+  },
 ]
 
 // Merchant features are gated on the plan carrying an allowance rather than on
 // an id comparison, so a future tier grants them by declaring one.
 export function getPlanMerchantAllowance(planId: MemberPlanId) {
   return getMemberPlan(planId).merchant
+}
+
+export function getDeveloperAllowance(planId: MemberPlanId) {
+  return getMemberPlan(planId).developer
 }
 
 export function getMemberPlan(planId: MemberPlanId) {

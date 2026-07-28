@@ -87,7 +87,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
     const requestedPlan = memberPlans.find((plan) => plan.id === body.planId)
 
-    if (requestedPlan?.id === 'organization') {
+    if (requestedPlan?.id === 'organization' || requestedPlan?.id === 'developers') {
       const applications = session.account
         ? await listMemberOrganizationApplications(env, session.account.id)
         : []

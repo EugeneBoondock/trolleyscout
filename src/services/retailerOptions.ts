@@ -1,10 +1,16 @@
-import type { DiscoveredDeal, StoreLeaflet } from '../types'
+import type {
+  DiscoveredDeal,
+  Retailer,
+  RetailerOfferStatus,
+  StoreLeaflet,
+} from '../types'
 
 interface RetailerPickerOption {
   catalogueCount?: number
   count: number
   id: string
   name: string
+  offerStatus?: RetailerOfferStatus
 }
 
 interface MutableRetailerOption extends RetailerPickerOption {
@@ -14,13 +20,32 @@ interface MutableRetailerOption extends RetailerPickerOption {
 export function buildRetailerPickerOptions(
   deals: readonly DiscoveredDeal[],
   leaflets: readonly StoreLeaflet[],
+  retailerCatalog: readonly Pick<Retailer, 'id' | 'name' | 'offerStatus'>[] = [],
 ): RetailerPickerOption[] {
   const options = new Map<string, MutableRetailerOption>()
   const retailerIdByName = new Map<string, string>()
 
+  for (const retailer of retailerCatalog) {
+    const id = retailer.id.trim()
+    const name = retailer.name.trim()
+    if (!id || !name) continue
+
+    options.set(id, {
+      catalogueCount: 0,
+      count: 0,
+      id,
+      name,
+      offerStatus: retailer.offerStatus,
+    })
+    retailerIdByName.set(retailerNameKey(name), id)
+  }
+
   for (const deal of deals) {
-    const id = deal.retailerId.trim()
+    const suppliedId = deal.retailerId.trim()
     const name = deal.retailerName.trim()
+    const id = options.has(suppliedId)
+      ? suppliedId
+      : retailerIdByName.get(retailerNameKey(name)) ?? suppliedId
     if (!id || !name) continue
 
     const option = options.get(id)

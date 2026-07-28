@@ -45,7 +45,12 @@
         },
         {
           "href": "https://trolleyscout.co.za/mcp",
-          "title": "Model Context Protocol server (Streamable HTTP, read-only tools, no auth)",
+          "title": "Model Context Protocol server (Streamable HTTP, OAuth, Developers subscription)",
+          "type": "application/json"
+        },
+        {
+          "href": "https://trolleyscout.co.za/api/developer/v1/deals",
+          "title": "Developer REST API (API key, scoped shopping data and owned business campaigns)",
           "type": "application/json"
         },
         {
@@ -68,6 +73,11 @@
         {
           "href": "https://trolleyscout.co.za/auth.md",
           "title": "How agents authenticate with Trolley Scout",
+          "type": "text/markdown"
+        },
+        {
+          "href": "https://trolleyscout.co.za/developers.md",
+          "title": "Developer API and MCP guide",
           "type": "text/markdown"
         },
         {

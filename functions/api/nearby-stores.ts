@@ -16,6 +16,7 @@ import {
 } from '../_shared/dealItemStore'
 import {
   readCachedStores,
+  readAllStorePromotions,
   readStorePromotions,
   writeCachedStores,
   writeDiscoveredStores,
@@ -25,6 +26,10 @@ import { scoutAreaStores } from '../_shared/areaScout'
 import { scoutNearbyStores } from '../_shared/storeScout'
 import { json, methodNotAllowed } from '../_shared/respond'
 import { countryFromCode, detectRequestCountry } from '../_shared/countryContext'
+import {
+  buildRegisteredCountryRetailers,
+  resolveCountryRetailer,
+} from '../_shared/countryRetailerScout'
 import { getMemberSession } from '../_shared/memberStore'
 
 // Public, cookieless data — safe to allow any origin so the mobile app (and
@@ -103,15 +108,31 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
 
   // Attach what we already know: known chains' live deals + valid leaflets, and
   // any promotions previously scouted for these stores (still within date).
-  const [snapshots, leafletSnapshot, promotionsByPlace, normalizedItems] = await Promise.all([
+  const [snapshots, leafletSnapshot, promotionRows, normalizedItems] = await Promise.all([
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
-    isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
-    readStorePromotions(env, stores.map((store) => store.placeId), nowIso, country.code),
+    readLeafletSnapshot(env),
+    isSouthAfrica
+      ? readStorePromotions(env, stores.map((store) => store.placeId), nowIso, country.code)
+      : readAllStorePromotions(env, nowIso, 1000, country.code),
     isSouthAfrica ? readNormalizedItemsForRetailers(env, stores, nowIso) : Promise.resolve([]),
   ])
 
   const dealsByRetailer = groupDealsByRetailer(snapshots)
-  const leafletsByRetailer = groupValidLeafletsByRetailer(leafletSnapshot?.leaflets ?? [], nowIso)
+  const countryLeaflets = (leafletSnapshot?.leaflets ?? []).filter(
+    (leaflet) => (leaflet.countryCode ?? 'ZA').toUpperCase() === country.code,
+  )
+  const leafletsByRetailer = groupValidLeafletsByRetailer(countryLeaflets, nowIso)
+  const registeredRetailers = isSouthAfrica
+    ? []
+    : buildRegisteredCountryRetailers(country)
+  const promotionsByPlace = isSouthAfrica
+    ? promotionRows as Map<string, StorePromotion[]>
+    : matchInternationalStorePromotions(
+        stores,
+        promotionRows as StorePromotion[],
+        country,
+        registeredRetailers,
+      )
 
   const results: StoreResult[] = stores.map((store) => {
     const normalizedDeals = selectNormalizedDealsForStore(
@@ -120,13 +141,22 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     ).map((item) => normalizedItemToDiscoveredDeal(item, store.name))
     const snapshotDeals = store.retailerId ? dealsByRetailer.get(store.retailerId) ?? [] : []
 
+    const promotions = promotionsByPlace.get(store.placeId) ?? []
+    const leaflets = store.retailerId
+      ? selectLeafletsForStore(leafletsByRetailer.get(store.retailerId) ?? [], store)
+      : matchInternationalStoreLeaflets(
+          store,
+          countryLeaflets,
+          country,
+          registeredRetailers,
+        )
+
     return {
       ...store,
       deals: mergeNearMeDeals(normalizedDeals, snapshotDeals).slice(0, MAX_DEALS_PER_STORE),
-      leaflets: store.retailerId
-        ? selectLeafletsForStore(leafletsByRetailer.get(store.retailerId) ?? [], store)
-        : [],
-      promotions: promotionsByPlace.get(store.placeId) ?? [],
+      leaflets,
+      promotionCount: promotions.length,
+      promotions,
       logoUrl: nearbyStoreLogoUrl(store),
     }
   })
@@ -163,6 +193,72 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       },
     },
     { headers: privateHeaders },
+  )
+}
+
+const INTERNATIONAL_PROMOTIONS_PER_STORE = 60
+
+export function matchInternationalStorePromotions(
+  stores: NearbyStore[],
+  promotions: StorePromotion[],
+  country: ReturnType<typeof countryFromCode>,
+  retailers = buildRegisteredCountryRetailers(country),
+): Map<string, StorePromotion[]> {
+  const exactByPlace = new Map<string, StorePromotion[]>()
+  const nationalByRetailer = new Map<string, StorePromotion[]>()
+
+  for (const promotion of promotions) {
+    const exact = exactByPlace.get(promotion.placeId) ?? []
+    exact.push(promotion)
+    exactByPlace.set(promotion.placeId, exact)
+
+    const retailer = resolveCountryRetailer(
+      promotion.storeName,
+      country,
+      retailers,
+    )
+    if (!retailer) continue
+    const national = nationalByRetailer.get(retailer.id) ?? []
+    national.push(promotion)
+    nationalByRetailer.set(retailer.id, national)
+  }
+
+  const byPlace = new Map<string, StorePromotion[]>()
+  for (const store of stores) {
+    const retailer = resolveCountryRetailer(store.name, country, retailers)
+    const candidates = [
+      ...(exactByPlace.get(store.placeId) ?? []),
+      ...(retailer ? nationalByRetailer.get(retailer.id) ?? [] : []),
+    ]
+    const seen = new Set<string>()
+    const selected = candidates.filter((promotion) => {
+      const key = `${promotion.kind}:${promotion.productUrl ?? promotion.sourceUrl}:${promotion.title}`
+        .toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, INTERNATIONAL_PROMOTIONS_PER_STORE)
+    if (selected.length > 0) {
+      byPlace.set(store.placeId, selected)
+    }
+  }
+  return byPlace
+}
+
+export function matchInternationalStoreLeaflets(
+  store: NearbyStore,
+  leaflets: StoreLeaflet[],
+  country: ReturnType<typeof countryFromCode>,
+  retailers = buildRegisteredCountryRetailers(country),
+): StoreLeaflet[] {
+  const storeRetailer = resolveCountryRetailer(store.name, country, retailers)
+  if (!storeRetailer) return []
+
+  return selectLeafletsForStore(
+    leaflets.filter((leaflet) =>
+      resolveCountryRetailer(leaflet.retailerName, country, retailers)?.id ===
+      storeRetailer.id),
+    store,
   )
 }
 

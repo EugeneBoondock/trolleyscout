@@ -1,5 +1,9 @@
 import type { DealSiteItem } from '../../src/services/dealSites'
-import type { DiscoveredDeal, DiscoverySourceResult } from '../../src/types'
+import type {
+  BusinessStoryPublication,
+  DiscoveredDeal,
+  DiscoverySourceResult,
+} from '../../src/types'
 import type { OrganizationPublication } from './organizationPublicationStore'
 
 const BUSINESS_PORTAL_URL = 'https://org.trolleyscout.co.za'
@@ -11,7 +15,7 @@ export function organizationPublicationsToDiscoveryDeals(
   return publications
     .filter((publication) =>
       publication.kind !== 'post' &&
-      (publication.placement === 'marketplace' || publication.placement === 'both'),
+      publicationDestinations(publication).includes('marketplace'),
     )
     .map((publication) => ({
       capturedAt: publication.updatedAt,
@@ -39,7 +43,7 @@ export function organizationPublicationsToWindowItems(
 ): DealSiteItem[] {
   return publications
     .filter((publication) =>
-      publication.placement === 'window' || publication.placement === 'both',
+      publicationDestinations(publication).includes('window'),
     )
     .map((publication) => ({
       capturedAt: publication.updatedAt,
@@ -112,4 +116,31 @@ function windowPublicationUrl(publicationId: string) {
   const url = new URL(WINDOW_URL)
   url.searchParams.set('publication', publicationId)
   return url.toString()
+}
+
+export function organizationPublicationsToStoryFrames(
+  publications: OrganizationPublication[],
+): BusinessStoryPublication[] {
+  return publications
+    .filter((publication) =>
+      publicationDestinations(publication).includes('stories') && Boolean(publication.imageUrl))
+    .map((publication) => ({
+      bodyText: publication.bodyText,
+      id: publication.id,
+      imageAlt: publication.imageAlt,
+      imageUrl: publication.imageUrl!,
+      offerText: publication.offerText,
+      organizationName: publication.organizationName,
+      organizationSlug: publication.organizationSlug,
+      priceText: money(publication.priceCents, publication.currencyCode),
+      targetUrl: publication.targetUrl ?? windowPublicationUrl(publication.id),
+      title: publication.title,
+    }))
+}
+
+function publicationDestinations(publication: OrganizationPublication) {
+  return publication.destinations ??
+    (publication.placement === 'both'
+      ? ['marketplace', 'window']
+      : [publication.placement])
 }

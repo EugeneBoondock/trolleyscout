@@ -320,6 +320,33 @@ describe('catalogue scan leases', () => {
 })
 
 describe('resumable catalogue scanning', () => {
+  it('returns online catalogue discoveries for the shared catalogue snapshot', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const discovered = leaflet({
+      documentUrl: 'https://retailer.test/catalogues/current.pdf',
+      id: 'online-current',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      url: 'https://retailer.test/catalogues',
+    })
+    const dependencies = catalogueDependencies({
+      cursors,
+      fetcher: vi.fn() as unknown as typeof fetch,
+    })
+    dependencies.claimLease = async () => false
+    dependencies.discoverExternalLeaflets = async () => [discovered]
+
+    const result = await runCatalogueScout(
+      { DB: {} as D1Database },
+      [],
+      dependencies,
+    )
+
+    expect(result.discoveredLeafletCount).toBe(1)
+    expect(result.discoveredLeaflets).toEqual([discovered])
+    expect(result.scannedDocumentCount).toBe(0)
+  })
+
   it('writes one normalized page per run, resumes, completes, and resets when the manifest changes', async () => {
     const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
     const pageRequests: string[] = []
@@ -818,7 +845,7 @@ function catalogueDependencies({
 }) {
   return {
     claimLease: async () => true,
-    discoverExternalLeaflets: async () => [],
+    discoverExternalLeaflets: async (): Promise<StoreLeaflet[]> => [],
     fetcher,
     now: () => '2026-07-16T10:00:00.000Z',
     ownerToken: 'owner-test',

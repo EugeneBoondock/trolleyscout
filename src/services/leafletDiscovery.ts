@@ -12,8 +12,10 @@ export interface LeafletTarget {
     | 'sixty60-api'
     | 'html-list'
     | 'html-pdf'
+    | 'official-pdf-index'
     | 'sitebuilder-pdf'
     | 'pnp-cms'
+    | 'tmpnp-catalogue'
   countryCode?: string
   sourceId?: string
   // For sixty60-api: the leaflet API base + a representative national store id.
@@ -25,9 +27,90 @@ export interface LeafletTarget {
   // For sitebuilder-pdf: every page that may link a leaflet PDF (a chain's
   // home page plus each branch page). Results are deduped by document URL.
   pageUrls?: string[]
+  // Verified same-site documents used when an official index blocks edge
+  // readers. The index is still checked so newly published files are found.
+  documents?: Array<{ name: string; url: string }>
 }
 
 export const leafletTargets: LeafletTarget[] = [
+  {
+    apiBase: 'https://api.tmpnponline.co.zw/api/v1/catalog',
+    countryCode: 'ZW',
+    kind: 'tmpnp-catalogue',
+    pageUrl: 'https://tmpnponline.co.zw/catalog',
+    retailerId: 'pick-n-pay',
+    retailerName: 'TM Pick n Pay',
+    sourceId: 'tm-pick-n-pay-zw',
+  },
+  {
+    countryCode: 'ZW',
+    kind: 'official-pdf-index',
+    origin: 'https://edgarsstores.co.zw',
+    pageUrl: 'https://edgarsstores.co.zw/',
+    documents: [{
+      name: 'Edgars 2026 Winter Catalogue',
+      url: 'https://edgarsstores.co.zw/images/Edgars%202026%20Winter%20Catalogue_web.pdf',
+    }],
+    retailerId: 'edgars-zimbabwe',
+    retailerName: 'Edgars Zimbabwe',
+    sourceId: 'edgars-zimbabwe',
+  },
+  {
+    countryCode: 'ZW',
+    kind: 'official-pdf-index',
+    origin: 'https://techafrica.co.zw',
+    pageUrl: 'https://techafrica.co.zw/',
+    documents: [
+      {
+        name: 'Tech Africa Product Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Tech-Africa-Product-Catalogue.pdf',
+      },
+      {
+        name: 'Tech Africa Generators Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Tech-Africa-Generators-Catalogue.pdf',
+      },
+      {
+        name: 'Sterling AC Submersible Water Pumps Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Sterling-AC-Submersible-Water-Pumps-Catalogue.pdf',
+      },
+      {
+        name: 'Sterling Solar DC Submersible Water Pumps Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Sterling-Solar-DC-Submersible-Water-Pumps-Catalogue.pdf',
+      },
+      {
+        name: 'Tech Africa Water Pumps Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Tech-Africa-Water-Pumps-Catalogue.pdf',
+      },
+      {
+        name: 'TechAir Compressors Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/TechAir-Compressors-Catalogue.pdf',
+      },
+      {
+        name: 'Tech Africa Construction Equipment Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/02/Tech-Africa-Construction-Equipment-Catalogue.pdf',
+      },
+      {
+        name: 'Sterling Booster Dewatering Swimming Pool Pumps Catalogue',
+        url: 'https://techafrica.co.zw/wp-content/uploads/2025/03/Sterling-Booster-Dewatering-Swimming-Pool-Pumps-Catalogue.pdf',
+      },
+    ],
+    retailerId: 'tech-africa-zimbabwe',
+    retailerName: 'Tech Africa',
+    sourceId: 'tech-africa-zimbabwe',
+  },
+  {
+    countryCode: 'ZW',
+    documents: [{
+      name: 'College Press Zimbabwe Catalogue',
+      url: 'https://www.collegepress.co.zw/files/Zimbabwe%20Catalogue%20%28005%29.pdf',
+    }],
+    kind: 'official-pdf-index',
+    origin: 'https://www.collegepress.co.zw',
+    pageUrl: 'https://www.collegepress.co.zw/catalogues-and-brochures',
+    retailerId: 'college-press-zimbabwe',
+    retailerName: 'College Press Zimbabwe',
+    sourceId: 'college-press-zimbabwe',
+  },
   {
     countryCode: 'ZA',
     kind: 'catalogue-directory',
@@ -112,6 +195,214 @@ export const leafletTargets: LeafletTarget[] = [
     retailerName: 'Frontline Hyper',
   },
 ]
+
+const TMPNP_CATALOGUE_HOST = 'cdn-s7m8bx8sebjz.vultrcdn.com'
+const TMPNP_CATALOGUE_PAGE_SIZE = { height: 1280, width: 905 } as const
+
+// TM Pick n Pay publishes one current leaflet as a set of full-resolution
+// page images. Its storefront redirects datacentre requests, so the discovery
+// worker reads the public Jina rendering and rebuilds the leaflet as one
+// multi-page catalogue instead of five unrelated single-page cards.
+export function extractTmpnpCatalogues(
+  target: LeafletTarget,
+  content: string,
+  capturedAt: string,
+): StoreLeaflet[] {
+  const title = /^####\s+(.+?)\s*$/im.exec(content)?.[1]?.trim()
+  const validFromMatch =
+    /\bValid:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/i.exec(content)
+  const validToMatch =
+    /\bDeadline:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/i.exec(content)
+  if (!title || !validFromMatch || !validToMatch) {
+    return []
+  }
+
+  const validFrom = longDateToIso(
+    validFromMatch[1],
+    validFromMatch[2],
+    validFromMatch[3],
+  )
+  const validTo = longDateToIso(
+    validToMatch[1],
+    validToMatch[2],
+    validToMatch[3],
+  )
+  if (!validFrom || !validTo || validTo < capturedAt.slice(0, 10)) {
+    return []
+  }
+
+  const pages = Array.from(
+    content.matchAll(/\[Page\s+(\d+)\]\((https?:\/\/[^)\s]+)\)/gi),
+  )
+    .map((match) => ({
+      imageUrl: trustedTmpnpCatalogueImage(match[2], 'catalog_downloads'),
+      pageNumber: Number(match[1]),
+    }))
+    .filter(
+      (page): page is { imageUrl: string; pageNumber: number } =>
+        Boolean(page.imageUrl) &&
+        Number.isSafeInteger(page.pageNumber) &&
+        page.pageNumber > 0,
+    )
+    .sort((left, right) => left.pageNumber - right.pageNumber)
+    .map((page) => ({
+      ...TMPNP_CATALOGUE_PAGE_SIZE,
+      imageUrl: page.imageUrl,
+      pageNumber: page.pageNumber,
+    }))
+
+  if (pages.length < 2) {
+    return []
+  }
+
+  const cover = Array.from(
+    content.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi),
+  )
+    .map((match) => trustedTmpnpCatalogueImage(match[1], 'catalog_images'))
+    .find(Boolean)
+
+  return [{
+    capturedAt,
+    countryCode: target.countryCode ?? 'ZW',
+    id: leafletId(target.retailerId, `${validFrom}:${pages[0].imageUrl}`),
+    imageUrl: cover ?? pages[0].imageUrl,
+    name: title,
+    pages,
+    priceScope: { type: 'national' },
+    retailerId: target.retailerId,
+    retailerName: target.retailerName,
+    retailerUrl: target.pageUrl,
+    sourceId: target.sourceId,
+    sourceLabel: 'Official TM Pick n Pay catalogue',
+    url: target.pageUrl ?? pages[0].imageUrl,
+    validFrom,
+    validTo,
+  }]
+}
+
+interface TmpnpApiCatalogue {
+  expiry_date?: unknown
+  formatted_expiry_date?: unknown
+  formatted_start_date?: unknown
+  id?: unknown
+  image_path?: unknown
+  locations?: unknown
+  start_date?: unknown
+  title?: unknown
+}
+
+interface TmpnpApiPage {
+  file_path?: unknown
+  location_name?: unknown
+}
+
+export function extractTmpnpApiCatalogues(
+  target: LeafletTarget,
+  payload: unknown,
+  capturedAt: string,
+): StoreLeaflet[] {
+  if (!Array.isArray(payload)) {
+    return []
+  }
+
+  return payload.flatMap((value): StoreLeaflet[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+    const row = value as TmpnpApiCatalogue
+    const title = typeof row.title === 'string' ? row.title.trim() : ''
+    const validFrom = apiDateToIso(row.start_date) ??
+      apiLongDateToIso(row.formatted_start_date)
+    const validTo = apiDateToIso(row.expiry_date) ??
+      apiLongDateToIso(row.formatted_expiry_date)
+    if (!title || !validFrom || !validTo || validTo < capturedAt.slice(0, 10)) {
+      return []
+    }
+
+    const pages = (Array.isArray(row.locations) ? row.locations : [])
+      .flatMap((value): Array<{ imageUrl: string; pageNumber: number }> => {
+        if (!value || typeof value !== 'object') {
+          return []
+        }
+        const page = value as TmpnpApiPage
+        const pageNumber = typeof page.location_name === 'string'
+          ? Number(/\bPage\s+(\d+)\b/i.exec(page.location_name)?.[1])
+          : Number.NaN
+        const imageUrl = trustedTmpnpCatalogueImage(
+          typeof page.file_path === 'string' ? page.file_path : undefined,
+          'catalog_downloads',
+        )
+        return imageUrl && Number.isSafeInteger(pageNumber) && pageNumber > 0
+          ? [{ imageUrl, pageNumber }]
+          : []
+      })
+      .sort((left, right) => left.pageNumber - right.pageNumber)
+      .map((page) => ({ ...TMPNP_CATALOGUE_PAGE_SIZE, ...page }))
+
+    if (pages.length < 2) {
+      return []
+    }
+
+    const cover = trustedTmpnpCatalogueImage(
+      typeof row.image_path === 'string' ? row.image_path : undefined,
+      'catalog_images',
+    )
+    const identity = `${String(row.id ?? '')}:${validFrom}:${pages[0].imageUrl}`
+    return [{
+      capturedAt,
+      countryCode: target.countryCode ?? 'ZW',
+      id: leafletId(target.retailerId, identity),
+      imageUrl: cover ?? pages[0].imageUrl,
+      name: title,
+      pages,
+      priceScope: { type: 'national' },
+      retailerId: target.retailerId,
+      retailerName: target.retailerName,
+      retailerUrl: target.pageUrl,
+      sourceId: target.sourceId,
+      sourceLabel: 'Official TM Pick n Pay catalogue',
+      url: target.pageUrl ?? pages[0].imageUrl,
+      validFrom,
+      validTo,
+    }]
+  })
+}
+
+function apiDateToIso(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  return /^(\d{4}-\d{2}-\d{2})(?:\s|T|$)/.exec(value.trim())?.[1]
+}
+
+function apiLongDateToIso(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const match = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/.exec(value.trim())
+  return match ? longDateToIso(match[1], match[2], match[3]) : undefined
+}
+
+function trustedTmpnpCatalogueImage(
+  value: string | undefined,
+  directory: 'catalog_downloads' | 'catalog_images',
+): string | undefined {
+  try {
+    const url = new URL(value ?? '')
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === TMPNP_CATALOGUE_HOST &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
+      new RegExp(`^/${directory}/[A-Za-z0-9_-]+\\.jpe?g$`, 'i').test(url.pathname)
+    )
+      ? url.toString()
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const MONTHS: Record<string, string> = {
   january: 'January',
@@ -473,6 +764,112 @@ export function extractPdfLeaflets(
   }
 
   return leaflets
+}
+
+// Some Zimbabwe retailers publish real multi-page PDF catalogues from their
+// own home page. Keep only same-site PDF links labelled as catalogues, and
+// drop documents whose title names a year older than the current one.
+export function extractOfficialPdfIndexLeaflets(
+  target: LeafletTarget,
+  html: string,
+  capturedAt: string,
+  limit = 24,
+): StoreLeaflet[] {
+  const leaflets: StoreLeaflet[] = []
+  const seen = new Set<string>()
+  const currentYear = Number(capturedAt.slice(0, 4))
+  const links = [
+    ...Array.from(
+      html.matchAll(
+        /<a\b[^>]*\bhref=["']([^"']+?\.pdf(?:\?[^"']*)?)["'][^>]*>([\s\S]*?)<\/a>/gi,
+      ),
+      (match) => ({ href: match[1], label: match[2] }),
+    ),
+    ...Array.from(
+      html.matchAll(
+        /\[([^\]]+)\]\((https?:\/\/[^)\s]+?\.pdf(?:\?[^)\s]*)?)\)/gi,
+      ),
+      (match) => ({ href: match[2], label: match[1] }),
+    ).filter((link) => !link.label.trim().startsWith('![')),
+  ]
+
+  for (const link of links) {
+    if (leaflets.length >= limit) {
+      break
+    }
+    const documentUrl = trustedSameOriginPdf(
+      link.href,
+      target.origin ?? target.pageUrl,
+    )
+    if (!documentUrl || seen.has(documentUrl)) {
+      continue
+    }
+
+    const linkText = cleanText(link.label)
+    const filename = decodeURIComponent(new URL(documentUrl).pathname.split('/').pop() ?? '')
+    const descriptor = `${linkText} ${filename}`.trim()
+    if (!/\b(?:catalogue|catalog|lookbook|brochure)\b/i.test(descriptor)) {
+      continue
+    }
+
+    const namedYear = /\b(20\d{2})\b/.exec(`${linkText} ${filename}`)?.[1]
+    if (
+      namedYear &&
+      Number.isSafeInteger(currentYear) &&
+      Number(namedYear) < currentYear
+    ) {
+      continue
+    }
+
+    seen.add(documentUrl)
+    const name = linkText || cleanPdfCatalogueName(filename, target.retailerName)
+    leaflets.push({
+      capturedAt,
+      countryCode: target.countryCode,
+      documentUrl,
+      id: leafletId(target.retailerId, documentUrl),
+      name,
+      priceScope: { type: 'national' },
+      retailerId: target.retailerId,
+      retailerName: target.retailerName,
+      retailerUrl: target.pageUrl,
+      sourceId: target.sourceId,
+      sourceLabel: `Official ${target.retailerName} catalogue`,
+      url: documentUrl,
+    })
+  }
+
+  return leaflets
+}
+
+function trustedSameOriginPdf(
+  value: string | undefined,
+  origin: string | undefined,
+): string | undefined {
+  try {
+    const base = new URL(origin ?? '')
+    const url = new URL(value ?? '', base)
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      url.origin === base.origin &&
+      /\.pdf$/i.test(url.pathname) &&
+      !url.username &&
+      !url.password
+    )
+      ? url.toString()
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function cleanPdfCatalogueName(filename: string, retailerName: string): string {
+  const cleaned = filename
+    .replace(/\.pdf$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || `${retailerName} catalogue`
 }
 
 function pdfLeafletDetails(

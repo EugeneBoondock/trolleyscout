@@ -5,7 +5,13 @@ import {
   getSourceKinds,
 } from '../../src/services/sourceEngine'
 import { retailerLogoUrl } from '../../src/services/storeLogos'
-import type { Retailer, RetailerGroup, SourceKind, StoreLeaflet } from '../../src/types'
+import type {
+  Retailer,
+  RetailerGroup,
+  RetailerOfferStatus,
+  SourceKind,
+  StoreLeaflet,
+} from '../../src/types'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
@@ -89,8 +95,119 @@ async function internationalPayload(
   env: TrolleyScoutEnv,
   country: ReturnType<typeof detectRequestCountry>,
 ) {
-  const retailers = await getCountryRetailers(env, country)
+  const [countryRetailers, snapshot, scoutRows] = await Promise.all([
+    getCountryRetailers(env, country),
+    readLeafletSnapshot(env),
+    readCountryStoreScoutRows(env, country.code),
+  ])
+  const retailers = mergeRetailerScoutStatuses(
+    mergeCatalogueRetailers(
+      countryRetailers,
+      snapshot?.leaflets ?? [],
+      country.code,
+    ),
+    scoutRows,
+  )
   return { retailers, summary: countryRetailerSummary(retailers) }
+}
+
+export interface StoreScoutStatusRow {
+  next_scout_at: string
+  outcome_status: string
+  promotion_count: number
+  scouted_at: string
+  store_name: string
+  website: string | null
+}
+
+async function readCountryStoreScoutRows(
+  env: TrolleyScoutEnv,
+  countryCode: string,
+): Promise<StoreScoutStatusRow[]> {
+  if (!env.DB) return []
+
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT
+          store_name, website, scouted_at, next_scout_at,
+          promotion_count, outcome_status
+        FROM store_scout_log
+        WHERE place_id LIKE ?
+        ORDER BY scouted_at DESC`,
+    )
+      .bind(`online:${countryCode.trim().toLowerCase()}:%`)
+      .all<StoreScoutStatusRow>()
+    return rows.results
+  } catch {
+    // Migration 0042 may not have reached a rolling deployment yet.
+    return []
+  }
+}
+
+export function mergeRetailerScoutStatuses(
+  retailers: Retailer[],
+  rows: StoreScoutStatusRow[],
+  nowMs = Date.now(),
+): Retailer[] {
+  const rowsByHost = new Map<string, StoreScoutStatusRow[]>()
+
+  for (const row of rows) {
+    const host = row.website ? sourceHost(row.website) : undefined
+    if (!host) continue
+    const matches = rowsByHost.get(host) ?? []
+    matches.push(row)
+    rowsByHost.set(host, matches)
+  }
+
+  return retailers.map((retailer) => {
+    const retailerName = identityKey(retailer.name)
+    const candidates = retailer.sources.flatMap((source) => {
+      const host = sourceHost(source.url)
+      return host ? rowsByHost.get(host) ?? [] : []
+    })
+    const row = candidates.find(
+      (candidate) => identityKey(candidate.store_name) === retailerName,
+    ) ?? candidates[0]
+
+    if (!row) {
+      return { ...retailer, offerStatus: 'not-checked' }
+    }
+
+    return {
+      ...retailer,
+      offerStatus: retailerOfferStatus(row, nowMs),
+      offersCheckedAt: row.scouted_at,
+    }
+  })
+}
+
+function retailerOfferStatus(
+  row: StoreScoutStatusRow,
+  nowMs: number,
+): RetailerOfferStatus {
+  if (Number(row.promotion_count) > 0) return 'available'
+
+  switch (row.outcome_status) {
+    case 'checking':
+      return Date.parse(row.next_scout_at) > nowMs ? 'checking' : 'not-checked'
+    case 'empty':
+    case 'success':
+      return 'no-current-offers'
+    case 'transient_failure':
+      return 'temporarily-unavailable'
+    case 'permanent_unverified':
+      return 'unverified'
+    default:
+      return 'not-checked'
+  }
+}
+
+function sourceHost(value: string): string | undefined {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '').toLowerCase()
+  } catch {
+    return undefined
+  }
 }
 
 async function southAfricanPayload(env: TrolleyScoutEnv) {

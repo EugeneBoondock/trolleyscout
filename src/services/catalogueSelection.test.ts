@@ -21,6 +21,43 @@ function leaflet(overrides: Partial<StoreLeaflet> = {}): StoreLeaflet {
 }
 
 describe('selectCurrentCatalogues', () => {
+  it('drops a named prior-year PDF but keeps an evergreen current index PDF', () => {
+    const result = selectCurrentCatalogues([
+      leaflet({
+        documentUrl: 'https://edgars.test/images/2025-Edgars-Catalogue.pdf',
+        id: 'old-edgars',
+        name: 'Edgars 2025 Catalogue',
+        validFrom: undefined,
+        validTo: undefined,
+      }),
+      leaflet({
+        documentUrl:
+          'https://tech.test/wp-content/uploads/2025/03/Tech-Africa-Product-Catalogue.pdf',
+        id: 'tech-africa',
+        name: 'Tech Africa Product Catalogue',
+        retailerId: 'tech-africa',
+        retailerName: 'Tech Africa',
+        validFrom: undefined,
+        validTo: undefined,
+      }),
+    ], NOW)
+
+    expect(result.map((item) => item.id)).toEqual(['tech-africa'])
+  })
+
+  it('deduplicates the same PDF across www and apex hosts', () => {
+    const first = leaflet({
+      documentUrl: 'https://www.store.test/catalogues/current.pdf',
+      id: 'www-copy',
+    })
+    const second = leaflet({
+      documentUrl: 'https://store.test/catalogues/current.pdf',
+      id: 'apex-copy',
+    })
+
+    expect(selectCurrentCatalogues([first, second])).toHaveLength(1)
+  })
+
   it('removes expired catalogues', () => {
     expect(selectCurrentCatalogues([
       leaflet({ id: 'expired', validTo: '2026-07-26' }),

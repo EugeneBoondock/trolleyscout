@@ -68,6 +68,50 @@ export async function revealEmail(env: TrolleyScoutEnv, stored: string): Promise
   return new TextDecoder().decode(plaintext)
 }
 
+export function normalizePhone(phone: string): string {
+  const normalized = phone.trim().replace(/[\s().-]/g, '')
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) throw new Error('Use an international WhatsApp number, for example +263771234567.')
+  return normalized
+}
+
+export async function phoneLookup(env: TrolleyScoutEnv, phone: string): Promise<string> {
+  return lookupValue(env, normalizePhone(phone), new TextEncoder().encode('phone-lookup-hmac'))
+}
+
+export async function identityOtpHash(env: TrolleyScoutEnv, destinationLookup: string, code: string): Promise<string> {
+  return lookupValue(env, `${destinationLookup}:${code}`, new TextEncoder().encode('identity-otp-hmac'))
+}
+
+export async function protectPhone(env: TrolleyScoutEnv, phone: string): Promise<string> {
+  return protectValue(env, normalizePhone(phone), 'enc:phone:v1:', new TextEncoder().encode('phone-aes-gcm'), new TextEncoder().encode('trolley-scout:phone:v1'))
+}
+
+export async function revealPhone(env: TrolleyScoutEnv, stored: string): Promise<string> {
+  return revealValue(env, stored, 'enc:phone:v1:', new TextEncoder().encode('phone-aes-gcm'), new TextEncoder().encode('trolley-scout:phone:v1'))
+}
+
+async function lookupValue(env: TrolleyScoutEnv, value: string, label: Uint8Array): Promise<string> {
+  const key = await deriveKey(env, label, 'HMAC', ['sign'])
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value))
+  return bytesToBase64Url(new Uint8Array(signature))
+}
+
+async function protectValue(env: TrolleyScoutEnv, value: string, prefix: string, label: Uint8Array, aad: Uint8Array): Promise<string> {
+  const key = await deriveKey(env, label, 'AES-GCM', ['encrypt'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ciphertext = await crypto.subtle.encrypt({ additionalData: aad, iv, name: 'AES-GCM' }, key, new TextEncoder().encode(value))
+  return `${prefix}${bytesToBase64Url(iv)}:${bytesToBase64Url(new Uint8Array(ciphertext))}`
+}
+
+async function revealValue(env: TrolleyScoutEnv, stored: string, prefix: string, label: Uint8Array, aad: Uint8Array): Promise<string> {
+  if (!stored.startsWith(prefix)) return stored
+  const parts = stored.split(':')
+  if (parts.length !== 4 || !parts[2] || !parts[3]) throw new Error('Stored phone ciphertext is malformed.')
+  const key = await deriveKey(env, label, 'AES-GCM', ['decrypt'])
+  const plaintext = await crypto.subtle.decrypt({ additionalData: aad, iv: base64UrlToBytes(parts[2]), name: 'AES-GCM' }, key, base64UrlToBytes(parts[3]))
+  return new TextDecoder().decode(plaintext)
+}
+
 async function deriveKey(
   env: TrolleyScoutEnv,
   label: Uint8Array,

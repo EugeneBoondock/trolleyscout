@@ -21,21 +21,25 @@ export interface LocalPlanPrice {
 // currency.
 const PRICE_LISTS: Record<string, Record<PaidPlanId, LocalPlanPrice>> = {
   EUR: {
+    developers: { annual: 1990, monthly: 199 },
     household: { annual: 100, monthly: 10 },
     organization: { annual: 990, monthly: 99 },
     scout: { annual: 50, monthly: 5 },
   },
   GBP: {
+    developers: { annual: 1790, monthly: 179 },
     household: { annual: 90, monthly: 9 },
     organization: { annual: 890, monthly: 89 },
     scout: { annual: 40, monthly: 4 },
   },
   USD: {
+    developers: { annual: 1990, monthly: 199 },
     household: { annual: 100, monthly: 10 },
     organization: { annual: 990, monthly: 99 },
     scout: { annual: 50, monthly: 5 },
   },
   ZAR: {
+    developers: { annual: 9990, monthly: 999 },
     household: { annual: 590, monthly: 59 },
     organization: { annual: 4990, monthly: 499 },
     scout: { annual: 290, monthly: 29 },
@@ -52,6 +56,7 @@ const COUNTRY_PRICE_LISTS: Record<string, { currencyCode: string; plans: Record<
   ZW: {
     currencyCode: 'USD',
     plans: {
+      developers: { annual: 590, monthly: 59 },
       household: { annual: 40, monthly: 4 },
       organization: { annual: 290, monthly: 29 },
       scout: { annual: 20, monthly: 2 },

@@ -9,8 +9,346 @@ import {
   extractOfficialLeaflets,
   extractPromotionDetailUrls,
   extractPublicStoreDeals,
+  parseFoodWorldProducts,
+  parseFourHarvestsDeals,
+  parseGetMoreSpecialProducts,
+  parseSparZimbabweProducts,
+  parseTeloneProducts,
+  parseTillPointProducts,
   scoutNearbyStores,
 } from './storeScout'
+
+describe('parseFourHarvestsDeals', () => {
+  it('reads server-rendered WooCommerce sale cards with old and current prices', () => {
+    expect(parseFourHarvestsDeals(`
+      <div class="product type-product post-2092 sale">
+        <div class="thumbnail-wrapper">
+          <a href="https://www.4harvests.co.zw/product/koo-baked-beans/">
+            <img src="/wp-content/uploads/koo-beans.png" alt="Koo Baked Beans">
+          </a>
+        </div>
+        <h3 class="product-title">
+          <a href="https://www.4harvests.co.zw/product/koo-baked-beans/">
+            Koo Baked Beans
+          </a>
+        </h3>
+        <span class="price">
+          <del><span><bdi><span>$</span>3.36</bdi></span></del>
+          <ins><span><bdi><span>$</span>2.34</bdi></span></ins>
+        </span>
+      </div>
+    `)).toEqual([{
+      currencyCode: 'USD',
+      imageUrl: 'https://www.4harvests.co.zw/wp-content/uploads/koo-beans.png',
+      previousPriceCents: 336,
+      priceCents: 234,
+      productUrl: 'https://www.4harvests.co.zw/product/koo-baked-beans/',
+      promoLabel: '4 Harvests sale',
+      soldOut: false,
+      title: 'Koo Baked Beans',
+    }])
+  })
+
+  it('ignores regular-price cards and off-site product links', () => {
+    expect(parseFourHarvestsDeals(`
+      <div class="product type-product">
+        <h3 class="product-title">
+          <a href="https://www.4harvests.co.zw/product/regular/">Regular</a>
+        </h3>
+        <span class="price">$2.00</span>
+      </div>
+      <div class="product type-product sale">
+        <h3 class="product-title">
+          <a href="https://example.com/other">Other</a>
+        </h3>
+        <del>$3.00</del><ins>$2.00</ins>
+      </div>
+    `)).toEqual([])
+  })
+})
+
+describe('parseTillPointProducts', () => {
+  it('reads regular and discounted products from the public catalogue table', () => {
+    expect(parseTillPointProducts([
+      {
+        compare_at_price: 60,
+        currency: 'USD',
+        images: [],
+        is_available: true,
+        name: 'Portable Cordless Pressure Washer',
+        price: 49.99,
+        slug: 'portable-cordless-pressure-washer',
+        stock_quantity: 10,
+        thumbnail:
+          'https://example.supabase.co/storage/v1/object/public/products/washer.jpg',
+      },
+      {
+        currency: 'USD',
+        is_available: true,
+        name: 'Peanut Butter',
+        price: 1,
+        slug: 'peanut-butter',
+        stock_quantity: 0,
+      },
+    ])).toEqual([
+      {
+        currencyCode: 'USD',
+        imageUrl:
+          'https://example.supabase.co/storage/v1/object/public/products/washer.jpg',
+        previousPriceCents: 6000,
+        priceCents: 4999,
+        productUrl:
+          'https://tillpoint.co.zw/p/portable-cordless-pressure-washer',
+        promoLabel: 'TillPoint online catalogue',
+        soldOut: false,
+        title: 'Portable Cordless Pressure Washer',
+      },
+      {
+        currencyCode: 'USD',
+        imageUrl: undefined,
+        previousPriceCents: undefined,
+        priceCents: 100,
+        productUrl: 'https://tillpoint.co.zw/p/peanut-butter',
+        promoLabel: 'TillPoint online catalogue',
+        soldOut: true,
+        title: 'Peanut Butter',
+      },
+    ])
+  })
+
+  it('ignores hidden, malformed, and zero-priced rows', () => {
+    expect(parseTillPointProducts([
+      {
+        is_available: false,
+        name: 'Hidden item',
+        price: 2,
+        slug: 'hidden',
+      },
+      { is_available: true, name: 'Free item', price: 0, slug: 'free' },
+      { is_available: true, name: 'No URL', price: 2 },
+    ])).toEqual([])
+  })
+})
+
+describe('parseGetMoreSpecialProducts', () => {
+  it('reads product cards from the official Magento specials category', () => {
+    expect(parseGetMoreSpecialProducts(`
+      <li class="item product product-item">
+        <div class="product-item-info">
+          <img class="product-image-photo"
+               data-src="/media/catalog/product/porridge.jpg">
+          <strong class="product name product-item-name">
+            <a class="product-item-link"
+               href="https://getmore.co.zw/eden-porridge.html">
+              EDEN Instant Porridge Original 1kg
+            </a>
+          </strong>
+          <span data-price-amount="1.651651"
+                data-price-type="finalPrice"
+                class="price-wrapper"><span class="price">$1.65</span></span>
+        </div>
+      </li>
+    `)).toEqual([{
+      currencyCode: 'USD',
+      imageUrl: 'https://getmore.co.zw/media/catalog/product/porridge.jpg',
+      previousPriceCents: undefined,
+      priceCents: 165,
+      productUrl: 'https://getmore.co.zw/eden-porridge.html',
+      promoLabel: 'GetMore special offers',
+      title: 'EDEN Instant Porridge Original 1kg',
+    }])
+  })
+
+  it('rejects off-site links, missing prices, and duplicate cards', () => {
+    const card = `
+      <li class="product-item">
+        <a class="product-item-link"
+           href="https://getmore.co.zw/rice.html">Rice 2kg</a>
+        <span data-price-amount="4.50" data-price-type="finalPrice"></span>
+      </li>
+    `
+    expect(parseGetMoreSpecialProducts(`
+      <li class="product-item">
+        <a class="product-item-link" href="https://example.com/item">Other</a>
+        <span data-price-amount="2" data-price-type="finalPrice"></span>
+      </li>
+      <li class="product-item">
+        <a class="product-item-link" href="/missing.html">Missing</a>
+      </li>
+      ${card}
+      ${card}
+    `)).toHaveLength(1)
+  })
+})
+
+describe('parseFoodWorldProducts', () => {
+  it('reads regular and discounted products from the public WooCommerce catalogue', () => {
+    expect(parseFoodWorldProducts([
+      {
+        id: 21812,
+        images: [{ src: 'https://www.foodworld.co.zw/wp-content/uploads/cream.jpg' }],
+        is_in_stock: true,
+        name: 'CLOVER DAIRY CREAM UHT 500ML',
+        permalink: 'https://www.foodworld.co.zw/product/clover-dairy-cream-uht-500ml/',
+        prices: {
+          currency_code: 'USD',
+          currency_minor_unit: 2,
+          price: '535',
+          regular_price: '535',
+        },
+      },
+      {
+        id: 22,
+        is_in_stock: false,
+        name: 'Discounted rice',
+        prices: {
+          currency_code: 'USD',
+          currency_minor_unit: 2,
+          price: '250',
+          regular_price: '300',
+        },
+        slug: 'discounted-rice',
+      },
+    ])).toEqual([
+      {
+        currencyCode: 'USD',
+        imageUrl: 'https://www.foodworld.co.zw/wp-content/uploads/cream.jpg',
+        priceCents: 535,
+        productUrl:
+          'https://www.foodworld.co.zw/product/clover-dairy-cream-uht-500ml/',
+        promoLabel: 'Food World online catalogue',
+        soldOut: false,
+        title: 'CLOVER DAIRY CREAM UHT 500ML',
+      },
+      {
+        currencyCode: 'USD',
+        imageUrl: undefined,
+        previousPriceCents: 300,
+        priceCents: 250,
+        productUrl: 'https://foodworld.co.zw/product/discounted-rice/',
+        promoLabel: 'Food World online catalogue',
+        soldOut: true,
+        title: 'Discounted rice',
+      },
+    ])
+  })
+
+  it('ignores zero-priced and malformed catalogue rows', () => {
+    expect(parseFoodWorldProducts([
+      {
+        name: 'Price pending',
+        permalink: 'https://www.foodworld.co.zw/product/price-pending/',
+        prices: { currency_minor_unit: 2, price: '0' },
+      },
+      { name: 'No URL', prices: { currency_minor_unit: 2, price: '250' } },
+    ])).toEqual([])
+  })
+
+  it('uses the verified origin and label for another Zimbabwe WooCommerce shop', () => {
+    expect(parseFoodWorldProducts(
+      [{
+        name: 'Roller meal 20kg',
+        prices: {
+          currency_code: 'USD',
+          currency_minor_unit: 2,
+          price: '1026',
+          regular_price: '1026',
+        },
+        slug: 'roller-meal-20kg',
+      }],
+      'https://greensonline.co.zw',
+      'Greens online catalogue',
+    )[0]).toMatchObject({
+      priceCents: 1026,
+      productUrl: 'https://greensonline.co.zw/product/roller-meal-20kg/',
+      promoLabel: 'Greens online catalogue',
+    })
+  })
+})
+
+describe('parseSparZimbabweProducts', () => {
+  it('reads the server-rendered Zimbabwe catalogue with USD prices and images', () => {
+    expect(parseSparZimbabweProducts(`
+      <div class="listing grid-listing product-listing">
+        <ul>
+          <li>
+            <div class="listing-image">
+              <a
+                id="Content_List_Photo_0"
+                href="/products/2996/mazoe-orange-crush-original-2l"
+                style="background-image:url(https://cdn.spar.co.zw/data/2996-Thumb.jpg);"
+              ></a>
+            </div>
+            <div class="listing-details">
+              <p>MAZOE ORANGE CRUSH ORIGINAL 2L</p>
+            </div>
+            <div class="product-links">
+              <div><strong>USD&#36;4.00</strong></div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    `)).toEqual([{
+      currencyCode: 'USD',
+      imageUrl: 'https://cdn.spar.co.zw/data/2996-Thumb.jpg',
+      priceCents: 400,
+      productUrl: 'https://www.spar.co.zw/products/2996/mazoe-orange-crush-original-2l',
+      promoLabel: 'SPAR Zimbabwe online catalogue',
+      title: 'MAZOE ORANGE CRUSH ORIGINAL 2L',
+    }])
+  })
+
+  it('ignores navigation links, malformed prices, and duplicate product rows', () => {
+    const product = `
+      <li>
+        <div class="listing-image">
+          <a id="Content_List_Photo_2" href="/products/7/rice"
+            style="background-image:url(https://cdn.spar.co.zw/data/7-Thumb.jpg);"></a>
+        </div>
+        <div class="listing-details"><p>Rice 2kg</p></div>
+        <div class="product-links"><strong>USD&#36;2.50</strong></div>
+      </li>
+    `
+
+    expect(parseSparZimbabweProducts(`
+      <a href="/products/department/1/groceries">Groceries</a>
+      <li>
+        <div class="listing-image">
+          <a id="Content_List_Photo_1" href="/products/8/flour"></a>
+        </div>
+        <div class="listing-details"><p>Flour 2kg</p></div>
+        <div class="product-links"><strong>Price on request</strong></div>
+      </li>
+      ${product}
+      ${product}
+    `)).toHaveLength(1)
+  })
+})
+
+describe('parseTeloneProducts', () => {
+  it('reads the public TelOne shop API with USD prices and stock state', () => {
+    expect(parseTeloneProducts([
+      {
+        active: true,
+        id: 3,
+        imageUrl:
+          'https://springapi.telone.co.zw/digitalShop/api/v1/product-line/downloadFile/3.png',
+        name: 'TP LINK ADSL Router',
+        price: 35,
+        productItemTotal: 0,
+      },
+    ])).toEqual([{
+      currencyCode: 'USD',
+      imageUrl:
+        'https://springapi.telone.co.zw/digitalShop/api/v1/product-line/downloadFile/3.png',
+      priceCents: 3500,
+      productUrl: 'https://shop.telone.co.zw/product/3',
+      promoLabel: 'TelOne Digital Shop',
+      soldOut: true,
+      title: 'TP LINK ADSL Router',
+    }])
+  })
+})
 
 describe('extractPublicStoreDeals', () => {
   it('finds bounded same-site promotion detail pages', () => {
@@ -1232,6 +1570,48 @@ describe('scheduled discovered-store scouting', () => {
       `SELECT title FROM store_promotions WHERE place_id = 'healthy'`,
     ).first<{ title: string }>()
     expect(row?.title).toBe('Healthy Milk 2L')
+  })
+
+  it('checks independent online stores concurrently', async () => {
+    let activeRequests = 0
+    let peakRequests = 0
+    const stores = Array.from({ length: 5 }, (_, index) =>
+      discoveredStore({
+        countryCode: 'ZW',
+        name: `Zimbabwe Market ${index + 1}`,
+        placeId: `online:zw:market-${index + 1}.test`,
+        website: `https://market-${index + 1}.test/`,
+        websiteSource: 'country-retailer',
+      }))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const storeIndex = Number(url.hostname.match(/\d+/)?.[0] ?? 0)
+      activeRequests += 1
+      peakRequests = Math.max(peakRequests, activeRequests)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      activeRequests -= 1
+      return htmlResponse(
+        jsonLdDeal(
+          `Concurrent deal ${storeIndex}`,
+          `Zimbabwe Market ${storeIndex}`,
+        ),
+      )
+    }))
+
+    await scoutNearbyStores(
+      env,
+      stores,
+      Date.parse('2026-07-28T10:00:00.000Z'),
+      stores.length,
+    )
+
+    const count = await db.prepare(
+      `SELECT COUNT(*) AS count FROM store_promotions
+       WHERE country_code = 'ZW'`,
+    ).first<{ count: number }>()
+    expect(Number(count?.count)).toBe(5)
+    expect(peakRequests).toBeGreaterThan(1)
   })
 
   it('keeps only same-origin catalogue PDFs from a verified official website', async () => {

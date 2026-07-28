@@ -4,6 +4,24 @@ import 'package:trolley_scout/app_update_prompt.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
+  test('a configured update service opens its own Play Store listing', () async {
+    final opened = <Uri>[];
+    final service = GooglePlayAppUpdateService(
+      packageName: trolleyScoutBusinessAndroidPackage,
+      urlLauncher: (uri) async {
+        opened.add(uri);
+        return true;
+      },
+    );
+
+    await service.openPlayStore();
+
+    expect(
+      opened.single.toString(),
+      'market://details?id=za.co.trolleyscout.business',
+    );
+  });
+
   testWidgets('an available update offers both supported update paths',
       (tester) async {
     final service = _FakeUpdateService(

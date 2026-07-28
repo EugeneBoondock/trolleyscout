@@ -3545,6 +3545,16 @@
   background: var(--surface);
 }
 
+.biz-admin-preview-select select {
+  min-height: 2.75rem;
+  max-width: 15rem;
+  padding: 0 2.2rem 0 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background: var(--surface);
+}
+
 .biz-admin-business-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

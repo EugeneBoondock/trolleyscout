@@ -50,6 +50,38 @@ describe('groupDiscoveredStores', () => {
     expect(group.nearestDistanceM).toBe(650)
   })
 
+  it('counts a shared national promotion once across several branches', () => {
+    const sharedPromotion = {
+      id: 'tm-rice',
+      kind: 'deal' as const,
+      placeId: 'online:zw:tmpnponline-co-zw',
+      priceText: 'USD 4.99',
+      productUrl: 'https://tmpnponline.co.zw/products/rice',
+      sourceUrl: 'https://tmpnponline.co.zw/',
+      storeName: 'TM Pick n Pay',
+      title: 'Long grain rice',
+    }
+    const groups = groupDiscoveredStores([
+      store({
+        name: 'TM Pick n Pay Msasa',
+        placeId: 'tm-msasa',
+        promotionCount: 1,
+        promotions: [sharedPromotion],
+        website: 'https://tmpnponline.co.zw/',
+      }),
+      store({
+        name: 'TM Pick n Pay Avondale',
+        placeId: 'tm-avondale',
+        promotionCount: 1,
+        promotions: [sharedPromotion],
+        website: 'https://tmpnponline.co.zw/',
+      }),
+    ])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].promotionCount).toBe(1)
+  })
+
   it('groups unknown branches when their verified website host matches', () => {
     const groups = groupDiscoveredStores([
       store({ name: 'Family Foods Central', placeId: 'a', website: 'https://www.familyfoods.test/central' }),

@@ -61,6 +61,10 @@ class BusinessController extends ChangeNotifier {
       bootstrap = await api.bootstrap();
       if (isAdmin) {
         adminOverview = await api.adminOverview();
+      } else {
+        adminOverview = null;
+        adminApplications = null;
+        adminPublicationQueue = null;
       }
       state = BusinessLoadState.ready;
       notice = 'Welcome to Trolley Scout for Business.';

@@ -23,6 +23,7 @@ vi.mock('../_shared/organizationPublicationStore', async (importOriginal) => ({
   listLiveOrganizationPublications: mocks.listLiveOrganizationPublications,
 }))
 import {
+  buildInternationalRefreshStores,
   buildNormalizedDiscoveryChecks,
   buildSnapshotChecks,
   cataloguesForCountry,
@@ -53,6 +54,24 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('international live refresh', () => {
+  it('starts with the registered Zimbabwe storefront queue', () => {
+    const stores = buildInternationalRefreshStores('ZW')
+
+    expect(stores.length).toBeGreaterThan(300)
+    expect(stores.every((store) => store.countryCode === 'ZW')).toBe(true)
+    expect(stores.map((store) => store.name)).toEqual(expect.arrayContaining([
+      'TM Pick n Pay',
+      'TelOne Zimbabwe',
+      'ZIMOCO',
+    ]))
+    expect(
+      stores.every((store) =>
+        !('nextScoutAt' in store)),
+    ).toBe(true)
+  })
 })
 
 describe('summary preview', () => {
@@ -904,7 +923,8 @@ describe('normalized discovery cutover', () => {
       isAuthenticated: true,
       account: { id: 'member-1', role: 'member' },
     })
-    const liveFetch = vi.fn(async () => new Response('', { status: 503 }))
+    const liveFetch = vi.fn(async (_input: RequestInfo | URL) =>
+      new Response('', { status: 503 }))
     vi.stubGlobal('fetch', liveFetch)
 
     const response = await onRequest({
@@ -952,12 +972,13 @@ describe('normalized discovery cutover', () => {
     expect(mocks.runDealRefreshWithAlerts).toHaveBeenCalledTimes(1)
   })
 
-  it('does not run South African national sources for a Zimbabwe refresh', async () => {
+  it('refreshes only the Zimbabwe catalogue source for a Zimbabwe refresh', async () => {
     mocks.getMemberSession.mockResolvedValue({
       isAuthenticated: true,
       account: { countryCode: 'ZW', id: 'admin-1', role: 'admin' },
     })
-    const liveFetch = vi.fn(async () => new Response('', { status: 503 }))
+    const liveFetch = vi.fn(async (_input: RequestInfo | URL) =>
+      new Response('', { status: 503 }))
     vi.stubGlobal('fetch', liveFetch)
 
     const response = await onRequest({
@@ -975,7 +996,18 @@ describe('normalized discovery cutover', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(liveFetch).not.toHaveBeenCalled()
+    expect(liveFetch).toHaveBeenCalledTimes(9)
+    expect(liveFetch.mock.calls.map((call) => String(call[0])).sort()).toEqual([
+      'https://api.tmpnponline.co.zw/api/v1/catalog',
+      'https://www.collegepress.co.zw/catalogues-and-brochures',
+      'https://r.jina.ai/https://www.collegepress.co.zw/catalogues-and-brochures',
+      'https://r.jina.ai/https://tmpnponline.co.zw/catalog',
+      'https://r.jina.ai/http://tmpnponline.co.zw/catalog',
+      'https://r.jina.ai/https://edgarsstores.co.zw/',
+      'https://r.jina.ai/https://techafrica.co.zw/',
+      'https://edgarsstores.co.zw/',
+      'https://techafrica.co.zw/',
+    ].sort())
   })
 })
 

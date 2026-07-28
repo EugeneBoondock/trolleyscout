@@ -5,8 +5,11 @@ import {
   extractFlippingBookViewerUrl,
   extractViewerCoverImage,
   extractPdfLeaflets,
+  extractOfficialPdfIndexLeaflets,
   extractPnpCmsLeaflets,
   extractSixtyLeaflets,
+  extractTmpnpApiCatalogues,
+  extractTmpnpCatalogues,
   leafletTargets,
 } from './leafletDiscovery'
 
@@ -14,6 +17,214 @@ const shoprite = leafletTargets.find((target) => target.retailerId === 'shoprite
 const boxer = leafletTargets.find((target) => target.retailerId === 'boxer')!
 const usave = leafletTargets.find((target) => target.retailerId === 'usave')!
 const pnp = leafletTargets.find((target) => target.kind === 'pnp-cms')!
+const tmpnp = leafletTargets.find((target) => target.kind === 'tmpnp-catalogue')!
+const edgarsZimbabwe = leafletTargets.find(
+  (target) => target.retailerId === 'edgars-zimbabwe',
+)!
+
+describe('Zimbabwe official PDF catalogues', () => {
+  test('keeps current same-site multi-page documents and rejects stale or foreign files', () => {
+    const html = `
+      <a href="/images/Edgars%202026%20Winter%20Catalogue_web.pdf">
+        OUR CATALOGUE
+      </a>
+      <a href="/images/2025%20Edgars%20Corporate%20Catalogue.pdf">
+        Corporate catalogue
+      </a>
+      <a href="https://attacker.test/fake-catalogue.pdf">Fake catalogue</a>
+      <a href="/terms.pdf">Terms</a>
+    `
+
+    expect(extractOfficialPdfIndexLeaflets(
+      edgarsZimbabwe,
+      html,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZW',
+        documentUrl:
+          'https://edgarsstores.co.zw/images/Edgars%202026%20Winter%20Catalogue_web.pdf',
+        name: 'OUR CATALOGUE',
+        priceScope: { type: 'national' },
+        retailerName: 'Edgars Zimbabwe',
+      }),
+    ])
+  })
+
+  test('keeps several evergreen category catalogues from one current index', () => {
+    const techAfrica = leafletTargets.find(
+      (target) => target.retailerId === 'tech-africa-zimbabwe',
+    )!
+    const html = `
+      <a href="/wp-content/uploads/2025/03/Tech-Africa-Product-Catalogue.pdf">
+        Tech Africa Full Catalogue
+      </a>
+      <a href="/wp-content/uploads/2025/03/Tech-Africa-Generators-Catalogue.pdf">
+        Tech Africa Generators Catalogue
+      </a>
+    `
+
+    expect(extractOfficialPdfIndexLeaflets(
+      techAfrica,
+      html,
+      '2026-07-27T12:00:00.000Z',
+    )).toHaveLength(2)
+  })
+
+  test('reads official PDF links from a public reader response', () => {
+    const techAfrica = leafletTargets.find(
+      (target) => target.retailerId === 'tech-africa-zimbabwe',
+    )!
+    const markdown = `
+### [Tech Africa Full Catalogue](https://techafrica.co.zw/wp-content/uploads/2025/03/Tech-Africa-Product-Catalogue.pdf)
+[Foreign catalogue](https://attacker.test/catalogue.pdf)
+`
+
+    expect(extractOfficialPdfIndexLeaflets(
+      techAfrica,
+      markdown,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([
+      expect.objectContaining({ name: 'Tech Africa Full Catalogue' }),
+    ])
+  })
+
+  test('registers the live College Press Zimbabwe catalogue index', () => {
+    const collegePress = leafletTargets.find(
+      (target) => target.retailerId === 'college-press-zimbabwe',
+    )!
+
+    expect(collegePress).toMatchObject({
+      countryCode: 'ZW',
+      kind: 'official-pdf-index',
+      pageUrl: 'https://www.collegepress.co.zw/catalogues-and-brochures',
+    })
+    expect(extractOfficialPdfIndexLeaflets(
+      collegePress,
+      '[Zimbabwe Catalogue](https://www.collegepress.co.zw/files/Zimbabwe%20Catalogue%20%28005%29.pdf)',
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZW',
+        retailerName: 'College Press Zimbabwe',
+      }),
+    ])
+  })
+})
+
+describe('TM Pick n Pay Zimbabwe catalogues', () => {
+  test('maps the official catalogue API into one multi-page leaflet', () => {
+    const payload = [{
+      expiry_date: '2026-08-02 23:59:59',
+      id: 76,
+      image_path:
+        'https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_images/cover.jpg',
+      locations: [
+        {
+          file_path:
+            'https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-two.jpg',
+          location_name: 'Page 2',
+        },
+        {
+          file_path:
+            'https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-one.jpg',
+          location_name: 'Page 1',
+        },
+      ],
+      start_date: '2026-07-23 00:00:00',
+      title: 'Winter Warmers Promotion',
+    }]
+
+    expect(extractTmpnpApiCatalogues(
+      tmpnp,
+      payload,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZW',
+        name: 'Winter Warmers Promotion',
+        pages: [
+          expect.objectContaining({ pageNumber: 1 }),
+          expect.objectContaining({ pageNumber: 2 }),
+        ],
+        validFrom: '2026-07-23',
+        validTo: '2026-08-02',
+      }),
+    ])
+  })
+
+  test('keeps a current image set together as one multi-page catalogue', () => {
+    const content = `
+### In-Store Catalogues
+
+![Image 7: Winter Warmers Promotion](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_images/cover.jpg)
+
+#### Winter Warmers Promotion
+
+Valid: 23 July 2026
+
+Deadline: 2 August 2026
+
+Download the catalogue
+
+[Page 2](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-two.jpg)
+[Page 1](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-one.jpg)
+[Page 3](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-three.jpg)
+`
+
+    expect(extractTmpnpCatalogues(
+      tmpnp,
+      content,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZW',
+        imageUrl:
+          'https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_images/cover.jpg',
+        name: 'Winter Warmers Promotion',
+        priceScope: { type: 'national' },
+        retailerName: 'TM Pick n Pay',
+        validFrom: '2026-07-23',
+        validTo: '2026-08-02',
+        pages: [
+          expect.objectContaining({
+            imageUrl:
+              'https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/page-one.jpg',
+            pageNumber: 1,
+          }),
+          expect.objectContaining({ pageNumber: 2 }),
+          expect.objectContaining({ pageNumber: 3 }),
+        ],
+      }),
+    ])
+  })
+
+  test('rejects expired, single-page, and foreign-host catalogue images', () => {
+    const expired = `
+#### Old Catalogue
+Valid: 1 June 2026
+Deadline: 7 June 2026
+[Page 1](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/one.jpg)
+[Page 2](https://cdn-s7m8bx8sebjz.vultrcdn.com/catalog_downloads/two.jpg)`
+    const untrusted = `
+#### Fake Catalogue
+Valid: 23 July 2026
+Deadline: 2 August 2026
+[Page 1](https://evil.test/catalog_downloads/one.jpg)
+[Page 2](https://evil.test/catalog_downloads/two.jpg)`
+
+    expect(extractTmpnpCatalogues(
+      tmpnp,
+      expired,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([])
+    expect(extractTmpnpCatalogues(
+      tmpnp,
+      untrusted,
+      '2026-07-27T12:00:00.000Z',
+    )).toEqual([])
+  })
+})
 
 describe('Pick n Pay catalogue CMS leaflets', () => {
   test('registers the official catalogue CMS as a leaflet source', () => {

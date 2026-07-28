@@ -47,19 +47,24 @@ export function extractRetailerLeafletsFromHtml(
 ): StoreLeaflet[] {
   const leaflets: StoreLeaflet[] = []
   const seen = new Set<string>()
-  const linkPattern = /(?:href|src)=["']([^"']+)["']/gi
+  const linkPattern = /(href|src)=["']([^"']+)["']/gi
   let match: RegExpExecArray | null
 
   while ((match = linkPattern.exec(html)) !== null && leaflets.length < limit) {
-    const rawPath = decodeHtml(match[1])
+    const attribute = match[1].toLowerCase()
+    const rawPath = decodeHtml(match[2])
     const documentUrl = absoluteHttpUrl(rawPath, target.sourceUrl)
     const isPdf = /\.pdf(?:$|\?)/i.test(rawPath)
+    const isImageDocument = attribute === 'href' &&
+      /\.(?:avif|jpe?g|png|webp)(?:$|\?)/i.test(rawPath)
     const isHostedCatalogue = documentUrl ? isTrustedCatalogueUrl(documentUrl) : false
-    if (!isPdf && !isHostedCatalogue) continue
+    if (!isPdf && !isImageDocument && !isHostedCatalogue) continue
 
     const context = html.slice(Math.max(0, match.index - 1200), Math.min(html.length, match.index + 400))
     const searchable = `${rawPath} ${stripHtml(context)}`.toLowerCase()
-    const looksPromotional = looksLikePromotionSignal(searchable)
+    const looksPromotional = isImageDocument
+      ? looksLikePromotionSignal(rawPath)
+      : looksLikePromotionSignal(searchable)
 
     if (
       !documentUrl ||
@@ -70,8 +75,12 @@ export function extractRetailerLeafletsFromHtml(
       continue
     }
 
-    const name = leafletName(target.retailerName, html, match.index, context, documentUrl)
-    const imageUrl = nearestImage(context, target.sourceUrl)
+    const name = isImageDocument
+      ? nearestHeading(context) || documentName(documentUrl)
+      : leafletName(target.retailerName, html, match.index, context, documentUrl)
+    const imageUrl = isImageDocument
+      ? documentUrl
+      : nearestImage(context, target.sourceUrl)
     seen.add(documentUrl)
     leaflets.push({
       capturedAt,
@@ -148,7 +157,7 @@ export function looksLikePromotionSignal(value: string): boolean {
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-  return /special|promot|promoco|deal|offers?|catalog|leaflet|weekly|citizen|offre|oferta|folheto|punguzo|rabais|solde|desconto|month[\s_-]*end/.test(normalized)
+  return /special|promot|promoco|deal|offers?|catalog|leaflet|posters?|weekly|citizen|offre|oferta|folheto|punguzo|rabais|solde|desconto|month[\s_-]*end/.test(normalized)
 }
 
 function attributeValue(attributes: string, name: string): string | undefined {

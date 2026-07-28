@@ -314,6 +314,22 @@ void main() {
     expect(options.firstWhere((option) => option.id == 'pep').dealCount, 1);
   });
 
+  test('shows the real source state instead of zero deals', () {
+    final options = retailerOptionsFromDeals(
+      const [],
+      catalog: [
+        _retailer(
+          'zimoco',
+          'ZIMOCO',
+          offerStatus: 'temporarily-unavailable',
+        ),
+      ],
+    );
+
+    expect(options.single.dealCount, 0);
+    expect(options.single.dealCountLabel, 'Source unavailable');
+  });
+
   test('counts fetched catalogues instead of showing zero deals', () {
     final options = retailerOptionsFromDeals(
       const [],
@@ -516,7 +532,12 @@ class _CatalogueOnlyApi extends _PickerApi {
       );
 }
 
-Retailer _retailer(String id, String name) => Retailer(
+Retailer _retailer(
+  String id,
+  String name, {
+  String? offerStatus,
+}) =>
+    Retailer(
       id: id,
       name: name,
       shortName: name,
@@ -526,4 +547,5 @@ Retailer _retailer(String id, String name) => Retailer(
       verifiedOn: '2026-07-23',
       accentColor: '#000000',
       sources: const [],
+      offerStatus: offerStatus,
     );

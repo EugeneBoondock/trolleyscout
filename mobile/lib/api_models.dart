@@ -194,6 +194,8 @@ class Retailer {
     required this.accentColor,
     required this.sources,
     this.logoUrl,
+    this.offerStatus,
+    this.offersCheckedAt,
   });
 
   final String id;
@@ -206,6 +208,8 @@ class Retailer {
   final String accentColor;
   final List<RetailerSource> sources;
   final String? logoUrl;
+  final String? offerStatus;
+  final String? offersCheckedAt;
 
   factory Retailer.fromJson(Map<String, dynamic> json) => Retailer(
         id: _string(json['id']),
@@ -219,6 +223,8 @@ class Retailer {
         sources:
             _mapList(json['sources']).map(RetailerSource.fromJson).toList(),
         logoUrl: _optionalString(json['logoUrl']),
+        offerStatus: _optionalString(json['offerStatus']),
+        offersCheckedAt: _optionalString(json['offersCheckedAt']),
       );
 }
 
@@ -605,6 +611,59 @@ class DiscoveryAccess {
       };
 }
 
+class BusinessStoryPublication {
+  const BusinessStoryPublication({
+    required this.id,
+    required this.organizationName,
+    required this.organizationSlug,
+    required this.title,
+    required this.bodyText,
+    required this.imageUrl,
+    required this.targetUrl,
+    this.imageAlt,
+    this.offerText,
+    this.priceText,
+  });
+
+  final String id;
+  final String organizationName;
+  final String organizationSlug;
+  final String title;
+  final String bodyText;
+  final String imageUrl;
+  final String targetUrl;
+  final String? imageAlt;
+  final String? offerText;
+  final String? priceText;
+
+  factory BusinessStoryPublication.fromJson(Map<String, dynamic> json) =>
+      BusinessStoryPublication(
+        id: _string(json['id']),
+        organizationName: _string(json['organizationName'], 'Business'),
+        organizationSlug: _string(json['organizationSlug']),
+        title: _string(json['title']),
+        bodyText: _string(json['bodyText']),
+        imageUrl: _string(json['imageUrl']),
+        targetUrl: _string(json['targetUrl']),
+        imageAlt: _optionalString(json['imageAlt']),
+        offerText: _optionalString(json['offerText']),
+        priceText: _optionalString(json['priceText']),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'organizationName': organizationName,
+        'organizationSlug': organizationSlug,
+        'title': title,
+        'bodyText': bodyText,
+        'imageUrl': imageUrl,
+        'targetUrl': targetUrl,
+        'imageAlt': imageAlt,
+        'offerText': offerText,
+        'priceText': priceText,
+      };
+}
+
 class DiscoveryResult {
   const DiscoveryResult({
     required this.deals,
@@ -613,6 +672,7 @@ class DiscoveryResult {
     required this.unavailableSourceCount,
     required this.leafletCount,
     this.catalogues = const [],
+    this.businessStories = const [],
     this.access,
     this.refreshedAt,
   });
@@ -623,6 +683,7 @@ class DiscoveryResult {
   final int unavailableSourceCount;
   final int leafletCount;
   final List<Catalogue> catalogues;
+  final List<BusinessStoryPublication> businessStories;
   final DiscoveryAccess? access;
   final String? refreshedAt;
 
@@ -637,6 +698,9 @@ class DiscoveryResult {
       leafletCount: _int(summary['leafletCount']),
       catalogues:
           _mapList(json['leaflets']).map(Catalogue.fromLeaflet).toList(),
+      businessStories: _mapList(json['businessStories'])
+          .map(BusinessStoryPublication.fromJson)
+          .toList(),
       access: access == null ? null : DiscoveryAccess.fromJson(access),
       refreshedAt: _optionalString(json['refreshedAt']),
     );
@@ -647,6 +711,8 @@ class DiscoveryResult {
   Map<String, dynamic> toJson() => {
         'deals': deals.map((deal) => deal.toJson()).toList(),
         'leaflets': catalogues.map((catalogue) => catalogue.toJson()).toList(),
+        'businessStories':
+            businessStories.map((story) => story.toJson()).toList(),
         if (access != null) 'access': access!.toJson(),
         'refreshedAt': refreshedAt,
         'summary': {

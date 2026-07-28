@@ -74,6 +74,14 @@ export interface RetailerSource {
   kind: SourceKind
 }
 
+export type RetailerOfferStatus =
+  | 'available'
+  | 'checking'
+  | 'no-current-offers'
+  | 'not-checked'
+  | 'temporarily-unavailable'
+  | 'unverified'
+
 export interface Retailer {
   id: RetailerId
   name: string
@@ -86,6 +94,12 @@ export interface Retailer {
   sources: RetailerSource[]
   // Computed from the retailer's own site favicon; never stored by hand.
   logoUrl?: string
+  // International store directories can be much larger than the current deal
+  // snapshot. This says what the source check actually found, so a transport
+  // failure or a shop waiting for its first pass is never presented as “0
+  // deals”.
+  offerStatus?: RetailerOfferStatus
+  offersCheckedAt?: string
 }
 
 export type ScoutChatRole = 'assistant' | 'user'
@@ -282,6 +296,7 @@ export interface DiscoveryRun {
     planId: MemberPlanId
   }
   deals: DiscoveredDeal[]
+  businessStories?: BusinessStoryPublication[]
   leaflets?: StoreLeaflet[]
   refreshedAt?: string
   served?: 'snapshot' | 'live'
@@ -342,7 +357,7 @@ export interface OfferValidationResult {
   normalizedOffer?: VerifiedOffer
 }
 
-export type MemberPlanId = 'free' | 'scout' | 'household' | 'organization'
+export type MemberPlanId = 'free' | 'scout' | 'household' | 'organization' | 'developers'
 
 export type BillingCycle = 'monthly' | 'annual'
 
@@ -370,6 +385,48 @@ export interface MemberPlanMerchant {
   shopProfiles: number
 }
 
+export interface BusinessStoryPublication {
+  bodyText: string
+  id: string
+  imageAlt?: string
+  imageUrl: string
+  offerText?: string
+  organizationName: string
+  organizationSlug: string
+  priceText?: string
+  targetUrl: string
+  title: string
+}
+
+export interface MemberPlanDeveloper {
+  callsPerMinute: number
+  callsPerMonth: number
+}
+
+export type DeveloperScope =
+  | 'shopping:read'
+  | 'trends:read'
+  | 'campaigns:read'
+  | 'campaigns:write'
+
+export interface DeveloperApiKeySummary {
+  createdAt: string
+  expiresAt?: string
+  id: string
+  keyPrefix: string
+  lastUsedAt?: string
+  name: string
+  revokedAt?: string
+  scopes: DeveloperScope[]
+}
+
+export interface DeveloperKeyResource {
+  allowance: MemberPlanDeveloper
+  keys: DeveloperApiKeySummary[]
+  scopes: DeveloperScope[]
+  usage: number
+}
+
 export interface MemberPlan {
   id: MemberPlanId
   name: string
@@ -382,6 +439,7 @@ export interface MemberPlan {
   statusText: string
   features: string[]
   limits: MemberPlanLimits
+  developer?: MemberPlanDeveloper
   merchant?: MemberPlanMerchant
   // Rand cents: what PayFast debits, whatever currency the shopper was quoted.
   prices: {
@@ -405,6 +463,7 @@ export type MemberAccountStatus = 'active' | 'banned'
 export interface MemberAccount {
   id: string
   email: string
+  emailVerified?: boolean
   displayName: string
   initials: string
   planId: MemberPlanId
@@ -435,6 +494,7 @@ export interface MemberAccount {
   pendingBillingCycle?: BillingCycle
   pendingEffectiveAt?: string
   pendingPlanId?: MemberPlanId
+  phoneVerified?: boolean
 }
 
 export type OrganizationApplicationStatus = 'pending' | 'approved' | 'rejected'

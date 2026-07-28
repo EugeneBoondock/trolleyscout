@@ -4,6 +4,7 @@ export type BusinessView = 'overview' | 'content' | 'create' | 'locations' | 'in
 export type BusinessAdminView = 'overview' | 'businesses' | 'moderation' | 'campaigns' | 'payments'
 export type PublicationKind = 'deal' | 'special' | 'promotion' | 'post'
 export type PublicationPlacement = 'marketplace' | 'window' | 'both'
+export type PublicationDestination = 'marketplace' | 'window' | 'stories'
 export type PublicationStatus =
   | 'draft'
   | 'submitted'
@@ -30,6 +31,7 @@ export interface OrganizationGate {
 }
 
 export interface PublicationDraft {
+  destinations?: PublicationDestination[]
   kind: PublicationKind
   placement: PublicationPlacement
   title: string
@@ -83,9 +85,9 @@ export interface BusinessLocation extends BusinessLocationDraft {
 
 export interface BusinessMetricTotals {
   impressions: number
-  opens: number
+  imageViews: number
   saves: number
-  outboundVisits: number
+  linkClicks: number
 }
 
 export interface BusinessMetricDay extends BusinessMetricTotals {
@@ -93,8 +95,10 @@ export interface BusinessMetricDay extends BusinessMetricTotals {
 }
 
 export interface BusinessMetrics {
+  destinations: Array<BusinessMetricTotals & { destination: PublicationDestination }>
   days: BusinessMetricDay[]
   rangeDays: number
+  rankings: Array<BusinessMetricTotals & { id: string; title: string }>
   totals: BusinessMetricTotals
 }
 

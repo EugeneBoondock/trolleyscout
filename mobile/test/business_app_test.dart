@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trolley_scout/app_update_prompt.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/business/business_api.dart';
@@ -104,17 +105,73 @@ void main() {
     expect(find.text('Overview'), findsNothing);
   });
 
-  testWidgets('opens the shared-account business admin console',
+  testWidgets('lets the owner switch between admin and business views',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final api = _FakeBusinessApi(isAdmin: true);
     await _pumpBusiness(tester, api);
 
-    expect(find.text('BUSINESS ADMIN'), findsOneWidget);
+    expect(find.text('ADMIN'), findsOneWidget);
     expect(find.text('Business control'), findsOneWidget);
-    expect(find.text('Active businesses'), findsOneWidget);
-    expect(find.text('Money received'), findsOneWidget);
+    expect(api.adminOverviewCalls, 1);
+
+    await tester.tap(find.byTooltip('Act as business'));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('BUSINESS VIEW'), findsOneWidget);
+    expect(find.text('Kasi Pantry'), findsWidgets);
+    expect(find.text('Campaigns and promotions'), findsOneWidget);
+    expect(find.text('Family braai box'), findsOneWidget);
+    expect(find.byTooltip('Admin view'), findsOneWidget);
     expect(find.text('Business access is invitation-only'), findsNothing);
+
+    await tester.tap(find.byTooltip('Admin view'));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('ADMIN'), findsOneWidget);
   });
+
+  testWidgets('business app offers an available Google Play update',
+      (tester) async {
+    final service = _BusinessUpdateService();
+    final controller = BusinessController(
+      api: _FakeBusinessApi(authenticated: false),
+    );
+
+    await tester.pumpWidget(
+      TrolleyScoutBusinessApp(
+        appUpdateService: service,
+        controller: controller,
+        updateCheckDelay: Duration.zero,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(service.checkCalls, 1);
+    expect(find.text('A new Trolley Scout update is ready'), findsOneWidget);
+    expect(find.text('Update in app'), findsOneWidget);
+  });
+}
+
+class _BusinessUpdateService implements AppUpdateService {
+  int checkCalls = 0;
+
+  @override
+  Future<AppUpdateOffer?> checkForUpdate() async {
+    checkCalls += 1;
+    return const AppUpdateOffer(
+      availableVersionCode: 46,
+      inAppUpdateAllowed: true,
+    );
+  }
+
+  @override
+  Future<void> openPlayStore() async {}
+
+  @override
+  Future<void> updateInApp() async {}
 }
 
 Future<BusinessController> _pumpBusiness(
@@ -124,12 +181,25 @@ Future<BusinessController> _pumpBusiness(
   final controller = BusinessController(api: api);
   await tester.pumpWidget(
     TrolleyScoutBusinessApp(
+      appUpdateService: _NoBusinessUpdateService(),
       controller: controller,
+      updateCheckDelay: Duration.zero,
     ),
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 80));
   return controller;
+}
+
+class _NoBusinessUpdateService implements AppUpdateService {
+  @override
+  Future<AppUpdateOffer?> checkForUpdate() async => null;
+
+  @override
+  Future<void> openPlayStore() async {}
+
+  @override
+  Future<void> updateInApp() async {}
 }
 
 class _FakeBusinessApi implements BusinessApiClient {
@@ -143,6 +213,7 @@ class _FakeBusinessApi implements BusinessApiClient {
   final bool hasOrganization;
   final bool isAdmin;
   BusinessPublicationDraft? lastSaved;
+  int adminOverviewCalls = 0;
 
   @override
   Future<BusinessBootstrap> bootstrap() async => BusinessBootstrap(
@@ -192,7 +263,10 @@ class _FakeBusinessApi implements BusinessApiClient {
   }
 
   @override
-  Future<BusinessAdminOverview> adminOverview() async => _adminOverview;
+  Future<BusinessAdminOverview> adminOverview() async {
+    adminOverviewCalls += 1;
+    return _adminOverview;
+  }
 
   @override
   Future<List<BusinessAdminApplication>> adminApplications() async =>

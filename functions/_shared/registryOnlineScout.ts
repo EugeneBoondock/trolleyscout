@@ -29,7 +29,8 @@ export function buildRegistryOnlineStores(
 ): NearbyStore[] {
   const perCountry = countryCodes.map((code) => {
     const country = countryFromCode(code)
-    const seen = new Set<string>()
+    const seenSources = new Set<string>()
+    const usedPlaceIds = new Set<string>()
     const stores: NearbyStore[] = []
 
     const sources: Array<{
@@ -56,17 +57,32 @@ export function buildRegistryOnlineStores(
 
     for (const source of sources) {
       const host = safeHost(source.url)
-      if (!host || seen.has(host)) {
+      const sourceKey = `${host}:${canonicalRetailerKey(source.name)}`
+      if (!host || seenSources.has(sourceKey)) {
         continue
       }
-      seen.add(host)
+      seenSources.add(sourceKey)
+
+      const basePlaceId = `online:${country.code.toLowerCase()}:${host}`
+      let placeId = basePlaceId
+      if (usedPlaceIds.has(placeId)) {
+        const retailerSuffix = safeSlug(source.name)
+        placeId = `${basePlaceId}:${retailerSuffix}`
+        let collision = 2
+        while (usedPlaceIds.has(placeId)) {
+          placeId = `${basePlaceId}:${retailerSuffix}-${collision}`
+          collision += 1
+        }
+      }
+      usedPlaceIds.add(placeId)
+
       stores.push({
         countryCode: country.code,
         countryName: country.name,
         lat: 0,
         lon: 0,
         name: source.name,
-        placeId: `online:${country.code.toLowerCase()}:${host}`,
+        placeId,
         retailerId: source.retailerId,
         sourceCategory: source.sourceCategory,
         website: source.url,
@@ -114,4 +130,38 @@ function safeHost(value: string): string | undefined {
   } catch {
     return undefined
   }
+}
+
+function safeSlug(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'store'
+}
+
+function canonicalRetailerKey(value: string): string {
+  const key = value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((token) =>
+      token &&
+      ![
+        'group',
+        'online',
+        'official',
+        'store',
+        'stores',
+        'wholesaler',
+        'wholesalers',
+        'zimbabwe',
+      ].includes(token),
+    )
+    .join('-')
+  return key || safeSlug(value)
 }

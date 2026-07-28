@@ -20,10 +20,12 @@ class BusinessAdminShell extends StatefulWidget {
     super.key,
     required this.bootstrap,
     required this.controller,
+    required this.onViewBusiness,
   });
 
   final BusinessBootstrap bootstrap;
   final BusinessController controller;
+  final VoidCallback onViewBusiness;
 
   @override
   State<BusinessAdminShell> createState() => _BusinessAdminShellState();
@@ -80,6 +82,11 @@ class _BusinessAdminShellState extends State<BusinessAdminShell> {
         title: const _AdminBrand(),
         actions: [
           IconButton(
+            tooltip: 'Act as business',
+            onPressed: widget.onViewBusiness,
+            icon: const Icon(Icons.storefront_outlined),
+          ),
+          IconButton(
             tooltip: 'Refresh business reporting',
             onPressed: widget.controller.busy
                 ? null
@@ -113,11 +120,22 @@ class _BusinessAdminShellState extends State<BusinessAdminShell> {
               ),
             ),
             onSelected: (value) {
+              if (value == 'business_view') {
+                widget.onViewBusiness();
+              }
               if (value == 'sign_out') {
                 _confirmSignOut();
               }
             },
             itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'business_view',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.storefront_outlined),
+                  title: Text('Act as business'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'sign_out',
                 child: ListTile(
@@ -236,38 +254,53 @@ class _AdminBrand extends StatelessWidget {
   const _AdminBrand();
 
   @override
-  Widget build(BuildContext context) => const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedScoutMark.business(
-            motion: ScoutMarkMotion.scout,
-            size: 38,
-          ),
-          SizedBox(width: 9),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 240;
+          return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'TROLLEY SCOUT',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .3,
-                ),
+              const AnimatedScoutMark.business(
+                motion: ScoutMarkMotion.scout,
+                size: 38,
               ),
-              Text(
-                'BUSINESS ADMIN',
-                style: TextStyle(
-                  color: TS.red,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
+              const SizedBox(width: 9),
+              if (compact)
+                const Text(
+                  'ADMIN',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .8,
+                  ),
+                )
+              else
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'TROLLEY SCOUT',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .3,
+                      ),
+                    ),
+                    Text(
+                      'BUSINESS ADMIN',
+                      style: TextStyle(
+                        color: TS.red,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
             ],
-          ),
-        ],
+          );
+        },
       );
 }
 

@@ -1,6 +1,7 @@
 import type { TrolleyScoutEnv } from '../_shared/env'
 import {
   isPublicationEvent,
+  type OrganizationPublicationDestination,
   recordOrganizationPublicationEvent,
 } from '../_shared/organizationPublicationStore'
 import {
@@ -50,11 +51,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   const publicationId = bodyText(body.publicationId).trim()
   const event = bodyText(body.event).trim()
+  const destination = bodyText(body.destination).trim() as OrganizationPublicationDestination
   if (
     !publicationId ||
     publicationId.length > 200 ||
     !/^[A-Za-z0-9_-]+$/.test(publicationId) ||
-    !isPublicationEvent(event)
+    !isPublicationEvent(event) ||
+    !['marketplace', 'window', 'stories'].includes(destination)
   ) {
     return json(
       { accepted: false, issues: ['Provide a valid publication event.'] },
@@ -62,7 +65,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  const accepted = await recordOrganizationPublicationEvent(env, publicationId, event)
+  const accepted = await recordOrganizationPublicationEvent(env, publicationId, destination, event)
   return json(
     { accepted },
     { headers: eventHeaders, status: accepted ? 202 : 404 },

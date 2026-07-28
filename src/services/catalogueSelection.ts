@@ -89,6 +89,10 @@ function cleanCatalogue(
   const hasPromotionEvidence = PROMOTION_PATTERN.test(evidence)
   const hasCatalogueEvidence = CATALOGUE_PATTERN.test(evidence)
   const hasValidity = Boolean(leaflet.validFrom || validTo)
+  const namedYear = catalogueNamedYear(cleanedName, primaryUrl)
+  if (!hasValidity && namedYear !== undefined && namedYear < now.getUTCFullYear()) {
+    return undefined
+  }
 
   if (INFORMATION_PATTERN.test(evidence) && !hasValidity) {
     return undefined
@@ -268,7 +272,10 @@ function inferNamedEndDate(value: string): string | undefined {
 
 function inferAssetDate(value: string, now: Date): number | undefined {
   const path = decodeURIComponent(safeUrlPath(value)).toLowerCase()
-  const compact = /(?:^|[_/-])([0-3]\d)([01]\d)(2\d)(?=[_.\-/]|$)/.exec(path)
+  const dateText = path.includes('/wp-content/uploads/')
+    ? path.split('/').pop() ?? ''
+    : path
+  const compact = /(?:^|[_/-])([0-3]\d)([01]\d)(2\d)(?=[_.\-/]|$)/.exec(dateText)
   if (compact) {
     const first = Number(compact[1])
     const month = Number(compact[2])
@@ -287,7 +294,7 @@ function inferAssetDate(value: string, now: Date): number | undefined {
     }
   }
 
-  const yearMonth = /(?:^|[^\d])(20\d{2})[/_-](0?[1-9]|1[0-2])(?:[^\d]|$)/.exec(path)
+  const yearMonth = /(?:^|[^\d])(20\d{2})[/_-](0?[1-9]|1[0-2])(?:[^\d]|$)/.exec(dateText)
   if (yearMonth) {
     return Date.UTC(Number(yearMonth[1]), Number(yearMonth[2]) - 1, 1)
   }
@@ -306,7 +313,8 @@ function inferAssetDate(value: string, now: Date): number | undefined {
     'nov(?:ember)?',
     'dec(?:ember)?',
   ]
-  const monthMatch = new RegExp(`(?:^|[^a-z])(${monthNames.join('|')})(?:[^a-z]|$)`, 'i').exec(path)
+  const monthMatch = new RegExp(`(?:^|[^a-z])(${monthNames.join('|')})(?:[^a-z]|$)`, 'i')
+    .exec(dateText)
   if (!monthMatch) return undefined
   const month = monthNames.findIndex((pattern) => new RegExp(`^${pattern}$`, 'i').test(monthMatch[1]))
   if (month < 0) return undefined
@@ -337,6 +345,12 @@ function catalogueAssetKey(leaflet: StoreLeaflet): string | undefined {
   return canonicalUrl(leaflet.documentUrl ?? leaflet.url)
 }
 
+function catalogueNamedYear(name: string, value: string): number | undefined {
+  const filename = decodeURIComponent(safeUrlPath(value)).split('/').pop() ?? ''
+  const match = /\b(20\d{2})\b/.exec(`${name} ${filename}`)
+  return match ? Number(match[1]) : undefined
+}
+
 function catalogueCampaignKey(leaflet: StoreLeaflet): string | undefined {
   const name = leaflet.name
     .toLowerCase()
@@ -364,6 +378,7 @@ function canonicalUrl(value: string | undefined): string | undefined {
   if (!value) return undefined
   try {
     const url = new URL(value)
+    url.hostname = url.hostname.replace(/^www\./, '')
     url.hash = ''
     const hasFunctionalQuery = [
       'catalogue',

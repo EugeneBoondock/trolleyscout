@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DiscoveryRun, StoreLeaflet } from '../src/types'
 import {
+  buildScheduledOnlineStoreBatch,
   catalogueRetailerId,
   runScheduledScout,
   shouldRefreshDealSources,
@@ -21,6 +22,27 @@ function discoveryRun(leaflets: StoreLeaflet[] = []): DiscoveryRun {
     },
   }
 }
+
+describe('buildScheduledOnlineStoreBatch', () => {
+  it('reserves forty rotating slots for Zimbabwe sources', () => {
+    const firstRunAt = Date.parse('2026-07-27T12:00:00.000Z')
+    const first = buildScheduledOnlineStoreBatch(firstRunAt)
+    const second = buildScheduledOnlineStoreBatch(
+      firstRunAt + (3 * 60 * 60 * 1000),
+    )
+    const firstZimbabwe = first.filter((store) => store.countryCode === 'ZW')
+    const secondZimbabwe = second.filter((store) => store.countryCode === 'ZW')
+
+    expect(first).toHaveLength(100)
+    expect(firstZimbabwe).toHaveLength(40)
+    expect(secondZimbabwe).toHaveLength(40)
+    expect(
+      firstZimbabwe.some((store) =>
+        secondZimbabwe.every((next) => next.placeId !== store.placeId),
+      ),
+    ).toBe(true)
+  })
+})
 
 describe('runScheduledScout', () => {
   it('keeps catalogue discovery and scanning hourly while skipping three-hour deal lanes', async () => {
@@ -622,6 +644,68 @@ describe('runScheduledScout', () => {
       [
         expect.objectContaining({ id: 'structured-catalogue' }),
         expect.objectContaining({ id: 'legacy-catalogue' }),
+      ],
+      expect.stringMatching(/^20\d\d-/),
+    )
+  })
+
+  it('publishes catalogues found by the online catalogue scanner', async () => {
+    const saved = vi.fn(async () => undefined)
+    const cached: StoreLeaflet = {
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      documentUrl: 'https://cached.test/current.pdf',
+      id: 'cached-current',
+      name: 'Cached catalogue',
+      retailerId: 'spar',
+      retailerName: 'SPAR',
+      url: 'https://cached.test/catalogues',
+    }
+    const online: StoreLeaflet = {
+      capturedAt: '2026-07-27T11:00:00.000Z',
+      documentUrl: 'https://online.test/current.pdf',
+      id: 'online-current',
+      name: 'Online catalogue',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      url: 'https://online.test/catalogues',
+    }
+
+    await runScheduledScout(
+      { DB: {} as D1Database },
+      async () => Response.json({}),
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun([cached]),
+        runCatalogueScout: async () => ({
+          dealCount: 0,
+          discoveredLeafletCount: 1,
+          discoveredLeaflets: [online],
+          scannedDocumentCount: 0,
+        }),
+        runStructuredRetailerFeedScout: async () => ({
+          acceptedDealCount: 0,
+          catalogueCount: 0,
+          catalogues: [],
+          checkedSourceCount: 0,
+          databaseAvailable: true,
+          failedSourceCount: 0,
+          physicalRequestCount: 0,
+          sources: [],
+        }),
+        saveLeafletSnapshot: saved,
+        scoutNearbyStores: async () => undefined,
+      },
+      { refreshDealSources: false },
+    )
+
+    expect(saved).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({ id: 'cached-current' }),
+        expect.objectContaining({ id: 'online-current' }),
       ],
       expect.stringMatching(/^20\d\d-/),
     )

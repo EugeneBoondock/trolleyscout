@@ -1,13 +1,13 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/server-card.json",
   "name": "trolley-scout",
-  "title": "Trolley Scout",
-  "description": "Read-only MCP tools for South African grocery deals, nearby supermarkets, flash deals, and money help (SASSA grants and more). No authentication required.",
-  "version": "1.2.0",
+  "title": "Trolley Scout Developers",
+  "description": "OAuth-protected shopping data and business campaign tools for Developers subscribers.",
+  "version": "2.0.0",
   "serverInfo": {
     "name": "trolley-scout",
-    "title": "Trolley Scout",
-    "version": "1.2.0"
+    "title": "Trolley Scout Developers",
+    "version": "2.0.0"
   },
   "transport": {
     "type": "streamable-http",
@@ -15,7 +15,9 @@
   },
   "endpoint": "https://trolleyscout.co.za/mcp",
   "authentication": {
-    "type": "none"
+    "type": "oauth2",
+    "authorizationServer": "https://trolleyscout.co.za/.well-known/oauth-authorization-server",
+    "protectedResource": "https://trolleyscout.co.za/.well-known/oauth-protected-resource"
   },
   "capabilities": {
     "tools": {
@@ -25,19 +27,39 @@
   "tools": [
     {
       "name": "search_deals",
-      "description": "Search this week's verified South African grocery specials by keyword and/or retailer."
+      "description": "Search current shopping deals by keyword or retailer."
+    },
+    {
+      "name": "list_catalogues",
+      "description": "List current retailer catalogues."
     },
     {
       "name": "nearby_stores",
-      "description": "Find supermarkets near a latitude/longitude and their current specials."
+      "description": "Find supermarkets near a latitude and longitude."
     },
     {
-      "name": "flash_deals",
-      "description": "Browse flash/daily deals from OneDayOnly, Hyperli, Daddy's Deals and MyRunway."
+      "name": "list_stories",
+      "description": "List the current shopper Stories feed."
     },
     {
-      "name": "money_help",
-      "description": "Current South African social grant amounts (SASSA) and money-saving help."
+      "name": "get_trends",
+      "description": "Rank content for today, this week, or this month."
+    },
+    {
+      "name": "list_campaigns",
+      "description": "List campaigns owned by the connected business."
+    },
+    {
+      "name": "create_campaign_draft",
+      "description": "Create a campaign draft for the connected business."
+    },
+    {
+      "name": "submit_campaign",
+      "description": "Submit a campaign for Trolley Scout review."
+    },
+    {
+      "name": "get_campaign_results",
+      "description": "Read private results for an owned campaign."
     }
   ],
   "publisher": {

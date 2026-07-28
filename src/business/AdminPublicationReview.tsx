@@ -101,7 +101,7 @@ export function AdminPublicationReview() {
               <div className="admin-review-meta">
                 <strong>{publication.organizationName}</strong>
                 <span>{publication.kind}</span>
-                <span>{placementLabel(publication.placement)}</span>
+                <span>{destinationLabel(publication)}</span>
               </div>
               <h3>{publication.title}</h3>
               <p>{publication.bodyText}</p>
@@ -176,12 +176,17 @@ function formatMoney(cents: number, currency = 'ZAR') {
   }).format(cents / 100)
 }
 
-function placementLabel(placement: BusinessPublication['placement']) {
-  return placement === 'both'
-    ? 'Marketplace and Window Shopping'
-    : placement === 'window'
-      ? 'Window Shopping'
-      : 'Marketplace'
+function destinationLabel(publication: BusinessPublication) {
+  const destinations = publication.destinations ??
+    (publication.placement === 'both'
+      ? ['marketplace', 'window']
+      : [publication.placement])
+  return destinations.map((destination) =>
+    destination === 'marketplace'
+      ? 'Marketplace'
+      : destination === 'window'
+        ? 'Window Shopping'
+        : 'Stories').join(', ')
 }
 
 function dateWindow(startsAt?: string, endsAt?: string) {

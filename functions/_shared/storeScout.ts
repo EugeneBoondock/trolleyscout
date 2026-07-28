@@ -54,8 +54,8 @@ import {
 } from '../../src/services/commonCommerceDeals'
 import {
   TMPNP_STORE_HOST,
-  buildTmpnpSectionsUrl,
-  parseTmpnpSectionDeals,
+  buildTmpnpSpecialsUrl,
+  parseTmpnpSpecialDeals,
 } from '../../src/services/tmpnpDeals'
 import {
   reconcileSuccessfulStorePromotions,
@@ -98,6 +98,11 @@ const SPECIALS_PATHS = [
 // Keep a location scout cheap and quick: only a few independent stores per run,
 // and only those with a website that we have not scouted recently.
 const MAX_STORES_PER_RUN = 3
+// Browser and API fallbacks are independent per shop. Running a small pool
+// prevents one expired certificate or hanging host from consuming the entire
+// Zimbabwe sweep, while staying below Workers’ outbound connection and
+// subrequest limits.
+const STORE_SCOUT_CONCURRENCY = 4
 const MAX_PATHS_PER_STORE = 4
 // A Shopify catalogue page of 250 products runs to about 3.3MB, and reading a
 // truncated one leaves unparseable JSON, so the limit has to clear a whole page
@@ -111,8 +116,54 @@ const MAX_EMBEDDED_SCRIPTS = 30
 const MAX_EMBEDDED_NODES = 12_000
 const MAX_PROMOTIONS_PER_PAGE = 60
 const REQUEST_TIMEOUT_MS = 8_000
+// A request-bounded admin sweep must leave enough of its wall-clock budget to
+// fetch at least one claimed shop. With a large registry, checking cooldowns
+// one row at a time could otherwise consume the whole budget after a useful
+// candidate had already been found.
+const CLAIM_COLLECTION_AFTER_FIRST_MS = 1_000
+const STORE_FETCH_BUDGET_RESERVE_MS = REQUEST_TIMEOUT_MS + 2_000
 const SPAR_ORIGIN = 'https://mobile.spar.co.za'
+const SPAR_ZIMBABWE_HOST = 'spar.co.zw'
+const SPAR_ZIMBABWE_PRODUCTS_URL = 'https://www.spar.co.zw/products'
+const SPAR_ZIMBABWE_PRODUCT_PAGES = 4
+const ZIMBABWE_WOOCOMMERCE_PRODUCT_PAGES = 3
+const ZIMBABWE_WOOCOMMERCE_PAGE_SIZE = 100
+const ZIMBABWE_WOOCOMMERCE_CATALOGUES: Record<
+  string,
+  { apiUrl: string; label: string; origin: string; shopUrl: string }
+> = {
+  'foodworld.co.zw': {
+    apiUrl: 'https://www.foodworld.co.zw/wp-json/wc/store/v1/products',
+    label: 'Food World online catalogue',
+    origin: 'https://www.foodworld.co.zw',
+    shopUrl: 'https://www.foodworld.co.zw/shop/',
+  },
+  'greensonline.co.zw': {
+    apiUrl: 'https://greensonline.co.zw/wp-json/wc/store/v1/products',
+    label: 'Greens online catalogue',
+    origin: 'https://greensonline.co.zw',
+    shopUrl: 'https://greensonline.co.zw/index.php/shop-2/',
+  },
+  'budgetmeatshop.co.zw': {
+    apiUrl: 'https://budgetmeatshop.co.zw/wp-json/wc/store/v1/products',
+    label: 'Budget Meat Shop online catalogue',
+    origin: 'https://budgetmeatshop.co.zw',
+    shopUrl: 'https://budgetmeatshop.co.zw/shop/',
+  },
+}
 const AGGREGATOR_HOSTS = ['guzzle.co.za', 'tiendeo.co.za', 'cataloguespecials.co.za']
+const TELONE_SHOP_HOST = 'shop.telone.co.zw'
+const TELONE_PRODUCTS_URL =
+  'https://springapi.telone.co.zw/digitalShop/api/v1/product-line?region=Harare'
+const TILLPOINT_HOST = 'tillpoint.co.zw'
+const TILLPOINT_ORIGIN = 'https://tillpoint.co.zw'
+const GETMORE_HOST = 'getmore.co.zw'
+const GETMORE_SPECIALS_URL = 'https://getmore.co.zw/special-offers.html'
+const FOUR_HARVESTS_HOST = '4harvests.co.zw'
+const FOUR_HARVESTS_ORIGIN = 'https://www.4harvests.co.zw'
+const FOUR_HARVESTS_SALE_URL =
+  'https://www.4harvests.co.zw/shop/?on_sale=onsale'
+const FOUR_HARVESTS_PAGE_SIZE = 48
 
 const KNOWN_RETAILER_HOSTS: Record<string, string> = {
   builders: 'builders.co.za',
@@ -178,6 +229,7 @@ export async function scoutNearbyStores(
 
   const candidates: NearbyStore[] = []
   const limit = Math.max(0, Math.floor(maxStores))
+  const claimStartedAt = Date.now()
 
   if (limit === 0) {
     if (feedRetailersScouted) {
@@ -191,6 +243,19 @@ export async function scoutNearbyStores(
   }
 
   for (const store of storesNeedingDeals) {
+    if (
+      deadlineMs !== undefined &&
+      (
+        Date.now() >= deadlineMs - STORE_FETCH_BUDGET_RESERVE_MS ||
+        (
+          candidates.length > 0 &&
+          Date.now() - claimStartedAt >= CLAIM_COLLECTION_AFTER_FIRST_MS
+        )
+      )
+    ) {
+      break
+    }
+
     const queuedNextScoutAt = (store as NearbyStore & { nextScoutAt?: unknown }).nextScoutAt
     const isDueQueueItem =
       typeof queuedNextScoutAt === 'string' && queuedNextScoutAt <= nowIso
@@ -210,36 +275,56 @@ export async function scoutNearbyStores(
   let savedAnyPromotions = false
   const preparedCandidates = await enrichCountryRetailerWebsites(env, candidates)
 
-  for (const store of preparedCandidates) {
-    // Checked before each shop rather than after, so the sweep never starts one
-    // more fetch than the caller can wait for.
-    if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
-      break
-    }
+  let candidateIndex = 0
+  const workerCount = Math.min(
+    STORE_SCOUT_CONCURRENCY,
+    preparedCandidates.length,
+  )
 
-    try {
-      const outcome = await scoutStore(env, store, nowMs)
-      const resolvedStore = outcome.resolvedWebsite
-        ? { ...store, website: outcome.resolvedWebsite }
-        : store
-      const promotions = outcome.promotions.map((promotion) => ({
-        ...promotion,
-        countryCode: store.countryCode ?? 'ZA',
-      }))
-      const saved = await saveStorePromotions(env, promotions, nowMs)
-      if (saved && promotions.length > 0) {
-        savedAnyPromotions = true
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (candidateIndex < preparedCandidates.length) {
+        // Checked before reserving the next shop, so the pool never starts
+        // another fetch after the caller’s wall-clock budget has ended.
+        if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+          return
+        }
+
+        const store = preparedCandidates[candidateIndex]
+        candidateIndex += 1
+        if (!store) return
+
+        try {
+          const outcome = await scoutStore(env, store, nowMs)
+          const resolvedStore = outcome.resolvedWebsite
+            ? { ...store, website: outcome.resolvedWebsite }
+            : store
+          const promotions = outcome.promotions.map((promotion) => ({
+            ...promotion,
+            countryCode: store.countryCode ?? 'ZA',
+          }))
+          const saved = await saveStorePromotions(env, promotions, nowMs)
+          if (saved && promotions.length > 0) {
+            savedAnyPromotions = true
+          }
+          if (saved && outcome.status === 'success' && promotions.length > 0) {
+            await reconcileSuccessfulStorePromotions(env, store.placeId, promotions)
+          }
+          await recordStoreScout(
+            env,
+            resolvedStore,
+            promotions.length,
+            nowMs,
+            outcome.status,
+          )
+        } catch {
+          // A malformed store or unexpected source response is isolated to
+          // this queue item so every later due store still receives an attempt.
+          await recordStoreScout(env, store, 0, nowMs, 'transient_failure')
+        }
       }
-      if (saved && outcome.status === 'success' && promotions.length > 0) {
-        await reconcileSuccessfulStorePromotions(env, store.placeId, promotions)
-      }
-      await recordStoreScout(env, resolvedStore, promotions.length, nowMs, outcome.status)
-    } catch {
-      // A malformed store or unexpected source response is isolated to this
-      // queue item so every later due store still receives an attempt.
-      await recordStoreScout(env, store, 0, nowMs, 'transient_failure')
-    }
-  }
+    }),
+  )
 
   // New deals just landed from this shopper's area (structured feeds and/or
   // scouted promotions): see whether they answer anything members watch for.
@@ -410,6 +495,32 @@ async function scoutStore(
     }
   }
 
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === SPAR_ZIMBABWE_HOST
+  ) {
+    const sparZimbabwe = await scoutSparZimbabwe(store)
+    attempts.push(sparZimbabwe)
+    if (sparZimbabwe.promotions.length > 0) {
+      return sparZimbabwe
+    }
+  }
+
+  const zimbabweWooCommerce =
+    countryFromCode(store.countryCode).code === 'ZW' && safeHost(store.website)
+      ? ZIMBABWE_WOOCOMMERCE_CATALOGUES[safeHost(store.website) ?? '']
+      : undefined
+  if (zimbabweWooCommerce) {
+    const catalogue = await scoutZimbabweWooCommerceCatalogue(
+      store,
+      zimbabweWooCommerce,
+    )
+    attempts.push(catalogue)
+    if (catalogue.promotions.length > 0) {
+      return catalogue
+    }
+  }
+
   // A store matched to a custom-API retailer reads its live specials straight
   // from that API. TM Pick n Pay's Next.js storefront bot-walls datacenter
   // fetches with a redirect loop, so website scraping never would — but its
@@ -419,6 +530,50 @@ async function scoutStore(
     attempts.push(tmpnp)
     if (tmpnp.promotions.length > 0) {
       return tmpnp
+    }
+  }
+
+  // TelOne renders its public shop as an Angular shell. The product rows are
+  // loaded from this anonymous JSON endpoint, so the raw HTML contains no
+  // prices for a server-side scout to read.
+  if (safeHost(store.website) === TELONE_SHOP_HOST) {
+    const telone = await scoutTelone(store)
+    attempts.push(telone)
+    if (telone.promotions.length > 0) {
+      return telone
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === TILLPOINT_HOST
+  ) {
+    const tillPoint = await scoutTillPoint(store)
+    attempts.push(tillPoint)
+    if (tillPoint.promotions.length > 0) {
+      return tillPoint
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === GETMORE_HOST
+  ) {
+    const getMore = await scoutGetMore(env, store)
+    attempts.push(getMore)
+    if (getMore.promotions.length > 0) {
+      return getMore
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === FOUR_HARVESTS_HOST
+  ) {
+    const fourHarvests = await scoutFourHarvests(env, store)
+    attempts.push(fourHarvests)
+    if (fourHarvests.promotions.length > 0) {
+      return fourHarvests
     }
   }
 
@@ -1075,8 +1230,691 @@ async function scoutTmpnp(store: NearbyStore, nowMs: number): Promise<ScoutOutco
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const response = await fetch(buildTmpnpSectionsUrl(), {
-      headers: { accept: 'application/json', 'user-agent': BROWSER_UA },
+    const pageResults = await Promise.allSettled(
+      Array.from({ length: 4 }, async (_, index) => {
+        const response = await fetch(buildTmpnpSpecialsUrl(index + 1), {
+          headers: { accept: 'application/json', 'user-agent': BROWSER_UA },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`TM Pick n Pay specials returned ${response.status}`)
+        }
+        return JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
+      }),
+    )
+    const deals = pageResults
+      .flatMap((result) =>
+        result.status === 'fulfilled' ? parseTmpnpSpecialDeals(result.value, nowMs) : [],
+      )
+      .filter(
+        (deal, index, all) =>
+          all.findIndex(
+            (candidate) =>
+              (candidate.productUrl ?? candidate.title.toLowerCase()) ===
+              (deal.productUrl ?? deal.title.toLowerCase()),
+          ) === index,
+      )
+      .slice(0, MAX_PLATFORM_DEALS)
+    if (deals.length === 0) {
+      return outcome(
+        pageResults.some((result) => result.status === 'rejected')
+          ? 'transient_failure'
+          : 'empty',
+      )
+    }
+
+    return outcome(
+      'success',
+      deals.map((deal) => platformDealToPromotion(store, deal, `https://${TMPNP_STORE_HOST}`)),
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+interface TeloneProduct {
+  active?: unknown
+  id?: unknown
+  imageUrl?: unknown
+  name?: unknown
+  price?: unknown
+  productItemTotal?: unknown
+}
+
+interface FoodWorldProduct {
+  id?: unknown
+  images?: unknown
+  is_in_stock?: unknown
+  name?: unknown
+  permalink?: unknown
+  prices?: unknown
+  slug?: unknown
+}
+
+interface TillPointProduct {
+  compare_at_price?: unknown
+  currency?: unknown
+  id?: unknown
+  images?: unknown
+  is_available?: unknown
+  name?: unknown
+  price?: unknown
+  slug?: unknown
+  stock_quantity?: unknown
+  thumbnail?: unknown
+}
+
+export function parseTillPointProducts(payload: unknown): PlatformDeal[] {
+  if (!Array.isArray(payload)) {
+    return []
+  }
+
+  return payload.flatMap((value): PlatformDeal[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+
+    const row = value as TillPointProduct
+    const title = typeof row.name === 'string' ? row.name.trim() : ''
+    const slug = typeof row.slug === 'string' ? row.slug.trim() : ''
+    const price = typeof row.price === 'number'
+      ? row.price
+      : Number.parseFloat(String(row.price ?? ''))
+    const compareAt = typeof row.compare_at_price === 'number'
+      ? row.compare_at_price
+      : Number.parseFloat(String(row.compare_at_price ?? ''))
+    const stock = typeof row.stock_quantity === 'number'
+      ? row.stock_quantity
+      : Number.parseFloat(String(row.stock_quantity ?? ''))
+    const images = Array.isArray(row.images)
+      ? row.images.filter((image): image is string => typeof image === 'string')
+      : []
+    const imageUrl = absoluteUrl(
+      typeof row.thumbnail === 'string' ? row.thumbnail : images[0],
+      TILLPOINT_ORIGIN,
+    )
+
+    if (
+      row.is_available === false ||
+      !title ||
+      !slug ||
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      return []
+    }
+
+    const priceCents = Math.round(price * 100)
+    const previousPriceCents = Number.isFinite(compareAt) && compareAt > price
+      ? Math.round(compareAt * 100)
+      : undefined
+
+    return [{
+      currencyCode: typeof row.currency === 'string'
+        ? row.currency.toUpperCase()
+        : 'USD',
+      imageUrl,
+      previousPriceCents,
+      priceCents,
+      productUrl: `${TILLPOINT_ORIGIN}/p/${encodeURIComponent(slug)}`,
+      promoLabel: 'TillPoint online catalogue',
+      soldOut: Number.isFinite(stock) ? stock <= 0 : undefined,
+      title,
+    }]
+  })
+}
+
+export function parseGetMoreSpecialProducts(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const itemPattern =
+    /<li\b[^>]*class=["'][^"']*\bproduct-item\b[^"']*["'][^>]*>[\s\S]*?<\/li>/gi
+  let item: RegExpExecArray | null
+
+  while ((item = itemPattern.exec(html)) !== null) {
+    const segment = item[0]
+    const productLink =
+      /<a\b([^>]*class=["'][^"']*\bproduct-item-link\b[^"']*["'][^>]*)>([\s\S]*?)<\/a>/i
+        .exec(segment)
+    const productUrl = absoluteUrl(
+      productLink ? attributeValue(productLink[1], ['href']) : undefined,
+      GETMORE_SPECIALS_URL,
+    )
+    const title = productLink ? cleanText(productLink[2]) : ''
+    const finalPriceTag =
+      /<[^>]*\bdata-price-type=["']finalPrice["'][^>]*>/i.exec(segment)?.[0]
+    const oldPriceTag =
+      /<[^>]*\bdata-price-type=["']oldPrice["'][^>]*>/i.exec(segment)?.[0]
+    const price = Number.parseFloat(
+      attributeValue(finalPriceTag ?? '', ['data-price-amount']) ?? '',
+    )
+    const previousPrice = Number.parseFloat(
+      attributeValue(oldPriceTag ?? '', ['data-price-amount']) ?? '',
+    )
+    const imageTag =
+      /<img\b([^>]*class=["'][^"']*\bproduct-image-photo\b[^"']*["'][^>]*)>/i
+        .exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag ? attributeValue(imageTag, ['data-src', 'src']) : undefined,
+      GETMORE_SPECIALS_URL,
+    )
+
+    if (
+      !productUrl ||
+      safeHost(productUrl) !== GETMORE_HOST ||
+      !title ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    seen.add(productUrl)
+    products.push({
+      currencyCode: 'USD',
+      imageUrl,
+      previousPriceCents:
+        Number.isFinite(previousPrice) && previousPrice > price
+          ? Math.round(previousPrice * 100)
+          : undefined,
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: 'GetMore special offers',
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+export function parseFourHarvestsDeals(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const starts = Array.from(html.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bproduct\b[^"']*\btype-product\b[^"']*["'][^>]*>/gi,
+  ))
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index].index ?? 0
+    const next = starts[index + 1]?.index ?? html.length
+    const segment = html.slice(start, Math.min(next, start + 35_000))
+    const titleLink =
+      /<h3\b[^>]*class=["'][^"']*\bproduct-title\b[^"']*["'][^>]*>[\s\S]*?<a\b([^>]*)>([\s\S]*?)<\/a>/i
+        .exec(segment)
+    const productUrl = absoluteUrl(
+      titleLink ? attributeValue(titleLink[1], ['href']) : undefined,
+      FOUR_HARVESTS_SALE_URL,
+    )
+    const title = titleLink ? cleanText(titleLink[2]) : ''
+    const previousPrice = numberValue(
+      cleanText(/<del\b[^>]*>([\s\S]*?)<\/del>/i.exec(segment)?.[1] ?? ''),
+    )
+    const price = numberValue(
+      cleanText(/<ins\b[^>]*>([\s\S]*?)<\/ins>/i.exec(segment)?.[1] ?? ''),
+    )
+    const imageTag = /<img\b([^>]*)>/i.exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag ? attributeValue(imageTag, ['src', 'data-src']) : undefined,
+      FOUR_HARVESTS_SALE_URL,
+    )
+
+    if (
+      !productUrl ||
+      safeHost(productUrl) !== FOUR_HARVESTS_HOST ||
+      !title ||
+      price === undefined ||
+      previousPrice === undefined ||
+      previousPrice <= price ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    seen.add(productUrl)
+    products.push({
+      currencyCode: 'USD',
+      imageUrl,
+      previousPriceCents: Math.round(previousPrice * 100),
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: '4 Harvests sale',
+      soldOut: /\boutofstock\b|\bout of stock\b/i.test(segment),
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+async function scoutTillPoint(store: NearbyStore): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const homeResponse = await fetch(TILLPOINT_ORIGIN, {
+      headers: { accept: 'text/html', 'user-agent': BROWSER_UA },
+      signal: controller.signal,
+    })
+    if (!homeResponse.ok) {
+      return outcome(homeResponse.status >= 500 ? 'transient_failure' : 'empty')
+    }
+    const homeHtml = await readBoundedBody(homeResponse, MAX_BODY_BYTES)
+    const entryPath =
+      /<script\b[^>]*\bsrc=["']([^"']*\/_expo\/static\/js\/web\/entry-[^"']+\.js)["']/i
+        .exec(homeHtml)?.[1]
+    const entryUrl = absoluteUrl(entryPath, TILLPOINT_ORIGIN)
+    if (!entryUrl || !sameOrigin(entryUrl, TILLPOINT_ORIGIN)) {
+      return outcome('empty')
+    }
+
+    const bundleResponse = await fetch(entryUrl, {
+      headers: { accept: 'application/javascript', 'user-agent': BROWSER_UA },
+      signal: controller.signal,
+    })
+    if (!bundleResponse.ok) {
+      return outcome(bundleResponse.status >= 500 ? 'transient_failure' : 'empty')
+    }
+    const bundle = await readBoundedBody(bundleResponse, MAX_BODY_BYTES)
+    const supabaseOrigin =
+      /supabaseUrl[\s\S]{0,80}?(https:\/\/[a-z0-9-]+\.supabase\.co)/i
+        .exec(bundle)?.[1]
+    const anonKey =
+      /supabaseAnonKey[\s\S]{0,100}?(eyJ[A-Za-z0-9._-]+)/i.exec(bundle)?.[1]
+    if (
+      !supabaseOrigin ||
+      !safeHost(supabaseOrigin)?.endsWith('.supabase.co') ||
+      !anonKey
+    ) {
+      return outcome('empty')
+    }
+
+    const productsUrl = new URL('/rest/v1/products', supabaseOrigin)
+    productsUrl.searchParams.set(
+      'select',
+      'id,name,slug,price,compare_at_price,stock_quantity,is_available,thumbnail,images,currency',
+    )
+    productsUrl.searchParams.set('is_available', 'eq.true')
+    productsUrl.searchParams.set('order', 'created_at.desc')
+    productsUrl.searchParams.set('limit', String(MAX_PLATFORM_DEALS))
+    const productsResponse = await fetch(productsUrl, {
+      headers: {
+        accept: 'application/json',
+        apikey: anonKey,
+        authorization: `Bearer ${anonKey}`,
+        'user-agent': BROWSER_UA,
+      },
+      signal: controller.signal,
+    })
+    if (!productsResponse.ok) {
+      return outcome(productsResponse.status >= 500 ? 'transient_failure' : 'empty')
+    }
+
+    const products = parseTillPointProducts(
+      JSON.parse(await readBoundedBody(productsResponse, MAX_BODY_BYTES)),
+    ).slice(0, MAX_PLATFORM_DEALS)
+    return products.length > 0
+      ? outcome(
+          'success',
+          products.map((product) =>
+            platformDealToPromotion(
+              store,
+              product,
+              TILLPOINT_ORIGIN,
+              'Online catalogue',
+            ),
+          ),
+          TILLPOINT_ORIGIN,
+        )
+      : outcome('empty')
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function scoutGetMore(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const page = await fetchStorePage(GETMORE_SPECIALS_URL, env.JINA_API_KEY)
+  if (page.status !== 'success' || !page.text) {
+    return outcome(page.status)
+  }
+
+  const products = parseGetMoreSpecialProducts(page.text)
+  return products.length > 0
+    ? outcome(
+        'success',
+        products.map((product) =>
+          platformDealToPromotion(
+            store,
+            product,
+            GETMORE_SPECIALS_URL,
+            'Special offers',
+          ),
+        ),
+        'https://getmore.co.zw',
+      )
+    : outcome('empty')
+}
+
+async function scoutFourHarvests(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const salePage = await fetchStorePage(
+    FOUR_HARVESTS_SALE_URL,
+    env.JINA_API_KEY,
+  )
+  if (salePage.status !== 'success' || !salePage.text) {
+    return outcome(salePage.status)
+  }
+
+  const idsText = /["']on_sale["']\s*:\s*\[([^\]]+)\]/i
+    .exec(salePage.text)?.[1]
+  const saleIds = (idsText ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => /^\d+$/.test(value))
+    .slice(0, MAX_PLATFORM_DEALS)
+  if (saleIds.length === 0) {
+    return outcome('empty')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const pageCount = Math.ceil(saleIds.length / FOUR_HARVESTS_PAGE_SIZE)
+    const pages = await Promise.allSettled(
+      Array.from({ length: pageCount }, async (_, currentPage) => {
+        const body = new URLSearchParams({
+          action: 'load_more',
+          current_page: String(currentPage),
+          filter_cat: '',
+          is_search: '',
+          layered_nav: '',
+          max_price: '',
+          min_price: '',
+          orderby: '',
+          per_page: String(FOUR_HARVESTS_PAGE_SIZE),
+          s: '',
+          shop_view: '',
+          taxonomy: '',
+          term_id: '',
+        })
+        for (const id of saleIds) {
+          body.append('on_sale[]', id)
+        }
+        const response = await fetch(
+          `${FOUR_HARVESTS_ORIGIN}/wp-admin/admin-ajax.php`,
+          {
+            body: body.toString(),
+            headers: {
+              accept: 'text/html',
+              'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              referer: FOUR_HARVESTS_SALE_URL,
+              'user-agent': BROWSER_UA,
+              'x-requested-with': 'XMLHttpRequest',
+            },
+            method: 'POST',
+            signal: controller.signal,
+          },
+        )
+        if (!response.ok) {
+          throw new Error(`4 Harvests sale page returned ${response.status}`)
+        }
+        return readBoundedBody(response, MAX_BODY_BYTES)
+      }),
+    )
+    const products = pages
+      .flatMap((page) =>
+        page.status === 'fulfilled'
+          ? parseFourHarvestsDeals(page.value)
+          : [],
+      )
+      .filter(
+        (product, index, all) =>
+          all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
+      )
+      .slice(0, MAX_PLATFORM_DEALS)
+
+    if (products.length === 0) {
+      return outcome(
+        pages.some((page) => page.status === 'rejected')
+          ? 'transient_failure'
+          : 'empty',
+      )
+    }
+
+    return outcome(
+      'success',
+      products.map((product) =>
+        platformDealToPromotion(
+          store,
+          product,
+          FOUR_HARVESTS_SALE_URL,
+          'Online sale',
+        ),
+      ),
+      FOUR_HARVESTS_ORIGIN,
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export function parseFoodWorldProducts(
+  payload: unknown,
+  origin = 'https://foodworld.co.zw',
+  promoLabel = 'Food World online catalogue',
+): PlatformDeal[] {
+  if (!Array.isArray(payload)) {
+    return []
+  }
+
+  return payload.flatMap((value): PlatformDeal[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+
+    const row = value as FoodWorldProduct
+    const prices = row.prices && typeof row.prices === 'object'
+      ? row.prices as Record<string, unknown>
+      : undefined
+    const title = typeof row.name === 'string' ? decodeHtml(row.name).trim() : ''
+    const minorUnit = Number.parseInt(String(prices?.currency_minor_unit ?? '2'), 10)
+    const rawPrice = Number.parseInt(String(prices?.price ?? ''), 10)
+    const divisor = 10 ** (Number.isFinite(minorUnit) ? Math.max(0, minorUnit) : 2)
+    const priceCents = Number.isFinite(rawPrice)
+      ? Math.round((rawPrice / divisor) * 100)
+      : Number.NaN
+    const rawRegularPrice = Number.parseInt(String(prices?.regular_price ?? ''), 10)
+    const previousPriceCents = Number.isFinite(rawRegularPrice)
+      ? Math.round((rawRegularPrice / divisor) * 100)
+      : undefined
+    const permalink = typeof row.permalink === 'string'
+      ? row.permalink
+      : undefined
+    const slug = typeof row.slug === 'string' ? row.slug.trim() : ''
+    const productUrl = absoluteUrl(
+      permalink || (slug ? `/product/${encodeURIComponent(slug)}/` : undefined),
+      origin,
+    )
+    const images = Array.isArray(row.images) ? row.images : []
+    const image = images.find(
+      (candidate): candidate is Record<string, unknown> =>
+        Boolean(candidate) && typeof candidate === 'object',
+    )
+    const imageUrl = absoluteUrl(
+      typeof image?.src === 'string' ? image.src : undefined,
+      origin,
+    )
+    const currencyCode = typeof prices?.currency_code === 'string'
+      ? prices.currency_code.toUpperCase()
+      : 'USD'
+
+    if (!title || !productUrl || !Number.isFinite(priceCents) || priceCents <= 0) {
+      return []
+    }
+
+    return [{
+      currencyCode,
+      imageUrl,
+      previousPriceCents:
+        previousPriceCents !== undefined && previousPriceCents > priceCents
+          ? previousPriceCents
+          : undefined,
+      priceCents,
+      productUrl,
+      promoLabel,
+      soldOut: row.is_in_stock === false,
+      title,
+    }]
+  })
+}
+
+async function scoutZimbabweWooCommerceCatalogue(
+  store: NearbyStore,
+  config: { apiUrl: string; label: string; origin: string; shopUrl: string },
+): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const pages = await Promise.allSettled(
+      Array.from({ length: ZIMBABWE_WOOCOMMERCE_PRODUCT_PAGES }, async (_, index) => {
+        const url = new URL(config.apiUrl)
+        url.searchParams.set('per_page', String(ZIMBABWE_WOOCOMMERCE_PAGE_SIZE))
+        url.searchParams.set('page', String(index + 1))
+        url.searchParams.set(
+          '_fields',
+          'id,name,slug,permalink,prices,images,is_in_stock',
+        )
+        const response = await fetch(url, {
+          headers: {
+            accept: 'application/json',
+            'user-agent': BROWSER_UA,
+          },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`Zimbabwe WooCommerce products returned ${response.status}`)
+        }
+        return JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
+      }),
+    )
+    const products = pages
+      .flatMap((page) =>
+        page.status === 'fulfilled'
+          ? parseFoodWorldProducts(page.value, config.origin, config.label)
+          : [],
+      )
+      .filter(
+        (product, index, all) =>
+          all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
+      )
+      .slice(0, MAX_PLATFORM_DEALS)
+
+    if (products.length === 0) {
+      return outcome(
+        pages.some((page) => page.status === 'rejected')
+          ? 'transient_failure'
+          : 'empty',
+      )
+    }
+
+    return outcome(
+      'success',
+      products.map((product) =>
+        platformDealToPromotion(
+          store,
+          product,
+          config.shopUrl,
+          'Online catalogue',
+        ),
+      ),
+      config.origin,
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export function parseTeloneProducts(payload: unknown): PlatformDeal[] {
+  if (!Array.isArray(payload)) {
+    return []
+  }
+
+  return payload.flatMap((value): PlatformDeal[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+
+    const row = value as TeloneProduct
+    const id = typeof row.id === 'number' || typeof row.id === 'string'
+      ? String(row.id)
+      : ''
+    const title = typeof row.name === 'string' ? row.name.trim() : ''
+    const price = typeof row.price === 'number'
+      ? row.price
+      : Number.parseFloat(String(row.price ?? ''))
+    if (
+      row.active === false ||
+      !id ||
+      !title ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      return []
+    }
+
+    const stock = typeof row.productItemTotal === 'number'
+      ? row.productItemTotal
+      : Number.parseFloat(String(row.productItemTotal ?? ''))
+    const imageUrl = typeof row.imageUrl === 'string' &&
+        /^https?:\/\//i.test(row.imageUrl)
+      ? row.imageUrl
+      : undefined
+
+    return [{
+      currencyCode: 'USD',
+      imageUrl,
+      priceCents: Math.round(price * 100),
+      productUrl: `https://${TELONE_SHOP_HOST}/product/${encodeURIComponent(id)}`,
+      promoLabel: 'TelOne Digital Shop',
+      soldOut: Number.isFinite(stock) ? stock <= 0 : undefined,
+      title,
+    }]
+  })
+}
+
+async function scoutTelone(store: NearbyStore): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(TELONE_PRODUCTS_URL, {
+      headers: {
+        accept: 'application/json',
+        origin: `https://${TELONE_SHOP_HOST}`,
+        'user-agent': BROWSER_UA,
+      },
       signal: controller.signal,
     })
     if (
@@ -1091,15 +1929,149 @@ async function scoutTmpnp(store: NearbyStore, nowMs: number): Promise<ScoutOutco
       return outcome('permanent_unverified')
     }
 
-    const payload = JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
-    const deals = parseTmpnpSectionDeals(payload, nowMs).slice(0, MAX_PLATFORM_DEALS)
-    if (deals.length === 0) {
-      return outcome('empty')
+    const products = parseTeloneProducts(
+      JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)),
+    )
+    return products.length > 0
+      ? outcome(
+          'success',
+          products.map((deal) =>
+            platformDealToPromotion(
+              store,
+              deal,
+              `https://${TELONE_SHOP_HOST}/store`,
+              'Online catalogue',
+            ),
+          ),
+        )
+      : outcome('empty')
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export function parseSparZimbabweProducts(html: string): PlatformDeal[] {
+  const deals: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const itemPattern =
+    /<li\b[^>]*>(?=[\s\S]{0,1200}<a\b[^>]*\bid=["']Content_List_Photo_\d+["'])[\s\S]*?<\/li>/gi
+  let item: RegExpExecArray | null
+
+  while ((item = itemPattern.exec(html)) !== null) {
+    const segment = item[0]
+    const anchorAttributes =
+      /<a\b([^>]*\bid=["']Content_List_Photo_\d+["'][^>]*)>/i.exec(segment)?.[1]
+    const href = anchorAttributes
+      ? attributeValue(anchorAttributes, ['href'])
+      : undefined
+    const productUrl = absoluteUrl(href, SPAR_ZIMBABWE_PRODUCTS_URL)
+    const titleMarkup =
+      /<div\b[^>]*class=["'][^"']*\blisting-details\b[^"']*["'][^>]*>\s*<p>([\s\S]*?)<\/p>/i
+        .exec(segment)?.[1]
+    const priceMarkup =
+      /<div\b[^>]*class=["'][^"']*\bproduct-links\b[^"']*["'][^>]*>[\s\S]*?<strong>([\s\S]*?)<\/strong>/i
+        .exec(segment)?.[1]
+    const title = titleMarkup ? cleanText(titleMarkup) : ''
+    const priceText = priceMarkup
+      ? cleanText(priceMarkup.replace(/&#(?:36|x24);/gi, '$'))
+      : ''
+    const price = /^USD\s*\$\s*(\d+(?:\.\d{1,2})?)$/i.exec(priceText)?.[1]
+
+    if (
+      !productUrl ||
+      !/^https:\/\/www\.spar\.co\.zw\/products\/[^/?#]+\/[^/?#]+/i.test(productUrl) ||
+      !title ||
+      !price ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    const style = anchorAttributes
+      ? attributeValue(anchorAttributes, ['style'])
+      : undefined
+    const imageUrl = style
+      ? /background-image\s*:\s*url\(\s*["']?(https:\/\/cdn\.spar\.co\.zw\/[^)"']+)["']?\s*\)/i
+          .exec(style)?.[1]
+      : undefined
+    const priceNumber = Number.parseFloat(price)
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      continue
+    }
+
+    seen.add(productUrl)
+    deals.push({
+      currencyCode: 'USD',
+      imageUrl,
+      priceCents: Math.round(priceNumber * 100),
+      productUrl,
+      promoLabel: 'SPAR Zimbabwe online catalogue',
+      title,
+    })
+
+    if (deals.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return deals
+}
+
+async function scoutSparZimbabwe(store: NearbyStore): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const pages = await Promise.allSettled(
+      Array.from({ length: SPAR_ZIMBABWE_PRODUCT_PAGES }, async (_, page) => {
+        const url = new URL(SPAR_ZIMBABWE_PRODUCTS_URL)
+        url.searchParams.set('pg', String(page))
+        const response = await fetch(url, {
+          headers: {
+            accept: 'text/html',
+            'user-agent': BROWSER_UA,
+          },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`SPAR Zimbabwe products returned ${response.status}`)
+        }
+        return readBoundedBody(response, MAX_BODY_BYTES)
+      }),
+    )
+    const products = pages
+      .flatMap((page) =>
+        page.status === 'fulfilled'
+          ? parseSparZimbabweProducts(page.value)
+          : [],
+      )
+      .filter(
+        (product, index, all) =>
+          all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
+      )
+      .slice(0, MAX_PLATFORM_DEALS)
+
+    if (products.length === 0) {
+      return outcome(
+        pages.some((page) => page.status === 'rejected')
+          ? 'transient_failure'
+          : 'empty',
+      )
     }
 
     return outcome(
       'success',
-      deals.map((deal) => platformDealToPromotion(store, deal, `https://${TMPNP_STORE_HOST}`)),
+      products.map((product) =>
+        platformDealToPromotion(
+          store,
+          product,
+          SPAR_ZIMBABWE_PRODUCTS_URL,
+          'Online catalogue',
+        ),
+      ),
+      'https://www.spar.co.zw',
     )
   } catch (error) {
     return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')

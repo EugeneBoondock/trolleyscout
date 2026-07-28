@@ -14,6 +14,7 @@ import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
 import '../widgets/dashboard_stories.dart';
+import '../widgets/dashboard_stories_skeleton.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/scout_avatar_view.dart';
 
@@ -315,14 +316,7 @@ class _DeferredDashboardStories extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  minHeight: 4,
-                  backgroundColor: TS.lineSoftOf(context),
-                  color: TS.redOf(context),
-                ),
-              ),
+              const DashboardStoriesSkeleton(),
             ],
           );
         }
@@ -334,6 +328,7 @@ class _DeferredDashboardStories extends StatelessWidget {
             catalogues: discovery.catalogues,
             deals: discovery.deals,
             retailers: retailers,
+            businessStories: discovery.businessStories,
           ),
         );
       },

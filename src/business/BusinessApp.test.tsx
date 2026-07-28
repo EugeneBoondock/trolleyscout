@@ -270,6 +270,42 @@ describe('Trolley Scout for Business', () => {
     expect(screen.queryByText('Business access is invitation-only')).toBeNull()
   })
 
+  it('lets an admin preview the business user workspace and return to admin', async () => {
+    mocks.loadBusinessBootstrap.mockResolvedValue({
+      ...activeBootstrap,
+      gate: {
+        applicationStatus: null,
+        hasOrganization: false,
+        organization: null,
+      },
+      locations: [],
+      publications: [],
+      session: {
+        account: {
+          ...account,
+          email: 'admin@trolleyscout.co.za',
+          isAdmin: true,
+          planId: 'free',
+          planName: 'Free',
+          role: 'admin',
+        },
+        isAuthenticated: true,
+      },
+    })
+
+    render(<BusinessApp />)
+
+    const previewButton = await screen.findByRole('button', { name: 'Act as business' })
+    await waitFor(() => expect((previewButton as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(previewButton)
+    expect(await screen.findByRole('navigation', { name: 'Business workspace preview' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Fresh Market' })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Return to admin' }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Return to admin' })[0])
+    expect(await screen.findByRole('heading', { name: 'Business control' })).toBeTruthy()
+  })
+
   it('shows the application state instead of exposing portal navigation', async () => {
     mocks.loadBusinessBootstrap.mockResolvedValue({
       ...activeBootstrap,

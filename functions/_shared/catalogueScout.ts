@@ -61,6 +61,7 @@ Hard rules:
 export interface CatalogueScoutResult {
   dealCount: number
   discoveredLeafletCount: number
+  discoveredLeaflets?: StoreLeaflet[]
   scannedDocumentCount: number
 }
 
@@ -695,7 +696,12 @@ export async function runCatalogueScout(
   dependencyOverrides: Partial<CatalogueScoutDependencies> = {},
 ): Promise<CatalogueScoutResult> {
   if (!env.DB || (!env.AI && !dependencyOverrides.runVision && !dependencyOverrides.toMarkdown)) {
-    return { dealCount: 0, discoveredLeafletCount: 0, scannedDocumentCount: 0 }
+    return {
+      dealCount: 0,
+      discoveredLeafletCount: 0,
+      discoveredLeaflets: [],
+      scannedDocumentCount: 0,
+    }
   }
   const dependencies: CatalogueScoutDependencies = {
     claimLease: claimCatalogueScanLease,
@@ -793,6 +799,7 @@ export async function runCatalogueScout(
   return {
     dealCount,
     discoveredLeafletCount: externalLeaflets.length,
+    discoveredLeaflets: externalLeaflets,
     scannedDocumentCount,
   }
 }

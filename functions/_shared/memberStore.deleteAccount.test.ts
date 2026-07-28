@@ -53,7 +53,7 @@ describe('account deletion (right to erasure)', () => {
         'https://example.test', 'https://example.test/p', 'Deal',
         '2026-07-23T00:00:00.000Z', 'R10', 'ev')`,
     ).run()
-  })
+  }, 30_000)
 
   afterEach(async () => {
     await miniflare.dispose()

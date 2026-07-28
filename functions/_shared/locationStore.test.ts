@@ -95,7 +95,8 @@ describe("discovered store scout timing", () => {
         `CREATE TABLE store_scout_log (
         place_id TEXT PRIMARY KEY, store_name TEXT NOT NULL, website TEXT, retailer_id TEXT,
         scouted_at TEXT NOT NULL, next_scout_at TEXT NOT NULL,
-        promotion_count INTEGER NOT NULL DEFAULT 0
+        promotion_count INTEGER NOT NULL DEFAULT 0,
+        outcome_status TEXT NOT NULL DEFAULT 'unknown'
       )`,
       )
       .run();
@@ -213,18 +214,22 @@ describe("discovered store scout timing", () => {
     await recordStoreScout(env, store, 0, nowMs, "transient_failure");
     const transient = await db
       .prepare(
-        `SELECT next_scout_at FROM store_scout_log WHERE place_id = 'fresh-market'`,
+        `SELECT next_scout_at, outcome_status
+         FROM store_scout_log WHERE place_id = 'fresh-market'`,
       )
-      .first<{ next_scout_at: string }>();
+      .first<{ next_scout_at: string; outcome_status: string }>();
     expect(transient?.next_scout_at).toBe("2026-07-16T11:00:00.000Z");
+    expect(transient?.outcome_status).toBe("transient_failure");
 
     await recordStoreScout(env, store, 0, nowMs, "empty");
     const empty = await db
       .prepare(
-        `SELECT next_scout_at FROM store_scout_log WHERE place_id = 'fresh-market'`,
+        `SELECT next_scout_at, outcome_status
+         FROM store_scout_log WHERE place_id = 'fresh-market'`,
       )
-      .first<{ next_scout_at: string }>();
+      .first<{ next_scout_at: string; outcome_status: string }>();
     expect(empty?.next_scout_at).toBe("2026-07-17T10:00:00.000Z");
+    expect(empty?.outcome_status).toBe("empty");
   });
 
   it("preserves the last valid promotion count when a source attempt fails", async () => {

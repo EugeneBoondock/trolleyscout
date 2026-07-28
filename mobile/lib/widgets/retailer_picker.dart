@@ -21,12 +21,14 @@ class RetailerOption {
     required this.name,
     required this.dealCount,
     this.catalogueCount = 0,
+    this.offerStatus,
   }) : searchKey = foldStoreName(name);
 
   final String id;
   final String name;
   final int dealCount;
   final int catalogueCount;
+  final String? offerStatus;
 
   /// The folded name, computed once at build time so filtering a few hundred
   /// stores per keystroke stays a plain substring scan.
@@ -41,7 +43,14 @@ class RetailerOption {
     }
     if (dealCount > 0) return _dealCountLabel(dealCount);
     if (catalogueCount > 0) return _catalogueCountLabel(catalogueCount);
-    return 'No current offers';
+    return switch (offerStatus) {
+      'available' => 'Offers found',
+      'checking' => 'Checking source',
+      'not-checked' => 'Queued for checking',
+      'temporarily-unavailable' => 'Source unavailable',
+      'unverified' => 'Source needs verification',
+      _ => 'No current offers',
+    };
   }
 }
 
@@ -117,6 +126,7 @@ List<RetailerOption> retailerOptionsFromDeals(
         name: entry.value,
         dealCount: counts[entry.key] ?? 0,
         catalogueCount: catalogueCounts[entry.key] ?? 0,
+        offerStatus: catalogById[entry.key]?.offerStatus,
       ),
   ]..sort((a, b) => a.searchKey.compareTo(b.searchKey));
 }

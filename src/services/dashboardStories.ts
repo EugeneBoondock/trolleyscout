@@ -1,4 +1,5 @@
 import type {
+  BusinessStoryPublication,
   DiscoveredDeal,
   Retailer,
   StoreLeaflet,
@@ -7,10 +8,11 @@ import type {
 export interface DashboardStoryFrame {
   catalogue?: StoreLeaflet
   deal?: DiscoveredDeal
+  businessPublication?: BusinessStoryPublication
   id: string
   imageUrl: string
   imageUrls: string[]
-  kind: 'catalogue' | 'deal'
+  kind: 'catalogue' | 'deal' | 'business'
   pageNumber?: number
   sourceUrl: string
   subtitle?: string
@@ -28,6 +30,7 @@ const MAX_STORIES = 16
 const MAX_FRAMES_PER_STORY = 40
 
 interface MutableStory {
+  business: DashboardStoryFrame[]
   catalogues: DashboardStoryFrame[]
   deals: DashboardStoryFrame[]
   id: string
@@ -38,6 +41,7 @@ export function buildDashboardStories(
   catalogues: StoreLeaflet[],
   deals: DiscoveredDeal[],
   retailers: Array<Pick<Retailer, 'id' | 'logoUrl' | 'name'>>,
+  businessStories: BusinessStoryPublication[] = [],
 ): DashboardStory[] {
   const groups = new Map<string, MutableStory>()
   const order: string[] = []
@@ -47,6 +51,7 @@ export function buildDashboardStories(
     if (existing) return existing
     if (groups.size >= MAX_STORIES) return undefined
     const created: MutableStory = {
+      business: [],
       catalogues: [],
       deals: [],
       id,
@@ -55,6 +60,22 @@ export function buildDashboardStories(
     groups.set(id, created)
     order.push(id)
     return created
+  }
+
+  for (const publication of businessStories) {
+    const id = `organization:${publication.organizationSlug}`
+    const group = storyFor(id, publication.organizationName)
+    if (!group || group.business.length >= MAX_FRAMES_PER_STORY) continue
+    group.business.push({
+      businessPublication: publication,
+      id: `publication:${publication.id}`,
+      imageUrl: publication.imageUrl,
+      imageUrls: [publication.imageUrl],
+      kind: 'business',
+      sourceUrl: publication.targetUrl,
+      subtitle: publication.offerText ?? publication.priceText,
+      title: publication.title,
+    })
   }
 
   for (const catalogue of catalogues) {
@@ -124,7 +145,7 @@ export function buildDashboardStories(
       const group = groups.get(id)!
       const retailer = retailerLookup.get(id)
       return {
-        frames: [...group.catalogues, ...group.deals].slice(0, MAX_FRAMES_PER_STORY),
+        frames: [...group.business, ...group.catalogues, ...group.deals].slice(0, MAX_FRAMES_PER_STORY),
         id,
         logoUrl: retailer?.logoUrl,
         retailerName: retailer?.name ?? group.retailerName,

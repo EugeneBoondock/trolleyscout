@@ -4,8 +4,12 @@ import { describe, expect, it } from 'vitest'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { StoreLeaflet } from '../../src/types'
 import type { StoredDealItem } from '../_shared/dealItemStore'
+import { countryFromCode } from '../_shared/countryContext'
+import type { StorePromotion } from '../_shared/locationStore'
 import {
   buildNearMeDealQueries,
+  matchInternationalStoreLeaflets,
+  matchInternationalStorePromotions,
   normalizedItemsForStore,
   persistAndScoutNearbyStores,
   selectStoresForAutomaticScouting,
@@ -14,6 +18,80 @@ import {
 } from './nearby-stores'
 
 describe('Near Me normalized deal selection', () => {
+  it('shares a Zimbabwe chain’s national online offers with its physical branches', () => {
+    const stores: NearbyStore[] = [{
+      countryCode: 'ZW',
+      countryName: 'Zimbabwe',
+      lat: -17.83,
+      lon: 31.05,
+      name: 'TM Pick n Pay Msasa',
+      placeId: 'geo-tm-msasa',
+    }, {
+      countryCode: 'ZW',
+      countryName: 'Zimbabwe',
+      lat: -17.82,
+      lon: 31.04,
+      name: 'Independent Corner Shop',
+      placeId: 'geo-independent',
+    }]
+    const promotions: StorePromotion[] = [{
+      countryCode: 'ZW',
+      id: 'tm-rice',
+      kind: 'deal',
+      placeId: 'online:zw:tmpnponline-co-zw',
+      priceText: 'USD 4.99',
+      productUrl: 'https://tmpnponline.co.zw/products/rice',
+      sourceUrl: 'https://tmpnponline.co.zw/',
+      storeName: 'TM Pick n Pay',
+      title: 'Long grain rice',
+    }]
+
+    const matched = matchInternationalStorePromotions(
+      stores,
+      promotions,
+      countryFromCode('ZW'),
+    )
+
+    expect(matched.get('geo-tm-msasa')).toEqual(promotions)
+    expect(matched.has('geo-independent')).toBe(false)
+  })
+
+  it('attaches a current Zimbabwe national catalogue to the matching branch only', () => {
+    const catalogue = {
+      capturedAt: '2026-07-27T10:00:00.000Z',
+      countryCode: 'ZW',
+      id: 'tm-winter',
+      name: 'Winter Warmers Promotion',
+      priceScope: { type: 'national' as const },
+      retailerId: 'pick-n-pay',
+      retailerName: 'TM Pick n Pay',
+      url: 'https://tmpnponline.co.zw/catalog',
+    }
+
+    expect(matchInternationalStoreLeaflets(
+      {
+        countryCode: 'ZW',
+        lat: -17.83,
+        lon: 31.05,
+        name: 'TM Pick n Pay Msasa',
+        placeId: 'geo-tm-msasa',
+      },
+      [catalogue],
+      countryFromCode('ZW'),
+    )).toEqual([catalogue])
+    expect(matchInternationalStoreLeaflets(
+      {
+        countryCode: 'ZW',
+        lat: -17.82,
+        lon: 31.04,
+        name: 'Independent Corner Shop',
+        placeId: 'geo-independent',
+      },
+      [catalogue],
+      countryFromCode('ZW'),
+    )).toEqual([])
+  })
+
   it('uses branch prices before province and national fallbacks', () => {
     const store: NearbyStore = {
       address: '10 Main Road, Cape Town, Western Cape, South Africa',

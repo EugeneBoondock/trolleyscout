@@ -8,6 +8,7 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 
 - [Site overview](https://trolleyscout.co.za/index.md): what the app does, in markdown
 - [API catalog](https://trolleyscout.co.za/.well-known/api-catalog): machine-readable list of public JSON endpoints
+- [Developer guide](https://trolleyscout.co.za/developers.md): API keys, OAuth, scopes, routes, MCP tools, and limits
 
 ## Public JSON API (read-only, no key needed)
 
@@ -21,9 +22,10 @@ Trolley Scout is a single-page web app at https://trolleyscout.co.za/ with a nat
 - [Geocode](https://trolleyscout.co.za/api/geocode?q=Soweto): geocode an address to coordinates
 - [Health](https://trolleyscout.co.za/api/health): service liveness
 
-## Agents
+## Developers and agents
 
-- [MCP server](https://trolleyscout.co.za/mcp): Model Context Protocol over Streamable HTTP with read-only tools (search_deals, nearby_stores, flash_deals)
+- [Developer REST API](https://trolleyscout.co.za/api/developer/v1/deals): API-key protected shopping, trends, and owned campaign routes for Developers subscribers
+- [MCP server](https://trolleyscout.co.za/mcp): OAuth-protected Model Context Protocol over Streamable HTTP
 - [MCP Server Card](https://trolleyscout.co.za/.well-known/mcp/server-card.json)
 - [Agent Skills index](https://trolleyscout.co.za/.well-known/agent-skills/index.json)
 - [Authentication for agents](https://trolleyscout.co.za/auth.md)

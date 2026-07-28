@@ -54,12 +54,20 @@ describe('global country support', () => {
       'SPAR Zimbabwe',
       'Sai Mart',
       'Greens Supermarket',
+      'Union Hardware',
+      'PrevailMart',
+      'OK Zimbabwe',
+      'Station Furnishers',
       'Nash Furnishers',
-      'Econet Wireless',
-      'NetOne',
+      'Tech Africa',
+      'Econet Online Store',
+      'Pantry Master Zimbabwe',
+      'Zimexapp',
+      'Econet Wireless Zimbabwe',
+      'NetOne Zimbabwe',
       'Telecel Zimbabwe',
     ]))
-    expect(zimbabweRetailers.length).toBeGreaterThan(50)
+    expect(zimbabweRetailers.length).toBeGreaterThan(100)
   })
 
   it('registers local mobile networks in non-South-African retailer directories', () => {
@@ -89,6 +97,26 @@ describe('global country support', () => {
       program: 'Zimbabwe store',
     })
     expect(retailers[0].sources[0]).toMatchObject({ kind: 'specials' })
+  })
+
+  it('merges Zimbabwe suffix variants into one retailer identity', () => {
+    const retailers = buildCountryRetailers(countryFromCode('ZW'), [
+      {
+        title: 'TM Pick n Pay',
+        trusted: true,
+        url: 'https://tmpnponline.co.zw/',
+        verifiedBrand: true,
+      },
+      {
+        title: 'TM Pick n Pay Zimbabwe',
+        trusted: true,
+        url: 'https://tmpnponline.co.zw/catalog',
+        verifiedBrand: true,
+      },
+    ])
+
+    expect(retailers).toHaveLength(1)
+    expect(retailers[0]?.sources).toHaveLength(1)
   })
 
   it('does not present catalogue aggregators as official country retailers', () => {

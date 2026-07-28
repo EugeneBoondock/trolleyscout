@@ -24,6 +24,7 @@ const migrationUrls = [
   new NodeUrl('../../migrations/0008_auth_roles.sql', import.meta.url),
   new NodeUrl('../../migrations/0030_organization_onboarding.sql', import.meta.url),
   new NodeUrl('../../migrations/0035_organization_publications.sql', import.meta.url),
+  new NodeUrl('../../migrations/0043_developer_mcp_campaign_insights.sql', import.meta.url),
 ]
 
 const dealDraft = {
@@ -121,7 +122,7 @@ describe('organization publication store', () => {
     ]))
   })
 
-  it('keeps posts in Window Shopping and rejects markup', async () => {
+  it('allows posts in chosen destinations and rejects markup', async () => {
     const result = await createOrganizationPublication(env, 'owner-1', {
       bodyText: 'Fresh bread arrives every weekday at seven in the morning.',
       kind: 'post',
@@ -130,7 +131,6 @@ describe('organization publication store', () => {
     })
 
     expect(result.issues).toEqual(expect.arrayContaining([
-      'Posts can appear in Window Shopping only.',
       'Remove < and > from publication text.',
     ]))
   })
@@ -278,18 +278,21 @@ describe('organization publication store', () => {
     await recordOrganizationPublicationEvent(
       env,
       created.publication!.id,
+      'marketplace',
       'impression',
       '2026-08-01T10:00:00.000Z',
     )
     await recordOrganizationPublicationEvent(
       env,
       created.publication!.id,
+      'marketplace',
       'impression',
       '2026-08-01T10:05:00.000Z',
     )
     await recordOrganizationPublicationEvent(
       env,
       created.publication!.id,
+      'marketplace',
       'save',
       '2026-08-01T10:10:00.000Z',
     )
@@ -301,21 +304,22 @@ describe('organization publication store', () => {
       '2026-08-02T12:00:00.000Z',
     )
     const row = await db.prepare(
-      `SELECT event_date, impressions, opens, saves, outbound_visits
-        FROM organization_publication_events_daily`,
+      `SELECT event_date, destination, impressions, image_views, saves, link_clicks
+        FROM organization_publication_metrics_daily`,
     ).first<Record<string, number | string>>()
 
     expect(metrics.totals).toEqual({
       impressions: 2,
-      opens: 0,
-      outboundVisits: 0,
+      imageViews: 0,
+      linkClicks: 0,
       saves: 1,
     })
     expect(row).toEqual({
       event_date: '2026-08-01',
+      destination: 'marketplace',
       impressions: 2,
-      opens: 0,
-      outbound_visits: 0,
+      image_views: 0,
+      link_clicks: 0,
       saves: 1,
     })
     expect(Object.keys(row ?? {})).not.toContain('account_id')

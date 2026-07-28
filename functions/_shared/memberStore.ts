@@ -57,6 +57,7 @@ interface MemberAccountRow {
   display_name: string
   email: string
   email_lookup?: string | null
+  email_verified_at?: string | null
   id: string
   last_seen_at?: string | null
   password_hash?: string | null
@@ -74,6 +75,7 @@ interface MemberAccountRow {
   country_code?: string | null
   country_name?: string | null
   currency_code?: string | null
+  phone_verified_at?: string | null
 }
 
 // The account owner. Signing up (or logging in) with this address always
@@ -81,7 +83,7 @@ interface MemberAccountRow {
 const ADMIN_EMAILS = new Set(['philosncube@gmail.com'])
 
 const ACCOUNT_COLUMNS =
-  `id, email, email_lookup, display_name, plan_id, plan_status, role, properties_access,
+  `id, email, email_lookup, email_verified_at, phone_verified_at, display_name, plan_id, plan_status, role, properties_access,
     password_hash, country_code, country_name, currency_code, created_at, updated_at,
     status, banned_at, ban_reason, last_seen_at`
 
@@ -89,7 +91,7 @@ const ACCOUNT_COLUMNS =
 // read that feeds the member UI joins the active subscription to learn whether
 // a paid member is on monthly or annual. A plan granted by an admin has no
 // subscription row and correctly reports no cycle.
-const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, member_accounts.email_lookup,
+const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, member_accounts.email_lookup, member_accounts.email_verified_at, member_accounts.phone_verified_at,
   member_accounts.display_name,
   member_accounts.plan_id, member_accounts.plan_status, member_accounts.role,
   member_accounts.properties_access,
@@ -123,7 +125,7 @@ export function computePropertiesAccess(
   role: 'member' | 'admin',
   grant: number | null | undefined,
 ): boolean {
-  return planId === 'household' || planId === 'organization' || role === 'admin' || grant === 1
+  return planId === 'household' || planId === 'organization' || planId === 'developers' || role === 'admin' || grant === 1
 }
 
 interface SavedSourceRow {
@@ -1808,6 +1810,7 @@ async function accountRowToMember(env: TrolleyScoutEnv, row: MemberAccountRow): 
     createdAt: row.created_at,
     displayName: row.display_name,
     email,
+    emailVerified: Boolean(row.email_verified_at),
     id: row.id,
     initials: getInitials(row.display_name),
     planId,
@@ -1826,6 +1829,7 @@ async function accountRowToMember(env: TrolleyScoutEnv, row: MemberAccountRow): 
     countryName: row.country_name ?? country.name,
     currencyCode: row.currency_code ?? country.currencyCode,
     updatedAt: row.updated_at,
+    phoneVerified: Boolean(row.phone_verified_at),
     billingCycle: normalizeBillingCycle(row.billing_cycle),
     currentPeriodEnd: row.current_period_end ?? undefined,
     // A queued downgrade is only meaningful with a date to land on, so an
@@ -2073,7 +2077,12 @@ function getInitials(displayName: string) {
 }
 
 function normalizePlanId(value: string): MemberPlanId {
-  return value === 'scout' || value === 'household' || value === 'organization' ? value : 'free'
+  return value === 'scout' ||
+    value === 'household' ||
+    value === 'organization' ||
+    value === 'developers'
+    ? value
+    : 'free'
 }
 
 function normalizePlanStatus(value: string): MemberPlanStatus {

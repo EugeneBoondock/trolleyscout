@@ -22,8 +22,26 @@ class StoreGroup {
     return null;
   }
 
-  int get offerCount =>
-      branches.fold(0, (total, branch) => total + branch.promotionCount);
+  int get offerCount {
+    final content = <String>{};
+    for (final branch in branches) {
+      for (final deal in branch.deals) {
+        content.add(deal.id.isNotEmpty
+            ? 'deal:${deal.id}'
+            : 'deal:${deal.productUrl ?? deal.sourceUrl}:${deal.title}');
+      }
+      for (final catalogue in branch.catalogues) {
+        content.add(catalogue.id?.isNotEmpty == true
+            ? 'catalogue:${catalogue.id}'
+            : 'catalogue:${catalogue.url}:${catalogue.name}');
+      }
+    }
+    if (content.isNotEmpty) return content.length;
+    return branches.fold(
+      0,
+      (total, branch) => total + branch.promotionCount,
+    );
+  }
 
   num? get nearestDistanceM {
     final distances =

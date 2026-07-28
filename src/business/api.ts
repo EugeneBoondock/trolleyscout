@@ -17,9 +17,11 @@ interface Envelope<T> {
 }
 
 const emptyMetrics: BusinessMetrics = {
+  destinations: [],
   days: [],
   rangeDays: 30,
-  totals: { impressions: 0, opens: 0, outboundVisits: 0, saves: 0 },
+  rankings: [],
+  totals: { impressions: 0, imageViews: 0, linkClicks: 0, saves: 0 },
 }
 
 const emptyGate: OrganizationGate = {
@@ -182,7 +184,7 @@ export async function updateBusinessLocation(
   )
 }
 
-export async function loadBusinessMetrics(days: 7 | 30 | 90): Promise<BusinessMetrics> {
+export async function loadBusinessMetrics(days: 1 | 7 | 30): Promise<BusinessMetrics> {
   const data = await request<{ metrics: BusinessMetrics }>(
     `/api/organization-metrics?days=${days}`,
   )
@@ -276,12 +278,14 @@ async function safeEnvelope<T>(response: Response): Promise<Envelope<T>> {
 function normalizeMetrics(metrics: BusinessMetrics | undefined): BusinessMetrics {
   if (!metrics) return emptyMetrics
   return {
+    destinations: Array.isArray(metrics.destinations) ? metrics.destinations : [],
     days: Array.isArray(metrics.days) ? metrics.days : [],
-    rangeDays: metrics.rangeDays === 7 || metrics.rangeDays === 90 ? metrics.rangeDays : 30,
+    rangeDays: metrics.rangeDays === 1 || metrics.rangeDays === 7 ? metrics.rangeDays : 30,
+    rankings: Array.isArray(metrics.rankings) ? metrics.rankings : [],
     totals: {
       impressions: Number(metrics.totals?.impressions ?? 0),
-      opens: Number(metrics.totals?.opens ?? 0),
-      outboundVisits: Number(metrics.totals?.outboundVisits ?? 0),
+      imageViews: Number(metrics.totals?.imageViews ?? 0),
+      linkClicks: Number(metrics.totals?.linkClicks ?? 0),
       saves: Number(metrics.totals?.saves ?? 0),
     },
   }

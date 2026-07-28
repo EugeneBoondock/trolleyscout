@@ -26,6 +26,35 @@ describe('buildRegistryOnlineStores', () => {
     expect(tmHosts).toHaveLength(1)
   })
 
+  it('keeps separate brands that share one Zimbabwe commerce host', () => {
+    const zw = buildRegistryOnlineStores(['ZW'])
+    const ampBrands = zw.filter((store) =>
+      store.website?.includes('ampmeats.co.zw'),
+    )
+
+    expect(ampBrands.map((store) => store.name)).toEqual(expect.arrayContaining([
+      'AMP Meats',
+      'Texas Meats Zimbabwe',
+      'Texas Meat Market',
+      'Butcher Box Zimbabwe',
+    ]))
+    expect(new Set(ampBrands.map((store) => store.placeId)).size)
+      .toBe(ampBrands.length)
+  })
+
+  it('places the full direct Zimbabwe directory in the national scout queue', () => {
+    const zw = buildRegistryOnlineStores(['ZW'])
+
+    expect(zw.length).toBeGreaterThan(275)
+    expect(zw.every((store) => store.countryCode === 'ZW')).toBe(true)
+    expect(zw.map((store) => store.name)).toEqual(expect.arrayContaining([
+      'BAMM Stationers',
+      'College Press Zimbabwe',
+      'TelOne Zimbabwe',
+      'ZIMOCO',
+    ]))
+  })
+
   it('interleaves countries so a per-run cap never starves the last country', () => {
     const stores = buildRegistryOnlineStores(['AO', 'ZW'])
     // Round-robin: the first two entries come from different countries.

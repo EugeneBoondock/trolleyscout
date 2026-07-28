@@ -1548,6 +1548,131 @@ main {
   font-size: 0.88rem;
 }
 
+.developer-access-panel {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+}
+
+.developer-access-panel code {
+  overflow-wrap: anywhere;
+}
+
+.developer-usage {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.45rem 0.75rem;
+}
+
+.developer-key-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.developer-key-form fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.developer-key-form legend {
+  color: var(--text);
+  font-weight: 800;
+  margin-bottom: 0.65rem;
+}
+
+.developer-scope-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.developer-scope-grid label {
+  align-items: flex-start;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  color: var(--text);
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.8rem;
+}
+
+.developer-scope-grid span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.developer-scope-grid small {
+  color: var(--muted);
+}
+
+.developer-secret {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.developer-secret code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  color: var(--text);
+  padding: 0.75rem;
+}
+
+.developer-key-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.developer-key-list article {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.85rem;
+}
+
+.developer-key-list article > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.developer-key-list article small,
+.developer-key-list article > span {
+  color: var(--muted);
+}
+
+.developer-key-list .is-revoked {
+  opacity: 0.65;
+}
+
+@media (max-width: 720px) {
+  .developer-scope-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .developer-key-list article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .password-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(44px, 2.75rem, 56px);

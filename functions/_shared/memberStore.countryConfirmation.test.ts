@@ -15,6 +15,7 @@ const MIGRATIONS = [
   '../../migrations/0008_auth_roles.sql',
   '../../migrations/0024_support_and_billing_cleanup.sql',
   '../../migrations/0025_scheduled_plan_changes.sql',
+  '../../migrations/0041_member_identity_verification.sql',
 ]
 
 // The remaining columns arrive in 0020, 0026 and 0031, each of which also

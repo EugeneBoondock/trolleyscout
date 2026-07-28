@@ -4,6 +4,9 @@ import 'package:in_app_update/in_app_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const trolleyScoutAndroidPackage = 'za.co.trolleyscout.trolley_scout';
+const trolleyScoutBusinessAndroidPackage = 'za.co.trolleyscout.business';
+
+typedef ExternalUrlLauncher = Future<bool> Function(Uri uri);
 
 @immutable
 class AppUpdateOffer {
@@ -25,6 +28,13 @@ abstract interface class AppUpdateService {
 }
 
 class GooglePlayAppUpdateService implements AppUpdateService {
+  GooglePlayAppUpdateService({
+    this.packageName = trolleyScoutAndroidPackage,
+    ExternalUrlLauncher? urlLauncher,
+  }) : _urlLauncher = urlLauncher ?? _launchExternalUrl;
+
+  final String packageName;
+  final ExternalUrlLauncher _urlLauncher;
   bool _flexibleAllowed = false;
   bool _immediateAllowed = false;
 
@@ -75,12 +85,9 @@ class GooglePlayAppUpdateService implements AppUpdateService {
   @override
   Future<void> openPlayStore() async {
     final marketUri =
-        Uri.parse('market://details?id=$trolleyScoutAndroidPackage');
+        Uri.parse('market://details?id=$packageName');
     try {
-      if (await launchUrl(
-        marketUri,
-        mode: LaunchMode.externalApplication,
-      )) {
+      if (await _urlLauncher(marketUri)) {
         return;
       }
     } catch (_) {
@@ -90,15 +97,15 @@ class GooglePlayAppUpdateService implements AppUpdateService {
     final webUri = Uri.https(
       'play.google.com',
       '/store/apps/details',
-      {'id': trolleyScoutAndroidPackage},
+      {'id': packageName},
     );
-    final opened = await launchUrl(
-      webUri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await _urlLauncher(webUri);
     if (!opened) throw StateError('Could not open the Google Play listing.');
   }
 }
+
+Future<bool> _launchExternalUrl(Uri uri) =>
+    launchUrl(uri, mode: LaunchMode.externalApplication);
 
 class AppUpdatePromptHost extends StatefulWidget {
   const AppUpdatePromptHost({

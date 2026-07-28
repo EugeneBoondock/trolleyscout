@@ -69,6 +69,7 @@ export function BusinessAdminShell({
   const [issues, setIssues] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [pendingBusinessId, setPendingBusinessId] = useState<string>()
+  const [businessPreview, setBusinessPreview] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const account = bootstrap.session.account!
@@ -158,6 +159,17 @@ export function BusinessAdminShell({
     (overview?.totals.pendingApplications ?? 0) +
     (overview?.totals.pendingModeration ?? 0)
 
+  if (businessPreview && overview) {
+    return (
+      <BusinessWorkspacePreview
+        onReturn={() => setBusinessPreview(false)}
+        onTheme={onTheme}
+        overview={overview}
+        theme={theme}
+      />
+    )
+  }
+
   return (
     <div className="biz-app-shell biz-admin-shell">
       <aside className={clsx('biz-rail biz-admin-rail', railOpen && 'is-open')}>
@@ -246,6 +258,15 @@ export function BusinessAdminShell({
           </div>
           <div className="biz-topbar-actions">
             <button
+              className="biz-secondary-button"
+              disabled={!overview}
+              onClick={() => setBusinessPreview(true)}
+              type="button"
+            >
+              <Storefront size={18} />
+              Act as business
+            </button>
+            <button
               aria-label="Refresh business reporting"
               className="biz-icon-button"
               disabled={loading}
@@ -271,6 +292,18 @@ export function BusinessAdminShell({
               </button>
               {accountOpen && (
                 <div className="biz-account-popover" role="menu">
+                  <button
+                    disabled={!overview}
+                    onClick={() => {
+                      setBusinessPreview(true)
+                      setAccountOpen(false)
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <Storefront size={18} />
+                    Act as business
+                  </button>
                   <button
                     onClick={() => {
                       onTheme(theme === 'light' ? 'dark' : 'light')
@@ -909,6 +942,237 @@ function AdminStateBadge({ status }: { status: 'active' | 'suspended' }) {
         : <WarningCircle size={15} weight="fill" />}
       {capitalise(status)}
     </span>
+  )
+}
+
+type BusinessPreviewView =
+  | 'overview'
+  | 'content'
+  | 'create'
+  | 'locations'
+  | 'insights'
+  | 'account'
+
+function BusinessWorkspacePreview({
+  onReturn,
+  onTheme,
+  overview,
+  theme,
+}: {
+  onReturn: () => void
+  onTheme: (theme: ThemeMode) => void
+  overview: BusinessAdminOverview
+  theme: ThemeMode
+}) {
+  const available = overview.businesses.filter((business) => business.status === 'active')
+  const [businessId, setBusinessId] = useState(available[0]?.id ?? overview.businesses[0]?.id ?? '')
+  const [view, setView] = useState<BusinessPreviewView>('overview')
+  const business = overview.businesses.find((item) => item.id === businessId)
+  const campaigns = overview.campaigns.filter((campaign) => campaign.organizationId === businessId)
+  const navigation: Array<{
+    icon: typeof HouseLine
+    label: string
+    value: BusinessPreviewView
+  }> = [
+    { icon: HouseLine, label: 'Overview', value: 'overview' },
+    { icon: ClipboardText, label: 'Content', value: 'content' },
+    { icon: ArrowRight, label: 'Create campaign', value: 'create' },
+    { icon: Buildings, label: 'Locations', value: 'locations' },
+    { icon: ChartLineUp, label: 'Insights', value: 'insights' },
+    { icon: Storefront, label: 'Account', value: 'account' },
+  ]
+
+  return (
+    <div className="biz-app-shell">
+      <aside className="biz-rail">
+        <div className="biz-rail-head">
+          <div className="biz-brand-lockup">
+            <ScoutMark size={42} variant="business" />
+            <div>
+              <strong>TROLLEY SCOUT</strong>
+              <span>FOR BUSINESS</span>
+            </div>
+          </div>
+        </div>
+        <div className="biz-org-chip">
+          <span><Storefront size={21} weight="fill" /></span>
+          <div>
+            <strong>{business?.name ?? 'Business workspace'}</strong>
+            <small>Admin preview</small>
+          </div>
+        </div>
+        <nav aria-label="Business workspace preview" className="biz-rail-nav">
+          {navigation.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                aria-current={view === item.value ? 'page' : undefined}
+                className={view === item.value ? 'is-active' : ''}
+                key={item.value}
+                onClick={() => setView(item.value)}
+                type="button"
+              >
+                <Icon size={21} />
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <div className="biz-rail-foot">
+          <button className="biz-secondary-button" onClick={onReturn} type="button">
+            <ShieldCheck size={18} />
+            Return to admin
+          </button>
+        </div>
+      </aside>
+
+      <div className="biz-workspace">
+        <header className="biz-topbar">
+          <div className="biz-topbar-context">
+            <Eye size={17} weight="fill" />
+            <span>Admin preview, changes are disabled</span>
+          </div>
+          <div className="biz-topbar-actions">
+            <label className="biz-admin-preview-select">
+              <span className="sr-only">Preview business</span>
+              <select value={businessId} onChange={(event) => setBusinessId(event.target.value)}>
+                {overview.businesses.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              aria-label={theme === 'light' ? 'Use dark theme' : 'Use light theme'}
+              className="biz-icon-button"
+              onClick={() => onTheme(theme === 'light' ? 'dark' : 'light')}
+              type="button"
+            >
+              {theme === 'light' ? <MoonStars size={19} /> : <Sun size={19} />}
+            </button>
+            <button className="biz-secondary-button" onClick={onReturn} type="button">
+              Return to admin
+            </button>
+          </div>
+        </header>
+
+        <main className="biz-main">
+          {!business ? (
+            <AdminUnavailable onRetry={onReturn} />
+          ) : view === 'overview' ? (
+            <div className="biz-page">
+              <header className="biz-page-header">
+                <div>
+                  <p className="biz-kicker">Business workspace preview</p>
+                  <h1>{business.name}</h1>
+                  <p>This is the workspace the business owner uses for campaigns and shopper results.</p>
+                </div>
+              </header>
+              <section className="biz-status-grid" aria-label="Business campaign summary">
+                <PreviewMetric label="Live campaigns" value={business.activeCampaigns} />
+                <PreviewMetric label="Total campaigns" value={business.campaigns} />
+                <PreviewMetric label="Impressions" value={business.impressions} />
+                <PreviewMetric label="Saved" value={business.saves} />
+              </section>
+            </div>
+          ) : view === 'content' ? (
+            <div className="biz-page">
+              <header className="biz-page-header">
+                <div>
+                  <p className="biz-kicker">Campaign library</p>
+                  <h1>Content</h1>
+                  <p>Review the campaigns and promotions visible to this business.</p>
+                </div>
+              </header>
+              <section className="biz-content-table" aria-label="Business campaign preview">
+                <div className="biz-content-table-head">
+                  <span>Campaign</span><span>Status</span><span>Placement</span><span>Results</span>
+                </div>
+                {campaigns.map((campaign) => (
+                  <div className="biz-content-row" key={campaign.id}>
+                    <div className="biz-content-identity">
+                      <div className="biz-content-thumb">
+                        {campaign.imageUrl
+                          ? <img alt={campaign.imageAlt ?? ''} src={campaign.imageUrl} />
+                          : <Storefront size={22} />}
+                      </div>
+                      <div><strong>{campaign.title}</strong><small>{capitalise(campaign.kind)}</small></div>
+                    </div>
+                    <span>{capitalise(campaign.status)}</span>
+                    <span>{capitalise(campaign.placement)}</span>
+                    <span>{formatCount(campaign.impressions)} views</span>
+                  </div>
+                ))}
+              </section>
+            </div>
+          ) : view === 'create' ? (
+            <PreviewMessage
+              eyebrow="Campaign composer"
+              title="Create campaign"
+              copy="Business owners choose Marketplace, Window Shopping, or Stories, add campaign details, save a draft, and submit it for review here."
+            />
+          ) : view === 'locations' ? (
+            <PreviewMessage
+              eyebrow="Store coverage"
+              title="Locations"
+              copy={`${business.locations} business location${business.locations === 1 ? '' : 's'} currently configured.`}
+            />
+          ) : view === 'insights' ? (
+            <div className="biz-page">
+              <header className="biz-page-header">
+                <div>
+                  <p className="biz-kicker">Shopper results</p>
+                  <h1>Insights</h1>
+                  <p>Businesses can inspect views, saves, and clicks for today, this week, or this month.</p>
+                </div>
+              </header>
+              <section className="biz-status-grid" aria-label="Business insight preview">
+                <PreviewMetric label="Impressions" value={business.impressions} />
+                <PreviewMetric label="Image views" value={business.opens} />
+                <PreviewMetric label="Saved" value={business.saves} />
+                <PreviewMetric label="Link clicks" value={business.visits} />
+              </section>
+            </div>
+          ) : (
+            <PreviewMessage
+              eyebrow="Business profile"
+              title="Account"
+              copy={`${business.ownerName} manages ${business.name} on the ${capitalise(business.planId)} plan.`}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+function PreviewMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <article className="biz-status-card is-green">
+      <div><span><ChartLineUp size={20} /></span><small>{label}</small></div>
+      <strong>{formatCount(value)}</strong>
+    </article>
+  )
+}
+
+function PreviewMessage({
+  copy,
+  eyebrow,
+  title,
+}: {
+  copy: string
+  eyebrow: string
+  title: string
+}) {
+  return (
+    <div className="biz-page">
+      <header className="biz-page-header">
+        <div>
+          <p className="biz-kicker">{eyebrow}</p>
+          <h1>{title}</h1>
+          <p>{copy}</p>
+        </div>
+      </header>
+    </div>
   )
 }
 

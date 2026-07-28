@@ -118,6 +118,21 @@ void main() {
 
     expect(find.text('Sam Shopper'), findsOneWidget);
     expect(find.byKey(const Key('dashboard-stories-loading')), findsOneWidget);
+    expect(
+      find.byKey(const Key('dashboard-story-reel-skeleton')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('dashboard-story-skeleton-item-0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('dashboard-stories-loading')),
+        matching: find.byType(LinearProgressIndicator),
+      ),
+      findsNothing,
+    );
     expect(api.summaryCalls, 1);
     expect(api.fullCalls, 1);
 
@@ -132,6 +147,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('View Example Market story'), findsOneWidget);
+    expect(
+      find.byKey(const Key('dashboard-story-reel-skeleton')),
+      findsNothing,
+    );
   });
 
   testWidgets('dashboard stories reuse a fresh discovery cache',

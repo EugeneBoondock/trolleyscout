@@ -20,12 +20,16 @@ import {
   extractPnpCmsLeaflets,
   extractViewerCoverImage,
   extractPdfLeaflets,
+  extractOfficialPdfIndexLeaflets,
   extractSixtyLeaflets,
+  extractTmpnpApiCatalogues,
+  extractTmpnpCatalogues,
   leafletTargets,
   type LeafletTarget,
 } from '../../src/services/leafletDiscovery'
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
 import { selectCurrentCatalogues } from '../../src/services/catalogueSelection'
+import { buildJinaReaderUrl } from '../../src/services/webSearch'
 import {
   catalogueSpecialsDirectoryPageCount,
   catalogueSpecialsDirectoryPageUrl,
@@ -76,7 +80,6 @@ import {
   parseModernFlippingBookViewer,
 } from '../_shared/catalogueScout'
 import {
-  readAllDiscoveredStores,
   readAllStorePromotions,
   type StorePromotion,
 } from '../_shared/locationStore'
@@ -89,6 +92,7 @@ import { getMemberSession } from '../_shared/memberStore'
 import {
   organizationPublicationDiscoverySource,
   organizationPublicationsToDiscoveryDeals,
+  organizationPublicationsToStoryFrames,
 } from '../_shared/organizationPublicationFeed'
 import {
   listLiveOrganizationPublications,
@@ -141,7 +145,8 @@ const PNP_VIEWER_TIMEOUT_MS = 8_000
 const PNP_VIEWER_CONCURRENCY = 3
 const CATALOGUE_DIRECTORY_MAX_BYTES = 2 * 1024 * 1024
 const DISCOVERY_EDGE_CACHE_SECONDS = 300
-const INTERNATIONAL_REFRESH_STORE_LIMIT = 3
+const INTERNATIONAL_REFRESH_STORE_LIMIT = 24
+const INTERNATIONAL_REFRESH_BUDGET_MS = 20_000
 const STOREFRONT_SOURCE_MAX_BYTES = 4 * 1024 * 1024
 
 function summarySnapshotKey(countryCode: string) {
@@ -228,6 +233,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
           const businessPublications = isSouthAfrica
             ? await listLiveOrganizationPublications(env, 'marketplace')
             : []
+          const businessStoryPublications = isSouthAfrica
+            ? await listLiveOrganizationPublications(env, 'stories')
+            : []
           const businessDeals = organizationPublicationsToDiscoveryDeals(businessPublications)
           return json(
             {
@@ -236,6 +244,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
                 ...parsed.topDeals,
               ])),
               leaflets: [],
+              businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
               summary: {
                 foundDealCount: (parsed.foundDealCount ?? 0) + businessDeals.length,
                 leafletCount: parsed.leafletCount ?? 0,
@@ -262,13 +271,17 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     initialStorePromotions,
     normalizedItems,
     businessPublications,
+    businessStoryPublications,
   ] = await Promise.all([
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
-    isSouthAfrica ? readLeafletSnapshot(env) : Promise.resolve(undefined),
+    readLeafletSnapshot(env),
     readAllStorePromotions(env, nowIso, 3000, countryCode),
     readNormalizedDealItems(env, nowIso, { countryCode }),
     isSouthAfrica
       ? listLiveOrganizationPublications(env, 'marketplace')
+      : Promise.resolve([]),
+    isSouthAfrica
+      ? listLiveOrganizationPublications(env, 'stories')
       : Promise.resolve([]),
   ])
   let storePromotions = initialStorePromotions
@@ -300,6 +313,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       summaryOnly,
       countryCode,
       accessPlanId,
+      businessStoryPublications,
     )
 
     // Compute summary and write back in background so subsequent summaryOnly hits get served instantly
@@ -344,10 +358,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   }
 
   if (!isSouthAfrica) {
-    await runDealRefreshWithAlerts(
-      env,
-      () => refreshInternationalStoreSources(env, countryCode, Date.now()),
-    )
+    const [, leaflets] = await Promise.all([
+      runDealRefreshWithAlerts(
+        env,
+        () => refreshInternationalStoreSources(env, countryCode, Date.now()),
+      ),
+      refreshLeafletCache(env, leafletSnapshot?.leaflets, {
+        targets: leafletTargets.filter((target) =>
+          (target.countryCode ?? 'ZA') === countryCode),
+      }),
+    ])
     storePromotions = await readAllStorePromotions(env, nowIso, 3000, countryCode)
     storeDiscovery = addBusinessDiscovery(
       storePromotionsToDiscovery(storePromotions, nowIso),
@@ -356,7 +376,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     )
     const response = respond(
       [],
-      [],
+      leaflets,
       new Date().toISOString(),
       false,
       interests,
@@ -364,6 +384,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       summaryOnly,
       countryCode,
       accessPlanId,
+      businessStoryPublications,
     )
     const allDeals = dedupeDiscoveryDeals(storeDiscovery.deals)
 
@@ -381,7 +402,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
           nowIso,
           JSON.stringify({
             foundDealCount: allDeals.length,
-            leafletCount: 0,
+            leafletCount: leaflets.length,
             topDeals: summaryPreviewDeals(allDeals),
           }),
         )
@@ -412,6 +433,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     summaryOnly,
     countryCode,
     accessPlanId,
+    businessStoryPublications,
   )
 
   // Update summary table for live updates
@@ -450,29 +472,13 @@ async function refreshInternationalStoreSources(
   countryCode: string,
   nowMs: number,
 ) {
-  const nowIso = new Date(nowMs).toISOString()
-  const { stores } = await readAllDiscoveredStores(
-    env,
-    nowIso,
-    INTERNATIONAL_REFRESH_STORE_LIMIT,
-    countryCode,
-    0,
-    undefined,
-    false,
-  )
+  const candidates = buildInternationalRefreshStores(countryCode)
 
   // Discovered stores are branches that someone's near-me search happened to
   // find, so a country nobody has searched in yet has none of them — which
   // left shoppers there looking at an empty page until the next scheduled
   // sweep. The country's registered online storefronts are known up front, so
   // fold them in: they need no branch to have been discovered first.
-  const registered = buildRegistryOnlineStores([countryCode])
-  const seen = new Set(stores.map((store) => store.placeId))
-  const candidates = [
-    ...stores.map((store) => ({ ...store, nextScoutAt: nowIso })),
-    ...registered.filter((store) => !seen.has(store.placeId)),
-  ]
-
   if (candidates.length === 0) {
     return
   }
@@ -480,7 +486,17 @@ async function refreshInternationalStoreSources(
   // Still bounded per request. store_scout_log cools each shop for a day after
   // a visit, so successive requests walk further down the list rather than
   // re-reading the same few shops.
-  await scoutNearbyStores(env, candidates, nowMs, INTERNATIONAL_REFRESH_STORE_LIMIT)
+  await scoutNearbyStores(
+    env,
+    candidates,
+    nowMs,
+    INTERNATIONAL_REFRESH_STORE_LIMIT,
+    nowMs + INTERNATIONAL_REFRESH_BUDGET_MS,
+  )
+}
+
+export function buildInternationalRefreshStores(countryCode: string) {
+  return buildRegistryOnlineStores([countryCode])
 }
 
 // Internal scheduled-worker entry point. It bypasses request authorization
@@ -503,6 +519,7 @@ export async function refreshDiscoveryCache(
     storePromotions,
     normalizedItems,
     businessPublications,
+    businessStoryPublications,
   ] = await Promise.all([
     readDealSnapshots(env),
     readLeafletSnapshot(env),
@@ -512,6 +529,7 @@ export async function refreshDiscoveryCache(
       onTruncated: options.onTruncated,
     }),
     listLiveOrganizationPublications(env, 'marketplace'),
+    listLiveOrganizationPublications(env, 'stories'),
   ])
   const [settled, leaflets] = await Promise.all([
     options.refreshDeals === false
@@ -520,7 +538,8 @@ export async function refreshDiscoveryCache(
     refreshLeafletCache(env, leafletSnapshot?.leaflets),
   ])
 
-  return buildDiscoveryRun(
+  return {
+    ...buildDiscoveryRun(
     mergeNormalizedFirstChecks(buildNormalizedDiscoveryChecks(normalizedItems), settled),
     leaflets,
     new Date().toISOString(),
@@ -533,7 +552,9 @@ export async function refreshDiscoveryCache(
     ),
     false,
     'ZA',
-  )
+    ),
+    businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
+  }
 }
 
 export async function readNormalizedDealItems(
@@ -975,6 +996,54 @@ async function fetchLeaflets(
       return leaflets.length > 0 ? success(leaflets) : failure()
     }
 
+    if (target.kind === 'tmpnp-catalogue' && target.pageUrl) {
+      if (target.apiBase) {
+        const apiResponse = await fetchWithTimeout(fetcher, target.apiBase, {
+          headers: {
+            accept: 'application/json',
+            'user-agent': BROWSER_USER_AGENT,
+            'x-requested-with': 'XMLHttpRequest',
+          },
+        }, PAGER_MANIFEST_TIMEOUT_MS)
+        if (apiResponse.ok) {
+          const apiLeaflets = extractTmpnpApiCatalogues(
+            target,
+            await apiResponse.json(),
+            checkedAt,
+          )
+          if (apiLeaflets.length > 0) {
+            return success(apiLeaflets)
+          }
+        }
+      }
+
+      for (const sourceUrl of [
+        target.pageUrl,
+        target.pageUrl.replace(/^https:/, 'http:'),
+      ]) {
+        const response = await fetchWithTimeout(
+          fetcher,
+          buildJinaReaderUrl(sourceUrl),
+          {
+            headers: {
+              accept: 'text/plain,text/markdown',
+              'user-agent': BROWSER_USER_AGENT,
+            },
+          },
+          PAGER_MANIFEST_TIMEOUT_MS,
+        )
+        if (!response.ok) {
+          continue
+        }
+        const content = await readBoundedText(response, CATALOGUE_DIRECTORY_MAX_BYTES)
+        const leaflets = extractTmpnpCatalogues(target, content, checkedAt)
+        if (leaflets.length > 0) {
+          return success(leaflets)
+        }
+      }
+      return failure()
+    }
+
     if (target.kind === 'pnp-cms' && target.pageUrl) {
       const response = await fetchWithTimeout(fetcher, target.pageUrl, {
         headers: {
@@ -1013,7 +1082,14 @@ async function fetchLeaflets(
       return success(extractSixtyLeaflets(target, await response.json(), checkedAt))
     }
 
-    if ((target.kind === 'html-list' || target.kind === 'html-pdf') && target.pageUrl) {
+    if (
+      (
+        target.kind === 'html-list' ||
+        target.kind === 'html-pdf' ||
+        target.kind === 'official-pdf-index'
+      ) &&
+      target.pageUrl
+    ) {
       const response = await fetcher(target.pageUrl, {
         headers: {
           accept: 'text/html',
@@ -1021,14 +1097,55 @@ async function fetchLeaflets(
         },
       })
 
-      if (!response.ok) {
+      if (!response.ok && target.kind !== 'official-pdf-index') {
         return failure()
       }
 
-      const html = await response.text()
+      const html = response.ok ? await response.text() : ''
 
       if (target.kind === 'html-pdf') {
         return success(extractPdfLeaflets(target, html, checkedAt))
+      }
+
+      if (target.kind === 'official-pdf-index') {
+        const registeredLeaflets = extractOfficialPdfIndexLeaflets(
+          target,
+          (target.documents ?? [])
+            .map((document) => `[${document.name}](${document.url})`)
+            .join('\n'),
+          checkedAt,
+        )
+        const directLeaflets = extractOfficialPdfIndexLeaflets(target, html, checkedAt)
+        if (directLeaflets.length > 0) {
+          return success(dedupeLeaflets([...directLeaflets, ...registeredLeaflets]))
+        }
+        const readerResponse = await fetchWithTimeout(
+          fetcher,
+          buildJinaReaderUrl(target.pageUrl),
+          {
+            headers: {
+              accept: 'text/plain,text/markdown',
+              'user-agent': BROWSER_USER_AGENT,
+            },
+          },
+          PAGER_MANIFEST_TIMEOUT_MS,
+        )
+        if (!readerResponse.ok) {
+          return registeredLeaflets.length > 0
+            ? success(registeredLeaflets)
+            : failure()
+        }
+        const markdown = await readBoundedText(
+          readerResponse,
+          CATALOGUE_DIRECTORY_MAX_BYTES,
+        )
+        const readerLeaflets = extractOfficialPdfIndexLeaflets(
+          target,
+          markdown,
+          checkedAt,
+        )
+        const combined = dedupeLeaflets([...readerLeaflets, ...registeredLeaflets])
+        return combined.length > 0 ? success(combined) : failure()
       }
 
       return success(await resolveEmbeddedViewers(
@@ -1461,6 +1578,7 @@ function respond(
   summaryOnly?: boolean,
   countryCode = 'ZA',
   planId: MemberPlanId = 'free',
+  businessStoryPublications: OrganizationPublication[] = [],
 ) {
   const headers = summaryOnly
     ? {
@@ -1470,7 +1588,8 @@ function respond(
     : privateHeaders
 
   return json(
-    buildDiscoveryRun(
+    {
+      ...buildDiscoveryRun(
       settled,
       leaflets,
       refreshedAt,
@@ -1480,7 +1599,9 @@ function respond(
       summaryOnly,
       countryCode,
       planId,
-    ),
+      ),
+      businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
+    },
     { headers },
   )
 }

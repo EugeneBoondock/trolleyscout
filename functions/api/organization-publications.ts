@@ -153,6 +153,7 @@ function publicationInput(body: Record<string, unknown>): OrganizationPublicatio
     bodyText: bodyText(body.bodyText),
     couponCode: optionalBodyText(body.couponCode),
     currencyCode: optionalBodyText(body.currencyCode),
+    destinations: stringArray(body.destinations) as OrganizationPublicationInput['destinations'],
     endsAt: optionalBodyText(body.endsAt),
     imageAlt: optionalBodyText(body.imageAlt),
     imageUrl: optionalBodyText(body.imageUrl),
