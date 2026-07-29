@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_COMMON_COMMERCE_PAGE_SIZE } from '../../src/services/commonCommerceDeals'
 import type { NearbyStore } from '../../src/services/nearbyStores'
 import type { TrolleyScoutEnv } from './env'
+import * as storeScoutModule from './storeScout'
 import {
   extractOfficialLeaflets,
   extractPromotionDetailUrls,
@@ -17,6 +18,395 @@ import {
   parseTillPointProducts,
   scoutNearbyStores,
 } from './storeScout'
+
+describe('parseFirstClassGroceriesProducts', () => {
+  it('reads purchasable products from the public Hostinger shop API', () => {
+    const parseFirstClassGroceriesProducts = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseFirstClassGroceriesProducts as
+      | ((payload: unknown) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseFirstClassGroceriesProducts).toBeTypeOf('function')
+    if (!parseFirstClassGroceriesProducts) return
+
+    expect(parseFirstClassGroceriesProducts({
+      count: 3,
+      products: [
+        {
+          id: 'prod_oil',
+          is_available: true,
+          purchasable: true,
+          ribbon_text: 'On Sale',
+          thumbnail: 'https://cdn.example.com/oil.png',
+          title: "D'lite Pure Cooking Oil 2L",
+          variants: [{
+            is_available: true,
+            prices: [{
+              amount: 500,
+              currency_code: 'zwl',
+              sale_amount: 450,
+            }],
+          }],
+        },
+        {
+          id: 'prod_rice',
+          is_available: false,
+          purchasable: true,
+          ribbon_text: 'Best Seller',
+          title: 'Tastic Rice 2kg',
+          variants: [{
+            is_available: false,
+            prices: [{ amount: 300, currency_code: 'usd' }],
+          }],
+        },
+        {
+          id: 'hidden',
+          purchasable: false,
+          title: 'Hidden product',
+          variants: [{
+            prices: [{ amount: 100, currency_code: 'usd' }],
+          }],
+        },
+      ],
+    })).toEqual([
+      {
+        currencyCode: 'USD',
+        imageUrl: 'https://cdn.example.com/oil.png',
+        previousPriceCents: 500,
+        priceCents: 450,
+        productUrl: 'https://www.firstclassgroceries.com/product/prod_oil',
+        promoLabel: 'On Sale',
+        soldOut: false,
+        title: "D'lite Pure Cooking Oil 2L",
+      },
+      {
+        currencyCode: 'USD',
+        imageUrl: undefined,
+        previousPriceCents: undefined,
+        priceCents: 300,
+        productUrl: 'https://www.firstclassgroceries.com/product/prod_rice',
+        promoLabel: 'Best Seller',
+        soldOut: true,
+        title: 'Tastic Rice 2kg',
+      },
+    ])
+  })
+})
+
+describe('parseBulkBarrelProducts', () => {
+  it('reads every visible card from the public wholesale catalogue', () => {
+    const parseBulkBarrelProducts = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseBulkBarrelProducts as
+      | ((html: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseBulkBarrelProducts).toBeTypeOf('function')
+    if (!parseBulkBarrelProducts) return
+
+    expect(parseBulkBarrelProducts(`
+      <div class="container" id="Groceries">
+        <div class="card">
+          <img src="img/mazoe.jpg" alt="Mazoe Orange Crush 6*2l">
+          <h3>Mazoe Orange Crush 6*2l</h3>
+          <p>$21.60</p>
+        </div>
+        <div class="card">
+          <img data-src="/bulk-barrel/img/sunlight.jpg" alt="Sunlight">
+          <h3>Sunlight liquid 25*750ml</h3>
+          <p>$60</p>
+        </div>
+      </div>
+    `)).toEqual([
+      {
+        currencyCode: 'USD',
+        imageUrl:
+          'https://bulkbmarketing-ux.github.io/bulk-barrel/img/mazoe.jpg',
+        priceCents: 2160,
+        productUrl: 'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+        promoLabel: 'Bulk & Barrel catalogue',
+        soldOut: false,
+        title: 'Mazoe Orange Crush 6*2l',
+      },
+      {
+        currencyCode: 'USD',
+        imageUrl:
+          'https://bulkbmarketing-ux.github.io/bulk-barrel/img/sunlight.jpg',
+        priceCents: 6000,
+        productUrl: 'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+        promoLabel: 'Bulk & Barrel catalogue',
+        soldOut: false,
+        title: 'Sunlight liquid 25*750ml',
+      },
+    ])
+  })
+})
+
+describe('parseWatumiraHereOffers', () => {
+  it('reads the public from-price grocery and hardware offers', () => {
+    const parseWatumiraHereOffers = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseWatumiraHereOffers as
+      | ((html: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseWatumiraHereOffers).toBeTypeOf('function')
+    if (!parseWatumiraHereOffers) return
+
+    expect(parseWatumiraHereOffers(`
+      <section>
+        <h3>Hampers for Every Budget</h3>
+        <p>
+          Choose ready-made grocery hampers from as low as R550, or build your
+          own custom package.
+        </p>
+      </section>
+      <section>
+        <h3>Affordable Construction Supplies</h3>
+        <p>
+          Get the best prices on trusted brands like PPC, Superset &amp;
+          Surecast – starting from R205.
+        </p>
+      </section>
+    `)).toEqual([
+      {
+        currencyCode: 'ZAR',
+        imageUrl: undefined,
+        priceCents: 55000,
+        productUrl: 'https://www.watumirahere.co.za/',
+        promoLabel: 'From R550',
+        soldOut: false,
+        title: 'Grocery hampers',
+      },
+      {
+        currencyCode: 'ZAR',
+        imageUrl: undefined,
+        priceCents: 20500,
+        productUrl: 'https://www.watumirahere.co.za/',
+        promoLabel: 'From R205',
+        soldOut: false,
+        title: 'Hardware supplies',
+      },
+    ])
+  })
+})
+
+describe('parseZimZoneSpecials', () => {
+  it('reads discounted products from Zim-Zone’s public specials page', () => {
+    const parseZimZoneSpecials = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseZimZoneSpecials as
+      | ((html: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseZimZoneSpecials).toBeTypeOf('function')
+    if (!parseZimZoneSpecials) return
+
+    expect(parseZimZoneSpecials(`
+      <div class="product-item sevenspikes-ajaxcart" data-productid="2266">
+        <div class="ribbon-wrapper">
+          <div class="picture">
+            <a href="/knorr-cream-of-mushroom-soup-10x50g">
+              <img
+                src="data:image/gif;base64,R0lGODlhAQABAAAAACw="
+                data-lazyloadsrc="https://zim-zone.co.uk/images/thumbs/knorr.jpeg"
+                class="picture-img"
+              >
+            </a>
+          </div>
+          <a href="/knorr-cream-of-mushroom-soup-10x50g">
+            <label class="ribbon-text">24% OFF</label>
+          </a>
+        </div>
+        <div class="details">
+          <h2 class="product-title">
+            <a href="/knorr-cream-of-mushroom-soup-10x50g">
+              KNORR CREAM OF MUSHROOM SOUP 10x50g
+            </a>
+          </h2>
+          <div class="prices">
+            <span class="price old-price">R97,43</span>
+            <span class="price actual-price">R74,05</span>
+          </div>
+          <button class="product-box-add-to-cart-button">Add to cart</button>
+        </div>
+      </div>
+      <div class="product-item sevenspikes-ajaxcart" data-productid="sold-out">
+        <div class="picture">
+          <img data-lazyloadsrc="/images/thumbs/rice.jpeg">
+        </div>
+        <h2 class="product-title">
+          <a href="/mahatma-white-rice-2kg">Mahatma White Rice 2kg</a>
+        </h2>
+        <div class="prices">
+          <span class="price actual-price">R39,81</span>
+        </div>
+        <span>Out of stock</span>
+      </div>
+    `)).toEqual([
+      {
+        currencyCode: 'ZAR',
+        imageUrl: 'https://zim-zone.co.uk/images/thumbs/knorr.jpeg',
+        previousPriceCents: 9743,
+        priceCents: 7405,
+        productUrl:
+          'https://zim-zone.co.uk/knorr-cream-of-mushroom-soup-10x50g',
+        promoLabel: '24% OFF',
+        soldOut: false,
+        title: 'KNORR CREAM OF MUSHROOM SOUP 10x50g',
+      },
+      {
+        currencyCode: 'ZAR',
+        imageUrl: 'https://zim-zone.co.uk/images/thumbs/rice.jpeg',
+        previousPriceCents: undefined,
+        priceCents: 3981,
+        productUrl: 'https://zim-zone.co.uk/mahatma-white-rice-2kg',
+        promoLabel: 'Zim-Zone specials',
+        soldOut: true,
+        title: 'Mahatma White Rice 2kg',
+      },
+    ])
+  })
+})
+
+describe('parseHelloKumbaProducts', () => {
+  it('reads active grocery products from the public Hyperzod catalogue', () => {
+    const parseHelloKumbaProducts = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseHelloKumbaProducts as
+      | ((payload: unknown, merchantId: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseHelloKumbaProducts).toBeTypeOf('function')
+    if (!parseHelloKumbaProducts) return
+
+    expect(parseHelloKumbaProducts({
+      success: true,
+      data: {
+        data: [
+          {
+            id: '6a5cef25c4af71b874015621',
+            in_stock: true,
+            name: 'COOKMORE COOKING OIL 2L',
+            price: 62.9,
+            price_currency: 'ZAR',
+            price_sell_compare: 64.9,
+            product_images: [{
+              file_url:
+                'https://cdn-upload.hyperzod.app/public/4729/images/oil.png',
+              is_cover: true,
+            }],
+            status: true,
+          },
+          {
+            id: 'hidden-product',
+            in_stock: true,
+            name: 'Hidden product',
+            price: 5,
+            price_currency: 'ZAR',
+            status: false,
+          },
+          {
+            id: 'sold-out-rice',
+            in_stock: false,
+            name: 'MARIANA RICE 5KG',
+            price: 104.9,
+            price_currency: 'ZAR',
+            status: true,
+          },
+        ],
+      },
+    }, '67bb1fd97dcc40153a0c8ff3')).toEqual([
+      {
+        currencyCode: 'ZAR',
+        imageUrl:
+          'https://cdn-upload.hyperzod.app/public/4729/images/oil.png',
+        previousPriceCents: 6490,
+        priceCents: 6290,
+        productUrl:
+          'https://order.hellokumba.com/m/hellokumba-kwese/67bb1fd97dcc40153a0c8ff3/product/6a5cef25c4af71b874015621',
+        promoLabel: 'Hello Kumba online catalogue',
+        soldOut: false,
+        title: 'COOKMORE COOKING OIL 2L',
+      },
+      {
+        currencyCode: 'ZAR',
+        imageUrl: undefined,
+        priceCents: 10490,
+        productUrl:
+          'https://order.hellokumba.com/m/hellokumba-kwese/67bb1fd97dcc40153a0c8ff3/product/sold-out-rice',
+        promoLabel: 'Hello Kumba online catalogue',
+        soldOut: true,
+        title: 'MARIANA RICE 5KG',
+      },
+    ])
+  })
+})
+
+describe('parseTengaiProducts', () => {
+  it('reads regular and discounted products from Tengai’s server-rendered shop', () => {
+    const parseTengaiProducts = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseTengaiProducts as
+      | ((html: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseTengaiProducts).toBeTypeOf('function')
+    if (!parseTengaiProducts) return
+
+    expect(parseTengaiProducts(`
+      <div class="wd-product product-grid-item product type-product instock" data-id="18385">
+        <a href="https://tengaionline.com/?product=happy-day-diapers"
+           class="wd-product-img-link">
+          <img src="https://i0.wp.com/tengaionline.com/diapers.png?resize=600%2C600&amp;ssl=1">
+        </a>
+        <h3 class="wd-entities-title">
+          <a href="https://tengaionline.com/?product=happy-day-diapers">
+            Happy Day Baby Diapers
+          </a>
+        </h3>
+        <span class="price">
+          <span class="woocommerce-Price-amount"><bdi><span>£</span>5.05</bdi></span>
+        </span>
+      </div>
+      <div class="wd-product product-grid-item product type-product outofstock sale" data-id="200">
+        <a href="https://tengaionline.com/?product=tea-bags" class="wd-product-img-link">
+          <img data-src="/wp-content/uploads/tea.png">
+        </a>
+        <h3 class="wd-entities-title">
+          <a href="https://tengaionline.com/?product=tea-bags">Tea Bags 100s</a>
+        </h3>
+        <span class="price">
+          <del><span class="woocommerce-Price-amount"><bdi><span>£</span>6.00</bdi></span></del>
+          <ins><span class="woocommerce-Price-amount"><bdi><span>£</span>4.50</bdi></span></ins>
+        </span>
+      </div>
+    `)).toEqual([
+      {
+        currencyCode: 'GBP',
+        imageUrl:
+          'https://i0.wp.com/tengaionline.com/diapers.png?resize=600%2C600&ssl=1',
+        previousPriceCents: undefined,
+        priceCents: 505,
+        productUrl: 'https://tengaionline.com/?product=happy-day-diapers',
+        promoLabel: 'Tengai Online catalogue',
+        soldOut: false,
+        title: 'Happy Day Baby Diapers',
+      },
+      {
+        currencyCode: 'GBP',
+        imageUrl: 'https://tengaionline.com/wp-content/uploads/tea.png',
+        previousPriceCents: 600,
+        priceCents: 450,
+        productUrl: 'https://tengaionline.com/?product=tea-bags',
+        promoLabel: 'Tengai Online catalogue',
+        soldOut: true,
+        title: 'Tea Bags 100s',
+      },
+    ])
+  })
+})
 
 describe('parseFourHarvestsDeals', () => {
   it('reads server-rendered WooCommerce sale cards with old and current prices', () => {
@@ -1149,6 +1539,349 @@ describe('scheduled discovered-store scouting', () => {
   afterEach(async () => {
     vi.unstubAllGlobals()
     await miniflare.dispose()
+  })
+
+  it('uses the public WooCommerce catalogue for Z-Store Zimbabwe', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'zstore.co.zw' &&
+        url.pathname === '/wp-json/wc/store/v1/products'
+      ) {
+        return jsonResponse(url.searchParams.get('page') === '1'
+          ? [{
+              images: [{ src: 'https://zstore.co.zw/wp-content/uploads/hamper.jpg' }],
+              is_in_stock: true,
+              name: 'Basic Hamper',
+              permalink: 'https://zstore.co.zw/basic-hamper/',
+              prices: {
+                currency_code: 'USD',
+                currency_minor_unit: 2,
+                price: '6000',
+                regular_price: '6000',
+              },
+            }]
+          : [])
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Z-Store Zimbabwe',
+        website: 'https://zstore.co.zw/',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedUrls.some((url) =>
+      new URL(url).pathname === '/wp-json/wc/store/v1/products'
+    )).toBe(true)
+    const row = await db.prepare(
+      `SELECT title, price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{ price_text: string; product_url: string; title: string }>()
+    expect(row).toEqual({
+      price_text: 'USD 60.00',
+      product_url: 'https://zstore.co.zw/basic-hamper/',
+      title: 'Basic Hamper',
+    })
+  })
+
+  it('discovers and saves Hello Kumba grocery products', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'order.hellokumba.com' &&
+        url.pathname === '/merchant_sitemap.xml'
+      ) {
+        return htmlResponse(`
+          <urlset>
+            <url>
+              <loc>https://order.hellokumba.com/m/hellokumba-kwese/67bb1fd97dcc40153a0c8ff3</loc>
+            </url>
+          </urlset>`)
+      }
+      if (
+        url.hostname === 'api.hyperzod.app' &&
+        url.pathname === '/store/v1/catalog/products'
+      ) {
+        return jsonResponse({
+          success: true,
+          data: {
+            data: url.searchParams.get('page') === '1'
+              ? [{
+                  id: 'grocery-product',
+                  in_stock: true,
+                  name: 'Roller Meal 10kg',
+                  price: 109.9,
+                  price_currency: 'ZAR',
+                  status: true,
+                }]
+              : [],
+          },
+        })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Hello Kumba',
+        website: 'https://order.hellokumba.com/',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedUrls.some((url) =>
+      new URL(url).pathname === '/merchant_sitemap.xml'
+    )).toBe(true)
+    expect(requestedUrls.filter((url) =>
+      new URL(url).pathname === '/store/v1/catalog/products'
+    )).toHaveLength(4)
+    const row = await db.prepare(
+      `SELECT title, price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{ price_text: string; product_url: string; title: string }>()
+    expect(row).toEqual({
+      price_text: 'R109.90',
+      product_url:
+        'https://order.hellokumba.com/m/hellokumba-kwese/67bb1fd97dcc40153a0c8ff3/product/grocery-product',
+      title: 'Roller Meal 10kg',
+    })
+  })
+
+  it('discovers and saves Zim-Zone specials', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'zim-zone.co.uk' &&
+        url.pathname === '/grocery-deals'
+      ) {
+        return htmlResponse(`
+          <div class="product-item sevenspikes-ajaxcart" data-productid="2266">
+            <div class="picture">
+              <img src="/images/thumbs/knorr.jpeg" class="picture-img">
+            </div>
+            <label class="ribbon-text">24% OFF</label>
+            <h2 class="product-title">
+              <a href="/knorr-soup">Knorr Soup 50g</a>
+            </h2>
+            <div class="prices">
+              <span class="price old-price">R9,93</span>
+              <span class="price actual-price">R7,94</span>
+            </div>
+          </div>
+        `)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Zim-Zone',
+        website: 'https://zim-zone.co.uk/grocery-deals',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedUrls).toContain(
+      'https://zim-zone.co.uk/grocery-deals?pagesize=100',
+    )
+    const row = await db.prepare(
+      `SELECT title, price_text, previous_price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(row).toEqual({
+      previous_price_text: 'R9.93',
+      price_text: 'R7.94',
+      product_url: 'https://zim-zone.co.uk/knorr-soup',
+      title: 'Knorr Soup 50g',
+    })
+  })
+
+  it('discovers and saves Watumira Here’s public offers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.hostname.endsWith('watumirahere.co.za')) {
+        return htmlResponse(`
+          <section>
+            <h3>Hampers for Every Budget</h3>
+            <p>Choose grocery hampers from as low as R550.</p>
+          </section>
+          <section>
+            <h3>Affordable Construction Supplies</h3>
+            <p>Get trusted hardware brands starting from R205.</p>
+          </section>
+        `)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Watumira Here',
+        website: 'https://www.watumirahere.co.za/',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    const rows = await db.prepare(
+      `SELECT title, price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'
+       ORDER BY price_text DESC`,
+    ).all<{
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(rows.results).toEqual([
+      {
+        price_text: 'R550.00',
+        product_url: 'https://www.watumirahere.co.za/',
+        title: 'Grocery hampers',
+      },
+      {
+        price_text: 'R205.00',
+        product_url: 'https://www.watumirahere.co.za/',
+        title: 'Hardware supplies',
+      },
+    ])
+  })
+
+  it('discovers and saves Bulk & Barrel’s product catalogue', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (
+        url.hostname === 'bulkbmarketing-ux.github.io' &&
+        url.pathname === '/bulk-barrel/'
+      ) {
+        return htmlResponse(`
+          <div class="container" id="Groceries">
+            <div class="card">
+              <img src="img/mazoe.jpg" alt="Mazoe Orange Crush">
+              <h3>Mazoe Orange Crush 6*2l</h3>
+              <p>$21.60</p>
+            </div>
+          </div>
+        `)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Bulk & Barrel Zimbabwe',
+        website: 'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    const row = await db.prepare(
+      `SELECT title, price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(row).toEqual({
+      price_text: 'USD 21.60',
+      product_url: 'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+      title: 'Mazoe Orange Crush 6*2l',
+    })
+  })
+
+  it('discovers and saves First Class Groceries products', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (url.hostname === 'api-ecommerce.hostinger.com') {
+        return Response.json({
+          count: 1,
+          products: [{
+            id: 'prod_oil',
+            is_available: true,
+            purchasable: true,
+            ribbon_text: 'On Sale',
+            thumbnail: 'https://cdn.example.com/oil.png',
+            title: "D'lite Pure Cooking Oil 2L",
+            variants: [{
+              is_available: true,
+              prices: [{
+                amount: 500,
+                currency_code: 'zwl',
+                sale_amount: 450,
+              }],
+            }],
+          }],
+        })
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'First Class Groceries Zimbabwe',
+        website: 'https://www.firstclassgroceries.com/',
+      })],
+      Date.parse('2026-07-29T00:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedUrls).toContain(
+      'https://api-ecommerce.hostinger.com/store/store_01KQGWJMJ110BVYHPYPHVH0GZ0/products?limit=100',
+    )
+    const row = await db.prepare(
+      `SELECT title, price_text, previous_price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(row).toEqual({
+      previous_price_text: 'USD 5.00',
+      price_text: 'USD 4.50',
+      product_url: 'https://www.firstclassgroceries.com/product/prod_oil',
+      title: "D'lite Pure Cooking Oil 2L",
+    })
   })
 
   it('saves a country-scoped network plan from its official provider page',
