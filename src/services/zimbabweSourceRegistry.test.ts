@@ -22,9 +22,9 @@ describe('Zimbabwe source directory', () => {
     const discovery = getZimbabweDiscoverySources()
     const social = getZimbabweSocialReferenceSources()
 
-    expect(direct).toHaveLength(290)
+    expect(direct).toHaveLength(293)
     expect(discovery).toHaveLength(13)
-    expect(social).toHaveLength(36)
+    expect(social).toHaveLength(33)
     expect(
       direct.every((source) =>
         !/(?:facebook|instagram|linkedin|tiktok|whatsapp|youtube)\.com/i.test(
@@ -53,6 +53,15 @@ describe('Zimbabwe source directory', () => {
     )
     expect(byName.get('BAMM Stationers')?.url).toBe(
       'https://www.bamm.co.zw/store/catalogue/',
+    )
+    expect(byName.get('Watumira Here')?.url).toBe(
+      'https://www.watumirahere.co.za/',
+    )
+    expect(byName.get('Bulk & Barrel Zimbabwe')?.url).toBe(
+      'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+    )
+    expect(byName.get('First Class Groceries Zimbabwe')?.url).toBe(
+      'https://www.firstclassgroceries.com/products',
     )
   })
 

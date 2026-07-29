@@ -531,11 +531,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Offers and online ordering",
+        "url": "https://www.watumirahere.co.za/"
+      },
+      {
         "label": "Facebook offers",
         "url": "https://www.facebook.com/WatumiraHere/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "027",
@@ -576,11 +580,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Product catalogue",
+        "url": "https://bulkbmarketing-ux.github.io/bulk-barrel/"
+      },
+      {
         "label": "Facebook specials",
         "url": "https://www.facebook.com/bulkbarrelzw/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "030",
@@ -591,11 +599,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Online shop",
+        "url": "https://www.firstclassgroceries.com/products"
+      },
+      {
         "label": "Facebook offers",
         "url": "https://www.facebook.com/firstclassgroceries1/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "031",
