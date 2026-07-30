@@ -187,6 +187,45 @@ describe('/api/deal-sites', () => {
     expect(waitUntil).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['free', 2_000],
+    ['scout', 7_000],
+    ['household', 7_100],
+    ['organization', 7_100],
+    ['developers', 7_100],
+  ] as const)('enforces the %s Window Shopping visibility policy', async (planId, expected) => {
+    mocks.getMemberSession.mockResolvedValue({
+      isAuthenticated: true,
+      account: { planId, role: 'member' },
+    })
+    mocks.readDealSiteFeed.mockResolvedValue({
+      deals: Array.from({ length: 7_100 }, (_, index) => ({ id: `deal-${index}` })),
+      sources: [],
+    })
+
+    const response = await invoke(
+      new Request('https://trolleyscout.co.za/api/deal-sites'),
+      vi.fn(),
+    )
+    const envelope = await response.json() as {
+      data: {
+        access: { availableDealCount: number; dealLimit: number; planId: string }
+        deals: Array<{ id: string }>
+      }
+    }
+
+    expect(envelope.data.deals).toHaveLength(expected)
+    expect(envelope.data.access).toMatchObject({
+      availableDealCount: 7_100,
+      dealLimit: planId === 'free'
+        ? 2_000
+        : planId === 'scout'
+          ? 7_000
+          : Number.MAX_SAFE_INTEGER,
+      planId,
+    })
+  })
+
   it('adds approved business posts to Window Shopping', async () => {
     mocks.readDealSiteFeed.mockResolvedValue(feed('cached-deal'))
     mocks.listLiveOrganizationPublications.mockResolvedValue([{

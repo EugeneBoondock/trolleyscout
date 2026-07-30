@@ -13,6 +13,7 @@ import {
   readStorePromotions,
   reconcileSuccessfulStorePromotions,
   recordStoreScout,
+  saveStorePromotions,
   writeCachedStores,
   writeDiscoveredStores,
   type StorePromotion,
@@ -31,6 +32,34 @@ describe("promotionExpiryIso", () => {
       ).toBe(expected);
     },
   );
+});
+
+describe("saveStorePromotions", () => {
+  it("writes large verified catalogues in bounded batches", async () => {
+    const batchSizes: number[] = [];
+    const statement = {
+      bind: () => statement,
+    };
+    const env = {
+      DB: {
+        batch: async (statements: unknown[]) => {
+          batchSizes.push(statements.length);
+          return [];
+        },
+        prepare: () => statement,
+      },
+    } as unknown as TrolleyScoutEnv;
+    const promotions = Array.from({ length: 250 }, (_, index) =>
+      promotion({
+        id: `verified-${index}`,
+        productUrl: `https://shop.example.co.zw/product/${index}`,
+        title: `Verified sale ${index}`,
+      }),
+    );
+
+    expect(await saveStorePromotions(env, promotions, Date.now())).toBe(true);
+    expect(batchSizes).toEqual([100, 100, 50]);
+  });
 });
 
 describe("discoveredStoreFromRow", () => {

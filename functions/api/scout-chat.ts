@@ -1,6 +1,8 @@
-﻿import { listActiveDealItems, type StoredDealItem } from '../_shared/dealItemStore'
+import type { SearchActiveDealItemsOptions } from '../_shared/dealItemStore'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { getMemberPlan } from '../../src/data/memberPlans'
+import type { DiscoveredDeal } from '../../src/types'
 import {
   getMemberBasket,
   getMemberSession,
@@ -10,12 +12,15 @@ import {
 import { json, methodNotAllowed } from '../_shared/respond'
 import {
   buildScoutContext,
+  extractScoutSearchTerms,
   mapScoutAnswer,
   normalizeScoutChatRequest,
   parseScoutModelAnswer,
   scoutAnswerSchema,
+  type ScoutContextDeal,
   type ScoutPersonalContextInput,
 } from '../_shared/scoutChat'
+import { parseProductQuery } from '../_shared/productQuery'
 import { buildScoutPersona } from '../_shared/scoutPersona'
 import {
   logScoutRetrieval,
@@ -28,6 +33,23 @@ import {
 } from '../_shared/scoutRetrieval'
 import { getMemberState, listWindowSaves } from '../_shared/windowSocialStore'
 import type { StoreLeaflet } from '../../src/types'
+import type { MemberPlanId } from '../../src/types'
+import { readVisibleMarketplaceDeals } from './discovery'
+import {
+  buildGroceryPlan,
+  parseGroceryPlanRequest,
+} from '../_shared/groceryPlanner'
+import {
+  parseMarketplaceProductQuery,
+  rankMarketplaceProductDeals,
+  type MarketplaceProductQuery,
+} from '../_shared/marketplaceProductSearch'
+import {
+  parseScoutSearchIntent,
+  productQueryFromIntent,
+  scoutSearchIntentSchema,
+  type ScoutSearchIntent,
+} from '../_shared/scoutSearchIntent'
 
 const MODEL = 'gpt-5.4-mini'
 const MAX_REQUESTS_PER_MINUTE = 20
@@ -38,6 +60,8 @@ interface ScoutSession {
     countryCode?: string
     currencyCode?: string
     id: string
+    planId?: MemberPlanId
+    role?: 'admin' | 'member'
   }
   isAuthenticated: boolean
 }
@@ -47,12 +71,30 @@ interface ScoutChatContext {
   request: Request
 }
 
+interface ScoutIntentRequest {
+  countryCode: string
+  currencyCode: string
+  history: Array<{ role: 'assistant' | 'user'; text: string }>
+  message: string
+}
+
 export interface ScoutChatDependencies {
   fetchOpenAI: (request: Request) => Promise<Response>
   getSession: (env: TrolleyScoutEnv, request: Request) => Promise<ScoutSession>
   incrementUsage: (env: TrolleyScoutEnv, accountId: string, now?: Date) => Promise<number>
-  listDeals: (env: TrolleyScoutEnv, countryCode: string) => Promise<StoredDealItem[]>
-  listLeaflets: (env: TrolleyScoutEnv) => Promise<StoreLeaflet[]>
+  interpretSearchIntent: (
+    env: TrolleyScoutEnv,
+    input: ScoutIntentRequest,
+  ) => Promise<ScoutSearchIntent | undefined>
+  listDeals: (
+    env: TrolleyScoutEnv,
+    options: SearchActiveDealItemsOptions & {
+      accountId: string
+      planId: MemberPlanId
+      productQuery?: MarketplaceProductQuery
+    },
+  ) => Promise<ScoutContextDeal[]>
+  listLeaflets: (env: TrolleyScoutEnv, countryCode: string) => Promise<StoreLeaflet[]>
   loadPersonalContext: (
     env: TrolleyScoutEnv,
     accountId: string,
@@ -68,11 +110,28 @@ const defaultDependencies: ScoutChatDependencies = {
   fetchOpenAI: (request) => fetch(request),
   getSession: getMemberSession,
   incrementUsage: incrementScoutChatUsage,
-  listDeals: (env, countryCode) => listActiveDealItems(env, {
-    countryCode,
-    limit: 120,
-  }),
-  listLeaflets: async (env) => (await readLeafletSnapshot(env))?.leaflets ?? [],
+  interpretSearchIntent: requestScoutSearchIntent,
+  listDeals: async (env, options) => {
+    const visibleDeals = await readVisibleMarketplaceDeals(env, {
+      accountId: options.accountId,
+      countryCode: options.countryCode,
+      planId: options.planId,
+    })
+    return options.productQuery
+      ? rankMarketplaceProductDeals(
+          visibleDeals,
+          options.productQuery,
+          options.limit ?? 120,
+        ).deals
+      : searchMarketplaceDeals(
+          visibleDeals,
+          options.searchTerms,
+          options.limit ?? 120,
+        )
+  },
+  listLeaflets: async (env, countryCode) =>
+    ((await readLeafletSnapshot(env))?.leaflets ?? [])
+      .filter((leaflet) => (leaflet.countryCode ?? 'ZA').toUpperCase() === countryCode),
   loadPersonalContext: loadScoutPersonalContext,
   logRetrieval: logScoutRetrieval,
   retrieveProducts: (message) => retrieveProducts(message),
@@ -134,21 +193,111 @@ export async function handleScoutChat(
 
   const countryCode = normalizedCountryCode(session.account.countryCode)
   const currencyCode = normalizedCurrencyCode(session.account.currencyCode)
-  // Retrieval runs alongside the stored context. Mr Scout used to see only the
-  // most recent promotions, so anything not currently on special â€” a 50 inch
-  // television, say â€” was invisible to him no matter what the shopper asked.
+  const groceryRequest = parseGroceryPlanRequest(input.message)
+  const personalOfferRequest = isPersonalOfferRequest(input.message)
+  const shopping = !groceryRequest && !personalOfferRequest
+  // The deterministic reader recognises most of what shoppers ask for at no
+  // cost, so "50 inch television" costs one model call rather than two. It
+  // cannot fix a typo or place an unfamiliar product though — "teh cheapest
+  // airforce sneaker" needs the model — so an unrecognised product still buys
+  // the intent call.
+  const localQuery = shopping ? parseProductQuery(input.message) : undefined
+  const interpretedSearchIntent = shopping && localQuery?.category === 'unknown'
+    ? await dependencies.interpretSearchIntent(env, {
+        countryCode,
+        currencyCode,
+        history: input.history,
+        message: input.message,
+      }).catch(() => undefined)
+    : undefined
+  const productQuery = !shopping
+    ? undefined
+    : interpretedSearchIntent
+      ? productQueryFromIntent(interpretedSearchIntent)
+      : parseMarketplaceProductQuery(input.message)
+  const searchTerms = groceryRequest
+    ? []
+    : productQuery?.productTerms ??
+      (interpretedSearchIntent ? [] : extractScoutSearchTerms(input.message))
+  const planId = session.account.role === 'admin'
+    ? 'organization'
+    : session.account.planId ?? 'free'
+  const planLimits = getMemberPlan(planId).limits
+  const visibilityLimit = planLimits.visibleDeals
+  // The Marketplace holds what we have already collected; the live sweep
+  // reaches the shelves we have not. A 50 inch television is rarely on
+  // promotion, so it exists in the second and not the first.
   const [deals, leaflets, personalContext, retrieval] = await Promise.all([
-    dependencies.listDeals(env, countryCode).catch(() => []),
-    dependencies.listLeaflets(env).catch(() => []),
-    dependencies.loadPersonalContext(env, session.account.id).catch(() => ({})),
-    dependencies.retrieveProducts(input.message).catch(() => undefined),
+    dependencies.listDeals(env, {
+      accountId: session.account.id,
+      countryCode,
+      planId,
+      productQuery,
+      searchTerms,
+      limit: groceryRequest ? 200 : 120,
+      visibilityLimit,
+    }).catch(() => []),
+    dependencies.listLeaflets(env, countryCode)
+      .then((items) => items.slice(0, planLimits.visibleCatalogues))
+      .catch(() => []),
+    dependencies.loadPersonalContext(env, session.account.id)
+      .then((context) => personalContextForRequest(input.message, context))
+      .catch(() => ({})),
+    shopping
+      ? dependencies.retrieveProducts(input.message).catch(() => undefined)
+      : Promise.resolve(undefined),
   ])
-
-  const storedContext = buildScoutContext(deals, leaflets, currencyCode, personalContext)
+  const rankedProductResult = productQuery
+    ? rankMarketplaceProductDeals(deals, productQuery, 120)
+    : undefined
+  const visibleDeals = rankedProductResult?.deals ?? deals
+  const marketplaceContext = buildScoutContext(
+    visibleDeals,
+    leaflets,
+    currencyCode,
+    personalContext,
+    { preserveDealOrder: Boolean(productQuery) },
+  )
   const liveCards = retrieval ? toScoutDealCards(retrieval.candidates, currencyCode) : []
-  // Live store hits lead the context so the model reaches for a real, current
-  // price before an older promotion.
-  const scoutContext = { ...storedContext, deals: [...liveCards, ...storedContext.deals] }
+  const liveCardIds = new Set(liveCards.map((card) => card.id))
+  // Live shelf prices lead, so the model reaches for a current price before an
+  // older promotion.
+  const scoutContext = {
+    ...marketplaceContext,
+    deals: [...liveCards, ...marketplaceContext.deals],
+  }
+
+  // A named product with nothing but Marketplace hits is answered straight
+  // from the Marketplace, as before. When the live sweep found something the
+  // Marketplace does not carry, the conversation continues to the model so
+  // Mr Scout can talk about it rather than return a canned line.
+  if (
+    interpretedSearchIntent?.kind === 'product' &&
+    productQuery &&
+    rankedProductResult &&
+    liveCards.length === 0
+  ) {
+    const marketplaceIds = new Set(visibleDeals.map((deal) => deal.id))
+    const productDeals = marketplaceContext.deals
+      .filter((deal) => marketplaceIds.has(deal.id))
+      .slice(0, 6)
+    return json(
+      {
+        answer: {
+          catalogues: [],
+          deals: productDeals,
+          followUps: [],
+          reply: marketplaceProductReply(
+            productQuery,
+            productDeals.length,
+            rankedProductResult.exactPackAvailable,
+          ),
+        },
+        model: MODEL,
+      },
+      { headers: privateHeaders },
+    )
+  }
   const openAIRequest = new Request('https://api.openai.com/v1/responses', {
     body: JSON.stringify({
       model: MODEL,
@@ -212,6 +361,46 @@ export async function handleScoutChat(
   try {
     const modelAnswer = parseScoutModelAnswer(await openAIResponse.json())
     const answer = mapScoutAnswer(modelAnswer, scoutContext)
+    if (groceryRequest) {
+      answer.groceryPlan = buildGroceryPlan(input.message, visibleDeals, currencyCode)
+      const itemCount = answer.groceryPlan.items.length
+      answer.reply = itemCount > 0
+        ? `I built a temporary grocery list with ${itemCount} ${itemCount === 1 ? 'item' : 'items'} from ${answer.groceryPlan.storeCount} ${answer.groceryPlan.storeCount === 1 ? 'store' : 'stores'}. Review the quantities, assumptions, promotions, and missing groups before transferring anything to your main basket.`
+        : 'I could not build a grocery list from the current in-stock deals. The grocery list shows the missing groups so you can adjust the request.'
+    }
+    if (productQuery && rankedProductResult) {
+      const marketplaceIds = new Set(visibleDeals.map((deal) => deal.id))
+      // A live shelf result is as trustworthy as a Marketplace one, so the
+      // guard against invented cards must let both through — filtering to
+      // Marketplace ids alone would drop every live find on the floor.
+      const trusted = (id: string) => marketplaceIds.has(id) || liveCardIds.has(id)
+      answer.deals = answer.deals.filter((deal) => trusted(deal.id))
+      if (productQuery.requestedPackGrams !== undefined || answer.deals.length === 0) {
+        answer.deals = scoutContext.deals.filter((deal) => trusted(deal.id)).slice(0, 6)
+        // The canned Marketplace line only makes sense when the answer really
+        // is Marketplace-only; otherwise Mr Scout's own words are kept.
+        if (liveCards.length === 0) {
+          answer.reply = marketplaceProductReply(
+            productQuery,
+            answer.deals.length,
+            rankedProductResult.exactPackAvailable,
+          )
+        }
+      }
+    } else if (
+      searchTerms.length > 0 &&
+      answer.deals.length === 0 &&
+      visibleDeals.length > 0
+    ) {
+      const marketplaceIds = new Set(visibleDeals.map((deal) => deal.id))
+      answer.deals = scoutContext.deals
+        .filter((deal) => marketplaceIds.has(deal.id) || liveCardIds.has(deal.id))
+        .slice(0, 6)
+      if (liveCards.length === 0) {
+        answer.reply = matchingDealsReply(answer.deals.length, searchTerms)
+      }
+    }
+
     // Logging must never cost the shopper their answer.
     const retrievalId = retrieval
       ? await dependencies.logRetrieval(env, {
@@ -236,6 +425,140 @@ export async function handleScoutChat(
       { headers: privateHeaders, status: 502 },
     )
   }
+}
+
+export function searchMarketplaceDeals(
+  deals: readonly DiscoveredDeal[],
+  searchTerms: readonly string[],
+  limit = 120,
+): DiscoveredDeal[] {
+  const terms = Array.from(new Set(
+    searchTerms
+      .map((term) => term.normalize('NFKC').trim().toLowerCase())
+      .filter((term) => term.length >= 2),
+  ))
+  const phrase = terms.join(' ')
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+
+  return deals
+    .map((deal, index) => ({
+      deal,
+      index,
+      searchText: [
+        deal.title,
+        deal.evidenceText,
+        deal.retailerName,
+        deal.sourceLabel,
+      ].join(' ').normalize('NFKC').toLowerCase(),
+      title: deal.title.normalize('NFKC').toLowerCase(),
+    }))
+    .filter(({ searchText }) => terms.every((term) => searchText.includes(term)))
+    .sort((a, b) => {
+      const aRank = a.title.startsWith(phrase) ? 0 : a.title.includes(phrase) ? 1 : 2
+      const bRank = b.title.startsWith(phrase) ? 0 : b.title.includes(phrase) ? 1 : 2
+      return aRank - bRank || a.index - b.index
+    })
+    .slice(0, boundedLimit)
+    .map(({ deal }) => deal)
+}
+
+function matchingDealsReply(matchCount: number, searchTerms: string[]): string {
+  const item = searchTerms.join(' ')
+  return `I found ${matchCount} current ${item} ${matchCount === 1 ? 'deal' : 'deals'} in Marketplace. Prices and stock can change, so check the retailer before buying.`
+}
+
+function marketplaceProductReply(
+  query: MarketplaceProductQuery,
+  matchCount: number,
+  exactPackAvailable: boolean,
+): string {
+  const product = query.productName ?? query.productTerms.join(' ')
+  if (matchCount === 0) {
+    const pack = query.requestedPackText ? ` in a ${query.requestedPackText} pack` : ''
+    return `I could not find current ${product}${pack} in your visible Marketplace deals. Try another pack size or check again when retailers update their offers.`
+  }
+  if (query.requestedPackText && !exactPackAvailable) {
+    return `No current ${query.requestedPackText} ${product} deal is available in your visible Marketplace results. These are the closest available ${product} pack sizes, ordered by pack-size match and valid price. Prices and stock can change.`
+  }
+  const pack = query.requestedPackText ? `${query.requestedPackText} ` : ''
+  const ordering = query.sort === 'price-asc' ? ' with the lowest valid prices first' : ''
+  return `I found ${matchCount} current Marketplace ${matchCount === 1 ? 'deal' : 'deals'} for ${pack}${product}${ordering}. Prices and stock can change, so check the retailer before buying.`
+}
+
+function isPersonalOfferRequest(message: string): boolean {
+  const normalized = message.normalize('NFKC').toLowerCase()
+  return /\b(?:my\s+)?(?:basket|saved|saves|favourites?|favorites?|followed|window\s+shopping|properties)\b/u
+    .test(normalized)
+}
+
+function personalContextForRequest(
+  message: string,
+  context: ScoutPersonalContextInput,
+): ScoutPersonalContextInput {
+  if (isPersonalOfferRequest(message)) return context
+  return {
+    favouriteStores: context.favouriteStores,
+    followedStores: context.followedStores,
+  }
+}
+
+export async function requestScoutSearchIntent(
+  env: TrolleyScoutEnv,
+  input: ScoutIntentRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<ScoutSearchIntent> {
+  if (!env.OPENAI_API_KEY) {
+    throw new TypeError('Mr Scout search intent needs an OpenAI API key.')
+  }
+  const response = await fetcher(new Request('https://api.openai.com/v1/responses', {
+    body: JSON.stringify({
+      model: MODEL,
+      reasoning: { effort: 'low' },
+      max_output_tokens: 300,
+      store: false,
+      input: [
+        {
+          role: 'developer',
+          content: [
+            'Extract the shopper’s retrieval intent before Marketplace search.',
+            `The shopper is in ${input.countryCode} and uses ${input.currencyCode}.`,
+            'Classify product requests as product. Use catalogue, personal, property, or general for other requests.',
+            'For a product, correct obvious spelling and spacing errors using shopping context.',
+            'Keep brand, model, product type, variant, material, colour, gender, size, and other requested qualifiers when they identify the item.',
+            'productName must be a concise corrected product noun phrase, without request words, store instructions, or price language.',
+            'productTerms must contain normalized title-matching terms in singular form where sensible.',
+            'Use price-asc for cheapest, cheap, affordable, lowest-price, or equivalent requests. Otherwise use relevance.',
+            'Extract a requested grocery pack into grams when stated. Use null when no pack is stated.',
+            'Never invent a product that the shopper did not request.',
+          ].join('\n'),
+        },
+        ...input.history.slice(-4).map((turn) => ({
+          role: turn.role,
+          content: turn.text,
+        })),
+        { role: 'user', content: input.message },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'mr_scout_search_intent',
+          strict: true,
+          schema: scoutSearchIntentSchema,
+        },
+      },
+    }),
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+    signal: AbortSignal.timeout(15_000),
+  }))
+  if (!response.ok) {
+    throw new TypeError(`Mr Scout search intent failed with ${response.status}.`)
+  }
+  return parseScoutSearchIntent(await response.json())
 }
 
 export async function loadScoutPersonalContext(

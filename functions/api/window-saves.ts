@@ -2,6 +2,10 @@
 // list, and auto-removal once a deal leaves the live feed.
 import { getMemberSession } from '../_shared/memberStore'
 import {
+  getMemberPlan,
+  limitVisibleDealsForPlan,
+} from '../../src/data/memberPlans'
+import {
   getDealCommentCounts,
   getWindowSaveCounts,
   listWindowSaves,
@@ -23,6 +27,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json({ error: 'Sign in to save deals.' }, { headers: privateHeaders, status: 401 })
   }
   const accountId = session.account.id
+  const planId = session.account.role === 'admin'
+    ? 'organization'
+    : session.account.planId
   const url = new URL(request.url)
 
   if (request.method === 'GET') {
@@ -40,7 +47,19 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         { headers: privateHeaders },
       )
     }
-    return json({ deals: await listWindowSaves(env, accountId) }, { headers: privateHeaders })
+    const savedDeals = await listWindowSaves(env, accountId)
+    const dealLimit = getMemberPlan(planId).limits.visibleDeals
+    return json(
+      {
+        access: {
+          availableDealCount: savedDeals.length,
+          dealLimit,
+          planId,
+        },
+        deals: limitVisibleDealsForPlan(savedDeals, planId),
+      },
+      { headers: privateHeaders },
+    )
   }
 
   if (request.method === 'DELETE') {

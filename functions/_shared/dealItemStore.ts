@@ -18,6 +18,7 @@ export const MISSING_VALID_TO_TTL_MS = 12 * 60 * 60 * 1_000
 const MAX_UPSERT_ITEMS = 100
 const MAX_FILTER_VALUES = 50
 const MAX_LIST_LIMIT = 200
+const MAX_MARKETPLACE_VISIBILITY_LIMIT = Number.MAX_SAFE_INTEGER
 
 export type DealItemStatus = 'active' | 'expired' | 'inactive'
 export type DealSourceRunStatus = 'failed' | 'partial' | 'success'
@@ -98,6 +99,14 @@ export interface ListActiveDealItemsOptions {
   retailerIds?: readonly string[]
   scope?: DealItemScopeFilter
   sourceKeys?: readonly string[]
+}
+
+export interface SearchActiveDealItemsOptions {
+  countryCode: string
+  limit?: number
+  now?: string
+  searchTerms: readonly string[]
+  visibilityLimit: number
 }
 
 export interface ExpireDealItemsOptions {
@@ -355,7 +364,12 @@ function buildActiveDealItemsStatement(
 ): D1PreparedStatement {
   const now = strictInstant(options.now ?? new Date().toISOString(), 'now')
   const limit = boundedInteger(options.limit ?? 100, 'limit', 1, MAX_LIST_LIMIT)
-  const offset = boundedInteger(options.offset ?? 0, 'offset', 0, 10_000)
+  const offset = boundedInteger(
+    options.offset ?? 0,
+    'offset',
+    0,
+    Number.MAX_SAFE_INTEGER,
+  )
   const where = ["status = 'active'", 'expires_at > ?']
   const bindings: Array<number | string> = [now]
 
@@ -415,6 +429,77 @@ export async function listActiveDealItems(
   const db = requireDatabase(env)
   const result = await buildActiveDealItemsStatement(db, options).all<DealItemRow>()
   return result.results.map(mapDealItemRow)
+}
+
+export async function searchActiveDealItems(
+  env: TrolleyScoutEnv,
+  options: SearchActiveDealItemsOptions,
+): Promise<StoredDealItem[]> {
+  const db = requireDatabase(env)
+  const now = strictInstant(options.now ?? new Date().toISOString(), 'now')
+  const countryCode = requiredCountryCode(options.countryCode)
+  const limit = boundedInteger(options.limit ?? 120, 'limit', 1, MAX_LIST_LIMIT)
+  const visibilityLimit = boundedInteger(
+    options.visibilityLimit,
+    'visibilityLimit',
+    1,
+    MAX_MARKETPLACE_VISIBILITY_LIMIT,
+  )
+  const searchTerms = Array.from(new Set(
+    options.searchTerms
+      .map((term) => term.normalize('NFKC').trim().toLowerCase())
+      .filter((term) => term.length >= 2)
+      .slice(0, 8),
+  ))
+  const searchable =
+    "lower(title || ' ' || evidence_text || ' ' || retailer_id || ' ' || source_key)"
+  const matches = searchTerms.map(() => `${searchable} LIKE ? ESCAPE '\\'`)
+  const bindings: Array<number | string> = [
+    now,
+    countryCode,
+    visibilityLimit,
+    ...searchTerms.map((term) => `%${escapeLikePattern(term)}%`),
+  ]
+  const phrase = searchTerms.join(' ')
+  bindings.push(
+    phrase ? `${escapeLikePattern(phrase)}%` : '%',
+    phrase ? `%${escapeLikePattern(phrase)}%` : '%',
+    limit,
+  )
+
+  const result = await db.prepare(
+    `SELECT *
+    FROM (
+      SELECT
+        id, retailer_id, source_key, source_product_id, promotion_id, title,
+        current_price_cents, previous_price_cents, sold_out, image_url, saving_text,
+        terms_text, unit_text, evidence_text, product_url, source_url, source_kind,
+        captured_at, valid_from, valid_to, expires_at, scope_type, scope_store_ids,
+        scope_region_ids, excluded_store_ids, content_fingerprint, status,
+        created_at, updated_at, last_seen_at, country_code, currency_code
+      FROM deal_items
+      WHERE status = 'active' AND expires_at > ? AND country_code = ?
+      ORDER BY expires_at ASC, retailer_id ASC, title ASC, id ASC
+      LIMIT ?
+    ) AS visible_deals
+    ${matches.length > 0 ? `WHERE ${matches.join(' AND ')}` : ''}
+    ORDER BY
+      CASE WHEN lower(title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+      CASE WHEN lower(title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+      CASE WHEN sold_out = 1 THEN 1 ELSE 0 END,
+      CASE WHEN image_url IS NULL OR image_url = '' THEN 1 ELSE 0 END,
+      CASE
+        WHEN previous_price_cents IS NOT NULL
+        THEN previous_price_cents - current_price_cents
+        ELSE 0
+      END DESC,
+      expires_at ASC,
+      retailer_id ASC,
+      title ASC
+    LIMIT ?`,
+  ).bind(...bindings).all<DealItemRow>()
+
+  return preferMarketplaceScopes(result.results.map(mapDealItemRow)).slice(0, limit)
 }
 
 /**
@@ -699,6 +784,34 @@ function mapDealItemRow(row: DealItemRow): StoredDealItem {
     validFrom: row.valid_from ?? undefined,
     validTo: row.valid_to ?? undefined,
   }
+}
+
+function preferMarketplaceScopes(items: StoredDealItem[]): StoredDealItem[] {
+  const priority = { national: 0, online: 1, province: 2, store: 3 } as const
+  const selected = new Map<string, { index: number; item: StoredDealItem }>()
+
+  items.forEach((item, index) => {
+    const key = `${item.retailerId}::${item.productId}`
+    const current = selected.get(key)
+    if (
+      !current ||
+      priority[item.scope.type] < priority[current.item.scope.type] ||
+      (
+        priority[item.scope.type] === priority[current.item.scope.type] &&
+        item.capturedAt > current.item.capturedAt
+      )
+    ) {
+      selected.set(key, { index: current?.index ?? index, item })
+    }
+  })
+
+  return Array.from(selected.values())
+    .sort((left, right) => left.index - right.index)
+    .map(({ item }) => item)
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`)
 }
 
 function storedScope(

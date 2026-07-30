@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { filterDiscoveryDeals } from './dealFilters'
+import * as dealFiltersModule from './dealFilters'
 import type { DiscoveredDeal } from '../types'
 
 const deals: DiscoveredDeal[] = [
@@ -65,5 +66,83 @@ describe('filterDiscoveryDeals', () => {
     expect(
       filterDiscoveryDeals(availabilityDeals, { hideSoldOut: true }).map((deal) => deal.id),
     ).toEqual(['rice', 'metadata-food'])
+  })
+
+  it('keeps only deals first added on or after the recent cutoff', () => {
+    const recentDeals: DiscoveredDeal[] = [
+      {
+        ...deals[0],
+        addedAt: '2026-07-24T08:00:00.000Z',
+        capturedAt: '2026-07-30T08:00:00.000Z',
+        id: 'recent-rice',
+      },
+      {
+        ...deals[1],
+        addedAt: '2026-07-20T08:00:00.000Z',
+        capturedAt: '2026-07-30T08:00:00.000Z',
+        id: 'refreshed-old-milk',
+      },
+      {
+        ...deals[2],
+        capturedAt: '2026-07-23T08:00:00.000Z',
+        id: 'legacy-cutoff-deal',
+      },
+    ]
+
+    expect(
+      filterDiscoveryDeals(recentDeals, {
+        recentlyAddedAfter: '2026-07-23T08:00:00.000Z',
+      }).map((deal) => deal.id),
+    ).toEqual(['recent-rice', 'legacy-cutoff-deal'])
+  })
+
+  it('combines recently added with search and category filters', () => {
+    const recentDeals: DiscoveredDeal[] = [
+      {
+        ...deals[0],
+        addedAt: '2026-07-29T08:00:00.000Z',
+        id: 'recent-rice',
+      },
+      {
+        ...deals[1],
+        addedAt: '2026-07-20T08:00:00.000Z',
+        id: 'old-milk',
+      },
+    ]
+
+    expect(
+      filterDiscoveryDeals(recentDeals, {
+        category: 'food',
+        query: 'rice',
+        recentlyAddedAfter: '2026-07-23T08:00:00.000Z',
+      }).map((deal) => deal.id),
+    ).toEqual(['recent-rice'])
+  })
+
+  it('reuses indexed category data when the shopper changes the search text', () => {
+    const createDealSearchIndex = (
+      dealFiltersModule as unknown as Record<string, unknown>
+    ).createDealSearchIndex as
+      | ((items: DiscoveredDeal[]) => unknown[])
+      | undefined
+    const filterIndexedDiscoveryDeals = (
+      dealFiltersModule as unknown as Record<string, unknown>
+    ).filterIndexedDiscoveryDeals as
+      | ((items: unknown[], options: { category: string; query: string }) => DiscoveredDeal[])
+      | undefined
+
+    expect(createDealSearchIndex).toBeTypeOf('function')
+    expect(filterIndexedDiscoveryDeals).toBeTypeOf('function')
+    if (!createDealSearchIndex || !filterIndexedDiscoveryDeals) return
+
+    const index = createDealSearchIndex(deals)
+    expect(
+      filterIndexedDiscoveryDeals(index, { category: 'food', query: 'rice' })
+        .map((deal) => deal.id),
+    ).toEqual(['rice'])
+    expect(
+      filterIndexedDiscoveryDeals(index, { category: 'food', query: 'milk' })
+        .map((deal) => deal.id),
+    ).toEqual(['milk'])
   })
 })

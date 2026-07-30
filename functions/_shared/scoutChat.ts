@@ -1,4 +1,5 @@
 import type {
+  DiscoveredDeal,
   ScoutChatAnswer,
   ScoutChatCatalogueCard,
   ScoutChatDealCard,
@@ -19,6 +20,70 @@ const MAX_PERSONAL_DEAL_CARDS = 24
 const MAX_RESULT_DEALS = 6
 const MAX_RESULT_CATALOGUES = 4
 const MAX_FOLLOW_UPS = 3
+const MAX_SEARCH_TERMS = 8
+
+const scoutSearchStopWords = new Set([
+  'a',
+  'about',
+  'and',
+  'am',
+  'any',
+  'are',
+  'around',
+  'at',
+  'available',
+  'best',
+  'buy',
+  'can',
+  'category',
+  'cheap',
+  'could',
+  'current',
+  'deal',
+  'deals',
+  'do',
+  'find',
+  'food',
+  'for',
+  'good',
+  'groceries',
+  'have',
+  'help',
+  'here',
+  'i',
+  'in',
+  'looking',
+  'local',
+  'marketplace',
+  'me',
+  'mr',
+  'near',
+  'nearby',
+  'need',
+  'offer',
+  'offers',
+  'on',
+  'please',
+  'price',
+  'prices',
+  'product',
+  'products',
+  'scout',
+  'search',
+  'show',
+  'some',
+  'the',
+  'than',
+  'there',
+  'today',
+  'under',
+  'what',
+  'with',
+  'want',
+  'you',
+])
+
+export type ScoutContextDeal = StoredDealItem | DiscoveredDeal
 
 export interface NormalizedScoutChatRequest {
   history: ScoutChatTurn[]
@@ -111,33 +176,74 @@ export function normalizeScoutChatRequest(input: unknown): NormalizedScoutChatRe
   return { history, message }
 }
 
+export function extractScoutSearchTerms(message: string): string[] {
+  return Array.from(new Set(
+    message
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) =>
+        term.length >= 2 &&
+        !scoutSearchStopWords.has(term) &&
+        !/^(?:r|zar)?\d+(?:[.,]\d+)?$/u.test(term),
+      ),
+  )).slice(0, MAX_SEARCH_TERMS)
+}
+
 export function buildScoutContext(
-  dealItems: readonly StoredDealItem[],
+  dealItems: readonly ScoutContextDeal[],
   leaflets: readonly StoreLeaflet[],
   currencyCode: string,
   personalInput: ScoutPersonalContextInput = {},
+  options: { preserveDealOrder?: boolean } = {},
 ): ScoutChatContext {
-  const liveDeals = dealItems
-    .filter((item) => item.status === 'active' && !item.soldOut && isHttpUrl(item.productUrl))
-    .sort((a, b) => {
-      const savingDifference = savingCents(b) - savingCents(a)
-      if (savingDifference !== 0) return savingDifference
-      if (Boolean(a.imageUrl) !== Boolean(b.imageUrl)) return a.imageUrl ? -1 : 1
-      return a.title.localeCompare(b.title)
-    })
+  const eligibleDeals = dealItems.filter((item) =>
+      (!('status' in item) || item.status === 'active') &&
+      !item.soldOut &&
+      isHttpUrl(item.productUrl),
+    )
+  const orderedDeals = options.preserveDealOrder
+    ? eligibleDeals
+    : eligibleDeals.every(
+    (item): item is StoredDealItem => 'priceCents' in item,
+  )
+    ? [...eligibleDeals].sort((a, b) => {
+        const savingDifference = savingCents(b) - savingCents(a)
+        if (savingDifference !== 0) return savingDifference
+        if (Boolean(a.imageUrl) !== Boolean(b.imageUrl)) return a.imageUrl ? -1 : 1
+        return a.title.localeCompare(b.title)
+      })
+    : eligibleDeals
+  const liveDeals = orderedDeals
     .slice(0, MAX_CONTEXT_DEALS)
-    .map((item): ScoutChatDealCard => ({
-      id: item.id,
-      imageUrl: safeHttpUrl(item.imageUrl),
-      previousPriceText: item.previousPriceCents === undefined
-        ? undefined
-        : formatMoney(item.previousPriceCents, item.currencyCode || currencyCode),
-      priceText: formatMoney(item.priceCents, item.currencyCode || currencyCode),
-      productUrl: item.productUrl,
-      retailerName: humanizeRetailer(item.retailerId),
-      savingText: item.savingText,
-      title: item.title,
-    }))
+    .map((item): ScoutChatDealCard => {
+      if ('priceCents' in item) {
+        return {
+          id: item.id,
+          imageUrl: safeHttpUrl(item.imageUrl),
+          previousPriceText: item.previousPriceCents === undefined
+            ? undefined
+            : formatMoney(item.previousPriceCents, item.currencyCode || currencyCode),
+          priceText: formatMoney(item.priceCents, item.currencyCode || currencyCode),
+          productUrl: item.productUrl,
+          retailerName: humanizeRetailer(item.retailerId),
+          savingText: item.savingText,
+          title: item.title,
+        }
+      }
+      return {
+        id: item.id,
+        imageUrl: safeHttpUrl(item.imageUrl),
+        previousPriceText: item.previousPriceText,
+        priceText: item.priceText ?? 'See retailer',
+        productUrl: item.productUrl,
+        retailerName: item.retailerName,
+        savingText: item.savingText,
+        title: item.title,
+      }
+    })
 
   const { cards: personalDealCards, shopper } = normalizeShopperContext(personalInput)
   const deals = [...liveDeals, ...personalDealCards].slice(
@@ -270,10 +376,6 @@ function extractResponseText(payload: Record<string, unknown>): string {
   throw new TypeError('Mr Scout returned no answer.')
 }
 
-function savingCents(item: StoredDealItem): number {
-  return Math.max(0, (item.previousPriceCents ?? item.priceCents) - item.priceCents)
-}
-
 function formatMoney(cents: number, currencyCode: string): string {
   const currency = /^[A-Z]{3}$/.test(currencyCode) ? currencyCode : 'ZAR'
   if (currency === 'ZAR') {
@@ -285,6 +387,10 @@ function formatMoney(cents: number, currencyCode: string): string {
     minimumFractionDigits: 2,
     style: 'currency',
   }).format(cents / 100)
+}
+
+function savingCents(item: StoredDealItem): number {
+  return Math.max(0, (item.previousPriceCents ?? item.priceCents) - item.priceCents)
 }
 
 function humanizeRetailer(value: string): string {

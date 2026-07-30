@@ -6,6 +6,7 @@ import {
   mapScoutAnswer,
   normalizeScoutChatRequest,
 } from './scoutChat'
+import * as scoutChatModule from './scoutChat'
 
 function deal(overrides: Partial<StoredDealItem>): StoredDealItem {
   return {
@@ -80,6 +81,56 @@ describe('normalizeScoutChatRequest', () => {
   it('rejects empty and oversized shopper messages', () => {
     expect(() => normalizeScoutChatRequest({ message: '   ' })).toThrow('Enter a message')
     expect(() => normalizeScoutChatRequest({ message: 'x'.repeat(601) })).toThrow('600 characters')
+  })
+})
+
+describe('extractScoutSearchTerms', () => {
+  it('turns a natural-language rice request into focused marketplace terms', () => {
+    const extractScoutSearchTerms = (
+      scoutChatModule as unknown as Record<string, unknown>
+    ).extractScoutSearchTerms as ((message: string) => string[]) | undefined
+
+    expect(extractScoutSearchTerms).toBeTypeOf('function')
+    if (!extractScoutSearchTerms) return
+
+    expect(
+      extractScoutSearchTerms('Can you please show me the best available rice deals?'),
+    ).toEqual(['rice'])
+  })
+
+  it('keeps a useful product phrase and removes shopping filler words', () => {
+    const extractScoutSearchTerms = (
+      scoutChatModule as unknown as Record<string, unknown>
+    ).extractScoutSearchTerms as ((message: string) => string[]) | undefined
+
+    expect(extractScoutSearchTerms).toBeTypeOf('function')
+    if (!extractScoutSearchTerms) return
+
+    expect(extractScoutSearchTerms('I am looking for extra virgin olive oil')).toEqual([
+      'extra',
+      'virgin',
+      'olive',
+      'oil',
+    ])
+  })
+
+  it('removes budget wording so a priced rice request still searches for rice', () => {
+    const extractScoutSearchTerms = (
+      scoutChatModule as unknown as Record<string, unknown>
+    ).extractScoutSearchTerms as ((message: string) => string[]) | undefined
+
+    expect(extractScoutSearchTerms).toBeTypeOf('function')
+    if (!extractScoutSearchTerms) return
+
+    expect(extractScoutSearchTerms('Find cheap rice under R100 today')).toEqual(['rice'])
+  })
+
+  it('drops category and location filler around a product request', () => {
+    expect(
+      scoutChatModule.extractScoutSearchTerms(
+        'Show me rice in Food and Groceries near me at a good price',
+      ),
+    ).toEqual(['rice'])
   })
 })
 

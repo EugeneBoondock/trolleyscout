@@ -45,6 +45,7 @@ import {
 import {
   DEFAULT_COMMON_COMMERCE_PAGE_SIZE,
   MAX_COMMON_COMMERCE_PAGES,
+  MAX_WOOCOMMERCE_PAGE_SIZE,
   buildCommonCommerceDealsRequest,
   commonCommercePayloadItemCount,
   detectCommonCommercePlatform,
@@ -126,29 +127,56 @@ const SPAR_ORIGIN = 'https://mobile.spar.co.za'
 const SPAR_ZIMBABWE_HOST = 'spar.co.zw'
 const SPAR_ZIMBABWE_PRODUCTS_URL = 'https://www.spar.co.zw/products'
 const SPAR_ZIMBABWE_PRODUCT_PAGES = 4
-const ZIMBABWE_WOOCOMMERCE_PRODUCT_PAGES = 3
+const ZIMBABWE_WOOCOMMERCE_PRODUCT_PAGES = 6
 const ZIMBABWE_WOOCOMMERCE_PAGE_SIZE = 100
+const MAX_ZIMBABWE_CATALOGUE_DEALS =
+  ZIMBABWE_WOOCOMMERCE_PRODUCT_PAGES * ZIMBABWE_WOOCOMMERCE_PAGE_SIZE
+const ZIMBABWE_COMMON_COMMERCE_CATALOGUES: Record<
+  string,
+  { currencyHint?: string; origin: string; platform: CommonCommercePlatform }
+> = {
+  '4harvests.co.zw': { currencyHint: 'USD', origin: 'https://www.4harvests.co.zw', platform: 'woocommerce' },
+  'africanunique.com': { currencyHint: 'USD', origin: 'https://africanunique.com', platform: 'shopify' },
+  'amanatelectrical.com': { currencyHint: 'USD', origin: 'https://amanatelectrical.com', platform: 'shopify' },
+  'avacarts.com': { currencyHint: 'USD', origin: 'https://avacarts.com', platform: 'woocommerce' },
+  'belindamarshallart.com': { currencyHint: 'USD', origin: 'https://belindamarshallart.com', platform: 'woocommerce' },
+  'dairibord.com': { currencyHint: 'USD', origin: 'https://www.dairibord.com', platform: 'woocommerce' },
+  'diy.co.zw': { currencyHint: 'USD', origin: 'https://www.diy.co.zw', platform: 'woocommerce' },
+  'filaptops.co.zw': { currencyHint: 'USD', origin: 'https://www.filaptops.co.zw', platform: 'woocommerce' },
+  'foodworld.co.zw': { currencyHint: 'USD', origin: 'https://www.foodworld.co.zw', platform: 'woocommerce' },
+  'infinitysolar.co.zw': { currencyHint: 'USD', origin: 'https://www.infinitysolar.co.zw', platform: 'woocommerce' },
+  'innovative.co.zw': { currencyHint: 'USD', origin: 'https://innovative.co.zw', platform: 'woocommerce' },
+  'kesontvs.co.zw': { currencyHint: 'USD', origin: 'https://kesontvs.co.zw', platform: 'woocommerce' },
+  'laptopzone.co.zw': { currencyHint: 'USD', origin: 'https://laptopzone.co.zw', platform: 'woocommerce' },
+  'luckybrandonline.co.zw': { currencyHint: 'USD', origin: 'https://luckybrandonline.co.zw', platform: 'woocommerce' },
+  'magnet.co.zw': { currencyHint: 'USD', origin: 'https://magnet.co.zw', platform: 'woocommerce' },
+  'market.ama.co.zw': { currencyHint: 'USD', origin: 'https://market.ama.co.zw', platform: 'woocommerce' },
+  'mawuafrica.com': { currencyHint: 'USD', origin: 'https://mawuafrica.com', platform: 'shopify' },
+  'mcmeats.co.zw': { currencyHint: 'USD', origin: 'https://mcmeats.co.zw', platform: 'woocommerce' },
+  'montanamallzw.com': { currencyHint: 'USD', origin: 'https://montanamallzw.com', platform: 'woocommerce' },
+  'nashfurnishers.co.zw': { currencyHint: 'USD', origin: 'https://nashfurnishers.co.zw', platform: 'woocommerce' },
+  'shop.zikimall.com': { currencyHint: 'USD', origin: 'https://shop.zikimall.com', platform: 'woocommerce' },
+  'solarshack.co.zw': { currencyHint: 'USD', origin: 'https://solarshack.co.zw', platform: 'woocommerce' },
+  'solutioncentre.co.zw': { currencyHint: 'USD', origin: 'https://solutioncentre.co.zw', platform: 'shopify' },
+  'steelcentre.co.zw': { currencyHint: 'USD', origin: 'https://steelcentre.co.zw', platform: 'woocommerce' },
+  'tcgas.co.zw': { currencyHint: 'USD', origin: 'https://tcgas.co.zw', platform: 'woocommerce' },
+  'tileandcarpetcentre.co.zw': { currencyHint: 'USD', origin: 'https://www.tileandcarpetcentre.co.zw', platform: 'woocommerce' },
+  'tvsales.co.zw': { currencyHint: 'USD', origin: 'https://tvsales.co.zw', platform: 'woocommerce' },
+  'vegetablebasket.co.zw': { currencyHint: 'USD', origin: 'https://www.vegetablebasket.co.zw', platform: 'woocommerce' },
+  'volksmaster.co.zw': { currencyHint: 'USD', origin: 'https://volksmaster.co.zw', platform: 'woocommerce' },
+  'zambezicart.com': { currencyHint: 'USD', origin: 'https://www.zambezicart.com', platform: 'shopify' },
+  'zbms.co.zw': { currencyHint: 'USD', origin: 'https://www.zbms.co.zw', platform: 'woocommerce' },
+}
 const ZIMBABWE_WOOCOMMERCE_CATALOGUES: Record<
   string,
   { apiUrl: string; label: string; origin: string; shopUrl: string }
 > = {
-  'foodworld.co.zw': {
-    apiUrl: 'https://www.foodworld.co.zw/wp-json/wc/store/v1/products',
-    label: 'Food World online catalogue',
-    origin: 'https://www.foodworld.co.zw',
-    shopUrl: 'https://www.foodworld.co.zw/shop/',
-  },
-  'greensonline.co.zw': {
-    apiUrl: 'https://greensonline.co.zw/wp-json/wc/store/v1/products',
-    label: 'Greens online catalogue',
-    origin: 'https://greensonline.co.zw',
-    shopUrl: 'https://greensonline.co.zw/index.php/shop-2/',
-  },
-  'budgetmeatshop.co.zw': {
-    apiUrl: 'https://budgetmeatshop.co.zw/wp-json/wc/store/v1/products',
-    label: 'Budget Meat Shop online catalogue',
-    origin: 'https://budgetmeatshop.co.zw',
-    shopUrl: 'https://budgetmeatshop.co.zw/shop/',
+  'everythingzimbabwean.com': {
+    apiUrl:
+      'https://api.everythingzimbabwean.com/wp-json/wc/store/v1/products?on_sale=true',
+    label: 'Everything Zimbabwean sale catalogue',
+    origin: 'https://everythingzimbabwean.com',
+    shopUrl: 'https://everythingzimbabwean.com/',
   },
 }
 const AGGREGATOR_HOSTS = ['guzzle.co.za', 'tiendeo.co.za', 'cataloguespecials.co.za']
@@ -164,6 +192,33 @@ const FOUR_HARVESTS_ORIGIN = 'https://www.4harvests.co.zw'
 const FOUR_HARVESTS_SALE_URL =
   'https://www.4harvests.co.zw/shop/?on_sale=onsale'
 const FOUR_HARVESTS_PAGE_SIZE = 48
+const TENGAI_HOST = 'tengaionline.com'
+const TENGAI_ORIGIN = 'https://tengaionline.com'
+const TENGAI_SHOP_URL = 'https://tengaionline.com/?post_type=product&per_page=24'
+const TENGAI_PRODUCT_PAGES = 4
+const HELLO_KUMBA_HOST = 'order.hellokumba.com'
+const HELLO_KUMBA_ORIGIN = 'https://order.hellokumba.com'
+const HELLO_KUMBA_MERCHANT_SITEMAP =
+  'https://order.hellokumba.com/merchant_sitemap.xml'
+const HELLO_KUMBA_PRODUCTS_API =
+  'https://api.hyperzod.app/store/v1/catalog/products'
+const HELLO_KUMBA_PRODUCT_PAGES = 4
+const ZIM_ZONE_HOST = 'zim-zone.co.uk'
+const ZIM_ZONE_ORIGIN = 'https://zim-zone.co.uk'
+const ZIM_ZONE_SPECIALS_URL =
+  'https://zim-zone.co.uk/grocery-deals?pagesize=100'
+const WATUMIRA_HERE_HOST = 'watumirahere.co.za'
+const WATUMIRA_HERE_URL = 'https://www.watumirahere.co.za/'
+const BULK_BARREL_HOST = 'bulkbmarketing-ux.github.io'
+const BULK_BARREL_CATALOGUE_URL =
+  'https://bulkbmarketing-ux.github.io/bulk-barrel/'
+const FIRST_CLASS_GROCERIES_HOST = 'firstclassgroceries.com'
+const FIRST_CLASS_GROCERIES_ORIGIN = 'https://www.firstclassgroceries.com'
+const FIRST_CLASS_GROCERIES_PRODUCTS_API =
+  'https://api-ecommerce.hostinger.com/store/store_01KQGWJMJ110BVYHPYPHVH0GZ0/products?limit=100'
+const KAMBUDZI_HOST = 'kambudzi.com'
+const KAMBUDZI_ORIGIN = 'https://kambudzi.com'
+const KAMBUDZI_SPECIALS_URL = 'https://kambudzi.com/search?q=special'
 
 const KNOWN_RETAILER_HOSTS: Record<string, string> = {
   builders: 'builders.co.za',
@@ -506,6 +561,23 @@ async function scoutStore(
     }
   }
 
+  const zimbabweCommonCommerce =
+    countryFromCode(store.countryCode).code === 'ZW' && safeHost(store.website)
+      ? ZIMBABWE_COMMON_COMMERCE_CATALOGUES[safeHost(store.website) ?? '']
+      : undefined
+  if (zimbabweCommonCommerce) {
+    const catalogue = await scoutCommonCommercePlatform(
+      store,
+      zimbabweCommonCommerce.platform,
+      zimbabweCommonCommerce.origin,
+      zimbabweCommonCommerce.currencyHint,
+    )
+    attempts.push(catalogue)
+    if (catalogue.promotions.length > 0) {
+      return catalogue
+    }
+  }
+
   const zimbabweWooCommerce =
     countryFromCode(store.countryCode).code === 'ZW' && safeHost(store.website)
       ? ZIMBABWE_WOOCOMMERCE_CATALOGUES[safeHost(store.website) ?? '']
@@ -574,6 +646,83 @@ async function scoutStore(
     attempts.push(fourHarvests)
     if (fourHarvests.promotions.length > 0) {
       return fourHarvests
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === TENGAI_HOST
+  ) {
+    const tengai = await scoutTengai(env, store)
+    attempts.push(tengai)
+    if (tengai.promotions.length > 0) {
+      return tengai
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === HELLO_KUMBA_HOST
+  ) {
+    const helloKumba = await scoutHelloKumba(store)
+    attempts.push(helloKumba)
+    if (helloKumba.promotions.length > 0) {
+      return helloKumba
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === ZIM_ZONE_HOST
+  ) {
+    const zimZone = await scoutZimZone(env, store)
+    attempts.push(zimZone)
+    if (zimZone.promotions.length > 0) {
+      return zimZone
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === WATUMIRA_HERE_HOST
+  ) {
+    const watumiraHere = await scoutWatumiraHere(env, store)
+    attempts.push(watumiraHere)
+    if (watumiraHere.promotions.length > 0) {
+      return watumiraHere
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === BULK_BARREL_HOST
+  ) {
+    const bulkBarrel = await scoutBulkBarrel(env, store)
+    attempts.push(bulkBarrel)
+    if (bulkBarrel.promotions.length > 0) {
+      return bulkBarrel
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === FIRST_CLASS_GROCERIES_HOST
+  ) {
+    const firstClassGroceries = await scoutFirstClassGroceries(store)
+    attempts.push(firstClassGroceries)
+    if (firstClassGroceries.promotions.length > 0) {
+      return firstClassGroceries
+    }
+  }
+
+  if (
+    countryFromCode(store.countryCode).code === 'ZW' &&
+    safeHost(store.website) === KAMBUDZI_HOST
+  ) {
+    const kambudzi = await scoutKambudzi(env, store)
+    attempts.push(kambudzi)
+    if (kambudzi.promotions.length > 0) {
+      return kambudzi
     }
   }
 
@@ -1133,11 +1282,14 @@ async function scoutCommonCommercePlatform(
   const seen = new Set<string>()
 
   try {
+    const pageSize = platform === 'woocommerce'
+      ? MAX_WOOCOMMERCE_PAGE_SIZE
+      : DEFAULT_COMMON_COMMERCE_PAGE_SIZE
     for (let page = 1; page <= MAX_COMMON_COMMERCE_PAGES; page += 1) {
       const request = buildCommonCommerceDealsRequest(
         platform,
         origin,
-        DEFAULT_COMMON_COMMERCE_PAGE_SIZE,
+        pageSize,
         page,
       )
       if (!request) {
@@ -1185,7 +1337,7 @@ async function scoutCommonCommercePlatform(
       }
       if (
         deals.length >= MAX_PLATFORM_DEALS ||
-        commonCommercePayloadItemCount(platform, payload) < DEFAULT_COMMON_COMMERCE_PAGE_SIZE
+        commonCommercePayloadItemCount(platform, payload) < pageSize
       ) {
         break
       }
@@ -1226,22 +1378,32 @@ function commonCommerceOutcome(
 // only accepts text/html, so this JSON feed is read with a bounded raw fetch,
 // the same way the Shoprite Group browse-by-store API is.
 async function scoutTmpnp(store: NearbyStore, nowMs: number): Promise<ScoutOutcome> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
   try {
-    const pageResults = await Promise.allSettled(
-      Array.from({ length: 4 }, async (_, index) => {
-        const response = await fetch(buildTmpnpSpecialsUrl(index + 1), {
+    const fetchPage = async (page: number): Promise<unknown> => {
+        const response = await fetch(buildTmpnpSpecialsUrl(page), {
           headers: { accept: 'application/json', 'user-agent': BROWSER_UA },
-          signal: controller.signal,
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
         if (!response.ok) {
           throw new Error(`TM Pick n Pay specials returned ${response.status}`)
         }
         return JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
-      }),
+    }
+    const firstPage = await fetchPage(1)
+    const lastPage = tmpnpLastPage(firstPage)
+    const remainingPages = Array.from(
+      { length: Math.max(0, lastPage - 1) },
+      (_, index) => index + 2,
     )
+    const remainingResults = await mapSettledWithConcurrency(
+      remainingPages,
+      4,
+      fetchPage,
+    )
+    const pageResults: Array<PromiseSettledResult<unknown>> = [
+      { status: 'fulfilled', value: firstPage },
+      ...remainingResults,
+    ]
     const deals = pageResults
       .flatMap((result) =>
         result.status === 'fulfilled' ? parseTmpnpSpecialDeals(result.value, nowMs) : [],
@@ -1269,9 +1431,36 @@ async function scoutTmpnp(store: NearbyStore, nowMs: number): Promise<ScoutOutco
     )
   } catch (error) {
     return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
-  } finally {
-    clearTimeout(timeout)
   }
+}
+
+function tmpnpLastPage(payload: unknown): number {
+  if (!payload || typeof payload !== 'object') return 1
+  const value = Number((payload as Record<string, unknown>).last_page)
+  return Number.isSafeInteger(value) ? Math.max(1, Math.min(30, value)) : 1
+}
+
+async function mapSettledWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results = new Array<PromiseSettledResult<R>>(items.length)
+  let cursor = 0
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      try {
+        results[index] = { status: 'fulfilled', value: await worker(items[index]!) }
+      } catch (reason) {
+        results[index] = { reason, status: 'rejected' }
+      }
+    }
+  }))
+  return results
 }
 
 interface TeloneProduct {
@@ -1291,6 +1480,17 @@ interface FoodWorldProduct {
   permalink?: unknown
   prices?: unknown
   slug?: unknown
+}
+
+interface HelloKumbaProduct {
+  id?: unknown
+  in_stock?: unknown
+  name?: unknown
+  price?: unknown
+  price_currency?: unknown
+  price_sell_compare?: unknown
+  product_images?: unknown
+  status?: unknown
 }
 
 interface TillPointProduct {
@@ -1495,6 +1695,768 @@ export function parseFourHarvestsDeals(html: string): PlatformDeal[] {
   }
 
   return products
+}
+
+export function parseTengaiProducts(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const starts = Array.from(html.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bproduct-grid-item\b[^"']*\btype-product\b[^"']*["'][^>]*>/gi,
+  ))
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index].index ?? 0
+    const next = starts[index + 1]?.index ?? html.length
+    const segment = html.slice(start, Math.min(next, start + 40_000))
+    const titleLink =
+      /<h3\b[^>]*class=["'][^"']*\bwd-entities-title\b[^"']*["'][^>]*>[\s\S]*?<a\b([^>]*)>([\s\S]*?)<\/a>/i
+        .exec(segment)
+    const productUrl = absoluteUrl(
+      titleLink
+        ? decodeHtml(attributeValue(titleLink[1], ['href']) ?? '')
+        : undefined,
+      TENGAI_SHOP_URL,
+    )
+    const title = titleLink ? cleanText(titleLink[2]) : ''
+    const currentPriceMarkup =
+      /<ins\b[^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>[\s\S]*?<\/ins>/i
+        .exec(segment)?.[1] ??
+      /<div\b[^>]*class=["'][^"']*\bwrap-price\b[^"']*["'][^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>/i
+        .exec(segment)?.[1] ??
+      /<span\b[^>]*class=["'][^"']*\bprice\b[^"']*["'][^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>/i
+        .exec(segment)?.[1]
+    const previousPriceMarkup =
+      /<del\b[^>]*>[\s\S]*?<bdi\b[^>]*>([\s\S]*?)<\/bdi>[\s\S]*?<\/del>/i
+        .exec(segment)?.[1]
+    const currentPriceText = cleanText(currentPriceMarkup ?? '')
+    const price = numberValue(currentPriceText)
+    const previousPrice = numberValue(cleanText(previousPriceMarkup ?? ''))
+    const imageTag = /<img\b([^>]*)>/i.exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag
+        ? decodeHtml(attributeValue(imageTag, ['src', 'data-src']) ?? '')
+        : undefined,
+      TENGAI_SHOP_URL,
+    )
+
+    if (
+      !productUrl ||
+      safeHost(productUrl) !== TENGAI_HOST ||
+      !title ||
+      price === undefined ||
+      price <= 0 ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    seen.add(productUrl)
+    products.push({
+      currencyCode: /£/.test(currentPriceText) ? 'GBP' : 'USD',
+      imageUrl,
+      previousPriceCents:
+        previousPrice !== undefined && previousPrice > price
+          ? Math.round(previousPrice * 100)
+          : undefined,
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: 'Tengai Online catalogue',
+      soldOut: /\boutofstock\b|\bout of stock\b/i.test(segment),
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+async function scoutTengai(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const pages = await Promise.all(
+    Array.from({ length: TENGAI_PRODUCT_PAGES }, async (_, index) => {
+      const url = new URL(TENGAI_SHOP_URL)
+      url.searchParams.set('paged', String(index + 1))
+      return fetchStorePage(url.toString(), env.JINA_API_KEY)
+    }),
+  )
+  const products = pages
+    .flatMap((page) =>
+      page.status === 'success' && page.text
+        ? parseTengaiProducts(page.text)
+        : [],
+    )
+    .filter(
+      (product, index, all) =>
+        all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
+    )
+    .slice(0, MAX_PLATFORM_DEALS)
+
+  if (products.length === 0) {
+    return outcome(
+      pages.some((page) => page.status === 'transient_failure')
+        ? 'transient_failure'
+        : 'empty',
+    )
+  }
+
+  return outcome(
+    'success',
+    products.map((product) =>
+      platformDealToPromotion(store, product, TENGAI_SHOP_URL, 'Online catalogue'),
+    ),
+    TENGAI_ORIGIN,
+  )
+}
+
+export function parseFirstClassGroceriesProducts(
+  payload: unknown,
+): PlatformDeal[] {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const rows = (payload as Record<string, unknown>).products
+  if (!Array.isArray(rows)) {
+    return []
+  }
+
+  return rows.flatMap((value): PlatformDeal[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+
+    const row = value as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id.trim() : ''
+    const title = typeof row.title === 'string'
+      ? decodeHtml(row.title).trim()
+      : ''
+    const variants = Array.isArray(row.variants)
+      ? row.variants.filter(
+          (variant): variant is Record<string, unknown> =>
+            Boolean(variant) && typeof variant === 'object',
+        )
+      : []
+    const variant =
+      variants.find((candidate) => candidate.is_available !== false) ??
+      variants[0]
+    const prices = Array.isArray(variant?.prices)
+      ? variant.prices.filter(
+          (price): price is Record<string, unknown> =>
+            Boolean(price) && typeof price === 'object',
+        )
+      : []
+    const price = prices[0]
+    const regularAmount = Number(price?.amount)
+    const saleAmount = Number(price?.sale_amount)
+    const hasSale =
+      Number.isFinite(saleAmount) &&
+      saleAmount > 0 &&
+      saleAmount < regularAmount
+    const currentAmount = hasSale ? saleAmount : regularAmount
+    const rawCurrency = typeof price?.currency_code === 'string'
+      ? price.currency_code.toUpperCase()
+      : 'USD'
+    // The live shop selector and displayed prices are USD. Hostinger still
+    // returns the retired ZWL code in this store's API metadata.
+    const currencyCode = rawCurrency === 'ZWL' ? 'USD' : rawCurrency
+
+    if (
+      row.purchasable !== true ||
+      !id ||
+      !title ||
+      !Number.isFinite(currentAmount) ||
+      currentAmount <= 0
+    ) {
+      return []
+    }
+
+    return [{
+      currencyCode,
+      imageUrl: absoluteUrl(
+        typeof row.thumbnail === 'string' ? row.thumbnail : undefined,
+        FIRST_CLASS_GROCERIES_ORIGIN,
+      ),
+      previousPriceCents: hasSale ? Math.round(regularAmount) : undefined,
+      priceCents: Math.round(currentAmount),
+      productUrl:
+        `${FIRST_CLASS_GROCERIES_ORIGIN}/product/${encodeURIComponent(id)}`,
+      promoLabel:
+        typeof row.ribbon_text === 'string' && row.ribbon_text.trim()
+          ? row.ribbon_text.trim()
+          : 'First Class online catalogue',
+      soldOut: row.is_available === false || variant?.is_available === false,
+      title,
+    }]
+  }).slice(0, MAX_PLATFORM_DEALS)
+}
+
+async function scoutFirstClassGroceries(
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(FIRST_CLASS_GROCERIES_PRODUCTS_API, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': BROWSER_UA,
+      },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      return outcome(response.status >= 500 ? 'transient_failure' : 'empty')
+    }
+
+    const products = parseFirstClassGroceriesProducts(
+      JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown,
+    )
+    if (products.length === 0) {
+      return outcome('empty')
+    }
+
+    return outcome(
+      'success',
+      products.map((product) =>
+        platformDealToPromotion(
+          store,
+          product,
+          `${FIRST_CLASS_GROCERIES_ORIGIN}/products`,
+          'Online catalogue',
+        ),
+      ),
+      FIRST_CLASS_GROCERIES_ORIGIN,
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export function parseBulkBarrelProducts(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const starts = Array.from(html.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bcard\b[^"']*["'][^>]*>/gi,
+  ))
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index].index ?? 0
+    const next = starts[index + 1]?.index ?? html.length
+    const segment = html.slice(start, Math.min(next, start + 12_000))
+    const title = cleanText(
+      /<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(segment)?.[1] ?? '',
+    )
+    const price = numberValue(
+      cleanText(/<p\b[^>]*>\s*\$?([\s\S]*?)<\/p>/i.exec(segment)?.[1] ?? ''),
+    )
+    const imageTag = /<img\b([^>]*)>/i.exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag
+        ? decodeHtml(attributeValue(imageTag, ['data-src', 'src']) ?? '')
+        : undefined,
+      BULK_BARREL_CATALOGUE_URL,
+    )
+    const key = `${title.toLowerCase()}:${price ?? ''}`
+
+    if (!title || price === undefined || price <= 0 || seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    products.push({
+      currencyCode: 'USD',
+      imageUrl,
+      priceCents: Math.round(price * 100),
+      productUrl: BULK_BARREL_CATALOGUE_URL,
+      promoLabel: 'Bulk & Barrel catalogue',
+      soldOut: false,
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+async function scoutBulkBarrel(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const page = await fetchStorePage(BULK_BARREL_CATALOGUE_URL, env.JINA_API_KEY)
+  if (page.status !== 'success' || !page.text) {
+    return outcome(
+      page.status === 'transient_failure' ? 'transient_failure' : 'empty',
+    )
+  }
+
+  const products = parseBulkBarrelProducts(page.text)
+  if (products.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome(
+    'success',
+    products.map((product) =>
+      platformDealToPromotion(
+        store,
+        product,
+        BULK_BARREL_CATALOGUE_URL,
+        'Online catalogue',
+      ),
+    ),
+    BULK_BARREL_CATALOGUE_URL,
+  )
+}
+
+export function parseWatumiraHereOffers(html: string): PlatformDeal[] {
+  const text = decodeHtml(stripHtml(html)).replace(/\s+/g, ' ').trim()
+  const offers = [
+    {
+      match:
+        /Hampers for Every Budget.{0,260}?from as low as R\s*([0-9][0-9.,]*)/i
+          .exec(text),
+      title: 'Grocery hampers',
+    },
+    {
+      match:
+        /Affordable Construction Supplies.{0,320}?starting from R\s*([0-9][0-9.,]*)/i
+          .exec(text),
+      title: 'Hardware supplies',
+    },
+  ]
+
+  return offers.flatMap(({ match, title }): PlatformDeal[] => {
+    const price = numberValue(match?.[1])
+    if (price === undefined || price <= 0) {
+      return []
+    }
+
+    const amount = Number.isInteger(price) ? price.toFixed(0) : price.toFixed(2)
+    return [{
+      currencyCode: 'ZAR',
+      imageUrl: undefined,
+      priceCents: Math.round(price * 100),
+      productUrl: WATUMIRA_HERE_URL,
+      promoLabel: `From R${amount}`,
+      soldOut: false,
+      title,
+    }]
+  })
+}
+
+async function scoutWatumiraHere(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const page = await fetchStorePage(WATUMIRA_HERE_URL, env.JINA_API_KEY)
+  if (page.status !== 'success' || !page.text) {
+    return outcome(
+      page.status === 'transient_failure' ? 'transient_failure' : 'empty',
+    )
+  }
+
+  const products = parseWatumiraHereOffers(page.text)
+  if (products.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome(
+    'success',
+    products.map((product) =>
+      platformDealToPromotion(
+        store,
+        product,
+        WATUMIRA_HERE_URL,
+        'Online offer',
+      ),
+    ),
+    WATUMIRA_HERE_URL,
+  )
+}
+
+export function parseZimZoneSpecials(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const starts = Array.from(html.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bproduct-item\b[^"']*["'][^>]*>/gi,
+  ))
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index].index ?? 0
+    const next = starts[index + 1]?.index ?? html.length
+    const segment = html.slice(start, Math.min(next, start + 45_000))
+    const titleLink =
+      /<h2\b[^>]*class=["'][^"']*\bproduct-title\b[^"']*["'][^>]*>[\s\S]*?<a\b([^>]*)>([\s\S]*?)<\/a>/i
+        .exec(segment)
+    const productUrl = absoluteUrl(
+      titleLink
+        ? decodeHtml(attributeValue(titleLink[1], ['href']) ?? '')
+        : undefined,
+      ZIM_ZONE_ORIGIN,
+    )
+    const title = titleLink ? cleanText(titleLink[2]) : ''
+    const price = numberValue(cleanText(
+      /<span\b[^>]*class=["'][^"']*\bactual-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+        .exec(segment)?.[1] ?? '',
+    ))
+    const previousPrice = numberValue(cleanText(
+      /<span\b[^>]*class=["'][^"']*\bold-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+        .exec(segment)?.[1] ?? '',
+    ))
+    const imageTag = /<img\b([^>]*)>/i.exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag
+        ? decodeHtml(
+            attributeValue(imageTag, ['data-lazyloadsrc', 'data-src', 'src']) ?? '',
+          )
+        : undefined,
+      ZIM_ZONE_ORIGIN,
+    )
+    const ribbon = cleanText(
+      /<label\b[^>]*class=["'][^"']*\bribbon-text\b[^"']*["'][^>]*>([\s\S]*?)<\/label>/i
+        .exec(segment)?.[1] ?? '',
+    )
+
+    if (
+      !productUrl ||
+      safeHost(productUrl) !== ZIM_ZONE_HOST ||
+      !title ||
+      price === undefined ||
+      price <= 0 ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    seen.add(productUrl)
+    products.push({
+      currencyCode: 'ZAR',
+      imageUrl,
+      previousPriceCents:
+        previousPrice !== undefined && previousPrice > price
+          ? Math.round(previousPrice * 100)
+          : undefined,
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: ribbon || (
+        previousPrice !== undefined && previousPrice > price
+          ? `${Math.round(((previousPrice - price) / previousPrice) * 100)}% OFF`
+          : 'Zim-Zone specials'
+      ),
+      soldOut: /\bout of stock\b|\bsold out\b|\bunavailable\b/i.test(segment),
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+async function scoutZimZone(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const page = await fetchStorePage(ZIM_ZONE_SPECIALS_URL, env.JINA_API_KEY)
+  if (page.status !== 'success' || !page.text) {
+    return outcome(
+      page.status === 'transient_failure' ? 'transient_failure' : 'empty',
+    )
+  }
+
+  const products = parseZimZoneSpecials(page.text)
+  if (products.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome(
+    'success',
+    products.map((product) =>
+      platformDealToPromotion(
+        store,
+        product,
+        ZIM_ZONE_SPECIALS_URL,
+        'Zim-Zone specials',
+      ),
+    ),
+    ZIM_ZONE_ORIGIN,
+  )
+}
+
+export function parseKambudziSpecials(html: string): PlatformDeal[] {
+  const products: PlatformDeal[] = []
+  const seen = new Set<string>()
+  const starts = Array.from(html.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bproduct-item\b[^"']*["'][^>]*>/gi,
+  ))
+
+  for (let index = 0; index < starts.length; index += 1) {
+    const start = starts[index].index ?? 0
+    const next = starts[index + 1]?.index ?? html.length
+    const segment = html.slice(start, Math.min(next, start + 45_000))
+    const titleLink =
+      /<h2\b[^>]*class=["'][^"']*\bproduct-title\b[^"']*["'][^>]*>[\s\S]*?<a\b([^>]*)>([\s\S]*?)<\/a>/i
+        .exec(segment)
+    const productUrl = absoluteUrl(
+      titleLink
+        ? decodeHtml(attributeValue(titleLink[1], ['href']) ?? '')
+        : undefined,
+      KAMBUDZI_ORIGIN,
+    )
+    const title = titleLink ? cleanText(titleLink[2]) : ''
+    const price = numberValue(cleanText(
+      /<span\b[^>]*class=["'][^"']*\bactual-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+        .exec(segment)?.[1] ?? '',
+    ))
+    const previousPrice = numberValue(cleanText(
+      /<span\b[^>]*class=["'][^"']*\bold-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+        .exec(segment)?.[1] ?? '',
+    ))
+    const imageTag = /<img\b([^>]*)>/i.exec(segment)?.[1]
+    const imageUrl = absoluteUrl(
+      imageTag
+        ? decodeHtml(
+            attributeValue(imageTag, ['data-lazyloadsrc', 'data-src', 'src']) ?? '',
+          )
+        : undefined,
+      KAMBUDZI_ORIGIN,
+    )
+
+    if (
+      !productUrl ||
+      safeHost(productUrl) !== KAMBUDZI_HOST ||
+      !title ||
+      price === undefined ||
+      price <= 0 ||
+      previousPrice === undefined ||
+      previousPrice <= price ||
+      seen.has(productUrl)
+    ) {
+      continue
+    }
+
+    seen.add(productUrl)
+    products.push({
+      currencyCode: 'ZAR',
+      imageUrl,
+      previousPriceCents: Math.round(previousPrice * 100),
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: `${Math.round(((previousPrice - price) / previousPrice) * 100)}% OFF`,
+      soldOut: /\bout of stock\b|\bsold out\b|\bunavailable\b/i.test(segment),
+      title,
+    })
+
+    if (products.length >= MAX_PLATFORM_DEALS) {
+      break
+    }
+  }
+
+  return products
+}
+
+async function scoutKambudzi(
+  env: TrolleyScoutEnv,
+  store: NearbyStore,
+): Promise<ScoutOutcome> {
+  const page = await fetchStorePage(KAMBUDZI_SPECIALS_URL, env.JINA_API_KEY)
+  if (page.status !== 'success' || !page.text) {
+    return outcome(
+      page.status === 'transient_failure' ? 'transient_failure' : 'empty',
+    )
+  }
+
+  const products = parseKambudziSpecials(page.text)
+  if (products.length === 0) {
+    return outcome('empty')
+  }
+
+  return outcome(
+    'success',
+    products.map((product) =>
+      platformDealToPromotion(
+        store,
+        product,
+        KAMBUDZI_SPECIALS_URL,
+        'Kambudzi special',
+      ),
+    ),
+    KAMBUDZI_ORIGIN,
+  )
+}
+
+function helloKumbaMerchantId(xml: string): string | undefined {
+  return /<loc>\s*https:\/\/order\.hellokumba\.com\/m\/hellokumba-kwese\/([a-f0-9]{24})\s*<\/loc>/i
+    .exec(xml)?.[1]
+}
+
+export function parseHelloKumbaProducts(
+  payload: unknown,
+  merchantId: string,
+): PlatformDeal[] {
+  if (!/^[a-f0-9]{24}$/i.test(merchantId) || !payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const root = payload as Record<string, unknown>
+  const data = root.data && typeof root.data === 'object'
+    ? root.data as Record<string, unknown>
+    : undefined
+  const rows = Array.isArray(data?.data)
+    ? data.data
+    : Array.isArray(root.data)
+      ? root.data
+      : []
+
+  return rows.flatMap((value): PlatformDeal[] => {
+    if (!value || typeof value !== 'object') {
+      return []
+    }
+
+    const row = value as HelloKumbaProduct
+    const id = typeof row.id === 'string' ? row.id.trim() : ''
+    const title = typeof row.name === 'string'
+      ? decodeHtml(row.name).trim()
+      : ''
+    const price = typeof row.price === 'number'
+      ? row.price
+      : Number.parseFloat(String(row.price ?? ''))
+    const comparePrice = typeof row.price_sell_compare === 'number'
+      ? row.price_sell_compare
+      : Number.parseFloat(String(row.price_sell_compare ?? ''))
+    const images = Array.isArray(row.product_images)
+      ? row.product_images.filter(
+          (image): image is Record<string, unknown> =>
+            Boolean(image) && typeof image === 'object',
+        )
+      : []
+    const image = images.find((candidate) => candidate.is_cover === true) ?? images[0]
+    const imageUrl = absoluteUrl(
+      typeof image?.file_url === 'string' ? image.file_url : undefined,
+      HELLO_KUMBA_ORIGIN,
+    )
+    const productUrl = absoluteUrl(
+      `/m/hellokumba-kwese/${merchantId}/product/${encodeURIComponent(id)}`,
+      HELLO_KUMBA_ORIGIN,
+    )
+
+    if (
+      row.status === false ||
+      !id ||
+      !title ||
+      !productUrl ||
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      return []
+    }
+
+    return [{
+      currencyCode: typeof row.price_currency === 'string'
+        ? row.price_currency.toUpperCase()
+        : 'ZAR',
+      imageUrl,
+      previousPriceCents:
+        Number.isFinite(comparePrice) && comparePrice > price
+          ? Math.round(comparePrice * 100)
+          : undefined,
+      priceCents: Math.round(price * 100),
+      productUrl,
+      promoLabel: 'Hello Kumba online catalogue',
+      soldOut: row.in_stock === false,
+      title,
+    }]
+  })
+}
+
+async function scoutHelloKumba(store: NearbyStore): Promise<ScoutOutcome> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const sitemapResponse = await fetch(HELLO_KUMBA_MERCHANT_SITEMAP, {
+      headers: {
+        accept: 'application/xml,text/xml',
+        'user-agent': BROWSER_UA,
+      },
+      signal: controller.signal,
+    })
+    if (!sitemapResponse.ok) {
+      return outcome(sitemapResponse.status >= 500 ? 'transient_failure' : 'empty')
+    }
+    const sitemap = await readBoundedBody(sitemapResponse, MAX_BODY_BYTES)
+    const merchantId = helloKumbaMerchantId(sitemap)
+    if (!merchantId) {
+      return outcome('empty')
+    }
+
+    const pages = await Promise.allSettled(
+      Array.from({ length: HELLO_KUMBA_PRODUCT_PAGES }, async (_, index) => {
+        const url = new URL(HELLO_KUMBA_PRODUCTS_API)
+        url.searchParams.set('merchant_id', merchantId)
+        url.searchParams.set('page', String(index + 1))
+        url.searchParams.set('per_page', '100')
+        const response = await fetch(url, {
+          headers: {
+            accept: 'application/json',
+            'user-agent': BROWSER_UA,
+            'x-apm-transaction-id': `trolley-scout-hello-kumba-${index + 1}`,
+            'x-tenant': HELLO_KUMBA_HOST,
+          },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error(`Hello Kumba products returned ${response.status}`)
+        }
+        return JSON.parse(await readBoundedBody(response, MAX_BODY_BYTES)) as unknown
+      }),
+    )
+    const products = pages
+      .flatMap((page) =>
+        page.status === 'fulfilled'
+          ? parseHelloKumbaProducts(page.value, merchantId)
+          : [],
+      )
+      .filter(
+        (product, index, all) =>
+          all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
+      )
+      .slice(0, MAX_PLATFORM_DEALS)
+
+    if (products.length === 0) {
+      return outcome(
+        pages.some((page) => page.status === 'rejected')
+          ? 'transient_failure'
+          : 'empty',
+      )
+    }
+
+    const merchantUrl =
+      `${HELLO_KUMBA_ORIGIN}/m/hellokumba-kwese/${merchantId}`
+    return outcome(
+      'success',
+      products.map((product) =>
+        platformDealToPromotion(store, product, merchantUrl, 'Online catalogue'),
+      ),
+      HELLO_KUMBA_ORIGIN,
+    )
+  } catch (error) {
+    return outcome(error instanceof SyntaxError ? 'empty' : 'transient_failure')
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function scoutTillPoint(store: NearbyStore): Promise<ScoutOutcome> {
@@ -1827,7 +2789,7 @@ async function scoutZimbabweWooCommerceCatalogue(
         (product, index, all) =>
           all.findIndex((candidate) => candidate.productUrl === product.productUrl) === index,
       )
-      .slice(0, MAX_PLATFORM_DEALS)
+      .slice(0, MAX_ZIMBABWE_CATALOGUE_DEALS)
 
     if (products.length === 0) {
       return outcome(

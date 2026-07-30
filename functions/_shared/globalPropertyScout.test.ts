@@ -7,6 +7,7 @@ import { countryFromCode } from './countryContext'
 import type { TrolleyScoutEnv } from './env'
 import {
   parseGenericPropertyListings,
+  preferredGlobalPropertyPages,
   propertySourceUrlForLocation,
   searchGlobalProperties,
 } from './globalPropertyScout'
@@ -33,6 +34,36 @@ describe('property platform location URLs', () => {
       'Bulawayo',
       'rent',
     )).toBe('https://www.propertybook.co.zw/to-rent/bulawayo')
+    expect(propertySourceUrlForLocation(
+      'https://www.propertybook.co.zw/',
+      'Bulawayo',
+      'sale',
+      3,
+    )).toBe('https://www.propertybook.co.zw/for-sale/bulawayo?page=3')
+    expect(propertySourceUrlForLocation(
+      'https://www.propzone.co.zw/en/properties/',
+      'Bulawayo',
+      'sale',
+      2,
+    )).toBe('https://www.propzone.co.zw/en/properties/?page=2')
+  })
+
+  it('reads several bounded pages from Zimbabwe portals that expose paging', () => {
+    expect(preferredGlobalPropertyPages(
+      'ZW',
+      'https://www.propertybook.co.zw/',
+      1,
+    )).toEqual([1, 2, 3])
+    expect(preferredGlobalPropertyPages(
+      'ZW',
+      'https://www.shonahome.com/property/for-sale/',
+      1,
+    )).toEqual([1])
+    expect(preferredGlobalPropertyPages(
+      'ZW',
+      'https://www.propertybook.co.zw/',
+      4,
+    )).toEqual([4])
   })
 
   it('leaves unknown platform URLs unchanged', () => {
@@ -503,16 +534,15 @@ describe('global property source discovery', () => {
         title: 'Three bedroom house in Harare',
       }),
     ])
-    expect(result.sources).toEqual([
-      expect.objectContaining({
-        id: 'web:property-co-zw',
-        label: 'Property',
-        ok: true,
-      }),
-    ])
+    expect(result.sources).toContainEqual(expect.objectContaining({
+      count: 1,
+      id: 'web:property-co-zw',
+      label: 'Property',
+      ok: true,
+    }))
   })
 
-  it('does not cache an empty result when every search provider is unavailable', async () => {
+  it('reports registered sources as unavailable without caching the failure', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })))
 
     const result = await searchGlobalProperties(
@@ -521,12 +551,70 @@ describe('global property source discovery', () => {
       countryFromCode('ZW'),
     )
     const cached = await db.prepare(
-      `SELECT item_count FROM property_cache WHERE cache_key = 'global:v3:ZW:rent:harare:1'`,
+      `SELECT item_count FROM property_cache WHERE cache_key = 'global:v4:ZW:rent:harare:1'`,
     ).first<{ item_count: number }>()
 
     expect(result.listings).toEqual([])
-    expect(result.sources).toEqual([])
+    expect(result.sources.length).toBeGreaterThanOrEqual(8)
+    expect(result.sources.every((source) => source.ok === false && source.count === 0))
+      .toBe(true)
     expect(cached).toBeNull()
+  })
+
+  it('distinguishes a readable zero-result source from an unavailable source', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (isSearchProvider(url)) return htmlResponse('')
+      if (url.hostname === 'www.propertybook.co.zw') return htmlResponse('<main>No matching homes</main>')
+      return new Response('', { status: 503 })
+    }))
+
+    const result = await searchGlobalProperties(
+      env,
+      { listingType: 'sale', query: 'Mutare' },
+      countryFromCode('ZW'),
+    )
+
+    expect(result.sources).toContainEqual(expect.objectContaining({
+      count: 0,
+      id: 'web:propertybook-co-zw',
+      ok: true,
+    }))
+    expect(result.sources.some((source) => source.ok === false)).toBe(true)
+  })
+
+  it('filters a country-wide Zimbabwe page to the requested location', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (isSearchProvider(url)) return htmlResponse('')
+      if (url.hostname !== 'www.propzone.co.zw') return new Response('', { status: 503 })
+      return htmlResponse([
+        {
+          '@type': 'House',
+          address: { addressLocality: 'Harare' },
+          name: 'Family house in Harare',
+          offers: { price: 160000, priceCurrency: 'USD' },
+          url: 'https://www.propzone.co.zw/en/properties/harare-family-house',
+        },
+        {
+          '@type': 'House',
+          address: { addressLocality: 'Bulawayo' },
+          name: 'Family house in Bulawayo',
+          offers: { price: 140000, priceCurrency: 'USD' },
+          url: 'https://www.propzone.co.zw/en/properties/bulawayo-family-house',
+        },
+      ].map((value) =>
+        `<script type="application/ld+json">${JSON.stringify(value)}</script>`
+      ).join(''))
+    }))
+
+    const result = await searchGlobalProperties(
+      env,
+      { listingType: 'sale', query: 'Harare' },
+      countryFromCode('ZW'),
+    )
+
+    expect(result.listings.map((listing) => listing.location)).toEqual(['Harare'])
   })
 
   it('does not count a token page served as HTTP 202 as a working source', async () => {
@@ -558,7 +646,8 @@ describe('global property source discovery', () => {
     )
 
     expect(result.listings).toEqual([])
-    expect(result.sources).toEqual([])
+    expect(result.sources.length).toBe(4)
+    expect(result.sources.every((source) => source.ok === false)).toBe(true)
     expect(fetchMock.mock.calls.some(([input]) =>
       String(input).startsWith('https://r.jina.ai/https://'))).toBe(true)
   })
@@ -661,8 +750,10 @@ describe('global property source discovery', () => {
     expect(result.listings.map((listing) => listing.title)).toEqual([
       'Appartement à louer à Kinshasa',
     ])
-    expect(result.sources).toHaveLength(1)
-    expect(result.sources.every((source) => source.label === 'Example')).toBe(true)
+    expect(result.sources.filter((source) => source.ok).map((source) => source.label))
+      .toEqual(expect.arrayContaining(['Example', 'ImmoRDC', 'Jiji DR Congo']))
+    expect(result.sources.filter((source) => source.ok && source.count === 0))
+      .toHaveLength(2)
   })
 })
 

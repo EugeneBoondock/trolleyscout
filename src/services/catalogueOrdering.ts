@@ -6,6 +6,8 @@ export interface CatalogueGroup {
   leaflets: StoreLeaflet[]
 }
 
+export type CatalogueSort = 'latest' | 'oldest' | 'store'
+
 function dateTime(value: string | undefined): number {
   if (!value) return Number.NEGATIVE_INFINITY
   const parsed = Date.parse(value)
@@ -31,9 +33,28 @@ export function sortLeafletsMostRecent(leaflets: StoreLeaflet[]): StoreLeaflet[]
   return [...leaflets].sort(compareLeafletsMostRecent)
 }
 
-export function groupLeafletsByRetailer(leaflets: StoreLeaflet[]): CatalogueGroup[] {
+export function sortLeaflets(
+  leaflets: StoreLeaflet[],
+  sort: CatalogueSort = 'latest',
+): StoreLeaflet[] {
+  if (sort === 'oldest') {
+    return [...leaflets].sort((left, right) => compareLeafletsMostRecent(right, left))
+  }
+  if (sort === 'store') {
+    return [...leaflets].sort((left, right) => {
+      const storeDifference = left.retailerName.localeCompare(right.retailerName)
+      return storeDifference || compareLeafletsMostRecent(left, right)
+    })
+  }
+  return sortLeafletsMostRecent(leaflets)
+}
+
+export function groupLeafletsByRetailer(
+  leaflets: StoreLeaflet[],
+  sort: CatalogueSort = 'latest',
+): CatalogueGroup[] {
   const byRetailer = new Map<string, CatalogueGroup>()
-  const sortedLeaflets = sortLeafletsMostRecent(leaflets)
+  const sortedLeaflets = sortLeaflets(leaflets, sort)
 
   for (const leaflet of sortedLeaflets) {
     const key = leaflet.retailerId || leaflet.retailerName.toLowerCase()

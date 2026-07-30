@@ -72,6 +72,9 @@ class _DealsScreenState extends State<DealsScreen> {
   final bool _imagesOnly = false;
   final bool _savingsOnly = false;
   bool _hideSoldOut = false;
+  bool _recentlyAddedOnly = false;
+  final DateTime _recentlyAddedAfter =
+      DateTime.now().toUtc().subtract(const Duration(days: 7));
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
@@ -79,6 +82,7 @@ class _DealsScreenState extends State<DealsScreen> {
   final _searchController = TextEditingController();
   final _catalogueSearchController = TextEditingController();
   String _catalogueQuery = '';
+  CatalogueSort _catalogueSort = CatalogueSort.latest;
   bool _creatingWatch = false;
   final _cacheStore = DiscoveryCache();
   CachedDiscovery? _cached;
@@ -430,6 +434,7 @@ class _DealsScreenState extends State<DealsScreen> {
         imagesOnly: _imagesOnly,
         savingsOnly: _savingsOnly,
         hideSoldOut: _hideSoldOut,
+        recentlyAddedAfter: _recentlyAddedOnly ? _recentlyAddedAfter : null,
         category: _category,
         foodSubcategory: _foodSubcategory,
       ),
@@ -945,20 +950,36 @@ class _DealsScreenState extends State<DealsScreen> {
                     ],
                   ),
           ),
-          CheckboxListTile(
-            key: const Key('hide-sold-out-filter'),
-            dense: true,
-            contentPadding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text(
-              'Hide sold out',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  key: const Key('hide-sold-out-filter'),
+                  label: const Text('Hide sold out'),
+                  selected: _hideSoldOut,
+                  selectedColor: TS.yellow.withValues(alpha: 0.3),
+                  side: BorderSide(color: TS.lineSoftOf(context)),
+                  onSelected: (value) => setState(() {
+                    _hideSoldOut = value;
+                    _page = 0;
+                  }),
+                ),
+                FilterChip(
+                  key: const Key('recently-added-filter'),
+                  label: const Text('Recently added · 7 days'),
+                  selected: _recentlyAddedOnly,
+                  selectedColor: TS.yellow.withValues(alpha: 0.3),
+                  side: BorderSide(color: TS.lineSoftOf(context)),
+                  onSelected: (value) => setState(() {
+                    _recentlyAddedOnly = value;
+                    _page = 0;
+                  }),
+                ),
+              ],
             ),
-            value: _hideSoldOut,
-            onChanged: (value) => setState(() {
-              _hideSoldOut = value ?? false;
-              _page = 0;
-            }),
           ),
         ],
       ),
@@ -1142,9 +1163,12 @@ class _DealsScreenState extends State<DealsScreen> {
           child: _CatalogueDirectoryHeader(
             controller: _catalogueSearchController,
             query: _catalogueQuery,
+            sort: _catalogueSort,
             totalCatalogueCount: totalCatalogueCount,
             visibleCatalogueCount: visibleCatalogueCount,
             onChanged: (value) => setState(() => _catalogueQuery = value),
+            onSortChanged: (value) =>
+                setState(() => _catalogueSort = value),
             onClear: () {
               _catalogueSearchController.clear();
               setState(() => _catalogueQuery = '');
@@ -1203,7 +1227,7 @@ class _DealsScreenState extends State<DealsScreen> {
     String retailerId = allRetailersId,
   }) {
     final byRetailer = <String, _CatalogueGroup>{};
-    for (final catalogue in sortCataloguesMostRecent(catalogues)) {
+    for (final catalogue in sortCatalogues(catalogues, _catalogueSort)) {
       final name = catalogue.retailerName ?? catalogue.name;
       var key = canonicalRetailerId(catalogue.retailerId ?? '', name);
       Retailer? knownRetailer;
@@ -1231,10 +1255,12 @@ class _DealsScreenState extends State<DealsScreen> {
       );
       byRetailer[key]!.catalogues.add(catalogue);
     }
-    final groups = byRetailer.values.toList()
-      ..sort((left, right) => left.retailerName
+    final groups = byRetailer.values.toList();
+    if (_catalogueSort == CatalogueSort.store) {
+      groups.sort((left, right) => left.retailerName
           .toLowerCase()
           .compareTo(right.retailerName.toLowerCase()));
+    }
     return groups;
   }
 
@@ -1840,17 +1866,21 @@ class _CatalogueDirectoryHeader extends StatelessWidget {
   const _CatalogueDirectoryHeader({
     required this.controller,
     required this.query,
+    required this.sort,
     required this.totalCatalogueCount,
     required this.visibleCatalogueCount,
     required this.onChanged,
+    required this.onSortChanged,
     required this.onClear,
   });
 
   final TextEditingController controller;
   final String query;
+  final CatalogueSort sort;
   final int totalCatalogueCount;
   final int visibleCatalogueCount;
   final ValueChanged<String> onChanged;
+  final ValueChanged<CatalogueSort> onSortChanged;
   final VoidCallback onClear;
 
   @override
@@ -1950,6 +1980,26 @@ class _CatalogueDirectoryHeader extends StatelessWidget {
                     )
                   : null,
             ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<CatalogueSort>(
+            key: const Key('catalogue-sort-field'),
+            initialValue: sort,
+            decoration: const InputDecoration(
+              labelText: 'Sort catalogues',
+              prefixIcon: Icon(Icons.swap_vert),
+            ),
+            isExpanded: true,
+            items: [
+              for (final option in CatalogueSort.values)
+                DropdownMenuItem(
+                  value: option,
+                  child: Text(option.label),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) onSortChanged(value);
+            },
           ),
         ],
       ),

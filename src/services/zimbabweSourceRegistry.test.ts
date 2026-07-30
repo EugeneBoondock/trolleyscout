@@ -22,9 +22,9 @@ describe('Zimbabwe source directory', () => {
     const discovery = getZimbabweDiscoverySources()
     const social = getZimbabweSocialReferenceSources()
 
-    expect(direct).toHaveLength(290)
+    expect(direct).toHaveLength(289)
     expect(discovery).toHaveLength(13)
-    expect(social).toHaveLength(36)
+    expect(social).toHaveLength(32)
     expect(
       direct.every((source) =>
         !/(?:facebook|instagram|linkedin|tiktok|whatsapp|youtube)\.com/i.test(
@@ -54,6 +54,23 @@ describe('Zimbabwe source directory', () => {
     expect(byName.get('BAMM Stationers')?.url).toBe(
       'https://www.bamm.co.zw/store/catalogue/',
     )
+    expect(byName.get('Watumira Here')?.url).toBe(
+      'https://www.watumirahere.co.za/',
+    )
+    expect(byName.get('Bulk & Barrel Zimbabwe')?.url).toBe(
+      'https://bulkbmarketing-ux.github.io/bulk-barrel/',
+    )
+    expect(byName.get('First Class Groceries Zimbabwe')?.url).toBe(
+      'https://www.firstclassgroceries.com/products',
+    )
+    expect(byName.get('Kambudzi Groceries')?.url).toBe(
+      'https://kambudzi.com/search?q=special',
+    )
+    expect(byName.has('Food Emporium Zimbabwe')).toBe(false)
+    expect(byName.has('FlexiMart Online Store')).toBe(false)
+    expect(byName.has('MutareMart')).toBe(false)
+    expect(byName.has('Online Musika')).toBe(false)
+    expect(byName.has('SA to Zim')).toBe(false)
   })
 
   it('exposes catalogue source pages for the catalogue scout', () => {

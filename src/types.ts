@@ -133,10 +133,44 @@ export interface ScoutChatCatalogueCard {
   validTo?: string
 }
 
+export interface ScoutGroceryPlanItem {
+  assumption: string
+  group: string
+  id: string
+  imageUrl?: string
+  lineTotalCents: number
+  lineTotalText: string
+  previousPriceText?: string
+  priceText: string
+  productUrl: string
+  promotionText?: string
+  quantity: number
+  retailerId: string
+  retailerName: string
+  sourceUrl: string
+  title: string
+  unitPriceCents: number
+}
+
+export interface ScoutGroceryPlan {
+  assumptions: string[]
+  currencyCode: string
+  items: ScoutGroceryPlanItem[]
+  maxStores: number
+  missingItems: string[]
+  storeCount: number
+  subtotalCents: number
+  subtotalText: string
+  totalCents: number
+  totalText: string
+  tradeOffs: string[]
+}
+
 export interface ScoutChatAnswer {
   catalogues: ScoutChatCatalogueCard[]
   deals: ScoutChatDealCard[]
   followUps: string[]
+  groceryPlan?: ScoutGroceryPlan
   reply: string
   /** Ties a thumbs rating back to the retrieval that produced this answer. */
   retrievalId?: string
@@ -191,6 +225,9 @@ export interface DiscoveredDeal {
   sourceUrl: string
   productUrl: string
   title: string
+  // The first time Trolley Scout stored this deal. Older snapshots may omit
+  // it, in which case clients use capturedAt for recent-deal filtering.
+  addedAt?: string
   capturedAt: string
   priceText?: string
   previousPriceText?: string

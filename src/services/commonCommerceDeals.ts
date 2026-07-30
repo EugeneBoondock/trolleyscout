@@ -8,6 +8,7 @@ export const COMMON_COMMERCE_DEAL_SCOPE = 'online-catalogue' as const
 // Shopify serves 250 products per page and so do most of the platforms behind
 // it, so asking for fewer buys nothing and costs reach.
 export const MAX_COMMON_COMMERCE_PAGE_SIZE = 250
+export const MAX_WOOCOMMERCE_PAGE_SIZE = 100
 // How many discounts to keep from one shop. The pages are fetched either way,
 // so a low ceiling throws away work already paid for — and shoppers noticed:
 // store after store reported exactly 150 deals, which is a ceiling talking,
@@ -20,10 +21,10 @@ export const MAX_COMMON_COMMERCE_DEALS = 300
 // the shop showed five deals while running well over a hundred.
 //
 // Full pages cost the same one request as small ones, and the scout still
-// stops as soon as it has MAX_COMMON_COMMERCE_DEALS, so a shop with its
-// discounts up front is no more expensive than before. Six full pages reach
-// fifteen hundred products instead of three hundred.
-export const MAX_COMMON_COMMERCE_PAGES = 6
+// stops as soon as it has MAX_COMMON_COMMERCE_DEALS. Ten pages cover verified
+// sale catalogues whose marked-down products continue past page six, while
+// every request remains bounded by the per-page and output ceilings.
+export const MAX_COMMON_COMMERCE_PAGES = 10
 export const DEFAULT_COMMON_COMMERCE_PAGE_SIZE = 250
 
 export type CommonCommercePlatform = 'shopify' | 'woocommerce' | 'magento' | 'vtex'
@@ -140,7 +141,10 @@ export function buildWooCommerceDealsRequest(
 
   const url = new URL('/wp-json/wc/store/v1/products', origin)
   url.searchParams.set('on_sale', 'true')
-  url.searchParams.set('per_page', String(boundedPageSize(pageSize)))
+  url.searchParams.set(
+    'per_page',
+    String(Math.min(MAX_WOOCOMMERCE_PAGE_SIZE, boundedPageSize(pageSize))),
+  )
   url.searchParams.set('page', String(boundedPage(page)))
   url.searchParams.set('_fields', 'id,name,slug,permalink,prices,images')
 

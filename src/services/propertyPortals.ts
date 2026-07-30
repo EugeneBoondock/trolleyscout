@@ -177,6 +177,15 @@ export interface Property24Location {
 
 /** Flattens the grouped autocomplete payload into a flat location list. */
 export function parseProperty24LocationCatalog(payload: unknown): Property24Location[] {
+  if (Array.isArray(payload)) {
+    return payload.filter((entry): entry is Property24Location =>
+      Boolean(entry) &&
+      typeof entry === 'object' &&
+      typeof entry.id === 'number' &&
+      typeof entry.name === 'string' &&
+      typeof entry.type === 'number',
+    )
+  }
   if (!payload || typeof payload !== 'object') return []
   const out: Property24Location[] = []
   for (const group of Object.values(payload as Record<string, unknown>)) {
@@ -200,6 +209,57 @@ export function parseProperty24LocationCatalog(payload: unknown): Property24Loca
     }
   }
   return out
+}
+
+export function parseProperty24SitemapLocations(
+  xml: string,
+): Property24Location[] {
+  const locations: Property24Location[] = []
+  const seen = new Set<string>()
+
+  for (const match of xml.matchAll(/<loc>\s*(https:\/\/www\.property24\.com\/[^<]+)\s*<\/loc>/gi)) {
+    let url: URL
+    try {
+      url = new URL(match[1].replace(/&amp;/g, '&'))
+    } catch {
+      continue
+    }
+    const parts = url.pathname.split('/').filter(Boolean)
+    if (
+      (parts[0] !== 'for-sale' && parts[0] !== 'to-rent') ||
+      (parts.length !== 4 && parts.length !== 5)
+    ) {
+      continue
+    }
+    const id = Number.parseInt(parts.at(-1) ?? '', 10)
+    if (!Number.isSafeInteger(id) || id <= 0) continue
+    const type = parts.length === 4 ? 2 : 1
+    const name = propertyLocationName(parts[1])
+    const parentName = propertyLocationName(parts[2])
+    const key = `${type}:${id}`
+    if (!name || !parentName || seen.has(key)) continue
+    seen.add(key)
+    locations.push({
+      id,
+      name,
+      normalizedName: normalizeLocationToken(name),
+      normalizedParentName: normalizeLocationToken(parentName),
+      parentName,
+      type,
+    })
+  }
+
+  return locations
+}
+
+function propertyLocationName(slugValue: string): string {
+  return decodeURIComponent(slugValue)
+    .split('-')
+    .filter(Boolean)
+    .map((word) => word.length <= 2 && /^[a-z]+$/i.test(word)
+      ? word.toUpperCase()
+      : `${word[0]?.toUpperCase() ?? ''}${word.slice(1).toLowerCase()}`)
+    .join(' ')
 }
 
 // Prefer a city, then a suburb, then a province, then anything else — so
@@ -280,18 +340,24 @@ export function buildProperty24Url(
   return `${PROPERTY24_ORIGIN}${paged}`
 }
 
-// Each result is a <div class="p24_tileContainer ... js_resultTile ..."
-// data-listing-number="X"> block. Sponsored/branding tiles carry no price or
-// detail link and are dropped.
+// Property24 randomises the order of CSS classes on standard result tiles.
+// Find outer containers by class tokens instead of assuming an order.
 export function parseProperty24Listings(
   html: string,
   listingType: PropertyListingType,
 ): PropertyListing[] {
-  const tileRe =
-    /<div class="p24_tileContainer[^"]*js_resultTile[^"]*"[^>]*data-listing-number="([^"]+)"/g
+  const tileRe = /<div\b[^>]*data-listing-number="([^"]+)"[^>]*>/g
   const starts: Array<{ index: number; listingNumber: string }> = []
   let m: RegExpExecArray | null
   while ((m = tileRe.exec(html)) !== null) {
+    const className = /\bclass="([^"]*)"/.exec(m[0])?.[1] ?? ''
+    const classes = new Set(className.split(/\s+/).filter(Boolean))
+    if (
+      !classes.has('p24_tileContainer') ||
+      (!classes.has('js_resultTile') && !classes.has('js_groupedResultTile'))
+    ) {
+      continue
+    }
     starts.push({ index: m.index, listingNumber: m[1] })
   }
 
@@ -306,21 +372,29 @@ export function parseProperty24Listings(
     const listingNumber = start.listingNumber.replace(/^P/i, '')
 
     const hrefMatch = /href="(\/(?:for-sale|to-rent)\/[^"]*\/\d+\/\d+[^"]*)"/.exec(chunk)
-    const priceMatch = /class="p24_price[^"]*"[^>]*>\s*([^<]+?)\s*</.exec(chunk)
-    if (!hrefMatch || !priceMatch) continue
+    const priceTagMatch =
+      /<(?:div|span)\b([^>]*class="[^"]*\bp24_price\b[^"]*"[^>]*)>/i.exec(chunk)
+    if (!hrefMatch || !priceTagMatch) continue
 
     const listingUrl = `${PROPERTY24_ORIGIN}${decodeEntities(hrefMatch[1]).split('?')[0]}`
-    const priceText = collapseSpace(priceMatch[1])
-    if (!/\d/.test(priceText)) continue
+    const structuredPrice = /\bcontent="([\d., ]+)"/i.exec(priceTagMatch[1])?.[1]
+    const priceBodyStart = (priceTagMatch.index ?? 0) + priceTagMatch[0].length
+    const visiblePrice = /^\s*([^<]+)/.exec(chunk.slice(priceBodyStart, priceBodyStart + 180))?.[1]
+    const priceText = collapseSpace(
+      structuredPrice ? `R ${structuredPrice}` : decodeEntities(visiblePrice ?? ''),
+    )
+    if (!priceText) continue
 
     const id = `property24:${listingNumber}`
     if (seen.has(id)) continue
     seen.add(id)
 
-    const titleMatch = /class="p24_proTile[^"]*"[^>]*title="([^"]+)"/.exec(chunk)
-    const rawTitle = titleMatch ? collapseSpace(titleMatch[1]) : ''
+    const titleMatch =
+      /title="([^"]+\s+for\s+(?:sale|rent)\s+in\s+[^"]+)"/i.exec(chunk) ??
+      /<meta\s+itemprop="name"\s+content="([^"]+)"/i.exec(chunk)
+    const rawTitle = titleMatch ? collapseSpace(decodeEntities(titleMatch[1])) : ''
     const title = rawTitle.replace(/\s+for\s+(?:sale|rent)\s+in\s+.*/i, '').trim()
-    const locationMatch = /class="p24_location"[^>]*>\s*([^<]+?)\s*</.exec(chunk)
+    const locationMatch = /class="[^"]*\bp24_location\b[^"]*"[^>]*>\s*([^<]+?)\s*</.exec(chunk)
     const typeMatch = /\d+\s+Bedroom\s+([A-Za-z ]+?)(?:\s+for\b|\s+in\b|$)/i.exec(rawTitle)
 
     const bedsMatch = /title="Bedrooms"[\s\S]{0,220}?<span>([\d.]+)<\/span>/i.exec(chunk)
@@ -658,11 +732,64 @@ export function filterListingsByLocation(
       listing,
       originalIndex,
       locationRank: terms.findIndex((term) => searchable.includes(term)),
+      locationUnknown: !listing.location?.trim(),
     }
   })
-    .filter((item) => item.locationRank >= 0)
-    .sort((a, b) => a.locationRank - b.locationRank || a.originalIndex - b.originalIndex)
+    .filter((item) => item.locationRank >= 0 || item.locationUnknown)
+    .sort((a, b) => {
+      const leftRank = a.locationRank >= 0 ? a.locationRank : terms.length
+      const rightRank = b.locationRank >= 0 ? b.locationRank : terms.length
+      return leftRank - rightRank || a.originalIndex - b.originalIndex
+    })
     .map((item) => item.listing)
+}
+
+export function dedupePropertyListings(
+  listings: PropertyListing[],
+): PropertyListing[] {
+  const seenUrls = new Set<string>()
+  const seenFingerprints = new Set<string>()
+
+  return listings.filter((listing) => {
+    const url = canonicalPropertyUrl(listing.listingUrl)
+    if (seenUrls.has(url)) return false
+
+    const fingerprint = propertyListingFingerprint(listing)
+    if (fingerprint && seenFingerprints.has(fingerprint)) return false
+
+    seenUrls.add(url)
+    if (fingerprint) seenFingerprints.add(fingerprint)
+    return true
+  })
+}
+
+function canonicalPropertyUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    url.hash = ''
+    url.search = ''
+    return url.toString().replace(/\/+$/, '').toLowerCase()
+  } catch {
+    return value.trim().toLowerCase()
+  }
+}
+
+function propertyListingFingerprint(
+  listing: PropertyListing,
+): string | undefined {
+  const title = normalizeLocationToken(listing.title)
+  const location = normalizeLocationToken(listing.location ?? '')
+  if (title.length < 8 || location.length < 3 || listing.priceValue === undefined) {
+    return undefined
+  }
+  return [
+    listing.listingType,
+    title,
+    location,
+    String(listing.priceValue),
+    String(listing.bedrooms ?? ''),
+    String(listing.bathrooms ?? ''),
+  ].join('|')
 }
 
 /** Interleaves portals so the first screen shows both sources, not one wall. */

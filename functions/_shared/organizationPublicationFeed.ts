@@ -18,6 +18,7 @@ export function organizationPublicationsToDiscoveryDeals(
       publicationDestinations(publication).includes('marketplace'),
     )
     .map((publication) => ({
+      addedAt: publication.createdAt,
       capturedAt: publication.updatedAt,
       evidenceText: publication.bodyText,
       expiresAt: publication.endsAt,

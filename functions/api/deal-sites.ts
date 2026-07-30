@@ -18,6 +18,8 @@ import {
   listLiveOrganizationPublications,
   type OrganizationPublication,
 } from '../_shared/organizationPublicationStore'
+import { getMemberPlan } from '../../src/data/memberPlans'
+import type { MemberPlanId } from '../../src/types'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 const publicHeaders = {
@@ -54,9 +56,12 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return methodNotAllowed(request.method, 'GET')
   }
 
+  const session = await getMemberSession(env, request)
+  const planId: MemberPlanId = session.account?.role === 'admin'
+    ? 'organization'
+    : session.account?.planId ?? 'free'
   const forceLive = new URL(request.url).searchParams.get('refresh') === '1'
   if (forceLive) {
-    const session = await getMemberSession(env, request)
     if (session.account?.role !== 'admin') {
       return json(
         { message: 'Admin access is required.' },
@@ -82,15 +87,31 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     feed = await readDealSiteFeed(env)
 
     return json(
-      addBusinessPublications(feed, businessPublications),
+      limitDealSiteFeed(addBusinessPublications(feed, businessPublications), planId),
       { headers: refreshHeaders },
     )
   }
 
   return json(
-    addBusinessPublications(feed, businessPublications),
-    { headers: publicHeaders },
+    limitDealSiteFeed(addBusinessPublications(feed, businessPublications), planId),
+    { headers: session.account ? refreshHeaders : publicHeaders },
   )
+}
+
+function limitDealSiteFeed<T extends { deals: DealSiteFeed['deals'] }>(
+  feed: T,
+  planId: MemberPlanId,
+) {
+  const dealLimit = getMemberPlan(planId).limits.visibleDeals
+  return {
+    ...feed,
+    access: {
+      availableDealCount: feed.deals.length,
+      dealLimit,
+      planId,
+    },
+    deals: feed.deals.slice(0, dealLimit),
+  }
 }
 
 function addBusinessPublications(

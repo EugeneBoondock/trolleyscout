@@ -1,4 +1,5 @@
 import type { SavedDealDraft } from '../../src/types'
+import { limitVisibleDealsForPlan } from '../../src/data/memberPlans'
 import {
   deleteMemberDeal,
   getMemberSession,
@@ -15,11 +16,16 @@ const privateHeaders = {
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   const session = await getMemberSession(env, request)
   const accountId = session.account?.id
+  const planId = session.account?.role === 'admin'
+    ? 'organization'
+    : session.account?.planId ?? 'free'
+  const listVisibleSavedDeals = async () =>
+    limitVisibleDealsForPlan(await listSavedDeals(env, accountId), planId)
 
   if (request.method === 'GET') {
     return json(
       {
-        savedDeals: await listSavedDeals(env, accountId),
+        savedDeals: await listVisibleSavedDeals(),
       },
       {
         headers: privateHeaders,
@@ -36,7 +42,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       return json(
         {
           issues: ['Request body must be valid JSON.'],
-          savedDeals: await listSavedDeals(env, accountId),
+          savedDeals: await listVisibleSavedDeals(),
         },
         {
           headers: privateHeaders,
@@ -46,7 +52,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     }
 
     const result = await saveMemberDeal(env, accountId, draft)
-    const savedDeals = await listSavedDeals(env, accountId)
+    const savedDeals = await listVisibleSavedDeals()
 
     if (!result.savedDeal) {
       return json(
@@ -80,7 +86,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         {
           deleted: false,
           id: '',
-          savedDeals: await listSavedDeals(env, accountId),
+          savedDeals: await listVisibleSavedDeals(),
         },
         {
           headers: privateHeaders,
@@ -95,7 +101,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       {
         deleted,
         id,
-        savedDeals: await listSavedDeals(env, accountId),
+        savedDeals: await listVisibleSavedDeals(),
       },
       {
         headers: privateHeaders,

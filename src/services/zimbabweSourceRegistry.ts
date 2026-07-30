@@ -531,11 +531,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Offers and online ordering",
+        "url": "https://www.watumirahere.co.za/"
+      },
+      {
         "label": "Facebook offers",
         "url": "https://www.facebook.com/WatumiraHere/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "027",
@@ -576,11 +580,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Product catalogue",
+        "url": "https://bulkbmarketing-ux.github.io/bulk-barrel/"
+      },
+      {
         "label": "Facebook specials",
         "url": "https://www.facebook.com/bulkbarrelzw/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "030",
@@ -591,11 +599,15 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     ],
     "links": [
       {
+        "label": "Online shop",
+        "url": "https://www.firstclassgroceries.com/products"
+      },
+      {
         "label": "Facebook offers",
         "url": "https://www.facebook.com/firstclassgroceries1/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "031",
@@ -653,15 +665,20 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
     "name": "Kambudzi Groceries",
     "category": "groceries",
     "status": [
+      "B",
       "C"
     ],
     "links": [
+      {
+        "label": "Online shop specials",
+        "url": "https://kambudzi.com/search?q=special"
+      },
       {
         "label": "Facebook offers",
         "url": "https://www.facebook.com/kambudzigroceries/"
       }
     ],
-    "automation": "social-reference"
+    "automation": "direct"
   },
   {
     "id": "035",
@@ -677,7 +694,7 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
         "url": "https://foodemporium.co.zw/"
       }
     ],
-    "automation": "direct"
+    "automation": "verify-first"
   },
   {
     "id": "036",
@@ -692,7 +709,7 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
         "url": "https://fleximart.co.zw/"
       }
     ],
-    "automation": "direct"
+    "automation": "verify-first"
   },
   {
     "id": "037",
@@ -708,7 +725,7 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
         "url": "https://mutaremart.com/"
       }
     ],
-    "automation": "direct"
+    "automation": "verify-first"
   },
   {
     "id": "038",
@@ -723,7 +740,7 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
         "url": "https://www.onlinemusika.co.zw/"
       }
     ],
-    "automation": "direct"
+    "automation": "verify-first"
   },
   {
     "id": "039",
@@ -739,7 +756,7 @@ export const ZIMBABWE_SOURCE_DIRECTORY = [
         "url": "https://www.satozim.co.zw/"
       }
     ],
-    "automation": "direct"
+    "automation": "verify-first"
   },
   {
     "id": "040",

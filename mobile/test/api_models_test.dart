@@ -196,6 +196,7 @@ void main() {
     });
 
     final marketplaceDeal = scrollDeal.toDeal();
+    expect(marketplaceDeal.addedAt, '2026-07-20T08:15:00.000Z');
     expect(marketplaceDeal.capturedAt, '2026-07-20T08:15:00.000Z');
     expect(marketplaceDeal.soldOut, isTrue);
     expect(ScrollDeal.fromJson(scrollDeal.toJson()).capturedAt,
@@ -207,11 +208,13 @@ void main() {
       'id': 'bobshop-auction',
       'title': 'Camera auction',
       'retailerName': 'Bob Shop',
+      'addedAt': '2026-07-20T07:00:00.000Z',
       'priceText': 'R250.00',
       'unitText': 'Current bid',
     });
 
     expect(deal.unitText, 'Current bid');
+    expect(Deal.fromJson(deal.toJson()).addedAt, '2026-07-20T07:00:00.000Z');
     expect(Deal.fromJson(deal.toJson()).unitText, 'Current bid');
   });
 

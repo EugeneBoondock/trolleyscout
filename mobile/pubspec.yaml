@@ -1,7 +1,7 @@
 name: trolley_scout
 description: Find grocery deals, compare store prices, and search properties.
 publish_to: 'none'
-version: 1.16.0+46
+version: 1.16.2+48
 
 environment:
   sdk: ^3.5.0

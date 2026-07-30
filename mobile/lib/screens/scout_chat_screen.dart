@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
 import '../theme.dart';
@@ -10,24 +13,30 @@ typedef ScoutChatSender = Future<ScoutChatAnswer> Function(
   String message,
   List<ScoutChatTurn> history,
 );
+typedef ScoutGroceryTransfer = Future<void> Function(
+  ScoutGroceryPlanItem item,
+);
 
 class ScoutChatScreen extends StatefulWidget {
   const ScoutChatScreen({
     super.key,
     required this.api,
     this.sendMessage,
+    this.transferItem,
   });
 
   final Api api;
   final ScoutChatSender? sendMessage;
+  final ScoutGroceryTransfer? transferItem;
 
   @override
   State<ScoutChatScreen> createState() => _ScoutChatScreenState();
 }
 
 class _ScoutChatScreenState extends State<ScoutChatScreen> {
+  static const _groceryStorageKey = 'trolley-scout-grocery-plan-v1';
   static const _starterPrompts = [
-    'Find the best grocery savings',
+    'Create a grocery list for the cheapest vegan food',
     'Show useful catalogues',
     'Find deals within my budget',
   ];
@@ -36,6 +45,8 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
   final List<_ScoutMessage> _messages = [];
+  List<ScoutGroceryPlanItem> _groceryItems = [];
+  ScoutGroceryPlan? _groceryPlan;
   var _sending = false;
   var _messageNumber = 0;
 
@@ -43,6 +54,7 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
   void initState() {
     super.initState();
     _focusNode.addListener(_handleComposerFocus);
+    _restoreGroceryPlan();
   }
 
   @override
@@ -92,6 +104,13 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
       );
       if (!mounted) return;
       setState(() {
+        if (answer.groceryPlan != null) {
+          _groceryPlan = answer.groceryPlan;
+          _groceryItems = _mergeGroceryItems(
+            _groceryItems,
+            answer.groceryPlan!.items,
+          );
+        }
         _messages.add(_ScoutMessage(
           answer: answer,
           id: 'assistant-$number',
@@ -148,6 +167,70 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
         curve: Curves.easeOutCubic,
       );
     });
+  }
+
+  Future<void> _restoreGroceryPlan() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_groceryStorageKey);
+    if (stored == null || stored.isEmpty || !mounted) return;
+
+    try {
+      final decoded = jsonDecode(stored);
+      if (decoded is! Map) return;
+      final plan = ScoutGroceryPlan.fromJson(
+        Map<String, dynamic>.from(decoded),
+      );
+      if (!mounted) return;
+      setState(() {
+        _groceryPlan = plan;
+        _groceryItems = plan.items;
+      });
+    } catch (_) {
+      await prefs.remove(_groceryStorageKey);
+    }
+  }
+
+  Future<void> _transferGroceryItem(ScoutGroceryPlanItem item) async {
+    if (widget.transferItem != null) {
+      return widget.transferItem!(item);
+    }
+
+    await widget.api.saveDealToBasket(
+      Deal(
+        capturedAt: DateTime.now().toUtc().toIso8601String(),
+        evidenceText: item.assumption,
+        id: item.id,
+        imageUrl: item.imageUrl,
+        previousPriceText: item.previousPriceText,
+        priceText: item.priceText,
+        productUrl: item.productUrl,
+        retailerId: item.retailerId,
+        retailerName: item.retailerName,
+        savingText: item.promotionText,
+        sourceLabel: 'Mr Scout grocery plan',
+        sourceUrl: item.sourceUrl,
+        title: item.title,
+      ),
+      quantity: item.quantity,
+    );
+  }
+
+  Future<void> _openGroceryPlan() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _GroceryPlannerSheet(
+        items: _groceryItems,
+        plan: _groceryPlan,
+        storageKey: _groceryStorageKey,
+        onChanged: (items) {
+          if (!mounted) return;
+          setState(() => _groceryItems = items);
+        },
+        onTransfer: _transferGroceryItem,
+      ),
+    );
   }
 
   @override
@@ -298,6 +381,26 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Semantics(
+                    button: true,
+                    label: 'Open grocery list, ${_groceryItems.length} items',
+                    child: IconButton.filledTonal(
+                      key: const ValueKey('mr-scout-grocery-button'),
+                      tooltip: 'Grocery list',
+                      onPressed: _openGroceryPlan,
+                      icon: Badge(
+                        isLabelVisible: _groceryItems.isNotEmpty,
+                        label: Text('${_groceryItems.length}'),
+                        backgroundColor: TS.redOf(context),
+                        textColor:
+                            Theme.of(context).brightness == Brightness.light
+                                ? Colors.white
+                                : TS.ink,
+                        child: const Icon(Icons.shopping_basket_outlined),
+                      ),
+                    ),
+                  ),
                   if (showStatus) ...[
                     const SizedBox(width: 10),
                     Container(
@@ -341,6 +444,596 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
       ),
     );
   }
+}
+
+List<ScoutGroceryPlanItem> _mergeGroceryItems(
+  List<ScoutGroceryPlanItem> current,
+  List<ScoutGroceryPlanItem> incoming,
+) {
+  final merged = <String, ScoutGroceryPlanItem>{
+    for (final item in current) item.id: item,
+  };
+  for (final item in incoming) {
+    merged[item.id] = item;
+  }
+  return merged.values.toList(growable: false);
+}
+
+class _GroceryPlannerSheet extends StatefulWidget {
+  const _GroceryPlannerSheet({
+    required this.items,
+    required this.plan,
+    required this.storageKey,
+    required this.onChanged,
+    required this.onTransfer,
+  });
+
+  final List<ScoutGroceryPlanItem> items;
+  final ScoutGroceryPlan? plan;
+  final String storageKey;
+  final ValueChanged<List<ScoutGroceryPlanItem>> onChanged;
+  final ScoutGroceryTransfer onTransfer;
+
+  @override
+  State<_GroceryPlannerSheet> createState() => _GroceryPlannerSheetState();
+}
+
+class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
+  late List<ScoutGroceryPlanItem> _items;
+  final Set<String> _transferring = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List.of(widget.items);
+  }
+
+  int get _totalCents => _items.fold(
+        0,
+        (total, item) => total + item.unitPriceCents * item.quantity,
+      );
+
+  void _replace(ScoutGroceryPlanItem item, int quantity) {
+    setState(() {
+      _items = [
+        for (final current in _items)
+          if (current.id == item.id)
+            current.copyWithQuantity(quantity)
+          else
+            current,
+      ];
+    });
+    widget.onChanged(List.unmodifiable(_items));
+  }
+
+  void _remove(ScoutGroceryPlanItem item) {
+    setState(() => _items.removeWhere((current) => current.id == item.id));
+    widget.onChanged(List.unmodifiable(_items));
+  }
+
+  Future<void> _save() async {
+    final template = widget.plan;
+    final plan = ScoutGroceryPlan(
+      assumptions: template?.assumptions ?? const [],
+      currencyCode: template?.currencyCode ?? 'ZAR',
+      items: _items,
+      maxStores: template?.maxStores ?? 3,
+      missingItems: template?.missingItems ?? const [],
+      storeCount: _items.map((item) => item.retailerId).toSet().length,
+      subtotalCents: _totalCents,
+      subtotalText: _formatGroceryMoney(
+        _totalCents,
+        template?.currencyCode ?? 'ZAR',
+      ),
+      totalCents: _totalCents,
+      totalText: _formatGroceryMoney(
+        _totalCents,
+        template?.currencyCode ?? 'ZAR',
+      ),
+      tradeOffs: template?.tradeOffs ?? const [],
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(widget.storageKey, jsonEncode(plan.toJson()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Grocery list saved on this device.')),
+    );
+  }
+
+  Future<void> _transfer(ScoutGroceryPlanItem item) async {
+    setState(() => _transferring.add(item.id));
+    try {
+      await widget.onTransfer(item);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${item.title} transferred to your basket.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${item.title} could not be transferred right now.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _transferring.remove(item.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currencyCode = widget.plan?.currencyCode ?? 'ZAR';
+    final grouped = <String, List<ScoutGroceryPlanItem>>{};
+    for (final item in _items) {
+      grouped.putIfAbsent(item.retailerName, () => []).add(item);
+    }
+
+    return FractionallySizedBox(
+      heightFactor: 0.94,
+      child: Column(
+        key: const ValueKey('mr-scout-grocery-sheet'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: TS.yellow,
+                    border: Border.all(color: TS.ink),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.shopping_basket_outlined,
+                    color: TS.ink,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mr Scout grocery list',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.merge(TS.display),
+                      ),
+                      Text(
+                        '${_items.length} items across ${grouped.length} stores',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close grocery list',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: TS.lineSoftOf(context)),
+          Expanded(
+            child: _items.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.playlist_add_rounded,
+                            size: 48,
+                            color: TS.mutedOf(context),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Your temporary grocery list is empty.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Ask Mr Scout for the cheapest meat, vegetables, vegan food, or another grocery plan.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: TS.mutedOf(context)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView(
+                    key: const ValueKey('mr-scout-grocery-items'),
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+                    children: [
+                      for (final entry in grouped.entries) ...[
+                        _GroceryStoreHeader(
+                          name: entry.key,
+                          subtotal: _formatGroceryMoney(
+                            entry.value.fold(
+                              0,
+                              (total, item) =>
+                                  total + item.unitPriceCents * item.quantity,
+                            ),
+                            currencyCode,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final item in entry.value)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _GroceryItemCard(
+                              item: item,
+                              lineTotal: _formatGroceryMoney(
+                                item.unitPriceCents * item.quantity,
+                                currencyCode,
+                              ),
+                              transferring: _transferring.contains(item.id),
+                              onDecrease: item.quantity <= 1
+                                  ? null
+                                  : () => _replace(item, item.quantity - 1),
+                              onIncrease: () =>
+                                  _replace(item, item.quantity + 1),
+                              onRemove: () => _remove(item),
+                              onTransfer: () => _transfer(item),
+                            ),
+                          ),
+                      ],
+                      if (widget.plan != null) ...[
+                        _GroceryNotes(
+                          assumptions: widget.plan!.assumptions,
+                          missingItems: widget.plan!.missingItems,
+                          tradeOffs: widget.plan!.tradeOffs,
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: TS.surfaceOf(context),
+              border: Border(
+                top: BorderSide(color: TS.lineSoftOf(context)),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Overall total',
+                          style: TextStyle(
+                            color: TS.mutedOf(context),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatGroceryMoney(_totalCents, currencyCode),
+                        key: const ValueKey('mr-scout-grocery-total'),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _items.isEmpty
+                              ? null
+                              : () {
+                                  setState(() => _items = []);
+                                  widget.onChanged(const []);
+                                },
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          label: const Text('Clear'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          key: const ValueKey('mr-scout-grocery-save'),
+                          onPressed: _items.isEmpty ? null : _save,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save list'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroceryStoreHeader extends StatelessWidget {
+  const _GroceryStoreHeader({
+    required this.name,
+    required this.subtotal,
+  });
+
+  final String name;
+  final String subtotal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      key: ValueKey('grocery-store-$name'),
+      children: [
+        const Icon(Icons.storefront_outlined, size: 19),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        Text(
+          subtotal,
+          style: TextStyle(
+            color: TS.mutedOf(context),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroceryItemCard extends StatelessWidget {
+  const _GroceryItemCard({
+    required this.item,
+    required this.lineTotal,
+    required this.transferring,
+    required this.onDecrease,
+    required this.onIncrease,
+    required this.onRemove,
+    required this.onTransfer,
+  });
+
+  final ScoutGroceryPlanItem item;
+  final String lineTotal;
+  final bool transferring;
+  final VoidCallback? onDecrease;
+  final VoidCallback onIncrease;
+  final VoidCallback onRemove;
+  final VoidCallback onTransfer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: ValueKey('grocery-item-${item.id}'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(11),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 66,
+                height: 66,
+                child: item.imageUrl == null
+                    ? ColoredBox(
+                        color: TS.surfaceSoftOf(context),
+                        child: Icon(
+                          Icons.local_grocery_store_outlined,
+                          color: TS.mutedOf(context),
+                        ),
+                      )
+                    : Image.network(
+                        item.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => ColoredBox(
+                          color: TS.surfaceSoftOf(context),
+                          child: Icon(
+                            Icons.local_grocery_store_outlined,
+                            color: TS.mutedOf(context),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.group.toUpperCase(),
+                    style: TS.eyebrowOf(context).copyWith(fontSize: 10),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    item.title,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 3,
+                    children: [
+                      Text(
+                        '${item.priceText} each',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (item.promotionText != null)
+                        Text(
+                          item.promotionText!,
+                          style: TextStyle(
+                            color: TS.greenOf(context),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      IconButton.outlined(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Decrease quantity',
+                        onPressed: onDecrease,
+                        icon: const Icon(Icons.remove, size: 18),
+                      ),
+                      Text(
+                        '${item.quantity}',
+                        key: ValueKey('grocery-quantity-${item.id}'),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      IconButton.outlined(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Increase quantity',
+                        onPressed: onIncrease,
+                        icon: const Icon(Icons.add, size: 18),
+                      ),
+                      Text(
+                        lineTotal,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove ${item.title}',
+                        onPressed: onRemove,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                      ),
+                      OutlinedButton.icon(
+                        key: ValueKey('grocery-transfer-${item.id}'),
+                        onPressed: transferring ? null : onTransfer,
+                        icon: transferring
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.move_to_inbox_outlined),
+                        label: const Text('Transfer'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GroceryNotes extends StatelessWidget {
+  const _GroceryNotes({
+    required this.assumptions,
+    required this.missingItems,
+    required this.tradeOffs,
+  });
+
+  final List<String> assumptions;
+  final List<String> missingItems;
+  final List<String> tradeOffs;
+
+  @override
+  Widget build(BuildContext context) {
+    if (assumptions.isEmpty && missingItems.isEmpty && tradeOffs.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      key: const ValueKey('mr-scout-grocery-notes'),
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: TS.surfaceSoftOf(context),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (assumptions.isNotEmpty)
+            _GroceryNoteGroup(
+              title: 'List assumptions',
+              values: assumptions,
+            ),
+          if (missingItems.isNotEmpty)
+            _GroceryNoteGroup(
+              title: 'Missing or unavailable',
+              values: missingItems,
+            ),
+          if (tradeOffs.isNotEmpty)
+            _GroceryNoteGroup(
+              title: 'Trade-offs',
+              values: tradeOffs,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroceryNoteGroup extends StatelessWidget {
+  const _GroceryNoteGroup({
+    required this.title,
+    required this.values,
+  });
+
+  final String title;
+  final List<String> values;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 3),
+          for (final value in values)
+            Text(
+              '• $value',
+              style: TextStyle(
+                color: TS.mutedOf(context),
+                height: 1.35,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatGroceryMoney(int cents, String currencyCode) {
+  final amount = (cents / 100).toStringAsFixed(2);
+  return switch (currencyCode.toUpperCase()) {
+    'ZAR' => 'R$amount',
+    'USD' => '\$$amount',
+    'GBP' => '£$amount',
+    'EUR' => '€$amount',
+    _ => '${currencyCode.toUpperCase()} $amount',
+  };
 }
 
 class _EmptyState extends StatelessWidget {

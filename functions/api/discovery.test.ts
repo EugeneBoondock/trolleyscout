@@ -597,6 +597,7 @@ describe('normalized discovery cutover', () => {
 
     expect(deals.filter((deal) => deal.productId === 'rice')).toHaveLength(1)
     expect(deals.find((deal) => deal.productId === 'rice')).toMatchObject({
+      addedAt: '2026-07-16T10:00:00.000Z',
       id: 'national',
       priceScope: { type: 'national' },
       priceText: 'R13.00',
@@ -872,14 +873,14 @@ describe('normalized discovery cutover', () => {
       }
     }
 
-    expect(free.data.deals).toHaveLength(10_000)
+    expect(free.data.deals).toHaveLength(2_000)
     expect(free.data.leaflets).toHaveLength(50)
     expect(free.data.leaflets.every((leaflet) => leaflet.countryCode === 'ZA')).toBe(true)
     expect(free.data.access).toEqual({
       availableCatalogueCount: 51,
       availableDealCount: 10_001,
       catalogueLimit: 50,
-      dealLimit: 10_000,
+      dealLimit: 2_000,
       planId: 'free',
     })
 
@@ -909,13 +910,49 @@ describe('normalized discovery cutover', () => {
       }
     }
 
-    expect(scout.data.deals).toHaveLength(10_001)
+    expect(scout.data.deals).toHaveLength(7_000)
     expect(scout.data.leaflets).toHaveLength(51)
     expect(scout.data.access).toMatchObject({
-      catalogueLimit: 250,
-      dealLimit: 50_000,
+      catalogueLimit: 150,
+      dealLimit: 7_000,
       planId: 'scout',
     })
+
+    for (const planId of ['household', 'organization', 'developers'] as const) {
+      mocks.getMemberSession.mockResolvedValue({
+        account: {
+          countryCode: 'ZA',
+          id: `${planId}-member`,
+          planId,
+          role: 'member',
+        },
+        isAuthenticated: true,
+      })
+      const response = await onRequest({
+        env,
+        request: new Request('https://trolleyscout.co.za/api/discovery'),
+        waitUntil: vi.fn(),
+      } as never)
+      const resource = await response.json() as {
+        data: {
+          access: {
+            catalogueLimit: number
+            dealLimit: number
+            planId: string
+          }
+          deals: DiscoveredDeal[]
+          leaflets: StoreLeaflet[]
+        }
+      }
+
+      expect(resource.data.deals).toHaveLength(10_001)
+      expect(resource.data.leaflets).toHaveLength(51)
+      expect(resource.data.access).toMatchObject({
+        catalogueLimit: Number.MAX_SAFE_INTEGER,
+        dealLimit: Number.MAX_SAFE_INTEGER,
+        planId,
+      })
+    }
   })
 
   it('rejects a forced refresh from a non-admin account before fetching sources', async () => {

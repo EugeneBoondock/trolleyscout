@@ -99,6 +99,57 @@ void main() {
     expect(find.byKey(const Key('deal-card-available')), findsOneWidget);
   });
 
+  testWidgets('Marketplace filters deals added in the last seven days',
+      (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      darkTheme: TS.darkTheme(),
+      home: Scaffold(
+        body: DealsScreen(
+          api: _RecentLayoutApi(),
+          isAuthenticated: true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
+    expect(
+        find.byKey(const Key('deal-card-refreshed-old-rice')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('recently-added-filter')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
+    expect(find.byKey(const Key('deal-card-refreshed-old-rice')), findsNothing);
+  });
+
+  testWidgets('Recently added filter stays usable in dark mode on a phone',
+      (tester) async {
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      darkTheme: TS.darkTheme(),
+      themeMode: ThemeMode.dark,
+      home: Scaffold(
+        body: DealsScreen(
+          api: _RecentLayoutApi(),
+          isAuthenticated: true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final filter = find.byKey(const Key('recently-added-filter'));
+    expect(filter, findsOneWidget);
+    expect(Theme.of(tester.element(filter)).brightness, Brightness.dark);
+    await tester.tap(filter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
+  });
+
   testWidgets('Marketplace explains a reached Free viewing allowance',
       (tester) async {
     await _usePhoneViewport(tester);
@@ -120,12 +171,14 @@ void main() {
     );
     expect(
       find.text(
-        'Free plan: up to 10,000 deals and 50 catalogues. '
+        'Free plan: up to 2,000 deals and 50 catalogues. '
         '12,000 deals and 72 catalogues are available.',
       ),
       findsOneWidget,
     );
     expect(find.byKey(const Key('deal-card-access-discovery')), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -320));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('deal-card-access-site')), findsOneWidget);
   });
 
@@ -310,6 +363,39 @@ class _AvailabilityLayoutApi extends _LayoutApi {
       );
 }
 
+class _RecentLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+      {bool forceLive = false, bool summary = false}) async {
+    final now = DateTime.now().toUtc();
+    return DiscoveryResult(
+      deals: [
+        Deal(
+          id: 'recent-rice',
+          retailerId: 'food-market',
+          retailerName: 'Food Market',
+          sourceLabel: 'Food specials',
+          title: 'Recently added rice',
+          capturedAt: now.subtract(const Duration(days: 1)).toIso8601String(),
+        ),
+        Deal(
+          id: 'refreshed-old-rice',
+          retailerId: 'food-market',
+          retailerName: 'Food Market',
+          sourceLabel: 'Food specials',
+          title: 'Refreshed old rice',
+          addedAt: now.subtract(const Duration(days: 14)).toIso8601String(),
+          capturedAt: now.subtract(const Duration(hours: 1)).toIso8601String(),
+        ),
+      ],
+      foundDealCount: 2,
+      checkedSourceCount: 1,
+      unavailableSourceCount: 0,
+      leafletCount: 0,
+    );
+  }
+}
+
 class _LimitedLayoutApi extends _LayoutApi {
   @override
   Future<DiscoveryResult> discovery(
@@ -319,7 +405,7 @@ class _LimitedLayoutApi extends _LayoutApi {
           availableCatalogueCount: 72,
           availableDealCount: 12000,
           catalogueLimit: 50,
-          dealLimit: 10000,
+          dealLimit: 2000,
           planId: 'free',
         ),
         deals: [
