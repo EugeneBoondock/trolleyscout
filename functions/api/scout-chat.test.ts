@@ -203,6 +203,72 @@ describe('handleScoutChat', () => {
     expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
   })
 
+  it('finds Marketplace chicken for a conversational natural-language request', async () => {
+    const chickenDeals = [
+      {
+        ...storedDeal,
+        id: 'chicken-expensive',
+        priceCents: 8999,
+        productId: 'chicken-expensive',
+        productUrl: 'https://retailer.test/chicken-expensive',
+        title: 'Fresh chicken drumsticks 1kg',
+      },
+      {
+        ...storedDeal,
+        id: 'chicken-cheap',
+        priceCents: 5999,
+        productId: 'chicken-cheap',
+        productUrl: 'https://retailer.test/chicken-cheap',
+        title: 'Frozen whole chicken 1.2kg',
+      },
+    ]
+    const deps = dependencies({
+      fetchOpenAI: vi.fn(async () => new Response(JSON.stringify({
+        output: [{
+          type: 'message',
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
+              reply: 'No chicken was found.',
+              dealIds: [],
+              catalogueIds: [],
+              followUps: [],
+            }),
+          }],
+        }],
+      }), { status: 200 })),
+      listDeals: vi.fn(async () => chickenDeals),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'Ok find some chicken for me' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ id: string }>; reply: string } }
+    }
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        productQuery: {
+          productTerms: ['chicken'],
+          sort: 'relevance',
+        },
+        searchTerms: ['chicken'],
+      }),
+    )
+    expect(body.data.answer.deals.map((deal) => deal.id)).toEqual([
+      'chicken-expensive',
+      'chicken-cheap',
+    ])
+    expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
+  })
+
   it('ranks current ten-kilo Marketplace rice by price and excludes unrelated cards', async () => {
     const deals = [
       {

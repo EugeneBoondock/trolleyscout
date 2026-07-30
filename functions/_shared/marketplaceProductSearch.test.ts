@@ -38,6 +38,35 @@ describe('parseMarketplaceProductQuery', () => {
         sort: 'price-asc',
       })
   })
+
+  it.each([
+    [
+      'Ok find some chicken for me',
+      { productTerms: ['chicken'], sort: 'relevance' },
+    ],
+    [
+      'Find me some cheap spaghetti',
+      { productTerms: ['spaghetti'], sort: 'price-asc' },
+    ],
+    [
+      'Could you please show me affordable chicken deals under R100?',
+      { productTerms: ['chicken'], sort: 'price-asc' },
+    ],
+    [
+      'I would like the lowest priced fresh chicken',
+      { productTerms: ['fresh', 'chicken'], sort: 'price-asc' },
+    ],
+    [
+      'Do you have any spaghetti specials?',
+      { productTerms: ['spaghetti'], sort: 'relevance' },
+    ],
+    [
+      'Show me some baked beans',
+      { productTerms: ['baked', 'beans'], sort: 'relevance' },
+    ],
+  ])('extracts product intent from “%s”', (message, expected) => {
+    expect(parseMarketplaceProductQuery(message)).toEqual(expected)
+  })
 })
 
 describe('extractPackSizeGrams', () => {
@@ -92,5 +121,52 @@ describe('rankMarketplaceProductDeals', () => {
       'rice-five',
       'rice-two',
     ])
+  })
+
+  it('keeps food spaghetti ahead of non-food Marketplace title matches', () => {
+    const query = parseMarketplaceProductQuery('Find me some cheap spaghetti')
+    expect(query).toBeDefined()
+
+    const result = rankMarketplaceProductDeals([
+      deal('spaghetti-expensive', 'Fatti’s & Moni’s Spaghetti 500g', 'R24.99'),
+      deal('spoon', 'Stainless Steel Spaghetti Spoon', 'R19.99'),
+      deal('sports-bra', 'Sports Bra Spaghetti Strap', 'R9.99'),
+      deal('spaghetti-cheap', 'No Name Pasta Spaghetti 500g', 'R18.99'),
+      deal('shirt', 'Men’s Graphics Spaghetti T-shirt', 'R14.99'),
+    ], query!)
+
+    expect(result.deals.map((item) => item.id)).toEqual([
+      'spaghetti-cheap',
+      'spaghetti-expensive',
+    ])
+  })
+
+  it('keeps chicken food and removes pet or toy title matches', () => {
+    const query = parseMarketplaceProductQuery('Ok find some chicken for me')
+    expect(query).toBeDefined()
+
+    const result = rankMarketplaceProductDeals([
+      deal('pet-food', 'Chicken Flavour Adult Dog Food 8kg', 'R99.99'),
+      deal('whole-chicken', 'Fresh Whole Chicken 1.4kg', 'R89.99'),
+      deal('toy', 'Plush Chicken Toy', 'R49.99'),
+      deal('drumsticks', 'Fresh Chicken Drumsticks 1kg', 'R69.99'),
+    ], query!)
+
+    expect(result.deals.map((item) => item.id)).toEqual([
+      'whole-chicken',
+      'drumsticks',
+    ])
+  })
+
+  it('does not block an accessory when the shopper explicitly requests it', () => {
+    const query = parseMarketplaceProductQuery('Show me a rice cooker')
+    expect(query).toBeDefined()
+
+    const result = rankMarketplaceProductDeals([
+      deal('cooker', 'Digital Rice Cooker 1.8L', 'R499.99'),
+      deal('rice', 'Long Grain Rice 2kg', 'R39.99'),
+    ], query!)
+
+    expect(result.deals.map((item) => item.id)).toEqual(['cooker'])
   })
 })

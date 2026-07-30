@@ -26,11 +26,16 @@ const QUERY_STOP_WORDS = new Set([
   'about',
   'and',
   'any',
+  'affordable',
   'available',
   'best',
+  'below',
   'buy',
   'can',
+  'cheap',
+  'cheaper',
   'cheapest',
+  'could',
   'current',
   'deal',
   'deals',
@@ -38,13 +43,19 @@ const QUERY_STOP_WORDS = new Set([
   'find',
   'for',
   'from',
+  'get',
   'give',
   'have',
+  'hello',
+  'hey',
+  'hi',
   'i',
   'in',
+  'inexpensive',
   'is',
   'item',
   'items',
+  'just',
   'kg',
   'kgs',
   'kilo',
@@ -52,13 +63,20 @@ const QUERY_STOP_WORDS = new Set([
   'kilograms',
   'kilos',
   'latest',
+  'less',
+  'like',
+  'looking',
   'lowest',
   'marketplace',
   'me',
+  'need',
   'of',
+  'ok',
+  'okay',
   'on',
   'please',
   'price',
+  'priced',
   'prices',
   'product',
   'products',
@@ -66,15 +84,27 @@ const QUERY_STOP_WORDS = new Set([
   'show',
   'special',
   'specials',
+  'some',
   'the',
   'to',
+  'under',
   'want',
   'what',
   'with',
+  'would',
   'you',
 ])
 
 const ACCESSORY_TERMS: Record<string, readonly string[]> = {
+  chicken: [
+    'cat',
+    'costume',
+    'dog',
+    'feed',
+    'pet',
+    'plush',
+    'toy',
+  ],
   rice: [
     'cracker',
     'crackers',
@@ -89,6 +119,13 @@ const ACCESSORY_TERMS: Record<string, readonly string[]> = {
     'noodles',
     'pudding',
     'shampoo',
+  ],
+  spaghetti: [
+    'bra',
+    'dress',
+    'shirt',
+    'spoon',
+    'strap',
   ],
 }
 
@@ -130,13 +167,16 @@ export function parseMarketplaceProductQuery(
       word.length >= 2 &&
       !QUERY_STOP_WORDS.has(word) &&
       !(word in NUMBER_WORDS) &&
-      !/^\d+(?:[.,]\d+)?$/u.test(word),
+      !/^\d+(?:[.,]\d+)?$/u.test(word) &&
+      !/^(?:r|zar|usd|zwg)\d+(?:[.,]\d+)?$/u.test(word),
     )
 
   const productTerms = Array.from(new Set(words)).slice(0, 5)
   if (productTerms.length === 0) return undefined
 
-  const wantsCheapest = /\b(?:cheapest|lowest\s+price|price\s+low\s+to\s+high)\b/u.test(normalized)
+  const wantsCheapest =
+    /\b(?:cheap(?:er|est)?|affordable|inexpensive|lowest(?:\s+price)?|price\s+low\s+to\s+high)\b/u
+      .test(normalized)
   return {
     productTerms,
     ...(requestedPackGrams === undefined
@@ -195,7 +235,10 @@ export function rankMarketplaceProductDeals<T extends MarketplaceProductDeal>(
       const titleMatches = query.productTerms.every((term) => hasWord(title, term))
       const searchMatches = query.productTerms.every((term) => hasWord(searchText, term))
       const blocked = query.productTerms.some((term) =>
-        (ACCESSORY_TERMS[term] ?? []).some((accessory) => hasWord(title, accessory)),
+        (ACCESSORY_TERMS[term] ?? []).some((accessory) =>
+          !query.productTerms.includes(accessory) &&
+          hasWord(title, accessory),
+        ),
       )
 
       return {
