@@ -739,6 +739,12 @@ export interface RetailerProductSearchMatch {
   sourceKind?: 'retailer-api' | 'official-site' | 'promotion'
   status: RetailerProductSearchStatus
   title?: string
+  /**
+   * Why nothing came back. "We could not reach the shop" and "the shop does
+   * not stock this" are different answers to a shopper and used to share one
+   * message.
+   */
+  unavailableReason?: 'no-search' | 'not-stocked' | 'store-unreachable'
 }
 
 export interface RetailerProductAlternative {

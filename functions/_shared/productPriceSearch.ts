@@ -487,6 +487,7 @@ export async function searchRetailerProduct(
           retailerId: retailer.id,
           retailerName: retailer.name,
           status: 'unavailable',
+          unavailableReason: 'not-stocked',
         }
       }
     } catch {
@@ -530,6 +531,9 @@ export async function searchRetailerProduct(
     retailerId: retailer.id,
     retailerName: retailer.name,
     status: 'unavailable',
+    // Reaching here with a request built means the store's own search was
+    // tried and did not answer; without one, we have no way in at all.
+    unavailableReason: request ? 'store-unreachable' : 'no-search',
   }
 }
 

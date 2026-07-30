@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import {
@@ -7,7 +7,12 @@ import {
   searchProductPrices,
   setMemberState,
 } from '../services/apiClient'
-import type { CountryOption, ProductComparisonResult, Retailer } from '../types'
+import type {
+  CountryOption,
+  ProductComparisonResult,
+  Retailer,
+  RetailerProductSearchMatch,
+} from '../types'
 
 const COMPARE_RETAILERS_STATE_KEY = 'compare_retailers_v1'
 const COMPARE_RETAILERS_LOCAL_KEY = 'ts_compare_retailers_v1'
@@ -156,7 +161,7 @@ function AutoShopCompare({ preferenceOwnerId }: { preferenceOwnerId?: string }) 
       </div>
 
       {isLoading ? (
-        <p className="section-lede">Loading stores available in your country…</p>
+        <p className="section-lede">Loading stores available in your countryâ€¦</p>
       ) : storeOptions.length === 0 ? (
         <p className="section-lede">No stores are available right now. Try again shortly.</p>
       ) : (
@@ -200,7 +205,7 @@ function AutoShopCompare({ preferenceOwnerId }: { preferenceOwnerId?: string }) 
               type="button"
             >
               <MagnifyingGlass size={16} weight="bold" />
-              {isSearching ? 'Searching stores…' : 'Compare'}
+              {isSearching ? 'Searching storesâ€¦' : 'Compare'}
             </button>
           </div>
 
@@ -229,9 +234,7 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
           >
             <span className="auto-compare-store-name">{match.retailerName}</span>
             {match.status === 'unavailable' ? (
-              <span className="auto-compare-missing">
-                This store has no public price search we can read. Check in store.
-              </span>
+              <span className="auto-compare-missing">{unavailableMessage(match)}</span>
             ) : (
               <>
                 {match.productUrl ? (
@@ -264,17 +267,17 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
       {result.pricedCount === 0 ? (
         <p className="compare-verdict">
           {result.foundCount > 0
-            ? `We found an official product page for “${result.query}”, but no selected store returned a live price.`
-            : `The selected stores returned no verified live price for “${result.query}” right now.`}
+            ? `We found an official product page for â€œ${result.query}â€, but no selected store returned a live price.`
+            : `The selected stores returned no verified live price for â€œ${result.query}â€ right now.`}
         </p>
       ) : result.pricedCount === 1 ? (
         <p className="compare-verdict">
-          Only one selected store returned a live price for “{result.query}”. We need at least two
+          Only one selected store returned a live price for â€œ{result.query}â€. We need at least two
           live prices before naming the cheapest.
         </p>
       ) : cheapest ? (
         <p className="compare-verdict">
-          <strong>{cheapest.retailerName}</strong> is cheapest for “{result.query}”
+          <strong>{cheapest.retailerName}</strong> is cheapest for â€œ{result.query}â€
           {result.savingsCents > 0 && (
             <>, saving you {formatCountryMoney(result.savingsCents, result.country)}</>
           )}.
@@ -285,6 +288,21 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
       ) : null}
     </div>
   )
+}
+
+/**
+ * "We could not reach the shop" and "the shop does not stock this" are
+ * different answers, and a shopper deciding where to drive needs to know
+ * which one they got. They used to share a single message.
+ */
+function unavailableMessage(match: RetailerProductSearchMatch): string {
+  if (match.unavailableReason === 'not-stocked') {
+    return 'This store searched and does not stock it. Try another size or brand.'
+  }
+  if (match.unavailableReason === 'store-unreachable') {
+    return 'This store is not answering us right now. Try again shortly.'
+  }
+  return 'This store has no public price search we can read. Check in store.'
 }
 
 function compareRetailersLocalKey(preferenceOwnerId: string | undefined): string {
@@ -367,3 +385,4 @@ function formatCountryMoney(cents: number, country: CountryOption): string {
     return `${country.currencyCode} ${(cents / 100).toFixed(2)}`
   }
 }
+
