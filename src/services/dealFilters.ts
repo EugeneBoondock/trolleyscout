@@ -10,12 +10,16 @@ export interface DealFilterOptions {
   hideSoldOut?: boolean
   category?: DealCategory | 'all'
   foodSubcategory?: FoodSubcategory | 'all'
+  // A deal first seen before this ISO timestamp is excluded. Legacy deals
+  // without addedAt fall back to their capture time.
+  recentlyAddedAfter?: string
   // A deal ends before this ISO date (YYYY-MM-DD) is excluded; a deal with no
   // known end date is always kept.
   endsAfter?: string
 }
 
 export interface IndexedDiscoveryDeal {
+  addedAtMs: number
   category: DealCategory
   deal: DiscoveredDeal
   foodSubcategory?: FoodSubcategory
@@ -34,6 +38,7 @@ export function createDealSearchIndex(
     })
     return {
       ...classification,
+      addedAtMs: Date.parse(deal.addedAt ?? deal.capturedAt),
       deal,
       searchText: [
         deal.title,
@@ -52,9 +57,18 @@ export function filterIndexedDiscoveryDeals(
   const category = options.category ?? 'all'
   const foodSubcategory = options.foodSubcategory ?? 'all'
   const endsAfter = options.endsAfter?.slice(0, 10)
+  const recentlyAddedAfter = options.recentlyAddedAfter
+    ? Date.parse(options.recentlyAddedAfter)
+    : undefined
 
   return indexedDeals
-    .filter(({ category: dealCategory, deal, foodSubcategory: dealFoodSubcategory, searchText }) => {
+    .filter(({
+      addedAtMs,
+      category: dealCategory,
+      deal,
+      foodSubcategory: dealFoodSubcategory,
+      searchText,
+    }) => {
       const matchesQuery = !query || searchText.includes(query)
       const matchesRetailer =
         !options.retailerId ||
@@ -73,6 +87,13 @@ export function filterIndexedDiscoveryDeals(
         (foodSubcategory === 'all' || dealFoodSubcategory === foodSubcategory)
       const matchesExpiry =
         !endsAfter || !deal.validTo || deal.validTo.slice(0, 10) >= endsAfter
+      const matchesRecentlyAdded =
+        recentlyAddedAfter === undefined ||
+        (
+          Number.isFinite(recentlyAddedAfter) &&
+          Number.isFinite(addedAtMs) &&
+          addedAtMs >= recentlyAddedAfter
+        )
 
       return (
         matchesQuery &&
@@ -82,7 +103,8 @@ export function filterIndexedDiscoveryDeals(
         matchesSaving &&
         matchesAvailability &&
         matchesCategory &&
-        matchesExpiry
+        matchesExpiry &&
+        matchesRecentlyAdded
       )
     })
     .map(({ deal }) => deal)

@@ -35,6 +35,7 @@ describe('organization publication feed mapping', () => {
     const [deal] = organizationPublicationsToDiscoveryDeals([basePublication])
 
     expect(deal).toEqual(expect.objectContaining({
+      addedAt: basePublication.createdAt,
       evidenceText: basePublication.bodyText,
       id: basePublication.id,
       previousPriceText: 'R59.99',

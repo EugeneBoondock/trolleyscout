@@ -597,6 +597,7 @@ describe('normalized discovery cutover', () => {
 
     expect(deals.filter((deal) => deal.productId === 'rice')).toHaveLength(1)
     expect(deals.find((deal) => deal.productId === 'rice')).toMatchObject({
+      addedAt: '2026-07-16T10:00:00.000Z',
       id: 'national',
       priceScope: { type: 'national' },
       priceText: 'R13.00',

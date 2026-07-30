@@ -467,6 +467,7 @@ class Deal {
     this.retailerId = '',
     this.sourceLabel = '',
     this.sourceUrl = '',
+    this.addedAt = '',
     this.capturedAt = '',
     this.evidenceText = '',
     this.priceText,
@@ -489,6 +490,7 @@ class Deal {
   final String sourceLabel;
   final String sourceUrl;
   final String title;
+  final String addedAt;
   final String capturedAt;
   final String evidenceText;
   final String? priceText;
@@ -528,6 +530,7 @@ class Deal {
         sourceLabel: _string(json['sourceLabel']),
         sourceUrl: _string(json['sourceUrl']),
         title: _string(json['title']),
+        addedAt: _string(json['addedAt']),
         capturedAt: _string(json['capturedAt']),
         evidenceText: _string(json['evidenceText']),
         priceText: _optionalString(json['priceText']),
@@ -558,6 +561,7 @@ class Deal {
         'sourceUrl': sourceUrl,
         'productUrl': productUrl ?? sourceUrl,
         'title': title,
+        if (addedAt.isNotEmpty) 'addedAt': addedAt,
         'capturedAt': capturedAt,
         'priceText': priceText,
         'previousPriceText': previousPriceText,
@@ -2394,6 +2398,7 @@ class ScrollDeal {
         retailerId: source,
         sourceLabel: sourceLabel,
         sourceUrl: productUrl,
+        addedAt: this.capturedAt ?? '',
         capturedAt:
             capturedAt?.toUtc().toIso8601String() ?? this.capturedAt ?? '',
         evidenceText: 'Found by Trolley Scout from the $sourceLabel feed.',

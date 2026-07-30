@@ -173,6 +173,7 @@ List<Deal> filterDeals(
   bool imagesOnly = false,
   bool savingsOnly = false,
   bool hideSoldOut = false,
+  DateTime? recentlyAddedAfter,
   DealCategory? category,
   FoodSubcategory? foodSubcategory,
 }) {
@@ -191,6 +192,11 @@ List<Deal> filterDeals(
         deal.savingText != null ||
         deal.previousPriceText != null;
     final matchesAvailability = !hideSoldOut || !deal.soldOut;
+    final addedAt = DateTime.tryParse(
+      deal.addedAt.isNotEmpty ? deal.addedAt : deal.capturedAt,
+    )?.toUtc();
+    final matchesRecentlyAdded = recentlyAddedAfter == null ||
+        (addedAt != null && !addedAt.isBefore(recentlyAddedAfter.toUtc()));
 
     var matchesCategory = true;
     if (category != null || foodSubcategory != null) {
@@ -216,6 +222,7 @@ List<Deal> filterDeals(
         matchesImage &&
         matchesSaving &&
         matchesAvailability &&
+        matchesRecentlyAdded &&
         matchesCategory;
   }).toList();
 }

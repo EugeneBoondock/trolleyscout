@@ -73,6 +73,68 @@ void main() {
     );
   });
 
+  test('keeps only deals first added on or after the recent cutoff', () {
+    const recentDeals = [
+      Deal(
+        id: 'recent-rice',
+        title: 'Rice 2kg',
+        retailerName: 'Local Market',
+        addedAt: '2026-07-24T08:00:00.000Z',
+        capturedAt: '2026-07-30T08:00:00.000Z',
+      ),
+      Deal(
+        id: 'refreshed-old-milk',
+        title: 'Milk 2L',
+        retailerName: 'Shoprite',
+        addedAt: '2026-07-20T08:00:00.000Z',
+        capturedAt: '2026-07-30T08:00:00.000Z',
+      ),
+      Deal(
+        id: 'legacy-cutoff-deal',
+        title: 'Bread',
+        retailerName: 'Local Market',
+        capturedAt: '2026-07-23T08:00:00.000Z',
+      ),
+    ];
+
+    expect(
+      filterDeals(
+        recentDeals,
+        recentlyAddedAfter: DateTime.utc(2026, 7, 23, 8),
+      ).map((deal) => deal.id),
+      ['recent-rice', 'legacy-cutoff-deal'],
+    );
+  });
+
+  test('combines recently added with search and category filters', () {
+    const recentDeals = [
+      Deal(
+        id: 'recent-rice',
+        title: 'Rice 2kg',
+        retailerName: 'Local Market',
+        sourceLabel: 'Food specials',
+        addedAt: '2026-07-29T08:00:00.000Z',
+      ),
+      Deal(
+        id: 'old-milk',
+        title: 'Milk 2L',
+        retailerName: 'Shoprite',
+        sourceLabel: 'Food specials',
+        addedAt: '2026-07-20T08:00:00.000Z',
+      ),
+    ];
+
+    expect(
+      filterDeals(
+        recentDeals,
+        query: 'rice',
+        category: DealCategory.food,
+        recentlyAddedAfter: DateTime.utc(2026, 7, 23, 8),
+      ).map((deal) => deal.id),
+      ['recent-rice'],
+    );
+  });
+
   test('filters branch and parent feed labels through the canonical store', () {
     const aliasedDeals = [
       Deal(

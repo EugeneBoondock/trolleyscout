@@ -2119,6 +2119,7 @@ function storedItemToDiscovery(
     : {}
   return {
     ...catalogueMetadata,
+    addedAt: item.createdAt,
     capturedAt: item.capturedAt,
     evidenceText: item.evidenceText,
     expiresAt: item.expiresAt,

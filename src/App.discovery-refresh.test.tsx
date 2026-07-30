@@ -338,6 +338,65 @@ it('debounces a large category search so typing keeps the current results respon
   }
 })
 
+it('filters Marketplace deals added in the last seven days', async () => {
+  const now = Date.now()
+  const recentDeal = {
+    capturedAt: new Date(now - 24 * 60 * 60 * 1_000).toISOString(),
+    evidenceText: 'Recently added rice',
+    id: 'recent-rice',
+    productUrl: 'https://example.test/recent-rice',
+    retailerId: 'food-market',
+    retailerName: 'Food Market',
+    sourceLabel: 'Food specials',
+    sourceUrl: 'https://example.test/specials',
+    title: 'Recently added rice',
+  }
+  const oldDeal = {
+    ...recentDeal,
+    addedAt: new Date(now - 14 * 24 * 60 * 60 * 1_000).toISOString(),
+    capturedAt: new Date(now - 60 * 60 * 1_000).toISOString(),
+    id: 'refreshed-old-rice',
+    productUrl: 'https://example.test/refreshed-old-rice',
+    title: 'Refreshed old rice',
+  }
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        deals: [recentDeal, oldDeal],
+        summary: {
+          ...emptyDiscovery.summary,
+          foundDealCount: 2,
+        },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  expect(await screen.findByText('Recently added rice')).toBeTruthy()
+  expect(screen.getByText('Refreshed old rice')).toBeTruthy()
+
+  fireEvent.click(screen.getByText('Advanced filters'))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Recently added (last 7 days)' }))
+
+  await waitFor(() => {
+    expect(screen.getByText('Recently added rice')).toBeTruthy()
+    expect(screen.queryByText('Refreshed old rice')).toBeNull()
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Use dark theme' }))
+  await waitFor(() => {
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(screen.getByRole('checkbox', { name: 'Recently added (last 7 days)' })).toBeTruthy()
+  })
+})
+
 it('sorts catalogues by Latest by default and supports Oldest with an accessible control', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input)

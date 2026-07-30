@@ -223,6 +223,9 @@ export interface DiscoveredDeal {
   sourceUrl: string
   productUrl: string
   title: string
+  // The first time Trolley Scout stored this deal. Older snapshots may omit
+  // it, in which case clients use capturedAt for recent-deal filtering.
+  addedAt?: string
   capturedAt: string
   priceText?: string
   previousPriceText?: string

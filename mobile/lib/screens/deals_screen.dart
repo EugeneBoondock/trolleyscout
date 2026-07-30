@@ -72,6 +72,9 @@ class _DealsScreenState extends State<DealsScreen> {
   final bool _imagesOnly = false;
   final bool _savingsOnly = false;
   bool _hideSoldOut = false;
+  bool _recentlyAddedOnly = false;
+  final DateTime _recentlyAddedAfter =
+      DateTime.now().toUtc().subtract(const Duration(days: 7));
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
@@ -431,6 +434,7 @@ class _DealsScreenState extends State<DealsScreen> {
         imagesOnly: _imagesOnly,
         savingsOnly: _savingsOnly,
         hideSoldOut: _hideSoldOut,
+        recentlyAddedAfter: _recentlyAddedOnly ? _recentlyAddedAfter : null,
         category: _category,
         foodSubcategory: _foodSubcategory,
       ),
@@ -946,20 +950,36 @@ class _DealsScreenState extends State<DealsScreen> {
                     ],
                   ),
           ),
-          CheckboxListTile(
-            key: const Key('hide-sold-out-filter'),
-            dense: true,
-            contentPadding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text(
-              'Hide sold out',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  key: const Key('hide-sold-out-filter'),
+                  label: const Text('Hide sold out'),
+                  selected: _hideSoldOut,
+                  selectedColor: TS.yellow.withValues(alpha: 0.3),
+                  side: BorderSide(color: TS.lineSoftOf(context)),
+                  onSelected: (value) => setState(() {
+                    _hideSoldOut = value;
+                    _page = 0;
+                  }),
+                ),
+                FilterChip(
+                  key: const Key('recently-added-filter'),
+                  label: const Text('Recently added · 7 days'),
+                  selected: _recentlyAddedOnly,
+                  selectedColor: TS.yellow.withValues(alpha: 0.3),
+                  side: BorderSide(color: TS.lineSoftOf(context)),
+                  onSelected: (value) => setState(() {
+                    _recentlyAddedOnly = value;
+                    _page = 0;
+                  }),
+                ),
+              ],
             ),
-            value: _hideSoldOut,
-            onChanged: (value) => setState(() {
-              _hideSoldOut = value ?? false;
-              _page = 0;
-            }),
           ),
         ],
       ),

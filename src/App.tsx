@@ -6002,6 +6002,11 @@ function DiscoveryPanel({
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
   const [hideSoldOut, setHideSoldOut] = useState(false)
+  const [recentlyAddedOnly, setRecentlyAddedOnly] = useState(false)
+  const recentlyAddedAfter = useMemo(
+    () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000).toISOString(),
+    [],
+  )
   const [category, setCategory] = useState<DealCategory | 'all'>('all')
   const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
   const sharedCatalogueId = typeof window === 'undefined'
@@ -6017,6 +6022,7 @@ function DiscoveryPanel({
       hideSoldOut,
       imagesOnly,
       query: debouncedDealQuery,
+      recentlyAddedAfter: recentlyAddedOnly ? recentlyAddedAfter : undefined,
       retailerId,
       savingsOnly,
       sourceLabel,
@@ -6028,6 +6034,8 @@ function DiscoveryPanel({
       foodSubcategory,
       hideSoldOut,
       imagesOnly,
+      recentlyAddedAfter,
+      recentlyAddedOnly,
       retailerId,
       savingsOnly,
       sourceLabel,
@@ -6081,6 +6089,7 @@ function DiscoveryPanel({
       imagesOnly,
       savingsOnly,
       hideSoldOut,
+      recentlyAddedOnly,
       category,
       foodSubcategory,
     ],
@@ -6191,6 +6200,14 @@ function DiscoveryPanel({
             <label className="deal-filter-check">
               <input checked={hideSoldOut} onChange={(event) => setHideSoldOut(event.target.checked)} type="checkbox" />
               Hide sold out
+            </label>
+            <label className="deal-filter-check">
+              <input
+                checked={recentlyAddedOnly}
+                onChange={(event) => setRecentlyAddedOnly(event.target.checked)}
+                type="checkbox"
+              />
+              Recently added (last 7 days)
             </label>
           </div>
         </details>
