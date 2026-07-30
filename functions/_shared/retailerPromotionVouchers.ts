@@ -42,11 +42,33 @@ const STORE_URL: Record<string, string> = {
   shoprite: 'https://www.shoprite.co.za',
 }
 
+/**
+ * One term is one subrequest, and a Worker invocation on the free plan gets
+ * fifty of them for every lane it runs — not just this one. Each run takes a
+ * slice of the basket and the next run takes the following slice, so the
+ * whole basket is still covered across the hourly schedule.
+ */
+const MAX_TERMS_PER_RUN = 6
+
 export interface PromotionSweepInput {
   capturedAt: string
   fetchImpl?: typeof fetch
+  /** Which slice of the basket to sweep. Defaults to rotating by the hour. */
+  rotation?: number
   retailerId: string
   terms: readonly string[]
+}
+
+export function termsForRun(
+  terms: readonly string[],
+  rotation: number,
+  size = MAX_TERMS_PER_RUN,
+): string[] {
+  if (terms.length <= size) return [...terms]
+  const start = (Math.abs(Math.trunc(rotation)) * size) % terms.length
+  const slice = terms.slice(start, start + size)
+  // Wrap around so the last slice is full rather than short.
+  return slice.length === size ? slice : [...slice, ...terms.slice(0, size - slice.length)]
 }
 
 export async function sweepRetailerPromotions(
@@ -55,8 +77,9 @@ export async function sweepRetailerPromotions(
   const fetchImpl = input.fetchImpl ?? fetch
   const found: VoucherCandidate[] = []
   const seen = new Set<string>()
+  const rotation = input.rotation ?? Math.floor(Date.parse(input.capturedAt) / 3_600_000)
 
-  for (const term of input.terms) {
+  for (const term of termsForRun(input.terms, rotation)) {
     const request = buildKnownProductSearchRequest(input.retailerId, term)
     if (!request) continue
 

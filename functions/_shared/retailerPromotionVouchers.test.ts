@@ -1,7 +1,41 @@
 import { describe, expect, it } from 'vitest'
-import { parsePromotionVouchers } from './retailerPromotionVouchers'
+import {
+  STAPLE_SWEEP_TERMS,
+  parsePromotionVouchers,
+  termsForRun,
+} from './retailerPromotionVouchers'
 
 const CAPTURED_AT = '2026-07-31T08:00:00.000Z'
+
+describe('staying inside the Worker subrequest budget', () => {
+  it('sweeps a slice of the basket per run, not the whole thing', () => {
+    // One term is one subrequest, and a free-plan invocation gets fifty for
+    // every lane it runs. Twenty terms across three retailers would be sixty.
+    expect(termsForRun(STAPLE_SWEEP_TERMS, 0)).toHaveLength(6)
+    expect(STAPLE_SWEEP_TERMS.length).toBeGreaterThan(6)
+  })
+
+  it('moves to the next slice on the next run', () => {
+    expect(termsForRun(STAPLE_SWEEP_TERMS, 1))
+      .not.toEqual(termsForRun(STAPLE_SWEEP_TERMS, 0))
+  })
+
+  it('covers the whole basket as the rotation comes round', () => {
+    const covered = new Set<string>()
+    for (let run = 0; run < 24; run += 1) {
+      for (const term of termsForRun(STAPLE_SWEEP_TERMS, run)) covered.add(term)
+    }
+    expect([...covered].sort()).toEqual([...STAPLE_SWEEP_TERMS].sort())
+  })
+
+  it('wraps to a full slice rather than a short one at the end', () => {
+    expect(termsForRun(['a', 'b', 'c', 'd', 'e'], 1, 3)).toEqual(['d', 'e', 'a'])
+  })
+
+  it('takes everything when the basket already fits', () => {
+    expect(termsForRun(['a', 'b'], 7)).toEqual(['a', 'b'])
+  })
+})
 
 describe('Pick n Pay Smart Shopper promotions', () => {
   const payload = {
