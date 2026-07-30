@@ -10,6 +10,9 @@ const OFFICIAL_VOUCHER_HOSTS: Record<string, readonly string[]> = {
   'amazon-za': ['amazon.co.za'],
   boxer: ['boxer.co.za'],
   builders: ['builders.co.za'],
+  checkers: ['checkers.co.za'],
+  'pick-n-pay': ['pnp.co.za'],
+  shoprite: ['shoprite.co.za'],
   woolworths: ['woolworths.co.za'],
 }
 

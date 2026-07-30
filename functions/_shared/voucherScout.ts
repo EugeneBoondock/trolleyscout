@@ -1,10 +1,14 @@
-import type { FeedCursor } from '../../src/services/retailerFeeds/types'
+﻿import type { FeedCursor } from '../../src/services/retailerFeeds/types'
 import {
   extractAmazonVoucherCandidates,
   extractPublicVoucherCandidates,
 } from '../../src/services/vouchers/voucherDiscovery'
 import type { VoucherCandidate } from '../../src/services/vouchers/types'
 import type { TrolleyScoutEnv } from './env'
+import {
+  STAPLE_SWEEP_TERMS,
+  sweepRetailerPromotions,
+} from './retailerPromotionVouchers'
 import {
   expireVouchers,
   readVoucherSourceCursor,
@@ -17,9 +21,11 @@ const DEFAULT_MAX_BODY_BYTES = 4_000_000
 const CURSOR_VERSION = 1
 
 export interface VoucherScoutSource {
-  parser: 'amazon' | 'public-code'
+  parser: 'amazon' | 'promotion-sweep' | 'public-code'
   retailerId: string
   sourceKey: string
+  /** Staple terms to sweep. Only read by the promotion-sweep parser. */
+  terms?: readonly string[]
   url: string
 }
 
@@ -46,34 +52,54 @@ export interface VoucherScoutSourceResult {
   written: number
 }
 
+/**
+ * Where real, redeemable South African vouchers come from.
+ *
+ * The loyalty sweeps lead because they are what shoppers actually redeem.
+ * Probing every official promo-code page we could find â€” Clicks, Zando,
+ * Yuppiechef, Faithful to Nature, NetFlorist, Superbalist, Loot, Takealot,
+ * Builders â€” produced not one public code between them, so a scanner pointed
+ * only at those pages left Amazon as the sole voucher in the app.
+ */
 export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   {
+    parser: 'promotion-sweep',
+    retailerId: 'pick-n-pay',
+    sourceKey: 'pick-n-pay::smart-shopper',
+    terms: STAPLE_SWEEP_TERMS,
+    url: 'https://www.pnp.co.za',
+  },
+  {
+    parser: 'promotion-sweep',
+    retailerId: 'checkers',
+    sourceKey: 'checkers::xtra-savings',
+    terms: STAPLE_SWEEP_TERMS,
+    url: 'https://www.checkers.co.za',
+  },
+  {
+    parser: 'promotion-sweep',
+    retailerId: 'shoprite',
+    sourceKey: 'shoprite::xtra-savings',
+    terms: STAPLE_SWEEP_TERMS,
+    url: 'https://www.shoprite.co.za',
+  },
+  {
     // /coupons now 301s to the deals collection; fetch the destination
-    // directly — it embeds the same clip-coupon product objects.
+    // directly â€” it embeds the same clip-coupon product objects.
     parser: 'amazon',
     retailerId: 'amazon-za',
     sourceKey: 'amazon-za::vouchers',
     url: 'https://www.amazon.co.za/deals?bubble-id=deals-collection-coupons',
   },
-  {
-    parser: 'public-code',
-    retailerId: 'woolworths',
-    sourceKey: 'woolworths::wrewards-vouchers',
-    url: 'https://www.woolworths.co.za/content/article/wrewards/vouchers/_/A-cmp204081',
-  },
-  // Boxer's "eCoupons" are purchasable gift money, not discounts — never a
+  // Boxer's "eCoupons" are purchasable gift money, not discounts â€” never a
   // voucher source.
   {
-    parser: 'public-code',
-    retailerId: 'builders',
-    sourceKey: 'builders::plus-vouchers',
-    url: 'https://www.builders.co.za/builders-plus',
-  },
-  {
+    // Kept because Yuppiechef does occasionally announce a code in prose;
+    // /specials.htm now 301s here, and following it lost the page body.
     parser: 'public-code',
     retailerId: 'yuppiechef',
-    sourceKey: 'yuppiechef::specials-codes',
-    url: 'https://www.yuppiechef.com/specials.htm',
+    sourceKey: 'yuppiechef::promotion-codes',
+    url: 'https://www.yuppiechef.com/promotions.htm',
   },
 ]
 
@@ -96,22 +122,21 @@ export async function runVoucherScout(
     const checkedAt = new Date().toISOString()
     try {
       const sourceUrl = validatedSourceUrl(source)
-      const html = await fetchVoucherSourceHtml(
-        source,
-        sourceUrl,
-        fetchImpl,
-        maxBodyBytes,
-        env.JINA_API_KEY,
-      )
-      const candidates = source.parser === 'amazon'
-        ? extractAmazonVoucherCandidates(html, checkedAt, 1_000)
-        : extractPublicVoucherCandidates({
+      const candidates = source.parser === 'promotion-sweep'
+        ? await sweepRetailerPromotions({
             capturedAt: checkedAt,
-            html,
-            limit: 1_000,
+            fetchImpl,
             retailerId: source.retailerId,
-            sourceUrl,
+            terms: source.terms ?? STAPLE_SWEEP_TERMS,
           })
+        : await scrapeVoucherCandidates(
+            source,
+            sourceUrl,
+            checkedAt,
+            fetchImpl,
+            maxBodyBytes,
+            env.JINA_API_KEY,
+          )
       const fingerprint = await candidateFingerprint(candidates)
       const storedCursor = await repository.readCursor(source.sourceKey)
       const offset = sourceOffset(storedCursor, fingerprint, candidates.length)
@@ -167,8 +192,34 @@ export async function runVoucherScout(
   return { expired, sources: results }
 }
 
+async function scrapeVoucherCandidates(
+  source: VoucherScoutSource,
+  sourceUrl: string,
+  capturedAt: string,
+  fetchImpl: typeof fetch,
+  maxBodyBytes: number,
+  jinaApiKey?: string,
+): Promise<VoucherCandidate[]> {
+  const html = await fetchVoucherSourceHtml(
+    source,
+    sourceUrl,
+    fetchImpl,
+    maxBodyBytes,
+    jinaApiKey,
+  )
+  return source.parser === 'amazon'
+    ? extractAmazonVoucherCandidates(html, capturedAt, 1_000)
+    : extractPublicVoucherCandidates({
+        capturedAt,
+        html,
+        limit: 1_000,
+        retailerId: source.retailerId,
+        sourceUrl,
+      })
+}
+
 // Fetches a voucher source page, falling back to the jina reader (asked for
-// raw HTML) when the retailer bot-walls direct fetches — Yuppiechef 403s the
+// raw HTML) when the retailer bot-walls direct fetches â€” Yuppiechef 403s the
 // honest crawler UA while serving the same public page to browsers.
 async function fetchVoucherSourceHtml(
   source: VoucherScoutSource,
@@ -288,6 +339,9 @@ function validatedSourceUrl(source: VoucherScoutSource) {
 const OFFICIAL_VOUCHER_ROOTS: Record<string, readonly string[]> = {
   'amazon-za': ['amazon.co.za'],
   builders: ['builders.co.za'],
+  checkers: ['checkers.co.za'],
+  'pick-n-pay': ['pnp.co.za'],
+  shoprite: ['shoprite.co.za'],
   woolworths: ['woolworths.co.za'],
   yuppiechef: ['yuppiechef.com'],
 }
@@ -374,3 +428,4 @@ function boundedBodyLimit(value: number) {
   }
   return value
 }
+

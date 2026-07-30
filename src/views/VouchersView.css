@@ -203,3 +203,10 @@
     align-self: flex-start;
   }
 }
+
+.voucher-redeem-hint {
+  color: var(--ts-ink-soft, #4a5568);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0;
+}
+

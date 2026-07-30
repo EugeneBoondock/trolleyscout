@@ -242,6 +242,7 @@ export function VouchersView({
                       </button>
                     </div>
                   )}
+                  <p className="voucher-redeem-hint">{redemptionHint(voucher)}</p>
                   <p className="voucher-terms">
                     {voucher.validTo
                       ? 'Valid until ' + formatDate(voucher.validTo)
@@ -282,6 +283,25 @@ export function VouchersView({
       )}
     </section>
   )
+}
+
+/**
+ * What the shopper actually has to do to get this price. A voucher they
+ * cannot work out how to redeem is not a voucher.
+ */
+function redemptionHint(voucher: Voucher) {
+  const retailer = cleanUiText(voucher.retailerId.replace(/-/g, ' '))
+
+  if (voucher.redemptionMode === 'loyalty') {
+    return `Scan your loyalty card at ${retailer} to get this price.`
+  }
+  if (voucher.redemptionMode === 'clip') {
+    return 'Open the product page and clip the coupon before you check out.'
+  }
+  if (voucher.redemptionMode === 'code' && voucher.code) {
+    return 'Enter this code at checkout.'
+  }
+  return 'The discount is applied automatically at checkout.'
 }
 
 function publicVoucherCode(voucher: Voucher) {
