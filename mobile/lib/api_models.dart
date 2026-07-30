@@ -1874,18 +1874,175 @@ class ScoutChatCatalogueCard {
       );
 }
 
+class ScoutGroceryPlanItem {
+  const ScoutGroceryPlanItem({
+    required this.assumption,
+    required this.group,
+    required this.id,
+    required this.lineTotalCents,
+    required this.lineTotalText,
+    required this.priceText,
+    required this.productUrl,
+    required this.quantity,
+    required this.retailerId,
+    required this.retailerName,
+    required this.sourceUrl,
+    required this.title,
+    required this.unitPriceCents,
+    this.imageUrl,
+    this.previousPriceText,
+    this.promotionText,
+  });
+
+  final String assumption;
+  final String group;
+  final String id;
+  final String? imageUrl;
+  final int lineTotalCents;
+  final String lineTotalText;
+  final String? previousPriceText;
+  final String priceText;
+  final String productUrl;
+  final String? promotionText;
+  final int quantity;
+  final String retailerId;
+  final String retailerName;
+  final String sourceUrl;
+  final String title;
+  final int unitPriceCents;
+
+  factory ScoutGroceryPlanItem.fromJson(Map<String, dynamic> json) =>
+      ScoutGroceryPlanItem(
+        assumption: _string(json['assumption']),
+        group: _string(json['group'], 'Grocery'),
+        id: _string(json['id']),
+        imageUrl: _optionalString(json['imageUrl']),
+        lineTotalCents: _int(json['lineTotalCents']),
+        lineTotalText: _string(json['lineTotalText']),
+        previousPriceText: _optionalString(json['previousPriceText']),
+        priceText: _string(json['priceText']),
+        productUrl: _string(json['productUrl']),
+        promotionText: _optionalString(json['promotionText']),
+        quantity: _int(json['quantity']).clamp(1, 99),
+        retailerId: _string(json['retailerId']),
+        retailerName: _string(json['retailerName'], 'Store'),
+        sourceUrl: _string(json['sourceUrl']),
+        title: _string(json['title'], 'Grocery item'),
+        unitPriceCents: _int(json['unitPriceCents']),
+      );
+
+  ScoutGroceryPlanItem copyWithQuantity(int value) => ScoutGroceryPlanItem(
+        assumption: assumption,
+        group: group,
+        id: id,
+        imageUrl: imageUrl,
+        lineTotalCents: unitPriceCents * value.clamp(1, 99),
+        lineTotalText: lineTotalText,
+        previousPriceText: previousPriceText,
+        priceText: priceText,
+        productUrl: productUrl,
+        promotionText: promotionText,
+        quantity: value.clamp(1, 99),
+        retailerId: retailerId,
+        retailerName: retailerName,
+        sourceUrl: sourceUrl,
+        title: title,
+        unitPriceCents: unitPriceCents,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'assumption': assumption,
+        'group': group,
+        'id': id,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        'lineTotalCents': unitPriceCents * quantity,
+        'lineTotalText': lineTotalText,
+        if (previousPriceText != null) 'previousPriceText': previousPriceText,
+        'priceText': priceText,
+        'productUrl': productUrl,
+        if (promotionText != null) 'promotionText': promotionText,
+        'quantity': quantity,
+        'retailerId': retailerId,
+        'retailerName': retailerName,
+        'sourceUrl': sourceUrl,
+        'title': title,
+        'unitPriceCents': unitPriceCents,
+      };
+}
+
+class ScoutGroceryPlan {
+  const ScoutGroceryPlan({
+    required this.assumptions,
+    required this.currencyCode,
+    required this.items,
+    required this.maxStores,
+    required this.missingItems,
+    required this.storeCount,
+    required this.subtotalCents,
+    required this.subtotalText,
+    required this.totalCents,
+    required this.totalText,
+    required this.tradeOffs,
+  });
+
+  final List<String> assumptions;
+  final String currencyCode;
+  final List<ScoutGroceryPlanItem> items;
+  final int maxStores;
+  final List<String> missingItems;
+  final int storeCount;
+  final int subtotalCents;
+  final String subtotalText;
+  final int totalCents;
+  final String totalText;
+  final List<String> tradeOffs;
+
+  factory ScoutGroceryPlan.fromJson(Map<String, dynamic> json) =>
+      ScoutGroceryPlan(
+        assumptions: _stringList(json['assumptions']),
+        currencyCode: _string(json['currencyCode'], 'ZAR'),
+        items: _mapList(json['items'])
+            .map(ScoutGroceryPlanItem.fromJson)
+            .toList(growable: false),
+        maxStores: _int(json['maxStores']),
+        missingItems: _stringList(json['missingItems']),
+        storeCount: _int(json['storeCount']),
+        subtotalCents: _int(json['subtotalCents']),
+        subtotalText: _string(json['subtotalText']),
+        totalCents: _int(json['totalCents']),
+        totalText: _string(json['totalText']),
+        tradeOffs: _stringList(json['tradeOffs']),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'assumptions': assumptions,
+        'currencyCode': currencyCode,
+        'items': items.map((item) => item.toJson()).toList(growable: false),
+        'maxStores': maxStores,
+        'missingItems': missingItems,
+        'storeCount': storeCount,
+        'subtotalCents': subtotalCents,
+        'subtotalText': subtotalText,
+        'totalCents': totalCents,
+        'totalText': totalText,
+        'tradeOffs': tradeOffs,
+      };
+}
+
 class ScoutChatAnswer {
   const ScoutChatAnswer({
     required this.reply,
     this.deals = const [],
     this.catalogues = const [],
     this.followUps = const [],
+    this.groceryPlan,
   });
 
   final String reply;
   final List<ScoutChatDealCard> deals;
   final List<ScoutChatCatalogueCard> catalogues;
   final List<String> followUps;
+  final ScoutGroceryPlan? groceryPlan;
 
   factory ScoutChatAnswer.fromJson(Map<String, dynamic> json) =>
       ScoutChatAnswer(
@@ -1900,6 +2057,9 @@ class ScoutChatAnswer {
             .map(ScoutChatCatalogueCard.fromJson)
             .toList(growable: false),
         followUps: _stringList(json['followUps']),
+        groceryPlan: json['groceryPlan'] is Map
+            ? ScoutGroceryPlan.fromJson(_mapOrEmpty(json['groceryPlan']))
+            : null,
       );
 }
 

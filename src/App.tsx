@@ -142,6 +142,7 @@ import type {
   AdminOverview,
   CountryContext,
   CountryOption,
+  ScoutGroceryPlanItem,
   StoreLeaflet,
   VerifiedOffer,
 } from './types'
@@ -156,10 +157,14 @@ import type {
 } from './services/apiClient'
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
-import { filterDiscoveryDeals } from './services/dealFilters'
+import {
+  createDealSearchIndex,
+  filterIndexedDiscoveryDeals,
+} from './services/dealFilters'
 import { buildRetailerPickerOptions } from './services/retailerOptions'
 import {
   groupLeafletsByRetailer,
+  type CatalogueSort,
 } from './services/catalogueOrdering'
 import { selectCurrentCatalogues } from './services/catalogueSelection'
 import {
@@ -364,6 +369,7 @@ function App() {
   const hasLoadedDiscoveryRef = useRef(false)
   const hasLoadedFullDiscoveryRef = useRef(false)
   const discoveryCountryRef = useRef('')
+  const discoveryRequestRef = useRef(0)
   const [scannerDraft, setScannerDraft] = useState<OfferDraft>(() => createBlankDraft())
   const [scannerResult, setScannerResult] = useState<ResourceState<OfferValidationResult> | undefined>()
   const [isScanning, setIsScanning] = useState(false)
@@ -673,6 +679,8 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController()
+    const requestId = discoveryRequestRef.current + 1
+    discoveryRequestRef.current = requestId
 
     if (!discoveryVisible) {
       return () => controller.abort()
@@ -701,6 +709,9 @@ function App() {
 
     loadDiscovery(controller.signal, { forceLive, summary: isDashboardOnly })
       .then((state) => {
+        if (controller.signal.aborted || discoveryRequestRef.current !== requestId) {
+          return
+        }
         hasLoadedDiscoveryRef.current = true
         if (!isDashboardOnly) {
           hasLoadedFullDiscoveryRef.current = true
@@ -718,7 +729,11 @@ function App() {
           return
         }
       })
-      .finally(() => setIsDiscovering(false))
+      .finally(() => {
+        if (discoveryRequestRef.current === requestId) {
+          setIsDiscovering(false)
+        }
+      })
 
     return () => controller.abort()
   }, [activeCountryCode, discoveryKey, discoveryVisible, activeView, memberView])
@@ -904,7 +919,10 @@ function App() {
     }
   }
 
-  async function addDiscoveredDealToBasket(deal: DiscoveredDeal) {
+  async function addDiscoveredDealToBasket(
+    deal: DiscoveredDeal,
+    quantity = 1,
+  ) {
     if (!memberSession.isAuthenticated) {
       setMemberMode(true)
       setMemberNotice('Log in before adding a deal to your basket.')
@@ -931,6 +949,7 @@ function App() {
 
       const basketResult = await addBasketItemForMember({
         savedDealId: savedResult.data.savedDeal.id,
+        quantity,
       })
       setBasketState({
         data: { basket: basketResult.data.basket },
@@ -1921,7 +1940,7 @@ function MemberShell({
   memberState: ResourceState<MemberResource>
   offerState: ResourceState<OfferResource>
   onAddToBasket: (savedDealId: string) => void
-  onAddDealToBasket: (deal: DiscoveredDeal) => void
+  onAddDealToBasket: (deal: DiscoveredDeal, quantity?: number) => void
   onClaimVoucher: (voucherId: string) => void | Promise<void>
   onCancelScheduledChange: () => void
   onCheckout: (planId: MemberPlanId, billingCycle: BillingCycle) => Promise<void>
@@ -2062,7 +2081,10 @@ function MemberShell({
 
         {activeView === 'chat' && (
           <LazyView label="Opening Mr Scout">
-            <ScoutChatView />
+            <ScoutChatView
+              onTransferItem={(item) =>
+                onAddDealToBasket(groceryItemToDiscoveredDeal(item), item.quantity)}
+            />
           </LazyView>
         )}
 
@@ -4828,8 +4850,20 @@ function CatalogueGroupsBoard({
   initialCatalogueId?: string
   leaflets: StoreLeaflet[]
 }) {
-  const groups = groupLeafletsByRetailer(leaflets)
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
+  const [catalogueQuery, setCatalogueQuery] = useState('')
+  const [catalogueSort, setCatalogueSort] = useState<CatalogueSort>('latest')
+  const filteredLeaflets = useMemo(() => {
+    const query = catalogueQuery.normalize('NFKC').trim().toLowerCase()
+    if (!query) return leaflets
+    return leaflets.filter((leaflet) =>
+      `${leaflet.retailerName} ${leaflet.name}`.normalize('NFKC').toLowerCase().includes(query),
+    )
+  }, [catalogueQuery, leaflets])
+  const groups = useMemo(
+    () => groupLeafletsByRetailer(filteredLeaflets, catalogueSort),
+    [catalogueSort, filteredLeaflets],
+  )
 
   useEffect(() => {
     if (!initialCatalogueId || openLeaflet) return
@@ -4837,7 +4871,7 @@ function CatalogueGroupsBoard({
     if (shared) setOpenLeaflet(shared)
   }, [initialCatalogueId, leaflets, openLeaflet])
 
-  if (groups.length === 0) {
+  if (leaflets.length === 0) {
     return (
       <div className="discovery-empty">
         <Storefront size={46} />
@@ -4856,11 +4890,47 @@ function CatalogueGroupsBoard({
           <h3>Current catalogues</h3>
           <p>Open a cover to read every available page in order.</p>
         </div>
-        <span>{leaflets.length} available</span>
+        <span>
+          {filteredLeaflets.length === leaflets.length
+            ? `${leaflets.length} available`
+            : `${filteredLeaflets.length} of ${leaflets.length}`}
+        </span>
       </header>
 
-      <div className="catalogue-store-list">
-        {groups.map((group) => (
+      <div className="catalogue-controls" aria-label="Catalogue filters">
+        <label>
+          Search catalogues
+          <input
+            onChange={(event) => setCatalogueQuery(event.target.value)}
+            placeholder="Store or catalogue name"
+            type="search"
+            value={catalogueQuery}
+          />
+        </label>
+        <label>
+          Sort catalogues
+          <select
+            onChange={(event) => setCatalogueSort(event.target.value as CatalogueSort)}
+            value={catalogueSort}
+          >
+            <option value="latest">Latest</option>
+            <option value="oldest">Oldest</option>
+            <option value="store">Store name</option>
+          </select>
+        </label>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="discovery-empty" role="status">
+          <MagnifyingGlass size={42} />
+          <h3>No catalogues match “{catalogueQuery.trim()}”</h3>
+          <button className="ghost-button" onClick={() => setCatalogueQuery('')} type="button">
+            Clear catalogue search
+          </button>
+        </div>
+      ) : (
+        <div className="catalogue-store-list">
+          {groups.map((group) => (
           <section
             aria-labelledby={`catalogue-store-${group.retailerId}`}
             className="catalogue-store-section"
@@ -4921,8 +4991,9 @@ function CatalogueGroupsBoard({
               })}
             </div>
           </section>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {openLeaflet && (
         <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
@@ -5881,8 +5952,18 @@ function DiscoveryPanel({
   state: ResourceState<DiscoveryResource>
 }) {
   const discovery = state.data.discovery
-  const allDeals = sortDealsByPage(discovery.deals)
-  const leaflets = selectCurrentCatalogues(discovery.leaflets ?? [])
+  const allDeals = useMemo(
+    () => sortDealsByPage(discovery.deals),
+    [discovery.deals],
+  )
+  const dealIndex = useMemo(
+    () => createDealSearchIndex(allDeals),
+    [allDeals],
+  )
+  const leaflets = useMemo(
+    () => selectCurrentCatalogues(discovery.leaflets ?? []),
+    [discovery.leaflets],
+  )
   const access = discovery.access
   const accessIsLimited = Boolean(
     access &&
@@ -5892,6 +5973,8 @@ function DiscoveryPanel({
     ),
   )
   const [dealQuery, setDealQuery] = useState(initialFilter?.query ?? '')
+  const debouncedDealQuery = useDebouncedValue(dealQuery, 220)
+  const isSearchPending = dealQuery !== debouncedDealQuery
   const [watchNotice, setWatchNotice] = useState('')
   const [isWatching, setIsWatching] = useState(false)
   const [previewDeal, setPreviewDeal] = useState<DiscoveredDeal>()
@@ -5927,30 +6010,58 @@ function DiscoveryPanel({
   const [activeTab, setActiveTab] = useState<'deals' | 'catalogues'>(
     sharedCatalogueId ? 'catalogues' : 'deals',
   )
-  const deals = filterDiscoveryDeals(allDeals, {
-    category,
-    foodSubcategory,
-    hideSoldOut,
-    imagesOnly,
-    query: dealQuery,
-    retailerId,
-    savingsOnly,
-    sourceLabel,
-  })
-  const retailers = buildRetailerPickerOptions(allDeals, leaflets, retailerCatalog)
-  const sourceLabels = Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort()
-  const catalogueRetailerCount = new Set(
-    leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
-  ).size
+  const deals = useMemo(
+    () => filterIndexedDiscoveryDeals(dealIndex, {
+      category,
+      foodSubcategory,
+      hideSoldOut,
+      imagesOnly,
+      query: debouncedDealQuery,
+      retailerId,
+      savingsOnly,
+      sourceLabel,
+    }),
+    [
+      category,
+      dealIndex,
+      debouncedDealQuery,
+      foodSubcategory,
+      hideSoldOut,
+      imagesOnly,
+      retailerId,
+      savingsOnly,
+      sourceLabel,
+    ],
+  )
+  const retailers = useMemo(
+    () => buildRetailerPickerOptions(allDeals, leaflets, retailerCatalog),
+    [allDeals, leaflets, retailerCatalog],
+  )
+  const sourceLabels = useMemo(
+    () => Array.from(new Set(allDeals.map((deal) => deal.sourceLabel))).sort(),
+    [allDeals],
+  )
+  const catalogueRetailerCount = useMemo(
+    () => new Set(
+      leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
+    ).size,
+    [leaflets],
+  )
 
   const dealsPerPage = 24
   const [page, setPage] = useState(0)
   const isSample = sampleLimit != null
   const pageCount = Math.max(1, Math.ceil(deals.length / dealsPerPage))
   const safePage = Math.min(page, pageCount - 1)
-  const pagedDeals = deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage)
+  const pagedDeals = useMemo(
+    () => deals.slice(safePage * dealsPerPage, safePage * dealsPerPage + dealsPerPage),
+    [deals, safePage],
+  )
   // Logged-out sample: show only the first N, never the pager.
-  const shownDeals = isSample ? deals.slice(0, sampleLimit) : pagedDeals
+  const shownDeals = useMemo(
+    () => isSample ? deals.slice(0, sampleLimit) : pagedDeals,
+    [deals, isSample, pagedDeals, sampleLimit],
+  )
   const reportedImpressions = useRef(new Set<string>())
 
   useEffect(() => {
@@ -5964,7 +6075,7 @@ function DiscoveryPanel({
   useEffect(
     () => setPage(0),
     [
-      dealQuery,
+      debouncedDealQuery,
       retailerId,
       sourceLabel,
       imagesOnly,
@@ -6046,6 +6157,7 @@ function DiscoveryPanel({
             type="search"
             value={dealQuery}
           />
+          {isSearchPending && <small aria-live="polite">Updating results…</small>}
         </label>
         <details className="advanced-deal-filters">
           <summary>Advanced filters</summary>
@@ -6127,7 +6239,7 @@ function DiscoveryPanel({
       )}
 
       {deals.length > 0 ? (
-        <div className="discovery-deal-list">
+        <div className="discovery-deal-list" aria-busy={isSearchPending}>
           {shownDeals.map((deal) => (
             <article className="discovery-deal-row" key={deal.id}>
               <div className="discovery-deal-main">
@@ -6315,6 +6427,17 @@ function DiscoveryPanel({
 
     </section>
   )
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(timeout)
+  }, [delayMs, value])
+
+  return debouncedValue
 }
 
 function memberPlanLabel(planId: MemberPlanId): string {
@@ -6811,6 +6934,24 @@ function getPreferredTheme(): ThemeMode {
   }
 
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function groceryItemToDiscoveredDeal(item: ScoutGroceryPlanItem): DiscoveredDeal {
+  return {
+    capturedAt: new Date().toISOString(),
+    evidenceText: item.assumption,
+    id: item.id,
+    imageUrl: item.imageUrl,
+    priceText: item.priceText,
+    previousPriceText: item.previousPriceText,
+    productUrl: item.productUrl,
+    retailerId: item.retailerId,
+    retailerName: item.retailerName,
+    savingText: item.promotionText,
+    sourceLabel: 'Mr Scout grocery plan',
+    sourceUrl: item.sourceUrl,
+    title: item.title,
+  }
 }
 
 function createBlankDraft(): OfferDraft {

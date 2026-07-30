@@ -6,6 +6,7 @@ import {
   MAX_COMMON_COMMERCE_DEALS,
   MAX_COMMON_COMMERCE_PAGES,
   MAX_COMMON_COMMERCE_PAGE_SIZE,
+  MAX_WOOCOMMERCE_PAGE_SIZE,
   buildCommonCommerceDealsRequest,
   buildMagentoDealsRequest,
   buildShopifyDealsRequest,
@@ -57,6 +58,10 @@ describe('detectCommonCommercePlatform', () => {
 })
 
 describe('public request descriptors', () => {
+  it('can inspect ten bounded pages for large verified sale catalogues', () => {
+    expect(MAX_COMMON_COMMERCE_PAGES).toBeGreaterThanOrEqual(10)
+  })
+
   it('builds a bounded Shopify products request on the verified store origin', () => {
     const request = buildShopifyDealsRequest(`${STORE_ORIGIN}/specials`, 5_000)
 
@@ -78,6 +83,11 @@ describe('public request descriptors', () => {
     expect(url.searchParams.get('on_sale')).toBe('true')
     expect(url.searchParams.get('per_page')).toBe('24')
     expect(url.searchParams.get('page')).toBe('1')
+  })
+
+  it('keeps WooCommerce requests within its public API page ceiling', () => {
+    const url = new URL(buildWooCommerceDealsRequest(STORE_ORIGIN, 250)?.url ?? '')
+    expect(url.searchParams.get('per_page')).toBe(String(MAX_WOOCOMMERCE_PAGE_SIZE))
   })
 
   it('builds a bounded Magento GraphQL POST request', () => {

@@ -44,6 +44,40 @@ void main() {
     expect(catalogues.map((item) => item.name), ['B', 'A']);
   });
 
+  test('supports oldest and store-name ordering', () {
+    const catalogues = [
+      Catalogue(
+        name: 'Zulu latest',
+        retailerName: 'Zulu',
+        url: 'https://zulu.example/latest',
+        validFrom: '2026-07-20',
+      ),
+      Catalogue(
+        name: 'Alpha oldest',
+        retailerName: 'Alpha',
+        url: 'https://alpha.example/oldest',
+        validFrom: '2026-07-01',
+      ),
+      Catalogue(
+        name: 'Bravo middle',
+        retailerName: 'Bravo',
+        url: 'https://bravo.example/middle',
+        validFrom: '2026-07-10',
+      ),
+    ];
+
+    expect(
+      sortCatalogues(catalogues, CatalogueSort.oldest)
+          .map((item) => item.name),
+      ['Alpha oldest', 'Bravo middle', 'Zulu latest'],
+    );
+    expect(
+      sortCatalogues(catalogues, CatalogueSort.store)
+          .map((item) => item.name),
+      ['Alpha oldest', 'Bravo middle', 'Zulu latest'],
+    );
+  });
+
   test('uses capture time when start dates match', () {
     const catalogues = [
       Catalogue(

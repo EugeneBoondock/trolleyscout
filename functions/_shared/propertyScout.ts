@@ -1,19 +1,11 @@
-// Network + cache layer for Properties Scout.
+// Network and cache layer for Properties Scout.
 //
-// SA property portals serve listings as server-rendered HTML and many block
-// Cloudflare datacenter IPs (a bot challenge comes back as HTTP 200 with no
-// listings). So we:
-//   1. Resolve the shopper's text / "near me" coordinates to a location WITHOUT
-//      calling bot-blocked autocompletes — via a baked-in catalogue
-//      (saPropertyLocations), falling back to the full Property24 catalogue
-//      (fetched through the r.jina.ai reader, cached) for long-tail suburbs.
-//   2. Fan out across every portal adapter (propertyAdapters) that can address
-//      the location, fetching each results page directly first and re-fetching
-//      through the reader proxy whenever a fetch yields zero listings.
-// Results are cached per portal/type/location/page in D1.
+// SA property portals serve listings as server-rendered HTML and some return a
+// challenge page to datacenter traffic. Result pages are fetched directly in
+// bounded batches and cached per portal, type, location, and page in D1.
 
 import {
-  PROPERTY24_AUTOCOMPLETE_URL,
+  dedupePropertyListings,
   filterAndSortListings,
   filterListingsByLocation,
   interleaveByPortal,
@@ -24,6 +16,7 @@ import {
   parseMyroofPlaces,
   parsePrivatePropertyShapes,
   parseProperty24LocationCatalog,
+  parseProperty24SitemapLocations,
   resolveProperty24Location,
   resolveProperty24Province,
   slug,
@@ -54,11 +47,21 @@ const BROWSER_UA =
 const FETCH_TIMEOUT_MS = 12_000
 const MAX_PER_PORTAL = 40
 const MAX_BODY_BYTES = 2_800_000
-const P24_CATALOG_KEY = '__p24_locations__'
+const PROPERTY_CATALOG_MAX_BODY_BYTES = 4_000_000
+const P24_CATALOG_KEY = '__p24_sitemap_locations_v1__'
+const P24_CITY_SITEMAP =
+  'https://www.property24.com/sitemap/Cities?SearchType=ForSale'
+const P24_SUBURB_SITEMAP =
+  'https://www.property24.com/sitemap/Suburbs?SearchType=ForSale'
 const P24_CATALOG_STALE_MS = 7 * 24 * 60 * 60 * 1000
 const SEARCH_STALE_MS = 3 * 60 * 60 * 1000
 const MIN_HEALTHY_PORTAL_RESULTS = 10
 const SEARCH_CACHE_PREFIX = 'property-search-v2'
+const PORTAL_SEARCH_CONCURRENCY = 5
+const READER_ALLOWED_HOSTS = new Set([
+  'www.privateproperty.co.za',
+  'www.property24.com',
+])
 
 interface PropertyCacheRow {
   cache_key: string
@@ -101,15 +104,18 @@ async function timedFetch(url: string, headers: Record<string, string>): Promise
   }
 }
 
-async function fetchDirect(url: string): Promise<string | undefined> {
+async function fetchDirect(
+  url: string,
+  maxBytes = MAX_BODY_BYTES,
+): Promise<string | undefined> {
   const response = await timedFetch(url, { 'user-agent': BROWSER_UA, accept: 'text/html' })
   if (!response?.ok) return undefined
-  const body = (await response.text()).slice(0, MAX_BODY_BYTES)
+  const body = (await response.text()).slice(0, maxBytes)
   return body.length > 0 ? body : undefined
 }
 
-// The r.jina.ai reader fetches from its own network (not Cloudflare's), so it
-// slips past the portals' datacenter-IP blocks. 'html' returns raw HTML.
+// Reader fallback is reserved for public result pages on hosts whose current
+// robots policy allows those paths.
 async function fetchViaReader(
   url: string,
   jinaApiKey: string | undefined,
@@ -136,7 +142,7 @@ async function fetchAndParse(
 ): Promise<PropertyListing[]> {
   const direct = await fetchDirect(url)
   let listings = direct ? parse(direct) : []
-  if (shouldUsePropertyReader(listings.length)) {
+  if (shouldUsePropertyReader(listings.length) && propertyReaderAllowed(url)) {
     const proxied = await fetchViaReader(url, env.JINA_API_KEY, 'html')
     if (proxied) {
       const proxiedListings = parse(proxied)
@@ -210,15 +216,16 @@ async function getProperty24Catalog(env: TrolleyScoutEnv) {
     const parsed = parseProperty24LocationCatalog(safeJson(cached!.payload_json))
     if (parsed.length > 0) return parsed
   }
-  let text = await fetchDirect(PROPERTY24_AUTOCOMPLETE_URL)
-  let payload = safeJson(text)
-  if (!payload) {
-    text = await fetchViaReader(PROPERTY24_AUTOCOMPLETE_URL, env.JINA_API_KEY, 'text')
-    payload = safeJson(text)
-  }
-  const catalog = payload ? parseProperty24LocationCatalog(payload) : []
+  const [cities, suburbs] = await Promise.all([
+    fetchDirect(P24_CITY_SITEMAP, PROPERTY_CATALOG_MAX_BODY_BYTES),
+    fetchDirect(P24_SUBURB_SITEMAP, PROPERTY_CATALOG_MAX_BODY_BYTES),
+  ])
+  const catalog = [
+    ...parseProperty24SitemapLocations(cities ?? ''),
+    ...parseProperty24SitemapLocations(suburbs ?? ''),
+  ]
   if (catalog.length > 0) {
-    await writeCache(env, P24_CATALOG_KEY, payload, catalog.length)
+    await writeCache(env, P24_CATALOG_KEY, catalog, catalog.length)
     return catalog
   }
   return cached ? parseProperty24LocationCatalog(safeJson(cached.payload_json)) : []
@@ -241,11 +248,13 @@ const MYROOF_PLACES_KEY = '__myroof_places__'
 const PP_CITIES_KEY = '__pp_places_v2__'
 const LOC_STALE_MS = 7 * 24 * 60 * 60 * 1000
 
-// Fetch text direct-first, then via the reader proxy (portals block CF IPs).
+// Fetch text directly, using the same policy-gated reader fallback as results.
 async function fetchResolving(env: TrolleyScoutEnv, url: string, format: 'html' | 'text'): Promise<string | undefined> {
   const direct = await fetchDirect(url)
   if (direct && direct.length > 100) return direct
-  return fetchViaReader(url, env.JINA_API_KEY, format)
+  return propertyReaderAllowed(url)
+    ? fetchViaReader(url, env.JINA_API_KEY, format)
+    : undefined
 }
 
 async function resolvePamGoldingId(env: TrolleyScoutEnv, query: string): Promise<number | undefined> {
@@ -258,8 +267,10 @@ async function resolvePamGoldingId(env: TrolleyScoutEnv, query: string): Promise
     if (p && typeof p.id === 'number') return p.id
   }
   const url = `${PG_AUTOCOMPLETE}${encodeURIComponent(q)}`
-  let parsed = parsePamGoldingAutocomplete(safeJson(await fetchResolving(env, url, 'text')), q)
-  if (!parsed) parsed = parsePamGoldingAutocomplete(safeJson(await fetchViaReader(url, env.JINA_API_KEY, 'text')), q)
+  const parsed = parsePamGoldingAutocomplete(
+    safeJson(await fetchResolving(env, url, 'text')),
+    q,
+  )
   if (parsed) {
     await writeCache(env, key, { id: parsed.id, path: parsed.path }, 1)
     return parsed.id
@@ -455,9 +466,23 @@ export function selectNearMeLocation(
 }
 
 export function preferredPortalPages(portalId: string, requestedPage: number): number[] {
-  return requestedPage === 1 && (portalId === 'property24' || portalId === 'privateproperty')
-    ? [1, 2, 3]
-    : [requestedPage]
+  if (requestedPage !== 1) return [requestedPage]
+  if (portalId === 'property24' || portalId === 'privateproperty') {
+    return [1, 2, 3]
+  }
+  if ([
+    'chaseveritt',
+    'gumtree',
+    'harcourts',
+    'jawitz',
+    'pamgolding',
+    'rawson',
+    'sahometraders',
+    'seeff',
+  ].includes(portalId)) {
+    return [1, 2]
+  }
+  return [1]
 }
 
 export function propertySearchCacheKey(
@@ -499,6 +524,43 @@ export function propertyAreaTerms(
   return terms
 }
 
+function propertyReaderAllowed(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return READER_ALLOWED_HOSTS.has(url.hostname.toLowerCase()) &&
+      !/\/(?:autocomplete|login|signup|services|portal\/account)/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
+async function mapSettledWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results = new Array<PromiseSettledResult<R>>(items.length)
+  let cursor = 0
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      try {
+        results[index] = {
+          status: 'fulfilled',
+          value: await worker(items[index], index),
+        }
+      } catch (reason) {
+        results[index] = { reason, status: 'rejected' }
+      }
+    }
+  }))
+
+  return results
+}
+
 export async function searchProperties(
   env: TrolleyScoutEnv,
   params: PropertySearchParams,
@@ -535,8 +597,10 @@ export async function searchProperties(
     resolved.preferredName,
   )
   const locKey = `${slug(loc.name)}|${slug(loc.province)}`
-  const settled = await Promise.allSettled(
-    PORTAL_ADAPTERS.map(async (adapter) => {
+  const settled = await mapSettledWithConcurrency(
+    PORTAL_ADAPTERS,
+    PORTAL_SEARCH_CONCURRENCY,
+    async (adapter) => {
       const results = await Promise.all(preferredPortalPages(adapter.id, page).map(async (portalPage) => {
         const url = adapter.buildUrl(loc!, params.listingType, portalPage)
         if (!url) return { listings: [] as PropertyListing[], ok: false }
@@ -556,7 +620,7 @@ export async function searchProperties(
         ok: results.some((result) => result.ok),
         portal: adapter,
       }
-    }),
+    },
   )
 
   const grouped: PropertyListing[][] = []
@@ -582,10 +646,14 @@ export async function searchProperties(
     minBeds: params.minBeds,
     sort: params.sort ?? 'relevance',
   }
-  const combined =
+  const merged =
     filters.sort && filters.sort !== 'relevance'
-      ? filterAndSortListings(grouped.flat(), filters)
-      : filterAndSortListings(interleaveByPortal(grouped), filters)
+      ? grouped.flat()
+      : interleaveByPortal(grouped)
+  const combined = filterAndSortListings(
+    dedupePropertyListings(merged),
+    filters,
+  )
 
   return {
     listings: combined,

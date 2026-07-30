@@ -96,6 +96,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
 
   List<ScrollDeal> _deals = const [];
   int? _dealAccessLimit;
+  bool _dealAccessLimited = false;
   final Set<String> _seenThisVisit = {};
   Set<String> _saved = {};
   // Global save counts per deal id, so the reel shows "N saves".
@@ -464,6 +465,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   Future<List<ScrollDeal>> _discoveryDeals({bool forceLive = false}) async {
     final result = await _loadStoredDiscovery(forceLive: forceLive);
     _dealAccessLimit = result.access?.dealLimit;
+    _dealAccessLimited = result.access?.dealsLimited ?? false;
     return result.deals
         .where((d) => d.imageUrl != null)
         .map(ScrollDeal.fromDeal)
@@ -870,6 +872,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
     if (_deals.isEmpty) {
       if (_caughtUp) {
         return _CaughtUpState(
+          limited: _dealAccessLimited,
           onRefresh: _refresh,
           onOpenSaved: _openSaved,
         );
@@ -2832,10 +2835,12 @@ class _ImageFallback extends StatelessWidget {
 
 class _CaughtUpState extends StatelessWidget {
   const _CaughtUpState({
+    required this.limited,
     required this.onRefresh,
     required this.onOpenSaved,
   });
 
+  final bool limited;
   final Future<void> Function() onRefresh;
   final VoidCallback onOpenSaved;
 
@@ -2866,7 +2871,9 @@ class _CaughtUpState extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'You’re all caught up.',
+                        limited
+                            ? 'You’ve reached your plan’s deal limit.'
+                            : 'You’re all caught up.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: TS.inkOf(context),
@@ -2876,7 +2883,9 @@ class _CaughtUpState extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Pull down to check for fresh deals.',
+                        limited
+                            ? 'Upgrade your plan to browse more current deals.'
+                            : 'Pull down to check for fresh deals.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: TS.mutedOf(context),

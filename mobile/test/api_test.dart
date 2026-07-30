@@ -48,6 +48,35 @@ void main() {
                   }
                 ],
                 'followUps': ['Show breakfast deals'],
+                'groceryPlan': {
+                  'assumptions': ['Two people for three days'],
+                  'currencyCode': 'ZAR',
+                  'items': [
+                    {
+                      'assumption': 'One bag',
+                      'group': 'Staple',
+                      'id': 'rice',
+                      'lineTotalCents': 5000,
+                      'lineTotalText': 'R50.00',
+                      'priceText': 'R50.00',
+                      'productUrl': 'https://shop.example.test/rice',
+                      'quantity': 1,
+                      'retailerId': 'fresh-market',
+                      'retailerName': 'Fresh Market',
+                      'sourceUrl': 'https://shop.example.test/rice',
+                      'title': 'Long grain rice',
+                      'unitPriceCents': 5000,
+                    }
+                  ],
+                  'maxStores': 3,
+                  'missingItems': [],
+                  'storeCount': 1,
+                  'subtotalCents': 5000,
+                  'subtotalText': 'R50.00',
+                  'totalCents': 5000,
+                  'totalText': 'R50.00',
+                  'tradeOffs': [],
+                },
               },
             },
           }),
@@ -80,6 +109,8 @@ void main() {
       'https://example.test/api/catalogue-pages?flyer=1',
     );
     expect(answer.followUps, ['Show breakfast deals']);
+    expect(answer.groceryPlan?.items.single.title, 'Long grain rice');
+    expect(answer.groceryPlan?.maxStores, 3);
     expect(requests.single.method, 'POST');
     expect(requests.single.url.path, '/api/scout-chat');
     expect(
@@ -111,10 +142,11 @@ void main() {
       evidenceText: 'Found by Trolley Scout.',
     );
 
-    await api.saveDealToBasket(deal);
+    await api.saveDealToBasket(deal, quantity: 3);
 
     expect(api.savedTitles, ['Daily deal']);
     expect(api.basketSavedDealIds, ['member-saved-1']);
+    expect(api.basketQuantities, [3]);
   });
 
   group('authenticated API', () {
@@ -380,7 +412,7 @@ void main() {
           'availableCatalogueCount': 72,
           'availableDealCount': 12000,
           'catalogueLimit': 50,
-          'dealLimit': 10000,
+          'dealLimit': 2000,
           'planId': 'free',
         },
         'deals': [],
@@ -397,7 +429,7 @@ void main() {
         'availableCatalogueCount': 72,
         'availableDealCount': 12000,
         'catalogueLimit': 50,
-        'dealLimit': 10000,
+        'dealLimit': 2000,
         'planId': 'free',
       });
     });
@@ -802,6 +834,7 @@ class _SaveBasketApi extends Api {
 
   final savedTitles = <String>[];
   final basketSavedDealIds = <String>[];
+  final basketQuantities = <int>[];
 
   @override
   Future<List<SavedDeal>> saveDeal(Deal deal) async {
@@ -825,6 +858,7 @@ class _SaveBasketApi extends Api {
   @override
   Future<Basket> addBasketItem(String savedDealId, {int quantity = 1}) async {
     basketSavedDealIds.add(savedDealId);
+    basketQuantities.add(quantity);
     return const Basket.empty();
   }
 }

@@ -133,10 +133,44 @@ export interface ScoutChatCatalogueCard {
   validTo?: string
 }
 
+export interface ScoutGroceryPlanItem {
+  assumption: string
+  group: string
+  id: string
+  imageUrl?: string
+  lineTotalCents: number
+  lineTotalText: string
+  previousPriceText?: string
+  priceText: string
+  productUrl: string
+  promotionText?: string
+  quantity: number
+  retailerId: string
+  retailerName: string
+  sourceUrl: string
+  title: string
+  unitPriceCents: number
+}
+
+export interface ScoutGroceryPlan {
+  assumptions: string[]
+  currencyCode: string
+  items: ScoutGroceryPlanItem[]
+  maxStores: number
+  missingItems: string[]
+  storeCount: number
+  subtotalCents: number
+  subtotalText: string
+  totalCents: number
+  totalText: string
+  tradeOffs: string[]
+}
+
 export interface ScoutChatAnswer {
   catalogues: ScoutChatCatalogueCard[]
   deals: ScoutChatDealCard[]
   followUps: string[]
+  groceryPlan?: ScoutGroceryPlan
   reply: string
 }
 

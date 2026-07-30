@@ -36,6 +36,17 @@ describe('global country support', () => {
       ),
     ).toBe(true)
     expect(SADC_MARKET_SOURCES.KM?.retailStatus).toBe('social-only')
+    expect(SADC_MARKET_SOURCES.ZW?.propertySources.map((source) => source.label))
+      .toEqual(expect.arrayContaining([
+        'Fingold',
+        'Huts',
+        'Musha',
+        'Pam Golding Zimbabwe',
+        'Property Zimbabwe',
+        'Propertybook',
+        'Propzone',
+        'ShonaHome',
+      ]))
   })
 
   it('builds verified retailer entries from the audited source registry', () => {

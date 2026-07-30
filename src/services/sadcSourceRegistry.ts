@@ -232,6 +232,20 @@ export const SADC_MARKET_SOURCES: Readonly<Record<string, SadcMarketSources>> = 
     propertySources: [
       property('Property Zimbabwe', 'https://www.property.co.zw/houses-for-sale', 'https://www.property.co.zw/'),
       property('Propertybook', 'https://www.propertybook.co.zw/'),
+      property('Propzone', 'https://www.propzone.co.zw/en/properties/'),
+      property('Huts', 'https://www.huts.co.zw/search'),
+      property(
+        'ShonaHome',
+        'https://www.shonahome.com/property/for-sale/',
+        'https://www.shonahome.com/property/for-rent/',
+      ),
+      property(
+        'Pam Golding Zimbabwe',
+        'https://www.pamgolding.co.zw/results/residential/for-sale/{location}/',
+        'https://www.pamgolding.co.zw/results/residential/to-rent/{location}/',
+      ),
+      property('Fingold', 'https://fingold.co.zw/properties/'),
+      property('Musha', 'https://musha.co.zw/properties/'),
     ],
     // Verified reachable and platform-probed in July 2026 (WooCommerce /
     // Shopify / Magento storefronts the deal detector can read, plus notable

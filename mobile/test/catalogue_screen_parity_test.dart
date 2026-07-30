@@ -45,7 +45,8 @@ void main() {
     expect(find.text('Page 1 of 2'), findsOneWidget);
   });
 
-  testWidgets('catalogue stores are ordered alphabetically', (tester) async {
+  testWidgets('catalogues default to latest and can sort by store name',
+      (tester) async {
     _useTallPhoneViewport(tester);
     await tester.pumpWidget(_wrap(
       DealsScreen(api: _CatalogueDirectoryApi()),
@@ -55,7 +56,7 @@ void main() {
     await tester.tap(find.byType(Tab).at(1));
     await tester.pumpAndSettle();
 
-    final storeOrder = tester
+    List<String?> storeOrder() => tester
         .widgetList<Text>(find.byType(Text))
         .map((widget) => widget.data)
         .where((label) =>
@@ -63,7 +64,16 @@ void main() {
             label == 'Bravo Shop' ||
             label == 'Zulu Store')
         .toList();
-    expect(storeOrder, ['Alpha Market', 'Bravo Shop', 'Zulu Store']);
+    expect(storeOrder(), ['Zulu Store', 'Bravo Shop', 'Alpha Market']);
+
+    final sort = find.byKey(const Key('catalogue-sort-field'));
+    expect(sort, findsOneWidget);
+    await tester.tap(sort);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Store name').last);
+    await tester.pumpAndSettle();
+
+    expect(storeOrder(), ['Alpha Market', 'Bravo Shop', 'Zulu Store']);
   });
 
   testWidgets('catalogue directory shows every catalogue without another tap',

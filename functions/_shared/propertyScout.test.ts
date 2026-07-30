@@ -15,7 +15,9 @@ describe('property search coverage', () => {
   it('fetches three pages from the two main portals on the first search', () => {
     expect(preferredPortalPages('property24', 1)).toEqual([1, 2, 3])
     expect(preferredPortalPages('privateproperty', 1)).toEqual([1, 2, 3])
-    expect(preferredPortalPages('seeff', 1)).toEqual([1])
+    expect(preferredPortalPages('gumtree', 1)).toEqual([1, 2])
+    expect(preferredPortalPages('seeff', 1)).toEqual([1, 2])
+    expect(preferredPortalPages('remax', 1)).toEqual([1])
     expect(preferredPortalPages('property24', 2)).toEqual([2])
   })
 

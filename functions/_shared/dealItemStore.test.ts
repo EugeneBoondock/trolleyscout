@@ -17,6 +17,7 @@ import {
   upsertDealItems,
   writeSourceCursor,
 } from './dealItemStore'
+import * as dealItemStoreModule from './dealItemStore'
 
 const migrationUrls = [
   new NodeUrl('../../migrations/0013_deal_items.sql', import.meta.url),
@@ -547,6 +548,56 @@ describe('deal item store', () => {
 
     const everywhere = await listActiveDealItems(env, { now: '2026-07-17T10:00:00.000Z' })
     expect(everywhere).toHaveLength(2)
+  })
+
+  it('searches the shopper-visible active country rows instead of the first page only', async () => {
+    const searchActiveDealItems = (
+      dealItemStoreModule as unknown as Record<string, unknown>
+    ).searchActiveDealItems as
+      | ((env: TrolleyScoutEnv, options: {
+          countryCode: string
+          now: string
+          searchTerms: string[]
+          visibilityLimit: number
+        }) => Promise<Array<{ title: string }>>)
+      | undefined
+
+    expect(searchActiveDealItems).toBeTypeOf('function')
+    if (!searchActiveDealItems) return
+
+    await upsertDealItems(env, {
+      candidates: [
+        candidate({ productId: 'bread', title: 'Brown bread' }),
+        candidate({
+          productId: 'rice',
+          productUrl: 'https://www.woolworths.co.za/product/rice',
+          title: 'Long grain rice 2kg',
+        }),
+      ],
+      retailerId: retailerSlug('woolworths'),
+      sourceKey: 'woolworths::all-savings',
+    })
+    await upsertDealItems(env, {
+      candidates: [candidate({
+        productId: 'us-rice',
+        productUrl: 'https://example.test/us-rice',
+        retailerId: retailerSlug('walmart'),
+        title: 'American rice',
+      })],
+      countryCode: 'US',
+      currencyCode: 'USD',
+      retailerId: retailerSlug('walmart'),
+      sourceKey: 'walmart::specials',
+    })
+
+    const matches = await searchActiveDealItems(env, {
+      countryCode: 'ZA',
+      now: '2026-07-17T10:00:00.000Z',
+      searchTerms: ['rice'],
+      visibilityLimit: 10_000,
+    })
+
+    expect(matches.map((item) => item.title)).toEqual(['Long grain rice 2kg'])
   })
 
   it.each([['USA'], ['z'], [''], ['12']])(

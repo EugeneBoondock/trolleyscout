@@ -5,7 +5,12 @@ import type {
   PropertyPortalSourceMeta,
   PropertySearchResult,
 } from '../../src/types'
-import { filterAndSortListings, type PropertySort } from '../../src/services/propertyPortals'
+import {
+  dedupePropertyListings,
+  filterAndSortListings,
+  filterListingsByLocation,
+  type PropertySort,
+} from '../../src/services/propertyPortals'
 import { getPropertySources } from '../../src/services/propertySourceRegistry'
 import { getSadcPropertySources } from '../../src/services/sadcSourceRegistry'
 import type { TrolleyScoutEnv } from './env'
@@ -16,7 +21,8 @@ const SEARCH_TTL_MS = 3 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 9_000
 const MAX_BODY_BYTES = 2_000_000
 const MAX_RESULTS_TO_FETCH = 8
-const MAX_PAGES_TO_FETCH = 14
+const MAX_PAGES_TO_FETCH = 32
+const PROPERTY_FETCH_CONCURRENCY = 4
 const MAX_REDIRECT_HOPS = 3
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 const HTTP_ACCEPTED = 202
@@ -94,19 +100,23 @@ export async function searchGlobalProperties(
         env.JINA_API_KEY,
       ),
     ])
-    const registeredResults: GlobalPropertyResult[] = [
+    const registeredSources = [
       ...getSadcPropertySources(country.code, params.listingType),
       ...getPropertySources(country.code, params.listingType),
-    ].map((source) => ({
-      label: source.label,
-      title: `${source.label} ${country.name} property listings`,
-      trusted: true,
-      url: propertySourceUrlForLocation(
-        source.url,
-        locationText,
-        params.listingType,
-      ),
-    })).filter((result) => !hasUnfilledLocation(result.url))
+    ]
+    const registeredResults: GlobalPropertyResult[] = registeredSources.flatMap((source) =>
+      preferredGlobalPropertyPages(country.code, source.url, page).map((sourcePage) => ({
+        label: source.label,
+        title: `${source.label} ${country.name} property listings`,
+        trusted: true,
+        url: propertySourceUrlForLocation(
+          source.url,
+          locationText,
+          params.listingType,
+          sourcePage,
+        ),
+      })),
+    ).filter((result) => !hasUnfilledLocation(result.url))
     const results = dedupeSearchResults([...registeredResults, ...resultGroups.flat()])
     const relevantResults = results.filter((result) =>
       result.trusted || isLikelyPropertySearchResult(result, country, locationText),
@@ -117,8 +127,10 @@ export async function searchGlobalProperties(
       MAX_PAGES_TO_FETCH,
       MAX_RESULTS_TO_FETCH + registeredResults.length,
     )
-    const fetched = await Promise.all(
-      relevantResults.slice(0, fetchBudget).map(async (result) => {
+    const fetched = await mapWithConcurrency(
+      relevantResults.slice(0, fetchBudget),
+      PROPERTY_FETCH_CONCURRENCY,
+      async (result) => {
         const html = await fetchPropertyPage(env, result.url)
         const parsed = html
           ? parseGenericPropertyListings(html, result.url, params.listingType, country.currencyCode)
@@ -134,21 +146,39 @@ export async function searchGlobalProperties(
                 country.currencyCode,
                 result.label,
               ),
-          source: parsed.length > 0 || !result.trusted
-            ? sourceFromUrl(result.url, parsed.length > 0, result.label)
-            : undefined,
+          source: sourceFromUrl(
+            result.url,
+            parsed.length,
+            html !== undefined,
+            result.label,
+          ),
         }
-      }),
+      },
     )
 
-    listings = dedupeListings(fetched.flatMap((entry) => entry.listings))
+    listings = filterListingsByLocation(
+      dedupePropertyListings(
+        dedupeListings(fetched.flatMap((entry) => entry.listings)),
+      ),
+      [locationText],
+    )
+    const sourceListingUrls = new Map<string, Set<string>>()
+    for (const entry of fetched) {
+      const sourceId = entry.source.id
+      const urls = sourceListingUrls.get(sourceId) ?? new Set<string>()
+      for (const listing of entry.listings) urls.add(listing.listingUrl)
+      sourceListingUrls.set(sourceId, urls)
+    }
     sources = mergeSources(
       fetched
         .map((entry) => entry.source)
         .filter((source): source is PropertyPortalSourceMeta => Boolean(source)),
-    )
+    ).map((source) => ({
+      ...source,
+      count: sourceListingUrls.get(source.id)?.size ?? 0,
+    }))
     refreshedAt = new Date().toISOString()
-    if (listings.length > 0 || sources.length > 0) {
+    if (listings.length > 0 || sources.some((source) => source.ok)) {
       await writeCache(env, key, country.code, { listings, sources })
     }
   }
@@ -175,6 +205,7 @@ export function propertySourceUrlForLocation(
   sourceUrl: string,
   locationText: string,
   listingType: PropertyListingType,
+  page = 1,
 ): string {
   const locationSlug = slug(locationText)
   const templated = locationSlug
@@ -187,13 +218,53 @@ export function propertySourceUrlForLocation(
 
   const host = normalizeSourceHost(source.hostname)
   if (host === 'property.co.zw') {
-    return `${source.origin}/property-${listingType === 'rent' ? 'for-rent' : 'for-sale'}/${locationSlug}`
+    return withPage(
+      `${source.origin}/property-${listingType === 'rent' ? 'for-rent' : 'for-sale'}/${locationSlug}`,
+      page,
+    )
   }
   if (host === 'propertybook.co.zw') {
-    return `${source.origin}/${listingType === 'rent' ? 'to-rent' : 'for-sale'}/${locationSlug}`
+    return withPage(
+      `${source.origin}/${listingType === 'rent' ? 'to-rent' : 'for-sale'}/${locationSlug}`,
+      page,
+    )
+  }
+  if (
+    host === 'propzone.co.zw' ||
+    host === 'pamgolding.co.zw' ||
+    host === 'musha.co.zw'
+  ) {
+    return withPage(templated, page)
   }
 
   return templated
+}
+
+export function preferredGlobalPropertyPages(
+  countryCode: string,
+  sourceUrl: string,
+  requestedPage: number,
+): number[] {
+  if (requestedPage !== 1) return [requestedPage]
+  if (countryCode.toUpperCase() !== 'ZW') return [1]
+  const host = normalizeSourceHost(safeHttpUrl(sourceUrl)?.hostname ?? '')
+  return [
+    'musha.co.zw',
+    'pamgolding.co.zw',
+    'property.co.zw',
+    'propertybook.co.zw',
+    'propzone.co.zw',
+  ].includes(host)
+    ? [1, 2, 3]
+    : [1]
+}
+
+function withPage(value: string, page: number): string {
+  if (page <= 1) return value
+  const url = safeHttpUrl(value)
+  if (!url) return value
+  url.searchParams.set('page', String(page))
+  return url.toString()
 }
 
 function hasUnfilledLocation(url: string): boolean {
@@ -895,17 +966,36 @@ function dedupeSearchResults(
 
 function sourceFromUrl(
   urlValue: string,
+  count: number,
   ok: boolean,
   label?: string,
 ): PropertyPortalSourceMeta {
   const url = safeHttpUrl(urlValue)
   const host = normalizeSourceHost(url?.hostname ?? 'web')
   return {
-    count: ok ? 1 : 0,
+    count,
     id: `web:${slug(host)}`,
     label: label ?? labelFromHost(host),
     ok,
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const workers = Math.max(1, Math.min(concurrency, items.length))
+  await Promise.all(Array.from({ length: workers }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      results[index] = await worker(items[index])
+    }
+  }))
+  return results
 }
 
 function mergeSources(sources: PropertyPortalSourceMeta[]): PropertyPortalSourceMeta[] {

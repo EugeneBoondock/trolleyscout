@@ -2,12 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/screens/scout_chat_screen.dart';
 import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/widgets/catalogue_reader.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('Mr Scout renders deal and catalogue recommendations',
       (tester) async {
     String? sentMessage;
@@ -57,7 +62,10 @@ void main() {
     );
 
     expect(find.text('Mr Scout'), findsOneWidget);
-    expect(find.text('Find the best grocery savings'), findsOneWidget);
+    expect(
+      find.text('Create a grocery list for the cheapest vegan food'),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey('mr-scout-message')),
@@ -155,7 +163,8 @@ void main() {
     expect(composerRect.right, lessThanOrEqualTo(320));
     expect(tester.takeException(), isNull);
 
-    final starter = find.text('Find the best grocery savings');
+    final starter =
+        find.text('Create a grocery list for the cheapest vegan food');
     await tester.ensureVisible(starter);
     await tester.pump();
     await tester.tap(starter);
@@ -236,6 +245,83 @@ void main() {
     expect(find.text('Back online.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'temporary grocery list stays isolated until an item is transferred',
+      (tester) async {
+    _configurePhone(tester, width: 390, height: 844);
+    final transferred = <ScoutGroceryPlanItem>[];
+    await _pumpChat(
+      tester,
+      sendMessage: (_, __) async => _groceryAnswer,
+      transferItem: (item) async => transferred.add(item),
+    );
+
+    await _send(tester, 'Create a grocery list for the cheapest vegan food');
+    expect(transferred, isEmpty);
+    expect(
+      find.byKey(const ValueKey('mr-scout-grocery-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mr-scout-grocery-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const ValueKey('mr-scout-grocery-sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Fresh Market'), findsOneWidget);
+    expect(find.text('Value Grocer'), findsOneWidget);
+    expect(find.text('List assumptions'), findsOneWidget);
+    expect(find.text('Save 15%'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mr-scout-grocery-total')),
+          )
+          .data,
+      'R80.00',
+    );
+
+    await tester.ensureVisible(
+      find.byTooltip('Increase quantity').first,
+    );
+    await tester.tap(find.byTooltip('Increase quantity').first);
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mr-scout-grocery-total')),
+          )
+          .data,
+      'R130.00',
+    );
+    expect(transferred, isEmpty);
+
+    final transfer = find.byKey(const ValueKey('grocery-transfer-rice'));
+    await tester.ensureVisible(transfer);
+    await tester.tap(transfer);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(transferred, hasLength(1));
+    expect(transferred.single.id, 'rice');
+    expect(transferred.single.quantity, 2);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('mr-scout-grocery-save')),
+    );
+    await tester.tap(find.byKey(const ValueKey('mr-scout-grocery-save')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getString('trolley-scout-grocery-plan-v1'),
+      contains('"quantity":2'),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 const _imageHeavyAnswer = ScoutChatAnswer(
@@ -293,6 +379,55 @@ const _imageHeavyAnswer = ScoutChatAnswer(
   followUps: ['Only show in-stock items', 'Find a cheaper option'],
 );
 
+const _groceryAnswer = ScoutChatAnswer(
+  reply: 'I planned a low-cost vegan grocery list across two stores.',
+  groceryPlan: ScoutGroceryPlan(
+    assumptions: ['Two people for three days'],
+    currencyCode: 'ZAR',
+    items: [
+      ScoutGroceryPlanItem(
+        assumption: 'One 5 kg bag',
+        group: 'Staple',
+        id: 'rice',
+        lineTotalCents: 5000,
+        lineTotalText: 'R50.00',
+        priceText: 'R50.00',
+        productUrl: 'https://shop.example.test/rice',
+        promotionText: 'Save 15%',
+        quantity: 1,
+        retailerId: 'fresh-market',
+        retailerName: 'Fresh Market',
+        sourceUrl: 'https://shop.example.test/rice',
+        title: 'Long grain rice',
+        unitPriceCents: 5000,
+      ),
+      ScoutGroceryPlanItem(
+        assumption: 'Two tins',
+        group: 'Plant protein',
+        id: 'beans',
+        lineTotalCents: 3000,
+        lineTotalText: 'R30.00',
+        priceText: 'R15.00',
+        productUrl: 'https://shop.example.test/beans',
+        quantity: 2,
+        retailerId: 'value-grocer',
+        retailerName: 'Value Grocer',
+        sourceUrl: 'https://shop.example.test/beans',
+        title: 'Baked beans',
+        unitPriceCents: 1500,
+      ),
+    ],
+    maxStores: 3,
+    missingItems: ['Fresh spinach'],
+    storeCount: 2,
+    subtotalCents: 8000,
+    subtotalText: 'R80.00',
+    totalCents: 8000,
+    totalText: 'R80.00',
+    tradeOffs: ['Two stores save R12.00'],
+  ),
+);
+
 void _configurePhone(
   WidgetTester tester, {
   required double width,
@@ -311,6 +446,7 @@ Future<void> _pumpChat(
   WidgetTester tester, {
   required ScoutChatSender sendMessage,
   ThemeMode themeMode = ThemeMode.light,
+  ScoutGroceryTransfer? transferItem,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -321,6 +457,7 @@ Future<void> _pumpChat(
         body: ScoutChatScreen(
           api: Api(baseUrl: 'https://example.test'),
           sendMessage: sendMessage,
+          transferItem: transferItem,
         ),
       ),
     ),

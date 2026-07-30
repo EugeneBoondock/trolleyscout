@@ -1,6 +1,8 @@
-import { listActiveDealItems, type StoredDealItem } from '../_shared/dealItemStore'
+import type { SearchActiveDealItemsOptions } from '../_shared/dealItemStore'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { getMemberPlan } from '../../src/data/memberPlans'
+import type { DiscoveredDeal } from '../../src/types'
 import {
   getMemberBasket,
   getMemberSession,
@@ -10,14 +12,22 @@ import {
 import { json, methodNotAllowed } from '../_shared/respond'
 import {
   buildScoutContext,
+  extractScoutSearchTerms,
   mapScoutAnswer,
   normalizeScoutChatRequest,
   parseScoutModelAnswer,
   scoutAnswerSchema,
+  type ScoutContextDeal,
   type ScoutPersonalContextInput,
 } from '../_shared/scoutChat'
 import { getMemberState, listWindowSaves } from '../_shared/windowSocialStore'
 import type { StoreLeaflet } from '../../src/types'
+import type { MemberPlanId } from '../../src/types'
+import { readVisibleMarketplaceDeals } from './discovery'
+import {
+  buildGroceryPlan,
+  parseGroceryPlanRequest,
+} from '../_shared/groceryPlanner'
 
 const MODEL = 'gpt-5.4-mini'
 const MAX_REQUESTS_PER_MINUTE = 20
@@ -28,6 +38,8 @@ interface ScoutSession {
     countryCode?: string
     currencyCode?: string
     id: string
+    planId?: MemberPlanId
+    role?: 'admin' | 'member'
   }
   isAuthenticated: boolean
 }
@@ -41,8 +53,14 @@ export interface ScoutChatDependencies {
   fetchOpenAI: (request: Request) => Promise<Response>
   getSession: (env: TrolleyScoutEnv, request: Request) => Promise<ScoutSession>
   incrementUsage: (env: TrolleyScoutEnv, accountId: string, now?: Date) => Promise<number>
-  listDeals: (env: TrolleyScoutEnv, countryCode: string) => Promise<StoredDealItem[]>
-  listLeaflets: (env: TrolleyScoutEnv) => Promise<StoreLeaflet[]>
+  listDeals: (
+    env: TrolleyScoutEnv,
+    options: SearchActiveDealItemsOptions & {
+      accountId: string
+      planId: MemberPlanId
+    },
+  ) => Promise<ScoutContextDeal[]>
+  listLeaflets: (env: TrolleyScoutEnv, countryCode: string) => Promise<StoreLeaflet[]>
   loadPersonalContext: (
     env: TrolleyScoutEnv,
     accountId: string,
@@ -53,11 +71,18 @@ const defaultDependencies: ScoutChatDependencies = {
   fetchOpenAI: (request) => fetch(request),
   getSession: getMemberSession,
   incrementUsage: incrementScoutChatUsage,
-  listDeals: (env, countryCode) => listActiveDealItems(env, {
-    countryCode,
-    limit: 120,
-  }),
-  listLeaflets: async (env) => (await readLeafletSnapshot(env))?.leaflets ?? [],
+  listDeals: async (env, options) => searchMarketplaceDeals(
+    await readVisibleMarketplaceDeals(env, {
+      accountId: options.accountId,
+      countryCode: options.countryCode,
+      planId: options.planId,
+    }),
+    options.searchTerms,
+    options.limit ?? 120,
+  ),
+  listLeaflets: async (env, countryCode) =>
+    ((await readLeafletSnapshot(env))?.leaflets ?? [])
+      .filter((leaflet) => (leaflet.countryCode ?? 'ZA').toUpperCase() === countryCode),
   loadPersonalContext: loadScoutPersonalContext,
 }
 
@@ -117,9 +142,25 @@ export async function handleScoutChat(
 
   const countryCode = normalizedCountryCode(session.account.countryCode)
   const currencyCode = normalizedCurrencyCode(session.account.currencyCode)
+  const groceryRequest = parseGroceryPlanRequest(input.message)
+  const searchTerms = groceryRequest ? [] : extractScoutSearchTerms(input.message)
+  const planId = session.account.role === 'admin'
+    ? 'organization'
+    : session.account.planId ?? 'free'
+  const planLimits = getMemberPlan(planId).limits
+  const visibilityLimit = planLimits.visibleDeals
   const [deals, leaflets, personalContext] = await Promise.all([
-    dependencies.listDeals(env, countryCode).catch(() => []),
-    dependencies.listLeaflets(env).catch(() => []),
+    dependencies.listDeals(env, {
+      accountId: session.account.id,
+      countryCode,
+      planId,
+      searchTerms,
+      limit: groceryRequest ? 200 : 120,
+      visibilityLimit,
+    }).catch(() => []),
+    dependencies.listLeaflets(env, countryCode)
+      .then((items) => items.slice(0, planLimits.visibleCatalogues))
+      .catch(() => []),
     dependencies.loadPersonalContext(env, session.account.id).catch(() => ({})),
   ])
   const scoutContext = buildScoutContext(deals, leaflets, currencyCode, personalContext)
@@ -191,9 +232,21 @@ export async function handleScoutChat(
 
   try {
     const modelAnswer = parseScoutModelAnswer(await openAIResponse.json())
+    const answer = mapScoutAnswer(modelAnswer, scoutContext)
+    if (groceryRequest) {
+      answer.groceryPlan = buildGroceryPlan(input.message, deals, currencyCode)
+      const itemCount = answer.groceryPlan.items.length
+      answer.reply = itemCount > 0
+        ? `I built a temporary grocery list with ${itemCount} ${itemCount === 1 ? 'item' : 'items'} from ${answer.groceryPlan.storeCount} ${answer.groceryPlan.storeCount === 1 ? 'store' : 'stores'}. Review the quantities, assumptions, promotions, and missing groups before transferring anything to your main basket.`
+        : 'I could not build a grocery list from the current in-stock deals. The grocery list shows the missing groups so you can adjust the request.'
+    }
+    if (searchTerms.length > 0 && answer.deals.length === 0 && scoutContext.deals.length > 0) {
+      answer.deals = scoutContext.deals.slice(0, 6)
+      answer.reply = matchingDealsReply(answer.deals.length, searchTerms)
+    }
     return json(
       {
-        answer: mapScoutAnswer(modelAnswer, scoutContext),
+        answer,
         model: MODEL,
       },
       { headers: privateHeaders },
@@ -204,6 +257,46 @@ export async function handleScoutChat(
       { headers: privateHeaders, status: 502 },
     )
   }
+}
+
+export function searchMarketplaceDeals(
+  deals: readonly DiscoveredDeal[],
+  searchTerms: readonly string[],
+  limit = 120,
+): DiscoveredDeal[] {
+  const terms = Array.from(new Set(
+    searchTerms
+      .map((term) => term.normalize('NFKC').trim().toLowerCase())
+      .filter((term) => term.length >= 2),
+  ))
+  const phrase = terms.join(' ')
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+
+  return deals
+    .map((deal, index) => ({
+      deal,
+      index,
+      searchText: [
+        deal.title,
+        deal.evidenceText,
+        deal.retailerName,
+        deal.sourceLabel,
+      ].join(' ').normalize('NFKC').toLowerCase(),
+      title: deal.title.normalize('NFKC').toLowerCase(),
+    }))
+    .filter(({ searchText }) => terms.every((term) => searchText.includes(term)))
+    .sort((a, b) => {
+      const aRank = a.title.startsWith(phrase) ? 0 : a.title.includes(phrase) ? 1 : 2
+      const bRank = b.title.startsWith(phrase) ? 0 : b.title.includes(phrase) ? 1 : 2
+      return aRank - bRank || a.index - b.index
+    })
+    .slice(0, boundedLimit)
+    .map(({ deal }) => deal)
+}
+
+function matchingDealsReply(matchCount: number, searchTerms: string[]): string {
+  const item = searchTerms.join(' ')
+  return `I found ${matchCount} current ${item} ${matchCount === 1 ? 'deal' : 'deals'} in Marketplace. Prices and stock can change, so check the retailer before buying.`
 }
 
 export async function loadScoutPersonalContext(

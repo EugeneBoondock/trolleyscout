@@ -851,7 +851,7 @@ class Api {
     );
   }
 
-  Future<Basket> saveDealToBasket(Deal deal) async {
+  Future<Basket> saveDealToBasket(Deal deal, {int quantity = 1}) async {
     final savedDeals = await saveDeal(deal);
     SavedDeal? saved;
     for (final candidate in savedDeals) {
@@ -866,7 +866,7 @@ class Api {
       throw const ApiException(
           'The deal was saved, but could not be matched for the basket.');
     }
-    return addBasketItem(saved.id);
+    return addBasketItem(saved.id, quantity: quantity);
   }
 
   /// Runs the scout lanes the legacy refresh never reached: the structured

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { filterDiscoveryDeals } from './dealFilters'
+import * as dealFiltersModule from './dealFilters'
 import type { DiscoveredDeal } from '../types'
 
 const deals: DiscoveredDeal[] = [
@@ -65,5 +66,32 @@ describe('filterDiscoveryDeals', () => {
     expect(
       filterDiscoveryDeals(availabilityDeals, { hideSoldOut: true }).map((deal) => deal.id),
     ).toEqual(['rice', 'metadata-food'])
+  })
+
+  it('reuses indexed category data when the shopper changes the search text', () => {
+    const createDealSearchIndex = (
+      dealFiltersModule as unknown as Record<string, unknown>
+    ).createDealSearchIndex as
+      | ((items: DiscoveredDeal[]) => unknown[])
+      | undefined
+    const filterIndexedDiscoveryDeals = (
+      dealFiltersModule as unknown as Record<string, unknown>
+    ).filterIndexedDiscoveryDeals as
+      | ((items: unknown[], options: { category: string; query: string }) => DiscoveredDeal[])
+      | undefined
+
+    expect(createDealSearchIndex).toBeTypeOf('function')
+    expect(filterIndexedDiscoveryDeals).toBeTypeOf('function')
+    if (!createDealSearchIndex || !filterIndexedDiscoveryDeals) return
+
+    const index = createDealSearchIndex(deals)
+    expect(
+      filterIndexedDiscoveryDeals(index, { category: 'food', query: 'rice' })
+        .map((deal) => deal.id),
+    ).toEqual(['rice'])
+    expect(
+      filterIndexedDiscoveryDeals(index, { category: 'food', query: 'milk' })
+        .map((deal) => deal.id),
+    ).toEqual(['milk'])
   })
 })

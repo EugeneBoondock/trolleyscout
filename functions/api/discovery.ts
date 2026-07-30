@@ -131,11 +131,10 @@ const NORMALIZED_PAGE_SIZE = 200
 // and the shop read as having nothing while its catalogue was live. Shoprite
 // kept 57 of 615 for the same reason.
 //
-// Sized well above the current total (~7,700) rather than snugly, because the
-// symptom is silent: a shop reporting zero looks like a broken retailer rather
-// than a full bucket. `readNormalizedDealItems` now says when it stops early,
-// so the next time this fills up it is visible instead of guessed at.
-const NORMALIZED_SAFETY_CAP = 25_000
+// Read until D1 returns a short page. Subscription policy is applied after the
+// full country corpus is ranked, so an unlimited plan and a long-tail search do
+// not lose valid rows behind an internal collection cap.
+const NORMALIZED_SAFETY_CAP = Number.MAX_SAFE_INTEGER
 const PAGER_MANIFEST_MAX_BYTES = 512 * 1024
 const PAGER_MANIFEST_TIMEOUT_MS = 8_000
 const PAGER_ENRICH_CONCURRENCY = 2
@@ -244,7 +243,10 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
                 ...parsed.topDeals,
               ])),
               leaflets: [],
-              businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
+              businessStories: limitVisibleStories(
+                organizationPublicationsToStoryFrames(businessStoryPublications),
+                accessPlanId,
+              ),
               summary: {
                 foundDealCount: (parsed.foundDealCount ?? 0) + businessDeals.length,
                 leafletCount: parsed.leafletCount ?? 0,
@@ -275,7 +277,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   ] = await Promise.all([
     isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map()),
     readLeafletSnapshot(env),
-    readAllStorePromotions(env, nowIso, 3000, countryCode),
+    readAllStorePromotions(env, nowIso, 10_000, countryCode),
     readNormalizedDealItems(env, nowIso, { countryCode }),
     isSouthAfrica
       ? listLiveOrganizationPublications(env, 'marketplace')
@@ -368,7 +370,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
           (target.countryCode ?? 'ZA') === countryCode),
       }),
     ])
-    storePromotions = await readAllStorePromotions(env, nowIso, 3000, countryCode)
+    storePromotions = await readAllStorePromotions(env, nowIso, 10_000, countryCode)
     storeDiscovery = addBusinessDiscovery(
       storePromotionsToDiscovery(storePromotions, nowIso),
       businessPublications,
@@ -499,6 +501,57 @@ export function buildInternationalRefreshStores(countryCode: string) {
   return buildRegistryOnlineStores([countryCode])
 }
 
+export interface MarketplaceCorpusOptions {
+  accountId?: string
+  countryCode: string
+  now?: string
+  planId: MemberPlanId
+}
+
+/**
+ * Reads the same stored, country-scoped Marketplace corpus used by a normal
+ * discovery request, then applies the member’s ranking and plan boundary.
+ * Mr Scout calls this instead of maintaining a smaller saved-deal view.
+ */
+export async function readVisibleMarketplaceDeals(
+  env: TrolleyScoutEnv,
+  options: MarketplaceCorpusOptions,
+): Promise<DiscoveredDeal[]> {
+  const now = options.now ?? new Date().toISOString()
+  const isSouthAfrica = options.countryCode === 'ZA'
+  const [
+    snapshots,
+    storePromotions,
+    normalizedItems,
+    businessPublications,
+    interests,
+  ] = await Promise.all([
+    isSouthAfrica ? readDealSnapshots(env) : Promise.resolve(new Map<string, DealSnapshot>()),
+    readAllStorePromotions(env, now, 10_000, options.countryCode),
+    readNormalizedDealItems(env, now, { countryCode: options.countryCode }),
+    isSouthAfrica
+      ? listLiveOrganizationPublications(env, 'marketplace')
+      : Promise.resolve([]),
+    getRequestInterests(env, options.accountId),
+  ])
+  const mergedChecks = mergeNormalizedFirstChecks(
+    buildNormalizedDiscoveryChecks(normalizedItems),
+    buildSnapshotChecks(snapshots),
+  )
+  const storeDiscovery = addBusinessDiscovery(
+    storePromotionsToDiscovery(storePromotions, now),
+    businessPublications,
+    now,
+  )
+  const allDeals = dedupeDiscoveryDeals([
+    ...mergedChecks.flatMap((result) => result.deals),
+    ...storeDiscovery.deals,
+  ])
+
+  return rankDealsForMember(allDeals, interests)
+    .slice(0, getMemberPlan(options.planId).limits.visibleDeals)
+}
+
 // Internal scheduled-worker entry point. It bypasses request authorization
 // because it is only called from the Worker bundle.
 export interface DiscoveryRefreshOptions {
@@ -553,7 +606,10 @@ export async function refreshDiscoveryCache(
     false,
     'ZA',
     ),
-    businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
+    businessStories: limitVisibleStories(
+      organizationPublicationsToStoryFrames(businessStoryPublications),
+      'organization',
+    ),
   }
 }
 
@@ -1600,10 +1656,17 @@ function respond(
       countryCode,
       planId,
       ),
-      businessStories: organizationPublicationsToStoryFrames(businessStoryPublications),
+      businessStories: limitVisibleStories(
+        organizationPublicationsToStoryFrames(businessStoryPublications),
+        planId,
+      ),
     },
     { headers },
   )
+}
+
+function limitVisibleStories<T>(stories: T[], planId: MemberPlanId): T[] {
+  return stories.slice(0, getMemberPlan(planId).limits.visibleDeals)
 }
 
 function buildDiscoveryRun(

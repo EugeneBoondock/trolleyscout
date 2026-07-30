@@ -3,6 +3,7 @@ import {
   bedroomsFromTitle,
   buildPrivatePropertyUrl,
   buildProperty24Url,
+  dedupePropertyListings,
   filterAndSortListings,
   filterListingsByLocation,
   interleaveByPortal,
@@ -15,6 +16,7 @@ import {
   parsePrivatePropertyShapes,
   parseProperty24Listings,
   parseProperty24LocationCatalog,
+  parseProperty24SitemapLocations,
   parseRandValue,
   resolvePrivatePropertyLocation,
   resolveProperty24Location,
@@ -63,11 +65,18 @@ const P24_TILE = `
       </div></div></div>
   </div>
 </div>
-<div class="p24_tileContainer js_resultTile" data-listing-number="117399738">
-  <div class="p24_proTile" title="2 Bedroom Apartment for rent in Sea Point" data-listing-number="117399738">
+<div class="FriskyPedology js_resultTile p24_tileContainer" data-listing-number="117399738">
+  <div class="p24_regularTile" data-listing-number="117399738">
+    <meta itemprop="name" content="2 Bedroom Apartment" />
+    <div title="2 Bedroom Apartment for rent in Sea Point - Cape Town">
     <a href="/to-rent/sea-point/cape-town/western-cape/11021/117399738"><img itemprop="image" src="/blank.gif" lazy-src="https://images.prop24.com/382783380/Crop526x328" /></a>
-    <div class="p24_price"> R 18 500 <div class="p24_description">2 Bedroom Apartment in <span class="p24_location">Sea Point</span></div></div>
+    <span class="p24_price" itemprop="price" content="18500">
+      <meta itemprop="priceCurrency" content="ZAR" />
+      R 18 500
+      <span class="p24_description">2 Bedroom Apartment in <span class="p24_location ">Sea Point</span></span>
+    </span>
     <span class="p24_featureDetails" title="Bedrooms"><span>2</span></span>
+    </div>
   </div>
 </div>
 <div class="p24_tileContainer js_resultTile" data-listing-number="99999999">
@@ -113,6 +122,29 @@ describe('Property24 location resolution', () => {
 
   it('flattens grouped catalogue entries', () => {
     expect(catalog).toHaveLength(3)
+  })
+  it('reads allowed city and suburb sitemap URLs without autocomplete', () => {
+    expect(parseProperty24SitemapLocations(`
+      <url><loc>https://www.property24.com/for-sale/pretoria/gauteng/1</loc></url>
+      <url><loc>https://www.property24.com/for-sale/sea-point/cape-town/western-cape/11021</loc></url>
+    `)).toEqual([
+      {
+        id: 1,
+        name: 'Pretoria',
+        normalizedName: 'pretoria',
+        normalizedParentName: 'gauteng',
+        parentName: 'Gauteng',
+        type: 2,
+      },
+      {
+        id: 11021,
+        name: 'Sea Point',
+        normalizedName: 'seapoint',
+        normalizedParentName: 'capetown',
+        parentName: 'Cape Town',
+        type: 1,
+      },
+    ])
   })
   it('prefers the city over a like-named suburb', () => {
     const loc = resolveProperty24Location(catalog, 'Cape Town')
@@ -164,6 +196,8 @@ describe('parseProperty24Listings', () => {
   it('prefers lazy-src for lazily-loaded images', () => {
     expect(listings[1].imageUrl).toBe('https://images.prop24.com/382783380/Crop526x328')
     expect(listings[1].priceValue).toBe(18500)
+    expect(listings[1].title).toBe('2 Bedroom Apartment')
+    expect(listings[1].location).toBe('Sea Point')
   })
 })
 
@@ -251,6 +285,74 @@ describe('property location quality', () => {
 
     expect(filterListingsByLocation(listings, ['Eden Glen', 'Edenvale', 'Eastleigh']).map((listing) => listing.id))
       .toEqual(['2', '1'])
+  })
+
+  it('keeps scoped listings whose portal omits a location label', () => {
+    const listings: PropertyListing[] = [
+      {
+        id: 'unknown-location',
+        portal: 'property24',
+        portalName: 'Property24',
+        title: 'Three bedroom family home',
+        listingUrl: 'https://www.property24.com/listing/123',
+        listingType: 'sale',
+      },
+      {
+        id: 'wrong-location',
+        location: 'Polokwane',
+        portal: 'gumtree',
+        portalName: 'Gumtree',
+        title: 'Two bedroom apartment',
+        listingUrl: 'https://www.gumtree.co.za/polokwane/456',
+        listingType: 'sale',
+      },
+    ]
+
+    expect(filterListingsByLocation(listings, ['Cape Town']).map((listing) => listing.id))
+      .toEqual(['unknown-location'])
+  })
+})
+
+describe('property duplicate handling', () => {
+  it('removes the same normalized listing across portals and keeps real variants', () => {
+    const listings: PropertyListing[] = [
+      {
+        bedrooms: 3,
+        id: 'p24',
+        location: 'Eden Glen',
+        portal: 'property24',
+        portalName: 'Property24',
+        priceValue: 2_500_000,
+        title: '3 Bedroom House for sale in Eden Glen',
+        listingUrl: 'https://www.property24.com/for-sale/eden-glen/1',
+        listingType: 'sale',
+      },
+      {
+        bedrooms: 3,
+        id: 'pp',
+        location: 'Eden Glen',
+        portal: 'privateproperty',
+        portalName: 'Private Property',
+        priceValue: 2_500_000,
+        title: '3 bedroom house for sale in Eden Glen',
+        listingUrl: 'https://www.privateproperty.co.za/eden-glen/1',
+        listingType: 'sale',
+      },
+      {
+        bedrooms: 3,
+        id: 'different-price',
+        location: 'Eden Glen',
+        portal: 'seeff',
+        portalName: 'Seeff',
+        priceValue: 2_650_000,
+        title: '3 bedroom house for sale in Eden Glen',
+        listingUrl: 'https://www.seeff.com/eden-glen/2',
+        listingType: 'sale',
+      },
+    ]
+
+    expect(dedupePropertyListings(listings).map((listing) => listing.id))
+      .toEqual(['p24', 'different-price'])
   })
 })
 

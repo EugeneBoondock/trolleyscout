@@ -270,6 +270,52 @@ describe('parseZimZoneSpecials', () => {
   })
 })
 
+describe('parseKambudziSpecials', () => {
+  it('keeps real discounted products from Kambudzi’s public search results', () => {
+    const parseKambudziSpecials = (
+      storeScoutModule as unknown as Record<string, unknown>
+    ).parseKambudziSpecials as
+      | ((html: string) => Array<Record<string, unknown>>)
+      | undefined
+
+    expect(parseKambudziSpecials).toBeTypeOf('function')
+    if (!parseKambudziSpecials) return
+
+    expect(parseKambudziSpecials(`
+      <div class="product-item" data-productid="35501">
+        <img data-lazyloadsrc="/images/thumbs/tastic-rice.jpeg">
+        <h2 class="product-title">
+          <a href="/tastic-rice-parboiled-2kg-2">TASTIC RICE PARBOILED 2KG</a>
+        </h2>
+        <div class="prices">
+          <span class="price old-price">R81,06</span>
+          <span class="price actual-price">R72,95</span>
+        </div>
+      </div>
+      <div class="product-item" data-productid="regular">
+        <h2 class="product-title">
+          <a href="/regular-rice">REGULAR RICE</a>
+        </h2>
+        <div class="prices">
+          <span class="price old-price">R50,00</span>
+          <span class="price actual-price">R50,00</span>
+        </div>
+      </div>
+    `)).toEqual([
+      {
+        currencyCode: 'ZAR',
+        imageUrl: 'https://kambudzi.com/images/thumbs/tastic-rice.jpeg',
+        previousPriceCents: 8106,
+        priceCents: 7295,
+        productUrl: 'https://kambudzi.com/tastic-rice-parboiled-2kg-2',
+        promoLabel: '10% OFF',
+        soldOut: false,
+        title: 'TASTIC RICE PARBOILED 2KG',
+      },
+    ])
+  })
+})
+
 describe('parseHelloKumbaProducts', () => {
   it('reads active grocery products from the public Hyperzod catalogue', () => {
     const parseHelloKumbaProducts = (
@@ -1541,7 +1587,7 @@ describe('scheduled discovered-store scouting', () => {
     await miniflare.dispose()
   })
 
-  it('uses the public WooCommerce catalogue for Z-Store Zimbabwe', async () => {
+  it('does not count full-price Z-Store stock as a deal', async () => {
     const requestedUrls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
@@ -1582,15 +1628,138 @@ describe('scheduled discovered-store scouting', () => {
 
     expect(requestedUrls.some((url) =>
       new URL(url).pathname === '/wp-json/wc/store/v1/products'
-    )).toBe(true)
+    )).toBe(false)
     const row = await db.prepare(
       `SELECT title, price_text, product_url
        FROM store_promotions WHERE place_id = 'market-place'`,
     ).first<{ price_text: string; product_url: string; title: string }>()
+    expect(row).toBeNull()
+  })
+
+  it('uses a verified Zimbabwe WooCommerce sale endpoint without counting full-price stock',
+      async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'magnet.co.zw' &&
+        url.pathname === '/wp-json/wc/store/v1/products'
+      ) {
+        return jsonResponse([{
+          images: [{ src: 'https://magnet.co.zw/wp-content/uploads/router.webp' }],
+          name: 'Dual-band Wi-Fi router',
+          prices: {
+            currency_code: 'USD',
+            currency_minor_unit: 2,
+            price: '6500',
+            regular_price: '8500',
+            sale_price: '6500',
+          },
+          slug: 'dual-band-wifi-router',
+        }])
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Magnet Zimbabwe',
+        website: 'https://magnet.co.zw/',
+      })],
+      Date.parse('2026-07-30T00:00:00.000Z'),
+      1,
+    )
+
+    const productRequests = requestedUrls
+      .map((url) => new URL(url))
+      .filter((url) => url.pathname === '/wp-json/wc/store/v1/products')
+    expect(productRequests).toHaveLength(1)
+    expect(productRequests[0]?.searchParams.get('on_sale')).toBe('true')
+    expect(productRequests[0]?.searchParams.get('per_page')).toBe('100')
+    const row = await db.prepare(
+      `SELECT title, price_text, previous_price_text
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      title: string
+    }>()
     expect(row).toEqual({
-      price_text: 'USD 60.00',
-      product_url: 'https://zstore.co.zw/basic-hamper/',
-      title: 'Basic Hamper',
+      previous_price_text: 'USD 85.00',
+      price_text: 'USD 65.00',
+      title: 'Dual-band Wi-Fi router',
+    })
+  })
+
+  it('uses Everything Zimbabwean’s public sale catalogue', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'api.everythingzimbabwean.com' &&
+        url.pathname === '/wp-json/wc/store/v1/products'
+      ) {
+        return jsonResponse(url.searchParams.get('page') === '1'
+          ? [{
+              images: [{
+                src: 'https://api.everythingzimbabwean.com/wp-content/uploads/tape.webp',
+              }],
+              is_in_stock: true,
+              name: 'Beifa Packing Tape 48mm',
+              permalink:
+                'https://everythingzimbabwean.com/product/beifa-packing-tape-48mm/',
+              prices: {
+                currency_code: 'USD',
+                currency_minor_unit: 2,
+                price: '120528',
+                regular_price: '150660',
+              },
+            }]
+          : [])
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Everything Zimbabwean',
+        website: 'https://everythingzimbabwean.com/',
+      })],
+      Date.parse('2026-07-30T00:00:00.000Z'),
+      1,
+    )
+
+    const productRequests = requestedUrls
+      .map((url) => new URL(url))
+      .filter((url) =>
+        url.hostname === 'api.everythingzimbabwean.com' &&
+        url.pathname === '/wp-json/wc/store/v1/products')
+    expect(productRequests).toHaveLength(6)
+    expect(productRequests.every((url) => url.searchParams.get('on_sale') === 'true'))
+      .toBe(true)
+    const row = await db.prepare(
+      `SELECT title, price_text, previous_price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(row).toEqual({
+      previous_price_text: 'USD 1506.60',
+      price_text: 'USD 1205.28',
+      product_url:
+        'https://everythingzimbabwean.com/product/beifa-packing-tape-48mm/',
+      title: 'Beifa Packing Tape 48mm',
     })
   })
 
@@ -1720,6 +1889,65 @@ describe('scheduled discovered-store scouting', () => {
       price_text: 'R7.94',
       product_url: 'https://zim-zone.co.uk/knorr-soup',
       title: 'Knorr Soup 50g',
+    })
+  })
+
+  it('discovers and saves Kambudzi’s public specials', async () => {
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      requestedUrls.push(url.toString())
+      if (
+        url.hostname === 'kambudzi.com' &&
+        url.pathname === '/search' &&
+        url.searchParams.get('q') === 'special'
+      ) {
+        return htmlResponse(`
+          <div class="product-item" data-productid="35501">
+            <h2 class="product-title">
+              <a href="/tastic-rice-parboiled-2kg-2">
+                TASTIC RICE PARBOILED 2KG
+              </a>
+            </h2>
+            <div class="prices">
+              <span class="price old-price">R81,06</span>
+              <span class="price actual-price">R72,95</span>
+            </div>
+          </div>
+        `)
+      }
+      return htmlResponse('')
+    }))
+
+    await scoutNearbyStores(
+      env,
+      [discoveredStore({
+        countryCode: 'ZW',
+        countryName: 'Zimbabwe',
+        name: 'Kambudzi Groceries',
+        website: 'https://kambudzi.com/search?q=special',
+      })],
+      Date.parse('2026-07-30T00:00:00.000Z'),
+      1,
+    )
+
+    expect(requestedUrls).toContain(
+      'https://kambudzi.com/search?q=special',
+    )
+    const row = await db.prepare(
+      `SELECT title, price_text, previous_price_text, product_url
+       FROM store_promotions WHERE place_id = 'market-place'`,
+    ).first<{
+      previous_price_text: string
+      price_text: string
+      product_url: string
+      title: string
+    }>()
+    expect(row).toEqual({
+      previous_price_text: 'R81.06',
+      price_text: 'R72.95',
+      product_url: 'https://kambudzi.com/tastic-rice-parboiled-2kg-2',
+      title: 'TASTIC RICE PARBOILED 2KG',
     })
   })
 

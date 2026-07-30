@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import App from './App'
@@ -139,7 +139,7 @@ it('explains when a Free member reaches the marketplace viewing allowance', asyn
           availableCatalogueCount: 72,
           availableDealCount: 12_000,
           catalogueLimit: 50,
-          dealLimit: 10_000,
+          dealLimit: 2_000,
           planId: 'free',
         },
         summary: {
@@ -158,7 +158,7 @@ it('explains when a Free member reaches the marketplace viewing allowance', asyn
   fireEvent.click(within(navigation).getByRole('button', { name: 'Marketplace' }))
 
   expect(await screen.findByText(
-    'Free plan: up to 10,000 deals and 50 catalogues. ' +
+    'Free plan: up to 2,000 deals and 50 catalogues. ' +
     '12,000 deals and 72 catalogues are available.',
   )).toBeTruthy()
 })
@@ -245,11 +245,14 @@ it('shows matching image cards for today savings and saved deals', async () => {
   const savings = await screen.findByRole('region', { name: 'Today’s savings' })
   const saved = await screen.findByRole('region', { name: 'Your saved deals' })
   const savingsCard = savings.querySelector<HTMLButtonElement>('.dash-deal-card')
-  const savedCard = saved.querySelector<HTMLButtonElement>('.dash-deal-card')
   expect(savingsCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
-  expect(savedCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
   expect(savingsCard).toBeTruthy()
-  expect(savedCard).toBeTruthy()
+  await waitFor(() => {
+    const savedCard = saved.querySelector<HTMLButtonElement>('.dash-deal-card')
+    expect(savedCard?.querySelector('img')?.getAttribute('src')).toBe(deal.imageUrl)
+    expect(savedCard).toBeTruthy()
+  })
+  const savedCard = saved.querySelector<HTMLButtonElement>('.dash-deal-card')
   expect(savingsCard?.textContent).toContain('Sold out')
   expect(savedCard?.textContent).toContain('Sold out')
 
@@ -278,6 +281,125 @@ it('shows matching image cards for today savings and saved deals', async () => {
   })
 })
 
+it('debounces a large category search so typing keeps the current results responsive', async () => {
+  const deals = Array.from({ length: 11_700 }, (_, index) => ({
+    capturedAt: '2026-07-29T10:00:00.000Z',
+    evidenceText: index === 11_699 ? 'Long grain rice 2kg' : `Milk 2L item ${index}`,
+    id: `deal-${index}`,
+    productUrl: `https://example.test/product-${index}`,
+    retailerId: 'food-market',
+    retailerName: 'Food Market',
+    sourceLabel: 'Food and grocery specials',
+    sourceUrl: 'https://example.test/specials',
+    title: index === 11_699 ? 'Long grain rice 2kg' : `Milk 2L item ${index}`,
+  }))
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        deals,
+        summary: {
+          ...emptyDiscovery.summary,
+          foundDealCount: deals.length,
+        },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  await screen.findByRole('heading', { name: 'Marketplace' })
+  fireEvent.click(screen.getByRole('button', { name: /Food & Groceries/ }))
+  expect(screen.getByRole('tab', { name: 'Deals (11700)' })).toBeTruthy()
+
+  vi.useFakeTimers()
+  try {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search deals' }), {
+      target: { value: 'rice' },
+    })
+    expect(screen.getByText('Updating results…')).toBeTruthy()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(219)
+    })
+    expect(screen.getByRole('tab', { name: 'Deals (11700)' })).toBeTruthy()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(screen.getByRole('tab', { name: 'Deals (1)' })).toBeTruthy()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('sorts catalogues by Latest by default and supports Oldest with an accessible control', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        leaflets: [
+          {
+            capturedAt: '2026-07-29T10:00:00.000Z',
+            id: 'latest',
+            name: 'Latest weekly',
+            retailerId: 'zulu',
+            retailerName: 'Zulu Store',
+            pages: [{
+              height: 1200,
+              imageUrl: 'https://example.test/latest-page.webp',
+              pageNumber: 1,
+              width: 900,
+            }],
+            url: 'https://example.test/latest',
+            validFrom: '2026-07-29',
+          },
+          {
+            capturedAt: '2026-07-01T10:00:00.000Z',
+            id: 'oldest',
+            name: 'Oldest weekly',
+            retailerId: 'alpha',
+            retailerName: 'Alpha Store',
+            pages: [{
+              height: 1200,
+              imageUrl: 'https://example.test/oldest-page.webp',
+              pageNumber: 1,
+              width: 900,
+            }],
+            url: 'https://example.test/oldest',
+            validFrom: '2026-07-01',
+          },
+        ],
+        summary: {
+          ...emptyDiscovery.summary,
+          leafletCount: 2,
+        },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  fireEvent.click(await screen.findByRole('tab', { name: 'Catalogues (2)' }))
+
+  const sort = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Sort catalogues' })
+  expect(sort.value).toBe('latest')
+  expect(catalogueStoreHeadings()).toEqual(['Zulu Store', 'Alpha Store'])
+
+  fireEvent.change(sort, { target: { value: 'oldest' } })
+  expect(catalogueStoreHeadings()).toEqual(['Alpha Store', 'Zulu Store'])
+})
+
 function envelope(data: unknown) {
   return Response.json({
     data,
@@ -286,4 +408,10 @@ function envelope(data: unknown) {
       source: 'cloudflare-pages',
     },
   })
+}
+
+function catalogueStoreHeadings() {
+  return screen
+    .getAllByRole('heading', { level: 4 })
+    .map((heading) => heading.textContent)
 }

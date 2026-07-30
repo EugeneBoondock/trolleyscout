@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { StoredDealItem } from '../_shared/dealItemStore'
 import type { StoreLeaflet } from '../../src/types'
-import { handleScoutChat, type ScoutChatDependencies } from './scout-chat'
+import {
+  handleScoutChat,
+  searchMarketplaceDeals,
+  type ScoutChatDependencies,
+} from './scout-chat'
 
 const storedDeal: StoredDealItem = {
   capturedAt: '2026-07-26T10:00:00.000Z',
@@ -61,6 +65,7 @@ function dependencies(overrides: Partial<ScoutChatDependencies> = {}): ScoutChat
         countryCode: 'ZA',
         currencyCode: 'ZAR',
         id: 'member-1',
+        planId: 'free' as const,
       },
       isAuthenticated: true,
     })),
@@ -110,6 +115,184 @@ describe('handleScoutChat', () => {
       type: 'json_schema',
       strict: true,
     })
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        countryCode: 'ZA',
+        searchTerms: ['coffee'],
+        visibilityLimit: 2_000,
+      }),
+    )
+  })
+
+  it.each([
+    ['free', 2_000],
+    ['scout', 7_000],
+    ['household', Number.MAX_SAFE_INTEGER],
+    ['organization', Number.MAX_SAFE_INTEGER],
+    ['developers', Number.MAX_SAFE_INTEGER],
+  ] as const)('uses the %s Marketplace visibility policy', async (planId, visibilityLimit) => {
+    const deps = dependencies({
+      getSession: vi.fn(async () => ({
+        account: {
+          countryCode: 'ZA',
+          currencyCode: 'ZAR',
+          id: `${planId}-member`,
+          planId,
+        },
+        isAuthenticated: true,
+      })),
+    })
+
+    await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'Find rice deals' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ visibilityLimit }),
+    )
+  })
+
+  it('returns trusted rice cards when the model incorrectly claims Marketplace has none', async () => {
+    const riceDeal = {
+      ...storedDeal,
+      id: 'rice-deal',
+      productId: 'rice-1',
+      productUrl: 'https://retailer.test/rice',
+      title: 'Long grain rice 2kg',
+    }
+    const deps = dependencies({
+      fetchOpenAI: vi.fn(async () => new Response(JSON.stringify({
+        output: [{
+          type: 'message',
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
+              reply: 'I could not find any rice deals.',
+              dealIds: [],
+              catalogueIds: [],
+              followUps: [],
+            }),
+          }],
+        }],
+      }), { status: 200 })),
+      listDeals: vi.fn(async () => [riceDeal]),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'Do you have any rice deals?' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ id: string }>; reply: string } }
+    }
+    expect(body.data.answer.deals).toEqual([
+      expect.objectContaining({ id: 'rice-deal' }),
+    ])
+    expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
+  })
+
+  it('builds a temporary vegan grocery plan from the visible Marketplace corpus', async () => {
+    const groceryDeals = [
+      {
+        ...storedDeal,
+        id: 'rice',
+        priceCents: 4500,
+        productId: 'rice',
+        productUrl: 'https://retailer.test/rice',
+        title: 'Long grain rice 2kg',
+      },
+      {
+        ...storedDeal,
+        id: 'beans',
+        priceCents: 1800,
+        productId: 'beans',
+        productUrl: 'https://retailer.test/beans',
+        title: 'Red kidney beans 400g',
+      },
+      {
+        ...storedDeal,
+        id: 'spinach',
+        priceCents: 1600,
+        productId: 'spinach',
+        productUrl: 'https://retailer.test/spinach',
+        title: 'Fresh spinach bunch',
+      },
+      {
+        ...storedDeal,
+        id: 'tofu',
+        priceCents: 3800,
+        productId: 'tofu',
+        productUrl: 'https://retailer.test/tofu',
+        title: 'Firm tofu 300g',
+      },
+      {
+        ...storedDeal,
+        id: 'chicken',
+        priceCents: 8000,
+        productId: 'chicken',
+        productUrl: 'https://retailer.test/chicken',
+        title: 'Chicken breast 1kg',
+      },
+    ]
+    const deps = dependencies({
+      listDeals: vi.fn(async () => groceryDeals),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({
+          message: 'Create a grocery list for the cheapest vegan food for a family of 4',
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+    const body = await response.json() as {
+      data: {
+        answer: {
+          groceryPlan?: {
+            items: Array<{ id: string; quantity: number }>
+            maxStores: number
+            storeCount: number
+          }
+          reply: string
+        }
+      }
+    }
+
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        limit: 200,
+        searchTerms: [],
+        visibilityLimit: 2_000,
+      }),
+    )
+    expect(body.data.answer.groceryPlan).toMatchObject({
+      maxStores: 3,
+      storeCount: 1,
+    })
+    expect(body.data.answer.groceryPlan?.items.map((item) => item.id)).toEqual(
+      expect.arrayContaining(['rice', 'beans', 'spinach', 'tofu']),
+    )
+    expect(body.data.answer.groceryPlan?.items.map((item) => item.id))
+      .not.toContain('chicken')
+    expect(body.data.answer.groceryPlan?.items.every((item) => item.quantity === 2))
+      .toBe(true)
+    expect(body.data.answer.reply).toContain('temporary grocery list')
   })
 
   it('passes the signed-in shopper’s selected private context to Mr Scout', async () => {
@@ -200,5 +383,53 @@ describe('handleScoutChat', () => {
 
     expect(response.status).toBe(429)
     expect(deps.fetchOpenAI).not.toHaveBeenCalled()
+  })
+})
+
+describe('searchMarketplaceDeals', () => {
+  it('searches snapshot and business Marketplace rows in visible rank order', () => {
+    const marketplaceDeals = [
+      {
+        capturedAt: '2026-07-26T10:00:00.000Z',
+        evidenceText: 'Public promotion',
+        id: 'legacy-rice',
+        priceText: 'R39.99',
+        productUrl: 'https://retailer.test/rice',
+        retailerId: 'other',
+        retailerName: 'Local Market',
+        sourceLabel: 'Marketplace snapshot',
+        sourceUrl: 'https://retailer.test/specials',
+        title: 'Long grain rice 2kg',
+      },
+      {
+        capturedAt: '2026-07-26T10:00:00.000Z',
+        evidenceText: 'Public promotion',
+        id: 'business-rice',
+        priceText: 'R49.99',
+        productUrl: 'https://business.test/rice',
+        retailerId: 'other',
+        retailerName: 'Business Market',
+        sourceLabel: 'Business listing',
+        sourceUrl: 'https://business.test',
+        title: 'Rice combo',
+      },
+      {
+        capturedAt: '2026-07-26T10:00:00.000Z',
+        evidenceText: 'Public promotion',
+        id: 'coffee',
+        priceText: 'R79.99',
+        productUrl: 'https://retailer.test/coffee',
+        retailerId: 'other',
+        retailerName: 'Local Market',
+        sourceLabel: 'Marketplace snapshot',
+        sourceUrl: 'https://retailer.test/specials',
+        title: 'Coffee',
+      },
+    ] as const
+
+    expect(searchMarketplaceDeals(marketplaceDeals, ['rice']).map((deal) => deal.id)).toEqual([
+      'business-rice',
+      'legacy-rice',
+    ])
   })
 })

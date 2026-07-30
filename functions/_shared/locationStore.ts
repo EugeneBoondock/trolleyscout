@@ -344,7 +344,7 @@ export async function readPromotionCountsByPlace(
 export async function readAllStorePromotions(
   env: TrolleyScoutEnv,
   nowIso: string,
-  limit = 3000,
+  limit = 10_000,
   countryCode?: string,
 ): Promise<StorePromotion[]> {
   if (!hasDb(env)) {
@@ -635,8 +635,7 @@ export async function saveStorePromotions(
     );
     const capturedAt = new Date(nowMs).toISOString();
 
-    await env.DB.batch(
-      promotions.map((promotion) =>
+    const boundStatements = promotions.map((promotion) =>
         statement.bind(
           promotion.id,
           promotion.placeId,
@@ -659,8 +658,10 @@ export async function saveStorePromotions(
           // reaches a shopper as a sold-out badge.
           promotion.soldOut === undefined ? null : promotion.soldOut ? 1 : 0,
         ),
-      ),
     );
+    for (let start = 0; start < boundStatements.length; start += 100) {
+      await env.DB.batch(boundStatements.slice(start, start + 100));
+    }
     return true;
   } catch {
     // Best-effort write.

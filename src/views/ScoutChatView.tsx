@@ -2,8 +2,14 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowSquareOut,
   BookOpenText,
+  FloppyDisk,
+  Minus,
   PaperPlaneTilt,
+  Plus,
+  ShoppingCartSimple,
   Sparkle,
+  Trash,
+  X,
 } from '@phosphor-icons/react'
 
 import { LeafletViewer } from '../components/LeafletViewer'
@@ -14,6 +20,8 @@ import type {
   ScoutChatAnswer,
   ScoutChatCatalogueCard,
   ScoutChatTurn,
+  ScoutGroceryPlan,
+  ScoutGroceryPlanItem,
   StoreLeaflet,
 } from '../types'
 
@@ -25,7 +33,7 @@ interface ConversationMessage {
 }
 
 const starterPrompts = [
-  'Find the best grocery savings',
+  'Create a grocery list for the cheapest vegan food',
   'Show useful catalogues',
   'Find deals within my budget',
 ]
@@ -37,8 +45,10 @@ const welcomeMessage: ConversationMessage = {
 }
 
 export function ScoutChatView({
+  onTransferItem,
   sendMessage = sendScoutChatMessage,
 }: {
+  onTransferItem?: (item: ScoutGroceryPlanItem) => Promise<void> | void
   sendMessage?: (
     message: string,
     history: ScoutChatTurn[],
@@ -47,9 +57,13 @@ export function ScoutChatView({
 }) {
   const [messages, setMessages] = useState<ConversationMessage[]>([welcomeMessage])
   const [draft, setDraft] = useState('')
+  const [groceryItems, setGroceryItems] = useState<ScoutGroceryPlanItem[]>([])
+  const [groceryPlan, setGroceryPlan] = useState<ScoutGroceryPlan>()
+  const [isGroceryOpen, setIsGroceryOpen] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [openCatalogue, setOpenCatalogue] = useState<ScoutChatCatalogueCard>()
   const endRef = useRef<HTMLDivElement>(null)
+  const groceryControlRef = useRef<HTMLButtonElement>(null)
   const requestRef = useRef<AbortController | undefined>(undefined)
   const messageNumber = useRef(0)
 
@@ -88,6 +102,13 @@ export function ScoutChatView({
 
     try {
       const answer = await sendMessage(message, history, controller.signal)
+      if (answer.groceryPlan) {
+        setGroceryPlan(answer.groceryPlan)
+        setGroceryItems((current) => mergeGroceryItems(
+          current,
+          answer.groceryPlan!.items,
+        ))
+      }
       setMessages((current) => [...current, {
         answer,
         id: `assistant-${id}`,
@@ -116,6 +137,11 @@ export function ScoutChatView({
     void askMrScout(draft)
   }
 
+  function closeGroceryPlanner() {
+    setIsGroceryOpen(false)
+    window.setTimeout(() => groceryControlRef.current?.focus(), 0)
+  }
+
   return (
     <section className="scout-chat" aria-labelledby="mr-scout-heading">
       <header className="scout-chat-header">
@@ -129,10 +155,23 @@ export function ScoutChatView({
             <p>Verified deals, catalogue pages, prices, and store links.</p>
           </div>
         </div>
-        <span className="scout-chat-status">
-          <Sparkle aria-hidden="true" size={16} weight="fill" />
-          Ready to scout
-        </span>
+        <div className="scout-chat-header-actions">
+          <button
+            aria-label={`Open grocery list, ${groceryItems.length} ${groceryItems.length === 1 ? 'item' : 'items'}`}
+            className="scout-grocery-control"
+            onClick={() => setIsGroceryOpen(true)}
+            ref={groceryControlRef}
+            type="button"
+          >
+            <ShoppingCartSimple aria-hidden="true" size={20} weight="bold" />
+            <span>Grocery list</span>
+            <b>{groceryItems.length}</b>
+          </button>
+          <span className="scout-chat-status">
+            <Sparkle aria-hidden="true" size={16} weight="fill" />
+            Ready to scout
+          </span>
+        </div>
       </header>
 
       <div className="scout-chat-thread" aria-live="polite">
@@ -294,8 +333,318 @@ export function ScoutChatView({
           onClose={() => setOpenCatalogue(undefined)}
         />
       )}
+      {isGroceryOpen && (
+        <GroceryPlannerModal
+          items={groceryItems}
+          onChange={setGroceryItems}
+          onClose={closeGroceryPlanner}
+          onTransferItem={onTransferItem}
+          plan={groceryPlan}
+        />
+      )}
     </section>
   )
+}
+
+function GroceryPlannerModal({
+  items,
+  onChange,
+  onClose,
+  onTransferItem,
+  plan,
+}: {
+  items: ScoutGroceryPlanItem[]
+  onChange: (items: ScoutGroceryPlanItem[]) => void
+  onClose: () => void
+  onTransferItem?: (item: ScoutGroceryPlanItem) => Promise<void> | void
+  plan?: ScoutGroceryPlan
+}) {
+  const [notice, setNotice] = useState('')
+  const [transferringId, setTransferringId] = useState<string>()
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const modalRef = useRef<HTMLElement>(null)
+  const onCloseRef = useRef(onClose)
+  const grouped = useMemo(() => groupGroceryItems(items), [items])
+  const totalCents = items.reduce((total, item) => total + item.lineTotalCents, 0)
+  const currencyCode = plan?.currencyCode ?? 'ZAR'
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    closeButtonRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = [...(modalRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ) ?? [])]
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  function changeQuantity(item: ScoutGroceryPlanItem, quantity: number) {
+    const nextQuantity = Math.max(1, Math.min(99, Math.floor(quantity)))
+    onChange(items.map((candidate) => candidate.id === item.id
+      ? {
+          ...candidate,
+          lineTotalCents: candidate.unitPriceCents * nextQuantity,
+          lineTotalText: formatPlannerMoney(
+            candidate.unitPriceCents * nextQuantity,
+            currencyCode,
+          ),
+          quantity: nextQuantity,
+        }
+      : candidate))
+  }
+
+  async function transfer(item: ScoutGroceryPlanItem) {
+    if (!onTransferItem) {
+      setNotice('Main basket transfer is unavailable in this session.')
+      return
+    }
+    setTransferringId(item.id)
+    setNotice('')
+    try {
+      await onTransferItem(item)
+      setNotice(`${item.title} was transferred to the main basket.`)
+    } catch (error) {
+      setNotice(error instanceof Error
+        ? error.message
+        : 'The item could not be transferred.')
+    } finally {
+      setTransferringId(undefined)
+    }
+  }
+
+  function saveList() {
+    window.localStorage.setItem(
+      'trolley-scout-grocery-plan-v1',
+      JSON.stringify({ items, plan, savedAt: new Date().toISOString() }),
+    )
+    setNotice('Grocery list saved on this device.')
+  }
+
+  return (
+    <div className="scout-grocery-backdrop" role="presentation">
+      <section
+        aria-labelledby="scout-grocery-title"
+        aria-modal="true"
+        className="scout-grocery-modal"
+        ref={modalRef}
+        role="dialog"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">Mr Scout grocery planner</p>
+            <h2 id="scout-grocery-title">Temporary grocery list</h2>
+            <p>Plan across stores, then choose what enters your main basket.</p>
+          </div>
+          <button
+            aria-label="Close grocery list"
+            onClick={onClose}
+            ref={closeButtonRef}
+            type="button"
+          >
+            <X aria-hidden="true" size={22} />
+          </button>
+        </header>
+
+        {items.length === 0 ? (
+          <div className="scout-grocery-empty">
+            <ShoppingCartSimple aria-hidden="true" size={38} />
+            <h3>Your temporary grocery list is empty.</h3>
+            <p>Ask Mr Scout for meat, vegetables, vegan food, or a full grocery plan.</p>
+          </div>
+        ) : (
+          <div className="scout-grocery-body">
+            <div className="scout-grocery-groups">
+              {grouped.map(([storeName, storeItems]) => (
+                <section className="scout-grocery-store" key={storeName}>
+                  <header>
+                    <div>
+                      <h3>{storeName}</h3>
+                      <span>{storeItems.length} {storeItems.length === 1 ? 'item' : 'items'}</span>
+                    </div>
+                    <strong>
+                      {formatPlannerMoney(
+                        storeItems.reduce(
+                          (total, item) => total + item.lineTotalCents,
+                          0,
+                        ),
+                        currencyCode,
+                      )}
+                    </strong>
+                  </header>
+                  <div>
+                    {storeItems.map((item) => (
+                      <article className="scout-grocery-item" key={item.id}>
+                        {item.imageUrl ? (
+                          <img
+                            alt={item.title}
+                            loading="lazy"
+                            onError={(event) => { event.currentTarget.hidden = true }}
+                            src={item.imageUrl}
+                          />
+                        ) : (
+                          <span className="scout-grocery-image-fallback">
+                            <ShoppingCartSimple aria-hidden="true" size={24} />
+                          </span>
+                        )}
+                        <div className="scout-grocery-item-copy">
+                          <small>{item.group}</small>
+                          <strong>{item.title}</strong>
+                          <span>{item.assumption}</span>
+                          {item.promotionText && <em>{item.promotionText}</em>}
+                        </div>
+                        <div className="scout-grocery-item-price">
+                          <span>{item.priceText} each</span>
+                          <strong>{item.lineTotalText}</strong>
+                        </div>
+                        <div
+                          aria-label={`${item.title} quantity`}
+                          className="scout-grocery-quantity"
+                        >
+                          <button
+                            aria-label={`Decrease ${item.title} quantity`}
+                            disabled={item.quantity <= 1}
+                            onClick={() => changeQuantity(item, item.quantity - 1)}
+                            type="button"
+                          >
+                            <Minus aria-hidden="true" size={15} />
+                          </button>
+                          <output aria-label={`${item.title} quantity ${item.quantity}`}>
+                            {item.quantity}
+                          </output>
+                          <button
+                            aria-label={`Increase ${item.title} quantity`}
+                            onClick={() => changeQuantity(item, item.quantity + 1)}
+                            type="button"
+                          >
+                            <Plus aria-hidden="true" size={15} />
+                          </button>
+                        </div>
+                        <div className="scout-grocery-item-actions">
+                          <button
+                            aria-label={`Remove ${item.title}`}
+                            onClick={() => onChange(items.filter(
+                              (candidate) => candidate.id !== item.id,
+                            ))}
+                            type="button"
+                          >
+                            <Trash aria-hidden="true" size={16} />
+                            Remove
+                          </button>
+                          <button
+                            aria-label={`Transfer ${item.title} to main basket`}
+                            disabled={transferringId === item.id}
+                            onClick={() => void transfer(item)}
+                            type="button"
+                          >
+                            {transferringId === item.id ? 'Transferring' : 'Transfer item'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            <aside className="scout-grocery-summary">
+              <h3>Plan summary</h3>
+              <dl>
+                <div><dt>Stores</dt><dd>{grouped.length} of {plan?.maxStores ?? 3}</dd></div>
+                <div><dt>Items</dt><dd>{items.length}</dd></div>
+                <div><dt>Subtotal</dt><dd>{formatPlannerMoney(totalCents, currencyCode)}</dd></div>
+                <div className="is-total"><dt>Overall total</dt><dd>{formatPlannerMoney(totalCents, currencyCode)}</dd></div>
+              </dl>
+              {plan && (
+                <>
+                  <GroceryNotes title="List assumptions" values={plan.assumptions} />
+                  <GroceryNotes title="Missing or unavailable" values={plan.missingItems} />
+                  <GroceryNotes title="Trade-offs" values={plan.tradeOffs} />
+                </>
+              )}
+              {notice && <p className="scout-grocery-notice" role="status">{notice}</p>}
+              <div className="scout-grocery-summary-actions">
+                <button aria-label="Save grocery list" onClick={saveList} type="button">
+                  <FloppyDisk aria-hidden="true" size={17} />
+                  Save list
+                </button>
+                <button
+                  aria-label="Clear grocery list"
+                  onClick={() => {
+                    onChange([])
+                    setNotice('Temporary grocery list cleared.')
+                  }}
+                  type="button"
+                >
+                  <Trash aria-hidden="true" size={17} />
+                  Clear list
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function GroceryNotes({ title, values }: { title: string; values: string[] }) {
+  if (values.length === 0) return null
+  return (
+    <section className="scout-grocery-notes">
+      <h4>{title}</h4>
+      <ul>
+        {values.map((value) => <li key={value}>{value}</li>)}
+      </ul>
+    </section>
+  )
+}
+
+function mergeGroceryItems(
+  current: ScoutGroceryPlanItem[],
+  incoming: ScoutGroceryPlanItem[],
+): ScoutGroceryPlanItem[] {
+  const merged = new Map(current.map((item) => [item.id, item]))
+  for (const item of incoming) merged.set(item.id, item)
+  return [...merged.values()]
+}
+
+function groupGroceryItems(
+  items: ScoutGroceryPlanItem[],
+): Array<[string, ScoutGroceryPlanItem[]]> {
+  const groups = new Map<string, ScoutGroceryPlanItem[]>()
+  for (const item of items) {
+    const group = groups.get(item.retailerName) ?? []
+    group.push(item)
+    groups.set(item.retailerName, group)
+  }
+  return [...groups.entries()]
+}
+
+function formatPlannerMoney(cents: number, currencyCode: string): string {
+  if (currencyCode === 'ZAR') return `R${(cents / 100).toFixed(2)}`
+  return `${currencyCode} ${(cents / 100).toFixed(2)}`
 }
 
 function catalogueCardToLeaflet(catalogue: ScoutChatCatalogueCard): StoreLeaflet {

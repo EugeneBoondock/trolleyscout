@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StoreLeaflet } from '../types'
 import { groupLeafletsByRetailer } from './catalogueOrdering'
+import * as catalogueOrderingModule from './catalogueOrdering'
 
 function leaflet(overrides: Partial<StoreLeaflet>): StoreLeaflet {
   return {
@@ -76,6 +77,46 @@ describe('groupLeafletsByRetailer', () => {
     expect(groups[0].leaflets.map((item) => item.id)).toEqual([
       'captured-new',
       'captured-old',
+    ])
+  })
+})
+
+describe('sortLeaflets', () => {
+  it('supports latest, oldest, and store-name order', () => {
+    const sortLeaflets = (
+      catalogueOrderingModule as unknown as Record<string, unknown>
+    ).sortLeaflets as
+      | ((leaflets: StoreLeaflet[], sort: string) => StoreLeaflet[])
+      | undefined
+    expect(sortLeaflets).toBeTypeOf('function')
+    if (!sortLeaflets) return
+
+    const values = [
+      leaflet({
+        id: 'zulu-new',
+        retailerId: 'zulu',
+        retailerName: 'Zulu',
+        validFrom: '2026-07-19',
+      }),
+      leaflet({
+        id: 'alpha-old',
+        retailerId: 'alpha',
+        retailerName: 'Alpha',
+        validFrom: '2026-07-01',
+      }),
+    ]
+
+    expect(sortLeaflets(values, 'latest').map((item) => item.id)).toEqual([
+      'zulu-new',
+      'alpha-old',
+    ])
+    expect(sortLeaflets(values, 'oldest').map((item) => item.id)).toEqual([
+      'alpha-old',
+      'zulu-new',
+    ])
+    expect(sortLeaflets(values, 'store').map((item) => item.id)).toEqual([
+      'alpha-old',
+      'zulu-new',
     ])
   })
 })

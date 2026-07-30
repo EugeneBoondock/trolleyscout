@@ -120,7 +120,7 @@ void main() {
     );
     expect(
       find.text(
-        'Free plan: up to 10,000 deals and 50 catalogues. '
+        'Free plan: up to 2,000 deals and 50 catalogues. '
         '12,000 deals and 72 catalogues are available.',
       ),
       findsOneWidget,
@@ -319,7 +319,7 @@ class _LimitedLayoutApi extends _LayoutApi {
           availableCatalogueCount: 72,
           availableDealCount: 12000,
           catalogueLimit: 50,
-          dealLimit: 10000,
+          dealLimit: 2000,
           planId: 'free',
         ),
         deals: [

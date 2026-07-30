@@ -5,6 +5,8 @@ import {
   getMemberPlan,
   getPlanBillingOption,
   getPlanMerchantAllowance,
+  limitVisibleCataloguesForPlan,
+  limitVisibleDealsForPlan,
   memberPlans,
 } from './memberPlans'
 
@@ -24,7 +26,7 @@ describe('memberPlans', () => {
     }
   })
 
-  it('gives every higher plan a much larger deal and catalogue viewing allowance', () => {
+  it('publishes the approved consumer and developer visibility policy', () => {
     expect(
       memberPlans.map((plan) => ({
         catalogues: plan.limits.visibleCatalogues,
@@ -32,12 +34,36 @@ describe('memberPlans', () => {
         id: plan.id,
       })),
     ).toEqual([
-      { catalogues: 50, deals: 10_000, id: 'free' },
-      { catalogues: 250, deals: 50_000, id: 'scout' },
-      { catalogues: 1_000, deals: 250_000, id: 'household' },
-      { catalogues: 5_000, deals: 1_000_000, id: 'organization' },
-      { catalogues: 5_000, deals: 1_000_000, id: 'developers' },
+      { catalogues: 50, deals: 2_000, id: 'free' },
+      { catalogues: 150, deals: 7_000, id: 'scout' },
+      {
+        catalogues: Number.MAX_SAFE_INTEGER,
+        deals: Number.MAX_SAFE_INTEGER,
+        id: 'household',
+      },
+      {
+        catalogues: Number.MAX_SAFE_INTEGER,
+        deals: Number.MAX_SAFE_INTEGER,
+        id: 'organization',
+      },
+      {
+        catalogues: Number.MAX_SAFE_INTEGER,
+        deals: Number.MAX_SAFE_INTEGER,
+        id: 'developers',
+      },
     ])
+  })
+
+  it.each([
+    ['free', 2_000, 50],
+    ['scout', 7_000, 150],
+    ['household', 8_000, 200],
+    ['organization', 8_000, 200],
+    ['developers', 8_000, 200],
+  ] as const)('applies %s limits to direct saved and cached views', (planId, deals, catalogues) => {
+    expect(limitVisibleDealsForPlan(Array.from({ length: 8_000 }), planId)).toHaveLength(deals)
+    expect(limitVisibleCataloguesForPlan(Array.from({ length: 200 }), planId))
+      .toHaveLength(catalogues)
   })
 
   it('maps billing cycles to PayFast frequencies and trusted amounts', () => {

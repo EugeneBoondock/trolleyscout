@@ -4,10 +4,119 @@ import { ScoutChatView } from './ScoutChatView'
 
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
   vi.unstubAllGlobals()
 })
 
 describe('ScoutChatView', () => {
+  it('keeps a separate editable grocery list behind a counted planner control', async () => {
+    const transferItem = vi.fn(async () => undefined)
+    const sendMessage = vi.fn(async () => ({
+      reply: 'I built a temporary grocery list.',
+      deals: [],
+      catalogues: [],
+      followUps: [],
+      groceryPlan: {
+        assumptions: ['2 people', 'One planning period'],
+        currencyCode: 'ZAR',
+        items: [
+          {
+            assumption: 'Staple for a household of 2',
+            group: 'Staple',
+            id: 'rice',
+            imageUrl: 'https://images.test/rice.webp',
+            lineTotalCents: 4500,
+            lineTotalText: 'R45.00',
+            priceText: 'R45.00',
+            productUrl: 'https://retailer.test/rice',
+            promotionText: 'Save R10',
+            quantity: 1,
+            retailerId: 'market-a',
+            retailerName: 'Market A',
+            sourceUrl: 'https://retailer.test/specials',
+            title: 'Long grain rice 2kg',
+            unitPriceCents: 4500,
+          },
+          {
+            assumption: 'Plant protein for a household of 2',
+            group: 'Plant protein',
+            id: 'tofu',
+            lineTotalCents: 3800,
+            lineTotalText: 'R38.00',
+            priceText: 'R38.00',
+            productUrl: 'https://retailer.test/tofu',
+            quantity: 1,
+            retailerId: 'market-b',
+            retailerName: 'Market B',
+            sourceUrl: 'https://retailer.test/specials',
+            title: 'Firm tofu 300g',
+            unitPriceCents: 3800,
+          },
+        ],
+        maxStores: 3,
+        missingItems: ['Fresh fruit'],
+        storeCount: 2,
+        subtotalCents: 8300,
+        subtotalText: 'R83.00',
+        totalCents: 8300,
+        totalText: 'R83.00',
+        tradeOffs: ['Two stores are used for better coverage.'],
+      },
+    }))
+    render(<ScoutChatView onTransferItem={transferItem} sendMessage={sendMessage} />)
+
+    expect(screen.getByRole('button', { name: 'Open grocery list, 0 items' }))
+      .toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Message Mr Scout'), {
+      target: { value: 'Create a grocery list for vegan food' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Open grocery list, 2 items' }))
+        .toBeTruthy(),
+    )
+    expect(transferItem).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open grocery list, 2 items' }))
+    expect(screen.getByRole('dialog', { name: 'Temporary grocery list' })).toBeTruthy()
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Close grocery list' }),
+    )
+    expect(screen.getByText('Market A')).toBeTruthy()
+    expect(screen.getByText('Market B')).toBeTruthy()
+    expect(screen.getByText('Long grain rice 2kg')).toBeTruthy()
+    expect(screen.getByText('Save R10')).toBeTruthy()
+    expect(screen.getByText('Fresh fruit')).toBeTruthy()
+    expect(screen.getAllByText('R83.00')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Long grain rice 2kg quantity' }))
+    expect(screen.getAllByText('R128.00')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer Long grain rice 2kg to main basket' }))
+    await waitFor(() =>
+      expect(transferItem).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'rice',
+        quantity: 2,
+      })),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Firm tofu 300g' }))
+    expect(screen.getByRole('button', { name: 'Open grocery list, 1 item' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save grocery list' }))
+    expect(window.localStorage.getItem('trolley-scout-grocery-plan-v1')).toContain('rice')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear grocery list' }))
+    expect(screen.getByText('Your temporary grocery list is empty.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open grocery list, 0 items' }))
+      .toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Temporary grocery list' }))
+      .toBeNull()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Open grocery list, 0 items' }),
+      ),
+    )
+  })
+
   it('sends a message and renders deal and catalogue cards from Mr Scout', async () => {
     const sendMessage = vi.fn(async () => ({
       reply: 'I found a coffee deal and this week’s catalogue.',
