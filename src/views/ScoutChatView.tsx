@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowSquareOut,
   BookOpenText,
+  Check,
   PaperPlaneTilt,
+  Plus,
+  ShoppingCartSimple,
   Sparkle,
 } from '@phosphor-icons/react'
 
+import { useScoutCart, type UseScoutCart } from '../hooks/useScoutCart'
+import { isInCart } from '../services/scoutCart'
 import { LeafletViewer } from '../components/LeafletViewer'
 import { ScoutMark } from '../components/ScoutMark'
 import { sendScoutChatMessage } from '../services/scoutChatClient'
@@ -33,7 +38,7 @@ const starterPrompts = [
 const welcomeMessage: ConversationMessage = {
   id: 'welcome',
   role: 'assistant',
-  text: 'Hi, I’m Mr Scout. Tell me what you need, your budget, or the store you prefer.',
+  text: 'Hi, Iâ€™m Mr Scout. Tell me what you need, your budget, or the store you prefer.',
 }
 
 export function ScoutChatView({
@@ -48,6 +53,9 @@ export function ScoutChatView({
   const [messages, setMessages] = useState<ConversationMessage[]>([welcomeMessage])
   const [draft, setDraft] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [cartFeedback, setCartFeedback] = useState('')
+  const cart = useScoutCart()
   const [openCatalogue, setOpenCatalogue] = useState<ScoutChatCatalogueCard>()
   const endRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef<AbortController | undefined>(undefined)
@@ -129,11 +137,36 @@ export function ScoutChatView({
             <p>Verified deals, catalogue pages, prices, and store links.</p>
           </div>
         </div>
-        <span className="scout-chat-status">
-          <Sparkle aria-hidden="true" size={16} weight="fill" />
-          Ready to scout
-        </span>
+        <div className="scout-chat-header-actions">
+          <span className="scout-chat-status">
+            <Sparkle aria-hidden="true" size={16} weight="fill" />
+            Ready to scout
+          </span>
+          <button
+            aria-expanded={isCartOpen}
+            aria-label={`Mr Scout cart, ${cart.summary.itemCount} ${
+              cart.summary.itemCount === 1 ? 'item' : 'items'
+            }`}
+            className="scout-chat-cart-button"
+            onClick={() => setIsCartOpen((open) => !open)}
+            type="button"
+          >
+            <ShoppingCartSimple aria-hidden="true" size={20} />
+            {cart.summary.itemCount > 0 && (
+              <span className="scout-chat-cart-badge">{cart.summary.itemCount}</span>
+            )}
+          </button>
+        </div>
       </header>
+
+      {isCartOpen && (
+        <ScoutCartPanel
+          cart={cart}
+          onClose={() => setIsCartOpen(false)}
+          onFeedback={setCartFeedback}
+          feedback={cartFeedback}
+        />
+      )}
 
       <div className="scout-chat-thread" aria-live="polite">
         {messages.map((message) => (
@@ -173,15 +206,31 @@ export function ScoutChatView({
                               {deal.previousPriceText && <s>{deal.previousPriceText}</s>}
                             </p>
                             {deal.savingText && <span>{deal.savingText}</span>}
-                            <a
-                              href={withReferralSource(deal.productUrl)}
-                              rel="noreferrer"
-                              target="_blank"
-                              aria-label={`View ${deal.title}`}
-                            >
-                              {deal.soldOut ? 'Check product' : 'View deal'}
-                              <ArrowSquareOut aria-hidden="true" size={16} />
-                            </a>
+                            <div className="scout-chat-card-actions">
+                              <a
+                                href={withReferralSource(deal.productUrl)}
+                                rel="noreferrer"
+                                target="_blank"
+                                aria-label={`View ${deal.title}`}
+                              >
+                                {deal.soldOut ? 'Check product' : 'View deal'}
+                                <ArrowSquareOut aria-hidden="true" size={16} />
+                              </a>
+                              <button
+                                aria-label={isInCart(cart.items, deal.productUrl)
+                                  ? `Remove ${deal.title} from your Mr Scout cart`
+                                  : `Add ${deal.title} to your Mr Scout cart`}
+                                className="scout-chat-add-to-cart"
+                                onClick={() => (isInCart(cart.items, deal.productUrl)
+                                  ? cart.remove(deal.productUrl)
+                                  : cart.add(deal))}
+                                type="button"
+                              >
+                                {isInCart(cart.items, deal.productUrl)
+                                  ? <><Check aria-hidden="true" size={16} />In cart</>
+                                  : <><Plus aria-hidden="true" size={16} />Add to cart</>}
+                              </button>
+                            </div>
                           </div>
                         </article>
                       ))}
@@ -298,6 +347,123 @@ export function ScoutChatView({
   )
 }
 
+/**
+ * The consideration list a shopper builds while talking to Mr Scout. Totals
+ * are broken down per store because "everything from Takealot" and
+ * "everything from Game" are two different trips.
+ */
+function ScoutCartPanel({
+  cart,
+  feedback,
+  onClose,
+  onFeedback,
+}: {
+  cart: UseScoutCart
+  feedback: string
+  onClose: () => void
+  onFeedback: (message: string) => void
+}) {
+  async function move(retailerName?: string) {
+    const { failed, moved } = await cart.moveToBasket(retailerName)
+    if (moved === 0) {
+      onFeedback('Nothing could be moved to your basket. Try again shortly.')
+      return
+    }
+    onFeedback(
+      failed > 0
+        ? `Moved ${moved} to your basket. ${failed} could not be moved and are still here.`
+        : `Moved ${moved} ${moved === 1 ? 'item' : 'items'} to your basket.`,
+    )
+  }
+
+  return (
+    <section aria-label="Mr Scout cart" className="scout-chat-cart-panel">
+      <header>
+        <h2>Your Mr Scout cart</h2>
+        <button aria-label="Close cart" onClick={onClose} type="button">Close</button>
+      </header>
+
+      {cart.items.length === 0 ? (
+        <p className="scout-chat-cart-empty">
+          Nothing here yet. Add anything Mr Scout finds and it will wait for you.
+        </p>
+      ) : (
+        <>
+          {cart.summary.groups.map((group) => (
+            <div className="scout-chat-cart-group" key={group.retailerName}>
+              <h3>
+                {group.retailerName}
+                <span>
+                  {group.totalCents === undefined
+                    ? `${group.itemCount} ${group.itemCount === 1 ? 'item' : 'items'}`
+                    : formatRands(group.totalCents)}
+                </span>
+              </h3>
+              <ul>
+                {group.items.map((item) => (
+                  <li key={item.productUrl}>
+                    <a href={withReferralSource(item.productUrl)} rel="noreferrer" target="_blank">
+                      {item.title}
+                    </a>
+                    <b>{item.priceText}</b>
+                    <button
+                      aria-label={`Remove ${item.title} from your Mr Scout cart`}
+                      onClick={() => cart.remove(item.productUrl)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                disabled={cart.isMoving}
+                onClick={() => void move(group.retailerName)}
+                type="button"
+              >
+                Add {group.retailerName} items to basket
+              </button>
+            </div>
+          ))}
+
+          <p className="scout-chat-cart-total">
+            <span>{cart.summary.itemCount} items</span>
+            <b>{formatRands(cart.summary.totalCents)}</b>
+            {cart.summary.unpricedCount > 0 && (
+              <small>{cart.summary.unpricedCount} without a readable price</small>
+            )}
+          </p>
+
+          <div className="scout-chat-cart-actions">
+            <button
+              className="primary-button"
+              disabled={cart.isMoving}
+              onClick={() => void move()}
+              type="button"
+            >
+              {cart.isMoving ? 'Movingâ€¦' : 'Add all to basket'}
+            </button>
+            <button
+              className="ghost-button"
+              disabled={cart.isMoving}
+              onClick={cart.clear}
+              type="button"
+            >
+              Clear
+            </button>
+          </div>
+        </>
+      )}
+
+      {feedback && <p aria-live="polite" className="scout-chat-cart-feedback">{feedback}</p>}
+    </section>
+  )
+}
+
+function formatRands(cents: number): string {
+  return `R${(cents / 100).toFixed(2)}`
+}
+
 function catalogueCardToLeaflet(catalogue: ScoutChatCatalogueCard): StoreLeaflet {
   return {
     capturedAt: new Date().toISOString(),
@@ -323,3 +489,4 @@ function cataloguePageLabel(pageCount: number): string {
   if (pageCount <= 0) return 'Open catalogue'
   return pageCount === 1 ? '1 page' : `${pageCount} pages`
 }
+

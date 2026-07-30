@@ -8813,3 +8813,101 @@ a.auto-compare-title:hover {
   background: var(--red);
   color: #fff;
 }
+
+/* Mr Scout cart — a consideration list built during the conversation, kept
+   apart from the real basket until the shopper commits. */
+.scout-chat-header-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.scout-chat-cart-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  height: 2.5rem;
+  justify-content: center;
+  position: relative;
+  width: 2.5rem;
+}
+
+.scout-chat-cart-badge {
+  background: #d92d20;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 1.15rem;
+  padding: 0.2rem 0.32rem;
+  position: absolute;
+  right: -0.25rem;
+  text-align: center;
+  top: -0.25rem;
+}
+
+.scout-chat-cart-panel {
+  background: var(--ts-surface, #fff);
+  border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: 0.9rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+}
+
+.scout-chat-cart-panel header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.scout-chat-cart-panel h2 { font-size: 1.05rem; margin: 0; }
+
+.scout-chat-cart-group { border-top: 1px solid rgb(0 0 0 / 0.08); padding: 0.6rem 0; }
+
+.scout-chat-cart-group h3 {
+  display: flex;
+  font-size: 0.9rem;
+  justify-content: space-between;
+  margin: 0 0 0.4rem;
+}
+
+.scout-chat-cart-group ul { list-style: none; margin: 0; padding: 0; }
+
+.scout-chat-cart-group li {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+}
+
+.scout-chat-cart-group li a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.scout-chat-cart-total {
+  align-items: baseline;
+  border-top: 1px solid rgb(0 0 0 / 0.12);
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  padding-top: 0.6rem;
+}
+
+.scout-chat-cart-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
+
+.scout-chat-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.scout-chat-add-to-cart {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+}
