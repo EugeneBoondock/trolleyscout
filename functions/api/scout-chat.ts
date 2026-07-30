@@ -1,4 +1,4 @@
-import { listActiveDealItems, type StoredDealItem } from '../_shared/dealItemStore'
+﻿import { listActiveDealItems, type StoredDealItem } from '../_shared/dealItemStore'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import {
@@ -17,6 +17,10 @@ import {
   type ScoutPersonalContextInput,
 } from '../_shared/scoutChat'
 import { buildScoutPersona } from '../_shared/scoutPersona'
+import {
+  logScoutRetrieval,
+  type ScoutRetrievalLogInput,
+} from '../_shared/scoutRetrievalLog'
 import {
   retrieveProducts,
   toScoutDealCards,
@@ -53,6 +57,10 @@ export interface ScoutChatDependencies {
     env: TrolleyScoutEnv,
     accountId: string,
   ) => Promise<ScoutPersonalContextInput>
+  logRetrieval: (
+    env: TrolleyScoutEnv,
+    input: ScoutRetrievalLogInput,
+  ) => Promise<string | undefined>
   retrieveProducts: (message: string) => Promise<ProductRetrievalResult>
 }
 
@@ -66,6 +74,7 @@ const defaultDependencies: ScoutChatDependencies = {
   }),
   listLeaflets: async (env) => (await readLeafletSnapshot(env))?.leaflets ?? [],
   loadPersonalContext: loadScoutPersonalContext,
+  logRetrieval: logScoutRetrieval,
   retrieveProducts: (message) => retrieveProducts(message),
 }
 
@@ -126,8 +135,8 @@ export async function handleScoutChat(
   const countryCode = normalizedCountryCode(session.account.countryCode)
   const currencyCode = normalizedCurrencyCode(session.account.currencyCode)
   // Retrieval runs alongside the stored context. Mr Scout used to see only the
-  // most recent promotions, so anything not currently on special — a 50 inch
-  // television, say — was invisible to him no matter what the shopper asked.
+  // most recent promotions, so anything not currently on special â€” a 50 inch
+  // television, say â€” was invisible to him no matter what the shopper asked.
   const [deals, leaflets, personalContext, retrieval] = await Promise.all([
     dependencies.listDeals(env, countryCode).catch(() => []),
     dependencies.listLeaflets(env).catch(() => []),
@@ -202,10 +211,22 @@ export async function handleScoutChat(
 
   try {
     const modelAnswer = parseScoutModelAnswer(await openAIResponse.json())
+    const answer = mapScoutAnswer(modelAnswer, scoutContext)
+    // Logging must never cost the shopper their answer.
+    const retrievalId = retrieval
+      ? await dependencies.logRetrieval(env, {
+          accountId: session.account.id,
+          queryText: input.message,
+          retrieval,
+          shownCount: answer.deals.length,
+        }).catch(() => undefined)
+      : undefined
+
     return json(
       {
-        answer: mapScoutAnswer(modelAnswer, scoutContext),
+        answer,
         model: MODEL,
+        retrievalId,
       },
       { headers: privateHeaders },
     )
@@ -300,3 +321,4 @@ function normalizedCurrencyCode(value: string | undefined): string {
   const code = value?.trim().toUpperCase() ?? ''
   return /^[A-Z]{3}$/.test(code) ? code : 'ZAR'
 }
+

@@ -69,6 +69,7 @@ function dependencies(overrides: Partial<ScoutChatDependencies> = {}): ScoutChat
     listDeals: vi.fn(async () => [storedDeal]),
     listLeaflets: vi.fn(async () => [leaflet]),
     loadPersonalContext: vi.fn(async () => ({})),
+    logRetrieval: vi.fn(async () => 'retrieval-1'),
     // Retrieval reaches real storefronts, so it stays stubbed out unless a
     // test is specifically about live product results.
     retrieveProducts: vi.fn(async () => ({
