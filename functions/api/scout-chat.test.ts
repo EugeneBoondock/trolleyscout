@@ -203,6 +203,155 @@ describe('handleScoutChat', () => {
     expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
   })
 
+  it('ranks current ten-kilo Marketplace rice by price and excludes unrelated cards', async () => {
+    const deals = [
+      {
+        ...storedDeal,
+        id: 'saved-shoes',
+        priceCents: 1999,
+        productId: 'shoes',
+        productUrl: 'https://retailer.test/shoes',
+        title: 'Ladies fashion shoes',
+      },
+      {
+        ...storedDeal,
+        id: 'rice-cooker',
+        priceCents: 9999,
+        productId: 'rice-cooker',
+        productUrl: 'https://retailer.test/rice-cooker',
+        title: 'Digital rice cooker 10kg',
+      },
+      {
+        ...storedDeal,
+        id: 'rice-ten-expensive',
+        priceCents: 22999,
+        productId: 'rice-ten-expensive',
+        productUrl: 'https://retailer.test/rice-ten-expensive',
+        title: 'Premium rice 10 kg',
+      },
+      {
+        ...storedDeal,
+        id: 'rice-five',
+        priceCents: 8999,
+        productId: 'rice-five',
+        productUrl: 'https://retailer.test/rice-five',
+        title: 'Long grain rice 5kg',
+      },
+      {
+        ...storedDeal,
+        id: 'rice-ten-cheap',
+        priceCents: 17999,
+        productId: 'rice-ten-cheap',
+        productUrl: 'https://retailer.test/rice-ten-cheap',
+        title: 'Parboiled rice 10kg',
+      },
+    ]
+    const deps = dependencies({
+      fetchOpenAI: vi.fn(async () => new Response(JSON.stringify({
+        output: [{
+          type: 'message',
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
+              reply: 'No rice was found.',
+              dealIds: ['saved-shoes'],
+              catalogueIds: [],
+              followUps: [],
+            }),
+          }],
+        }],
+      }), { status: 200 })),
+      listDeals: vi.fn(async () => deals),
+      loadPersonalContext: vi.fn(async () => ({
+        savedDeals: [{
+          priceText: 'R19.99',
+          productUrl: 'https://retailer.test/saved-shoes',
+          retailerName: 'Fashion Market',
+          title: 'Saved shoes',
+        }],
+      })),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'show me the cheapest ten-kilo rice' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ id: string }>; reply: string } }
+    }
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        countryCode: 'ZA',
+        productQuery: expect.objectContaining({
+          productTerms: ['rice'],
+          requestedPackGrams: 10_000,
+        }),
+        searchTerms: ['rice'],
+        visibilityLimit: 2_000,
+      }),
+    )
+    expect(body.data.answer.deals.map((deal) => deal.id)).toEqual([
+      'rice-ten-cheap',
+      'rice-ten-expensive',
+      'rice-five',
+    ])
+    expect(body.data.answer.reply).toContain('10 kg')
+
+    const openAIRequest = vi.mocked(deps.fetchOpenAI).mock.calls[0][0]
+    const openAiBody = await openAIRequest.clone().json() as {
+      input: Array<{ content: string }>
+    }
+    expect(openAiBody.input[1].content).not.toContain('Saved shoes')
+  })
+
+  it('states when the requested rice pack is unavailable and returns closest pack sizes', async () => {
+    const deps = dependencies({
+      listDeals: vi.fn(async () => [
+        {
+          ...storedDeal,
+          id: 'rice-two',
+          priceCents: 4499,
+          productId: 'rice-two',
+          productUrl: 'https://retailer.test/rice-two',
+          title: 'Long grain rice 2kg',
+        },
+        {
+          ...storedDeal,
+          id: 'rice-five',
+          priceCents: 9499,
+          productId: 'rice-five',
+          productUrl: 'https://retailer.test/rice-five',
+          title: 'White rice 5kg',
+        },
+      ]),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'show me the cheapest ten-kilo rice' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ id: string }>; reply: string } }
+    }
+    expect(body.data.answer.deals.map((deal) => deal.id)).toEqual([
+      'rice-five',
+      'rice-two',
+    ])
+    expect(body.data.answer.reply).toContain('No current 10 kg')
+    expect(body.data.answer.reply).toContain('closest')
+  })
+
   it('builds a temporary vegan grocery plan from the visible Marketplace corpus', async () => {
     const groceryDeals = [
       {

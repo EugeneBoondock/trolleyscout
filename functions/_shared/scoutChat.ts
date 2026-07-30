@@ -197,13 +197,16 @@ export function buildScoutContext(
   leaflets: readonly StoreLeaflet[],
   currencyCode: string,
   personalInput: ScoutPersonalContextInput = {},
+  options: { preserveDealOrder?: boolean } = {},
 ): ScoutChatContext {
   const eligibleDeals = dealItems.filter((item) =>
       (!('status' in item) || item.status === 'active') &&
       !item.soldOut &&
       isHttpUrl(item.productUrl),
     )
-  const orderedDeals = eligibleDeals.every(
+  const orderedDeals = options.preserveDealOrder
+    ? eligibleDeals
+    : eligibleDeals.every(
     (item): item is StoredDealItem => 'priceCents' in item,
   )
     ? [...eligibleDeals].sort((a, b) => {
