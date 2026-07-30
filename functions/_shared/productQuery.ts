@@ -139,12 +139,23 @@ const WRONG_TYPE_MARKERS: readonly string[] = [
 
 /** Softer signals — usually an accessory or a derivative, not the thing. */
 const WEAK_TYPE_MARKERS: readonly string[] = [
-  'case', 'cover', 'sleeve', 'stand', 'rack', 'hook', 'basket', 'tray', 'kit',
+  'case', 'cover', 'sleeve', 'stand', 'rack', 'hook', 'basket', 'kit',
   'refill', 'cartridge', 'filter', 'cable', 'charger', 'adapter', 'remote',
   'battery', 'bag', 'toy', 'book', 'magazine', 'flavour', 'flavoured',
   'flavored', 'scented', 'essence', 'extract', 'powder', 'sauce', 'spice',
   'seasoning', 'stock', 'soup',
 ]
+
+/**
+ * Words that refine a product without changing what it is — pack formats,
+ * grades and dairy descriptors. "Eggs Tray 30s" is still eggs and "Full Cream
+ * Milk" is still milk, so these never count as evidence of a different thing.
+ */
+const REFINING_TOKENS = new Set([
+  'assorted', 'cream', 'dozen', 'extra', 'family', 'fat', 'free', 'fresh',
+  'full', 'jumbo', 'large', 'lite', 'long', 'low', 'medium', 'mini', 'mixed',
+  'pack', 'plain', 'range', 'small', 'tray', 'value', 'white', 'whole',
+])
 
 /** Words that describe intent or price, never the product. */
 const INTENT_WORDS = new Set([
@@ -261,11 +272,50 @@ export function scoreProductCandidate(
     }
   }
 
-  // Shorter titles that still match are usually the plain product; long ones
-  // are bundles and variety packs.
-  score -= Math.min(15, Math.max(0, tokens.length - 8))
+  const extras = extraWordPenalty(tokens, query)
+  score -= extras.penalty
+  if (extras.adjacent) reasons.push(`modifier "${extras.adjacent}" next to the product`)
 
   return { reasons, rejected: false, score }
+}
+
+/**
+ * Words in the title the shopper never asked for. Position carries the
+ * meaning: a word sitting directly against the product name usually changes
+ * what the product IS ("Marshmallow Eggs", "Milk Tart", "Almond Milk"), while
+ * the same word elsewhere in a title is usually a brand or a flourish.
+ */
+function extraWordPenalty(
+  tokens: readonly string[],
+  query: ParsedProductQuery,
+): { adjacent?: string; penalty: number } {
+  const known = new Set([
+    ...query.modifiers,
+    ...query.headTerms.flatMap((term) => term.split(' ')),
+    ...(query.colour ? [query.colour] : []),
+  ])
+  const isHead = (token: string) => query.headTerms
+    .some((term) => term.split(' ').includes(token))
+  const first = tokens.findIndex(isHead)
+  const last = tokens.length - 1 - [...tokens].reverse().findIndex(isHead)
+
+  let penalty = 0
+  let adjacent: string | undefined
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (known.has(token) || REFINING_TOKENS.has(token)) continue
+    // Sizes, counts and model codes describe, they do not redefine.
+    if (/^\d/.test(token)) continue
+
+    if (index === first - 1 || index === last + 1) {
+      penalty += 25
+      adjacent ??= token
+    } else {
+      penalty += 4
+    }
+  }
+
+  return { adjacent, penalty }
 }
 
 function wrongTypePenalty(
