@@ -130,6 +130,7 @@ const ACCESSORY_TERMS: Record<string, readonly string[]> = {
 }
 
 export interface MarketplaceProductQuery {
+  productName?: string
   productTerms: string[]
   requestedPackGrams?: number
   requestedPackText?: string

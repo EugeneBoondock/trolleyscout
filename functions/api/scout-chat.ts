@@ -33,6 +33,12 @@ import {
   rankMarketplaceProductDeals,
   type MarketplaceProductQuery,
 } from '../_shared/marketplaceProductSearch'
+import {
+  parseScoutSearchIntent,
+  productQueryFromIntent,
+  scoutSearchIntentSchema,
+  type ScoutSearchIntent,
+} from '../_shared/scoutSearchIntent'
 
 const MODEL = 'gpt-5.4-mini'
 const MAX_REQUESTS_PER_MINUTE = 20
@@ -54,10 +60,21 @@ interface ScoutChatContext {
   request: Request
 }
 
+interface ScoutIntentRequest {
+  countryCode: string
+  currencyCode: string
+  history: Array<{ role: 'assistant' | 'user'; text: string }>
+  message: string
+}
+
 export interface ScoutChatDependencies {
   fetchOpenAI: (request: Request) => Promise<Response>
   getSession: (env: TrolleyScoutEnv, request: Request) => Promise<ScoutSession>
   incrementUsage: (env: TrolleyScoutEnv, accountId: string, now?: Date) => Promise<number>
+  interpretSearchIntent: (
+    env: TrolleyScoutEnv,
+    input: ScoutIntentRequest,
+  ) => Promise<ScoutSearchIntent | undefined>
   listDeals: (
     env: TrolleyScoutEnv,
     options: SearchActiveDealItemsOptions & {
@@ -77,6 +94,7 @@ const defaultDependencies: ScoutChatDependencies = {
   fetchOpenAI: (request) => fetch(request),
   getSession: getMemberSession,
   incrementUsage: incrementScoutChatUsage,
+  interpretSearchIntent: requestScoutSearchIntent,
   listDeals: async (env, options) => {
     const visibleDeals = await readVisibleMarketplaceDeals(env, {
       accountId: options.accountId,
@@ -159,12 +177,23 @@ export async function handleScoutChat(
   const currencyCode = normalizedCurrencyCode(session.account.currencyCode)
   const groceryRequest = parseGroceryPlanRequest(input.message)
   const personalOfferRequest = isPersonalOfferRequest(input.message)
+  const interpretedSearchIntent = groceryRequest || personalOfferRequest
+    ? undefined
+    : await dependencies.interpretSearchIntent(env, {
+        countryCode,
+        currencyCode,
+        history: input.history,
+        message: input.message,
+      }).catch(() => undefined)
   const productQuery = groceryRequest || personalOfferRequest
     ? undefined
-    : parseMarketplaceProductQuery(input.message)
+    : interpretedSearchIntent
+      ? productQueryFromIntent(interpretedSearchIntent)
+      : parseMarketplaceProductQuery(input.message)
   const searchTerms = groceryRequest
     ? []
-    : productQuery?.productTerms ?? extractScoutSearchTerms(input.message)
+    : productQuery?.productTerms ??
+      (interpretedSearchIntent ? [] : extractScoutSearchTerms(input.message))
   const planId = session.account.role === 'admin'
     ? 'organization'
     : session.account.planId ?? 'free'
@@ -198,6 +227,32 @@ export async function handleScoutChat(
     personalContext,
     { preserveDealOrder: Boolean(productQuery) },
   )
+  if (
+    interpretedSearchIntent?.kind === 'product' &&
+    productQuery &&
+    rankedProductResult
+  ) {
+    const marketplaceIds = new Set(visibleDeals.map((deal) => deal.id))
+    const productDeals = scoutContext.deals
+      .filter((deal) => marketplaceIds.has(deal.id))
+      .slice(0, 6)
+    return json(
+      {
+        answer: {
+          catalogues: [],
+          deals: productDeals,
+          followUps: [],
+          reply: marketplaceProductReply(
+            productQuery,
+            productDeals.length,
+            rankedProductResult.exactPackAvailable,
+          ),
+        },
+        model: MODEL,
+      },
+      { headers: privateHeaders },
+    )
+  }
   const openAIRequest = new Request('https://api.openai.com/v1/responses', {
     body: JSON.stringify({
       model: MODEL,
@@ -358,7 +413,7 @@ function marketplaceProductReply(
   matchCount: number,
   exactPackAvailable: boolean,
 ): string {
-  const product = query.productTerms.join(' ')
+  const product = query.productName ?? query.productTerms.join(' ')
   if (matchCount === 0) {
     const pack = query.requestedPackText ? ` in a ${query.requestedPackText} pack` : ''
     return `I could not find current ${product}${pack} in your visible Marketplace deals. Try another pack size or check again when retailers update their offers.`
@@ -368,7 +423,7 @@ function marketplaceProductReply(
   }
   const pack = query.requestedPackText ? `${query.requestedPackText} ` : ''
   const ordering = query.sort === 'price-asc' ? ' with the lowest valid prices first' : ''
-  return `I found ${matchCount} current ${pack}${product} ${matchCount === 1 ? 'deal' : 'deals'} in Marketplace${ordering}. Prices and stock can change, so check the retailer before buying.`
+  return `I found ${matchCount} current Marketplace ${matchCount === 1 ? 'deal' : 'deals'} for ${pack}${product}${ordering}. Prices and stock can change, so check the retailer before buying.`
 }
 
 function isPersonalOfferRequest(message: string): boolean {
@@ -386,6 +441,65 @@ function personalContextForRequest(
     favouriteStores: context.favouriteStores,
     followedStores: context.followedStores,
   }
+}
+
+export async function requestScoutSearchIntent(
+  env: TrolleyScoutEnv,
+  input: ScoutIntentRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<ScoutSearchIntent> {
+  if (!env.OPENAI_API_KEY) {
+    throw new TypeError('Mr Scout search intent needs an OpenAI API key.')
+  }
+  const response = await fetcher(new Request('https://api.openai.com/v1/responses', {
+    body: JSON.stringify({
+      model: MODEL,
+      reasoning: { effort: 'low' },
+      max_output_tokens: 300,
+      store: false,
+      input: [
+        {
+          role: 'developer',
+          content: [
+            'Extract the shopper’s retrieval intent before Marketplace search.',
+            `The shopper is in ${input.countryCode} and uses ${input.currencyCode}.`,
+            'Classify product requests as product. Use catalogue, personal, property, or general for other requests.',
+            'For a product, correct obvious spelling and spacing errors using shopping context.',
+            'Keep brand, model, product type, variant, material, colour, gender, size, and other requested qualifiers when they identify the item.',
+            'productName must be a concise corrected product noun phrase, without request words, store instructions, or price language.',
+            'productTerms must contain normalized title-matching terms in singular form where sensible.',
+            'Use price-asc for cheapest, cheap, affordable, lowest-price, or equivalent requests. Otherwise use relevance.',
+            'Extract a requested grocery pack into grams when stated. Use null when no pack is stated.',
+            'Never invent a product that the shopper did not request.',
+          ].join('\n'),
+        },
+        ...input.history.slice(-4).map((turn) => ({
+          role: turn.role,
+          content: turn.text,
+        })),
+        { role: 'user', content: input.message },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'mr_scout_search_intent',
+          strict: true,
+          schema: scoutSearchIntentSchema,
+        },
+      },
+    }),
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+    signal: AbortSignal.timeout(15_000),
+  }))
+  if (!response.ok) {
+    throw new TypeError(`Mr Scout search intent failed with ${response.status}.`)
+  }
+  return parseScoutSearchIntent(await response.json())
 }
 
 export async function loadScoutPersonalContext(

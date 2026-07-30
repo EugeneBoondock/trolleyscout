@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { StoredDealItem } from '../_shared/dealItemStore'
+import type { ScoutSearchIntent } from '../_shared/scoutSearchIntent'
 import type { StoreLeaflet } from '../../src/types'
 import {
   handleScoutChat,
+  requestScoutSearchIntent,
   searchMarketplaceDeals,
   type ScoutChatDependencies,
 } from './scout-chat'
@@ -70,6 +72,7 @@ function dependencies(overrides: Partial<ScoutChatDependencies> = {}): ScoutChat
       isAuthenticated: true,
     })),
     incrementUsage: vi.fn(async () => 1),
+    interpretSearchIntent: vi.fn(async () => undefined),
     listDeals: vi.fn(async () => [storedDeal]),
     listLeaflets: vi.fn(async () => [leaflet]),
     loadPersonalContext: vi.fn(async () => ({})),
@@ -267,6 +270,68 @@ describe('handleScoutChat', () => {
       'chicken-cheap',
     ])
     expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
+  })
+
+  it('uses model-led product intent for typo correction and product identity', async () => {
+    const airForceDeal = {
+      ...storedDeal,
+      id: 'air-force-sneaker',
+      priceCents: 129999,
+      productId: 'air-force-sneaker',
+      productUrl: 'https://retailer.test/air-force-sneaker',
+      title: 'Nike Air Force 1 Low White Sneaker',
+    }
+    const deps = dependencies({
+      interpretSearchIntent: vi.fn(async (): Promise<ScoutSearchIntent> => ({
+        kind: 'product',
+        productName: 'Air Force sneakers',
+        productTerms: ['air', 'force', 'sneaker'],
+        requestedPackGrams: null,
+        requestedPackText: null,
+        sort: 'price-asc',
+      })),
+      listDeals: vi.fn(async () => [airForceDeal]),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({
+          message: 'Check for me teh cheapest airforce sneaker',
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ id: string }>; reply: string } }
+    }
+    expect(deps.interpretSearchIntent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        countryCode: 'ZA',
+        currencyCode: 'ZAR',
+        message: 'Check for me teh cheapest airforce sneaker',
+      }),
+    )
+    expect(deps.listDeals).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        productQuery: {
+          productName: 'Air Force sneakers',
+          productTerms: ['air', 'force', 'sneaker'],
+          sort: 'price-asc',
+        },
+        searchTerms: ['air', 'force', 'sneaker'],
+      }),
+    )
+    expect(body.data.answer.deals).toEqual([
+      expect.objectContaining({ id: 'air-force-sneaker' }),
+    ])
+    expect(body.data.answer.reply).toContain('Air Force sneakers')
+    expect(body.data.answer.reply.toLowerCase()).not.toContain('could not find')
+    expect(deps.fetchOpenAI).not.toHaveBeenCalled()
   })
 
   it('ranks current ten-kilo Marketplace rice by price and excludes unrelated cards', async () => {
@@ -646,5 +711,59 @@ describe('searchMarketplaceDeals', () => {
       'business-rice',
       'legacy-rice',
     ])
+  })
+})
+
+describe('requestScoutSearchIntent', () => {
+  it('asks the model for corrected structured product identity before retrieval', async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_input): Promise<Response> =>
+      new Response(JSON.stringify({
+      output: [{
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text: JSON.stringify({
+            kind: 'product',
+            productName: 'Air Force sneakers',
+            productTerms: ['air', 'force', 'sneaker'],
+            requestedPackGrams: null,
+            requestedPackText: null,
+            sort: 'price-asc',
+          }),
+        }],
+      }],
+      }), { status: 200 }))
+
+    const intent = await requestScoutSearchIntent(
+      { OPENAI_API_KEY: 'test-key' },
+      {
+        countryCode: 'ZA',
+        currencyCode: 'ZAR',
+        history: [],
+        message: 'Check for me teh cheapest airforce sneaker',
+      },
+      fetcher,
+    )
+
+    expect(intent).toMatchObject({
+      kind: 'product',
+      productName: 'Air Force sneakers',
+      productTerms: ['air', 'force', 'sneaker'],
+      sort: 'price-asc',
+    })
+    const request = vi.mocked(fetcher).mock.calls[0][0] as Request
+    const body = await request.clone().json() as {
+      input: Array<{ content: string; role: string }>
+      text: { format: { name: string; strict: boolean } }
+    }
+    expect(body.input[0].content).toContain('correct obvious spelling and spacing errors')
+    expect(body.input.at(-1)).toEqual({
+      role: 'user',
+      content: 'Check for me teh cheapest airforce sneaker',
+    })
+    expect(body.text.format).toMatchObject({
+      name: 'mr_scout_search_intent',
+      strict: true,
+    })
   })
 })
