@@ -1,3 +1,8 @@
+import {
+  parseProductQuery,
+  scoreProductCandidate,
+  type ParsedProductQuery,
+} from './productQuery'
 import { searchWeb } from './searchWeb'
 import type {
   CountryOption,
@@ -770,7 +775,7 @@ function productTitleTokens(value: string): string[] {
   return value.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 1)
 }
 
-function parseKnownProductResults(
+export function parseKnownProductResults(
   retailerId: string,
   payload: unknown,
   query: string,
@@ -788,57 +793,43 @@ function parseKnownProductResults(
 }
 
 const MAX_MATCH_ALTERNATIVES = 3
+const MAX_PARSED_QUERY_CACHE = 50
+const MIN_MATCH_SCORE = 50
 
-// Words that refine a product without changing what it is. Sizes, pack
-// counts, and digit-led tokens ("30s", "2l") are free; anything else costs.
-const REFINING_TITLE_TOKENS = new Set([
-  'assorted', 'dozen', 'extra', 'family', 'fresh', 'jumbo', 'large',
-  'medium', 'mini', 'mixed', 'pack', 'small', 'tray', 'value',
-])
+// Reading a query is pure and slightly costly, and every candidate title in a
+// response is scored against the same one.
+const parsedQueryCache = new Map<string, ParsedProductQuery>()
+
+function parsedQuery(query: string): ParsedProductQuery {
+  const cached = parsedQueryCache.get(query)
+  if (cached) return cached
+  const parsed = parseProductQuery(query)
+  if (parsedQueryCache.size >= MAX_PARSED_QUERY_CACHE) parsedQueryCache.clear()
+  parsedQueryCache.set(query, parsed)
+  return parsed
+}
 
 /**
  * How closely a product title matches what the shopper typed. Higher is
- * better. The key signal is adjacency: an unmatched word DIRECTLY before a
- * matched one is usually a type-changing modifier ("Marshmallow Eggs"), while
- * front-of-title extras are usually brands ("Nulaid ... Eggs") — so adjacent
- * modifiers cost 3, other extras cost 1, sizes and counts cost nothing.
+ * better. See productQuery.ts — the score understands product type, size,
+ * colour and budget rather than counting shared words.
  */
 export function candidateRelevance(title: string, query: string): number {
-  const queryTokens = new Set(productTitleTokens(normalizeUnits(query)))
-  const titleTokens = productTitleTokens(normalizeUnits(title))
-  if (queryTokens.size === 0 || titleTokens.length === 0) return 0
-
-  let score = 0
-  for (let index = 0; index < titleTokens.length; index += 1) {
-    const token = titleTokens[index]
-    if (queryTokens.has(token)) {
-      score += 10
-    } else if (!/^\d/.test(token) && !REFINING_TITLE_TOKENS.has(token)) {
-      const nextMatches = index + 1 < titleTokens.length &&
-        queryTokens.has(titleTokens[index + 1])
-      score -= nextMatches ? 3 : 1
-    }
-  }
-  return score
+  return scoreProductCandidate(title, parsedQuery(query)).score
 }
 
+/**
+ * Whether a title is the product the shopper asked for. This used to require
+ * every typed word to appear literally in the title, which rejected every
+ * "TV" for a "television" query and every 50" set whose size lived in a model
+ * code. Product-type understanding replaces the substring test.
+ */
 function matchesQuery(title: string, query: string): boolean {
-  const titleText = normalizeUnits(title)
-  const tokens = normalizeUnits(query).split(/[^a-z0-9]+/).filter((token) => token.length > 1)
-  return tokens.length > 0 && tokens.every((token) => titleText.includes(token))
-}
-
-// "2L", "2 l" and "2 Litre" are the same size to a shopper — fold unit
-// spellings together so a query written one way matches titles written
-// another.
-function normalizeUnits(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\b(litres?|liters?)\b/g, 'l')
-    .replace(/\b(kilograms?|kgs)\b/g, 'kg')
-    .replace(/\b(grams?)\b/g, 'g')
-    .replace(/\b(millilitres?|milliliters?|mls)\b/g, 'ml')
-    .replace(/(\d)\s+(l|kg|g|ml)\b/g, '$1$2')
+  const scored = scoreProductCandidate(title, parsedQuery(query))
+  // A title can be the right kind of thing and still be the wrong answer —
+  // "PnP Milk Tart" is genuinely a milk product but nobody searching for milk
+  // wants one. The floor keeps those out of a price comparison.
+  return !scored.rejected && scored.score >= MIN_MATCH_SCORE
 }
 
 function firstMoney(value: unknown, keys: string[]): number | undefined {

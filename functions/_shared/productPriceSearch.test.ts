@@ -139,7 +139,10 @@ describe('on-demand retailer product results', () => {
     }])
   })
 
-  it('filters Game search noise that does not contain every query word', () => {
+  it('drops storage and homeware that merely share words with the food', () => {
+    // A bread bin contains every word of "white bread" and is not bread. The
+    // old every-word filter kept it and dropped the loaf; a shopper comparing
+    // grocery prices was quoted R299 for a container.
     const products = parseGameProductResults({
       products: [
         {
@@ -152,13 +155,18 @@ describe('on-demand retailer product results', () => {
           price: { value: 21.7 },
           url: '/ice-tray/p/2',
         },
+        {
+          name: 'Albany Superior White Bread 700g',
+          price: { value: 21.99 },
+          url: '/albany-white-bread/p/3',
+        },
       ],
     }, 'white bread')
 
     expect(products).toEqual([{
-      priceCents: 29900,
-      productUrl: 'https://www.game.co.za/bread-bin-white/p/1',
-      title: 'Bread Bin White 1 Each',
+      priceCents: 2199,
+      productUrl: 'https://www.game.co.za/albany-white-bread/p/3',
+      title: 'Albany Superior White Bread 700g',
     }])
   })
 
