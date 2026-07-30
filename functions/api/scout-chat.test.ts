@@ -1,3 +1,4 @@
+﻿import { parseProductQuery } from '../_shared/productQuery'
 import { describe, expect, it, vi } from 'vitest'
 import type { StoredDealItem } from '../_shared/dealItemStore'
 import type { StoreLeaflet } from '../../src/types'
@@ -68,6 +69,14 @@ function dependencies(overrides: Partial<ScoutChatDependencies> = {}): ScoutChat
     listDeals: vi.fn(async () => [storedDeal]),
     listLeaflets: vi.fn(async () => [leaflet]),
     loadPersonalContext: vi.fn(async () => ({})),
+    // Retrieval reaches real storefronts, so it stays stubbed out unless a
+    // test is specifically about live product results.
+    retrieveProducts: vi.fn(async () => ({
+      candidates: [],
+      query: parseProductQuery(''),
+      searched: false,
+      timings: [],
+    })),
     ...overrides,
   }
 }
@@ -112,7 +121,7 @@ describe('handleScoutChat', () => {
     })
   })
 
-  it('passes the signed-in shopper’s selected private context to Mr Scout', async () => {
+  it('passes the signed-in shopperâ€™s selected private context to Mr Scout', async () => {
     const deps = dependencies({
       loadPersonalContext: vi.fn(async () => ({
         basket: {
@@ -174,6 +183,81 @@ describe('handleScoutChat', () => {
     expect(privateContext).toContain('Sandton')
   })
 
+  it('searches the stores for what the shopper asked for', async () => {
+    // The reported bug: "can you get me 50 inch televisions?" answered that
+    // none could be found while Takealot and Game both stocked them. Nothing
+    // the shopper typed ever reached a product search.
+    const deps = dependencies({
+      fetchOpenAI: vi.fn(async () => new Response(JSON.stringify({
+        output: [{
+          type: 'message',
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
+              reply: 'Takealot has a 50 inch Hisense at R6099.',
+              dealIds: ['live:0:takealot'],
+              catalogueIds: [],
+              followUps: [],
+            }),
+          }],
+        }],
+      }), { status: 200 })),
+      retrieveProducts: vi.fn(async () => ({
+        candidates: [{
+          priceCents: 609_900,
+          productUrl: 'https://www.takealot.com/hisense-50/PLID1',
+          retailerId: 'takealot',
+          retailerName: 'Takealot',
+          score: 160,
+          scoreReasons: ['product type: tv', '50" size match'],
+          title: 'Hisense 50 Inch QLED VIDAA Smart LED Television',
+        }],
+        query: parseProductQuery('50 inch televisions'),
+        searched: true,
+        timings: [],
+      })),
+    })
+
+    const response = await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'can you get me 50 inch televisions?' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    expect(response.status).toBe(200)
+    expect(deps.retrieveProducts).toHaveBeenCalledWith('can you get me 50 inch televisions?')
+
+    const body = await response.json() as {
+      data: { answer: { deals: Array<{ priceText: string; retailerName: string; title: string }> } }
+    }
+    expect(body.data.answer.deals[0]).toMatchObject({
+      priceText: 'R6099.00',
+      retailerName: 'Takealot',
+      title: 'Hisense 50 Inch QLED VIDAA Smart LED Television',
+    })
+  })
+
+  it('tells Mr Scout when no live result came back instead of letting him guess', async () => {
+    const deps = dependencies()
+    await handleScoutChat({
+      env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'anything' }),
+        method: 'POST',
+      }),
+    }, deps)
+
+    const request = vi.mocked(deps.fetchOpenAI).mock.calls[0][0]
+    const openAiBody = await request.clone().json() as {
+      input: Array<{ content: string; role: string }>
+    }
+    expect(openAiBody.input[0].content).toContain('No live store results came back')
+    expect(openAiBody.input[0].content).toContain('Never estimate, average or recall a price')
+  })
+
   it('requires a signed-in consumer account', async () => {
     const response = await handleScoutChat({
       env: { DB: {} as D1Database, OPENAI_API_KEY: 'test-key' },
@@ -202,3 +286,4 @@ describe('handleScoutChat', () => {
     expect(deps.fetchOpenAI).not.toHaveBeenCalled()
   })
 })
+
