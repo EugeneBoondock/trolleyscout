@@ -8911,3 +8911,21 @@ a.auto-compare-title:hover {
   gap: 0.3rem;
   padding: 0.3rem 0.7rem;
 }
+
+.scout-chat-rating {
+  align-items: center;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  opacity: 0.85;
+}
+
+.scout-chat-rating button {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0.25rem 0.45rem;
+}

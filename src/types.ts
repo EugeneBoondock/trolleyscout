@@ -138,6 +138,8 @@ export interface ScoutChatAnswer {
   deals: ScoutChatDealCard[]
   followUps: string[]
   reply: string
+  /** Ties a thumbs rating back to the retrieval that produced this answer. */
+  retrievalId?: string
 }
 
 export interface VerifiedOffer {

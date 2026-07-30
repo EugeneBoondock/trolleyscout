@@ -7,13 +7,15 @@ import {
   Plus,
   ShoppingCartSimple,
   Sparkle,
+  ThumbsDown,
+  ThumbsUp,
 } from '@phosphor-icons/react'
 
 import { useScoutCart, type UseScoutCart } from '../hooks/useScoutCart'
 import { isInCart } from '../services/scoutCart'
 import { LeafletViewer } from '../components/LeafletViewer'
 import { ScoutMark } from '../components/ScoutMark'
-import { sendScoutChatMessage } from '../services/scoutChatClient'
+import { rateScoutAnswer, sendScoutChatMessage } from '../services/scoutChatClient'
 import { withReferralSource } from '../services/outboundLink'
 import type {
   ScoutChatAnswer,
@@ -29,11 +31,30 @@ interface ConversationMessage {
   text: string
 }
 
-const starterPrompts = [
+/**
+ * What an empty chat offers. Written as things a shopper here would really
+ * ask, so the first message is a real question rather than a demo of the
+ * feature.
+ */
+const starterPromptsByCountry: Record<string, readonly string[]> = {
+  ZA: [
+    'Cheapest 2L full cream milk near me',
+    'What do I need for chakalaka, and what does it cost?',
+    'Compare maize meal prices at Shoprite, Boxer and Checkers',
+    '55 inch smart TV under R8000',
+  ],
+}
+
+const defaultStarterPrompts = [
   'Find the best grocery savings',
   'Show useful catalogues',
   'Find deals within my budget',
+  'Compare prices across my usual stores',
 ]
+
+function starterPromptsFor(countryCode: string): readonly string[] {
+  return starterPromptsByCountry[countryCode.toUpperCase()] ?? defaultStarterPrompts
+}
 
 const welcomeMessage: ConversationMessage = {
   id: 'welcome',
@@ -42,8 +63,12 @@ const welcomeMessage: ConversationMessage = {
 }
 
 export function ScoutChatView({
+  countryCode = 'ZA',
+  rateAnswer = rateScoutAnswer,
   sendMessage = sendScoutChatMessage,
 }: {
+  countryCode?: string
+  rateAnswer?: (retrievalId: string, feedback: 'down' | 'up') => Promise<boolean>
   sendMessage?: (
     message: string,
     history: ScoutChatTurn[],
@@ -55,6 +80,7 @@ export function ScoutChatView({
   const [isSending, setIsSending] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [cartFeedback, setCartFeedback] = useState('')
+  const [ratedAnswers, setRatedAnswers] = useState<Record<string, 'down' | 'up'>>({})
   const cart = useScoutCart()
   const [openCatalogue, setOpenCatalogue] = useState<ScoutChatCatalogueCard>()
   const endRef = useRef<HTMLDivElement>(null)
@@ -117,6 +143,12 @@ export function ScoutChatView({
         setIsSending(false)
       }
     }
+  }
+
+  function rate(retrievalId: string, feedback: 'down' | 'up') {
+    // Recorded optimistically — a shopper should never wait to be thanked.
+    setRatedAnswers((current) => ({ ...current, [retrievalId]: feedback }))
+    void rateAnswer(retrievalId, feedback)
   }
 
   function handleSubmit(event: FormEvent) {
@@ -264,6 +296,31 @@ export function ScoutChatView({
                     </div>
                   )}
 
+                  {message.answer.retrievalId && (
+                    <div className="scout-chat-rating">
+                      {ratedAnswers[message.answer.retrievalId] ? (
+                        <span>Thanks — that helps Mr Scout get better.</span>
+                      ) : (
+                        <>
+                          <span>Was this helpful?</span>
+                          <button
+                            aria-label="This answer was helpful"
+                            onClick={() => rate(message.answer!.retrievalId!, 'up')}
+                            type="button"
+                          >
+                            <ThumbsUp aria-hidden="true" size={16} />
+                          </button>
+                          <button
+                            aria-label="This answer was not helpful"
+                            onClick={() => rate(message.answer!.retrievalId!, 'down')}
+                            type="button"
+                          >
+                            <ThumbsDown aria-hidden="true" size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {message.answer.followUps.length > 0 && (
                     <div className="scout-chat-followups" aria-label="Suggested follow-up messages">
                       {message.answer.followUps.map((followUp) => (
@@ -295,7 +352,7 @@ export function ScoutChatView({
 
       {messages.length === 1 && (
         <div className="scout-chat-starters" aria-label="Try asking">
-          {starterPrompts.map((prompt) => (
+          {starterPromptsFor(countryCode).map((prompt) => (
             <button
               disabled={isSending}
               key={prompt}
@@ -489,4 +546,5 @@ function cataloguePageLabel(pageCount: number): string {
   if (pageCount <= 0) return 'Open catalogue'
   return pageCount === 1 ? '1 page' : `${pageCount} pages`
 }
+
 

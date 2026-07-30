@@ -18,6 +18,7 @@ export async function sendScoutChatMessage(
     data?: {
       answer?: ScoutChatAnswer
       error?: string
+      retrievalId?: string
     }
   }
 
@@ -25,5 +26,23 @@ export async function sendScoutChatMessage(
     throw new Error(payload.data?.error || 'Mr Scout could not answer right now.')
   }
 
-  return payload.data.answer
+  // The retrieval id ties a thumbs rating back to the search that produced
+  // the answer, which is what makes relevance tunable.
+  return { ...payload.data.answer, retrievalId: payload.data.retrievalId }
+}
+
+export async function rateScoutAnswer(
+  retrievalId: string,
+  feedback: 'down' | 'up',
+): Promise<boolean> {
+  try {
+    const response = await fetch('/api/scout-feedback', {
+      body: JSON.stringify({ feedback, retrievalId }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    return response.ok
+  } catch {
+    return false
+  }
 }
