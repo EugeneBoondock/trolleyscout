@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   buildRegistryOnlineStores: vi.fn(),
@@ -10,9 +10,17 @@ const mocks = vi.hoisted(() => ({
   refreshLeafletCache: vi.fn(),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
-  runVoucherScout: vi.fn(async () => ({ expired: 0, sources: [] })),
-  discoverVoucherSources: vi.fn(async () => []),
-  listDiscoveredVoucherSources: vi.fn(async () => []),
+  runVoucherScout: vi.fn(async (): Promise<{
+    expired: number
+    sources: Array<{ discovered: number; sourceKey: string; written: number }>
+  }> => ({ expired: 0, sources: [] })),
+  discoverVoucherSources: vi.fn(async (): Promise<Array<{
+    candidateCount: number
+    outcome: string
+    retailerId: string
+    url: string
+  }>> => []),
+  listDiscoveredVoucherSources: vi.fn(async (): Promise<unknown[]> => []),
 }))
 
 // The voucher lane reaches real retailer sites, so it is stubbed out unless a
@@ -349,7 +357,7 @@ describe('/api/admin/scout-run', () => {
 
   it('reaches the sources that have gone longest unread, not just the first few', async () => {
     // A bounded run walks the list from the front and stops at the cap, so the
-    // sources registered last â€” Takealot's campaign shards among them â€” were
+    // sources registered last — Takealot's campaign shards among them — were
     // never reached however many times the button was pressed.
     signedInAs('admin-1', 'admin')
     mocks.getStructuredRetailerSources.mockReturnValue([
@@ -394,7 +402,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({ data: { country: 'NL' } })
   })
 
-  // Not because the lane is South African â€” it is not, any more â€” but because
+  // Not because the lane is South African — it is not, any more — but because
   // no feed has been built for the Netherlands yet, so the whole budget is
   // better spent on the shops that do serve it.
   it('skips the retailer feeds for a country that has none, and says why', async () => {

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowSquareOut,
   BookOpenText,
@@ -65,7 +65,7 @@ function starterPromptsFor(countryCode: string): readonly string[] {
 const welcomeMessage: ConversationMessage = {
   id: 'welcome',
   role: 'assistant',
-  text: 'Hi, Iâ€™m Mr Scout. Tell me what you need, your budget, or the store you prefer.',
+  text: 'Hi, I’m Mr Scout. Tell me what you need, your budget, or the store you prefer.',
 }
 
 export function ScoutChatView({
@@ -542,7 +542,7 @@ function ScoutCartPanel({
               onClick={() => void move()}
               type="button"
             >
-              {cart.isMoving ? 'Movingâ€¦' : 'Add all to basket'}
+              {cart.isMoving ? 'Moving…' : 'Add all to basket'}
             </button>
             <button
               className="ghost-button"

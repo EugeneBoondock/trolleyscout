@@ -250,7 +250,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
       _busy = true;
       _locationSettingsTarget = null;
       _searchFailed = false;
-      _message = 'Finding the selected country test locationâ€¦';
+      _message = 'Finding the selected country test location…';
     });
 
     try {

@@ -1,4 +1,4 @@
-﻿import type { FeedCursor } from '../../src/services/retailerFeeds/types'
+import type { FeedCursor } from '../../src/services/retailerFeeds/types'
 import {
   extractAmazonVoucherCandidates,
   extractPublicVoucherCandidates,
@@ -57,9 +57,9 @@ export interface VoucherScoutSourceResult {
  * Where real, redeemable South African vouchers come from.
  *
  * The loyalty sweeps lead because they are what shoppers actually redeem.
- * Probing every official promo-code page we could find â€” Clicks, Zando,
+ * Probing every official promo-code page we could find — Clicks, Zando,
  * Yuppiechef, Faithful to Nature, NetFlorist, Superbalist, Loot, Takealot,
- * Builders â€” produced not one public code between them, so a scanner pointed
+ * Builders — produced not one public code between them, so a scanner pointed
  * only at those pages left Amazon as the sole voucher in the app.
  */
 export const defaultVoucherSources: readonly VoucherScoutSource[] = [
@@ -86,13 +86,13 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   },
   {
     // /coupons now 301s to the deals collection; fetch the destination
-    // directly â€” it embeds the same clip-coupon product objects.
+    // directly — it embeds the same clip-coupon product objects.
     parser: 'amazon',
     retailerId: 'amazon-za',
     sourceKey: 'amazon-za::vouchers',
     url: 'https://www.amazon.co.za/deals?bubble-id=deals-collection-coupons',
   },
-  // Boxer's "eCoupons" are purchasable gift money, not discounts â€” never a
+  // Boxer's "eCoupons" are purchasable gift money, not discounts — never a
   // voucher source.
   {
     // Kept because Yuppiechef does occasionally announce a code in prose;
@@ -224,7 +224,7 @@ async function scrapeVoucherCandidates(
 }
 
 // Fetches a voucher source page, falling back to the jina reader (asked for
-// raw HTML) when the retailer bot-walls direct fetches â€” Yuppiechef 403s the
+// raw HTML) when the retailer bot-walls direct fetches — Yuppiechef 403s the
 // honest crawler UA while serving the same public page to browsers.
 async function fetchVoucherSourceHtml(
   source: VoucherScoutSource,

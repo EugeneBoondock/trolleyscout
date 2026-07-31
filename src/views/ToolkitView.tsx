@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import {
@@ -161,7 +161,7 @@ function AutoShopCompare({ preferenceOwnerId }: { preferenceOwnerId?: string }) 
       </div>
 
       {isLoading ? (
-        <p className="section-lede">Loading stores available in your countryâ€¦</p>
+        <p className="section-lede">Loading stores available in your country…</p>
       ) : storeOptions.length === 0 ? (
         <p className="section-lede">No stores are available right now. Try again shortly.</p>
       ) : (
@@ -205,7 +205,7 @@ function AutoShopCompare({ preferenceOwnerId }: { preferenceOwnerId?: string }) 
               type="button"
             >
               <MagnifyingGlass size={16} weight="bold" />
-              {isSearching ? 'Searching storesâ€¦' : 'Compare'}
+              {isSearching ? 'Searching stores…' : 'Compare'}
             </button>
           </div>
 
@@ -267,17 +267,17 @@ function AutoCompareResult({ result }: { result: ProductComparisonResult }) {
       {result.pricedCount === 0 ? (
         <p className="compare-verdict">
           {result.foundCount > 0
-            ? `We found an official product page for â€œ${result.query}â€, but no selected store returned a live price.`
-            : `The selected stores returned no verified live price for â€œ${result.query}â€ right now.`}
+            ? `We found an official product page for “${result.query}”, but no selected store returned a live price.`
+            : `The selected stores returned no verified live price for “${result.query}” right now.`}
         </p>
       ) : result.pricedCount === 1 ? (
         <p className="compare-verdict">
-          Only one selected store returned a live price for â€œ{result.query}â€. We need at least two
+          Only one selected store returned a live price for “{result.query}”. We need at least two
           live prices before naming the cheapest.
         </p>
       ) : cheapest ? (
         <p className="compare-verdict">
-          <strong>{cheapest.retailerName}</strong> is cheapest for â€œ{result.query}â€
+          <strong>{cheapest.retailerName}</strong> is cheapest for “{result.query}”
           {result.savingsCents > 0 && (
             <>, saving you {formatCountryMoney(result.savingsCents, result.country)}</>
           )}.

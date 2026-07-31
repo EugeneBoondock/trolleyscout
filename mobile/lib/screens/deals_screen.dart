@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -119,7 +119,7 @@ class _DealsScreenState extends State<DealsScreen> {
 
   // Load the taste profile learned from Window Shopping. When the shopper has
   // shown taste, Find a deal defaults to "For you" so the list opens on what
-  // they like â€” they can still switch sort manually.
+  // they like — they can still switch sort manually.
   Future<void> _restoreTaste() async {
     final taste = await _tasteStore.load();
     if (!mounted || taste.isEmpty) return;
@@ -256,8 +256,8 @@ class _DealsScreenState extends State<DealsScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
             content: Text(effectiveValue
-                ? 'On. Weâ€™ll alert you when new deals land.'
-                : 'Off. You wonâ€™t get new-deal alerts.'),
+                ? 'On. We’ll alert you when new deals land.'
+                : 'Off. You won’t get new-deal alerts.'),
           ));
       }
     } finally {
@@ -379,7 +379,7 @@ class _DealsScreenState extends State<DealsScreen> {
           if (_cached != null) {
             return _buildBoard(
               _cached!.result,
-              staleNote: '${_freshnessLabel(_cached!.fetchedAt)} Â· refreshingâ€¦',
+              staleNote: '${_freshnessLabel(_cached!.fetchedAt)} · refreshing…',
               staleIsRefreshing: true,
             );
           }
@@ -390,7 +390,7 @@ class _DealsScreenState extends State<DealsScreen> {
             return _buildBoard(
               _cached!.result,
               staleNote:
-                  'Couldnâ€™t refresh Â· showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}',
+                  'Couldn’t refresh · showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}',
             );
           }
           return _retry();
@@ -758,13 +758,13 @@ class _DealsScreenState extends State<DealsScreen> {
                   ] else if (_query.trim().length < 3)
                     const Text('No deals match those filters.')
                   else ...[
-                    Text('No deal for â€œ${_query.trim()}â€ yet.',
+                    Text('No deal for “${_query.trim()}” yet.',
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     Text(
                       widget.isAuthenticated
                           ? 'Watch it and Trolley Scout will alert you the moment '
-                              'any scout or another shopperâ€™s search finds one.'
+                              'any scout or another shopper’s search finds one.'
                           : 'Log in and Trolley Scout can watch this item for you, '
                               'then alert you the moment a deal appears.',
                       style:
@@ -865,7 +865,7 @@ class _DealsScreenState extends State<DealsScreen> {
                 const Text('Alert me about new deals',
                     style:
                         TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                Text('Weâ€™ll notify you when fresh deals land.',
+                Text('We’ll notify you when fresh deals land.',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 11)),
               ],
             ),
@@ -885,7 +885,7 @@ class _DealsScreenState extends State<DealsScreen> {
     int totalDealCount,
   ) {
     // Two form fields side by side stop fitting once the shopper scales text
-    // up, so they stack instead of squeezing â€” same rule ScreenHeader uses.
+    // up, so they stack instead of squeezing — same rule ScreenHeader uses.
     final stacked = MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
         MediaQuery.sizeOf(context).width < 360;
     final retailerField = RetailerFilterField(
@@ -1008,7 +1008,7 @@ class _DealsScreenState extends State<DealsScreen> {
               Icon(Icons.filter_list, size: 16, color: TS.mutedOf(context)),
               const SizedBox(width: 4),
               Text(
-                activeCount == 0 ? 'Filters' : 'Filters Â· $activeCount',
+                activeCount == 0 ? 'Filters' : 'Filters · $activeCount',
                 style: TextStyle(
                   color: TS.inkOf(context),
                   fontWeight: FontWeight.w700,
@@ -2071,7 +2071,7 @@ class _CatalogueSearchEmpty extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'No store or catalogue matches â€œ${query.trim()}â€.',
+                'No store or catalogue matches “${query.trim()}”.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context)),
               ),

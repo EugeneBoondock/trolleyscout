@@ -1,4 +1,4 @@
-﻿import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ScoutChatView } from './ScoutChatView'
 
@@ -182,7 +182,7 @@ describe('ScoutChatView', () => {
 
   it('sends a message and renders deal and catalogue cards from Mr Scout', async () => {
     const sendMessage = vi.fn(async () => ({
-      reply: 'I found a coffee deal and this weekâ€™s catalogue.',
+      reply: 'I found a coffee deal and this week’s catalogue.',
       deals: [{
         id: 'deal-1',
         imageUrl: 'https://images.test/coffee.webp',

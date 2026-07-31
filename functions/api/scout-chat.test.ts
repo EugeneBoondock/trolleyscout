@@ -1,4 +1,4 @@
-﻿import { parseProductQuery } from '../_shared/productQuery'
+import { parseProductQuery } from '../_shared/productQuery'
 import { describe, expect, it, vi } from 'vitest'
 import type { StoredDealItem } from '../_shared/dealItemStore'
 import type { ScoutSearchIntent } from '../_shared/scoutSearchIntent'
@@ -585,7 +585,7 @@ describe('handleScoutChat', () => {
     expect(body.data.answer.reply).toContain('temporary grocery list')
   })
 
-  it('passes the signed-in shopperâ€™s selected private context to Mr Scout', async () => {
+  it('passes the signed-in shopper’s selected private context to Mr Scout', async () => {
     const deps = dependencies({
       loadPersonalContext: vi.fn(async () => ({
         basket: {

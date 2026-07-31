@@ -383,17 +383,23 @@ it('filters Marketplace deals added in the last seven days', async () => {
   expect(screen.getByText('Refreshed old rice')).toBeTruthy()
 
   fireEvent.click(screen.getByText('Advanced filters'))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Recently added (last 7 days)' }))
+  // Newest first answers what the seven-day filter used to, without hiding
+  // anything: the deal first seen yesterday leads the one first seen a
+  // fortnight ago, however recently its source was rescanned.
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort' }), {
+    target: { value: 'newest' },
+  })
 
   await waitFor(() => {
-    expect(screen.getByText('Recently added rice')).toBeTruthy()
-    expect(screen.queryByText('Refreshed old rice')).toBeNull()
+    const titles = screen.getAllByText(/rice/i).map((node) => node.textContent)
+    expect(titles.indexOf('Recently added rice'))
+      .toBeLessThan(titles.indexOf('Refreshed old rice'))
   })
 
   fireEvent.click(screen.getByRole('button', { name: 'Use dark theme' }))
   await waitFor(() => {
     expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(screen.getByRole('checkbox', { name: 'Recently added (last 7 days)' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Sort' })).toBeTruthy()
   })
 })
 

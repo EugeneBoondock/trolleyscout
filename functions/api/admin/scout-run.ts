@@ -1,4 +1,4 @@
-﻿// Admin-only, on-demand run of the scout lanes the older "refresh deal
+// Admin-only, on-demand run of the scout lanes the older "refresh deal
 // sources" control never reached: the structured retailer feeds (Takealot
 // campaign shards, Woolworths, Clicks, Dis-Chem, Makro, Game, Builders, Mr
 // Price, Loot, Evetech, Wootware, Bob Shop, Decathlon) and the online-only
@@ -138,14 +138,14 @@ interface VoucherLaneSummary {
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   // A scout run has side effects (writes deals, claims shops), so it is POST
-  // only â€” never reachable by a link or a prefetch.
+  // only — never reachable by a link or a prefetch.
   if (request.method !== 'POST') {
     return methodNotAllowed(request.method, 'POST')
   }
 
   const session = await getMemberSession(env, request)
 
-  // The role is read from the account row server-side â€” never from the client.
+  // The role is read from the account row server-side — never from the client.
   // Nothing above this line has started any work.
   if (session.account?.role !== 'admin') {
     return json(
@@ -263,7 +263,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 /**
  * One bounded pass over the voucher sources, least recently run first so
  * pressing repeatedly walks the whole list rather than re-sweeping the front
- * of it. Discovered sources come first â€” they are the ones nobody has vetted.
+ * of it. Discovered sources come first — they are the ones nobody has vetted.
  */
 async function runVoucherLane(
   env: TrolleyScoutEnv,
@@ -434,7 +434,7 @@ function readLane(value: unknown, url: string): ScoutLane | undefined {
 
 // A bounded run walks the source list from the front, so with the cap this
 // endpoint has to keep, it could only ever reach the first handful of sources
-// â€” the ones registered last, Takealot's campaign shards among them, were
+// — the ones registered last, Takealot's campaign shards among them, were
 // never reached however many times the button was pressed. Ordering by how
 // long a source has gone unread makes each press advance whatever is most
 // overdue, so pressing repeatedly walks the whole list.
@@ -729,7 +729,7 @@ function summaryMessage(
     : summary
 
   // Said plainly rather than left as a suspiciously small number. It no longer
-  // reads "feeds are South African", because they are not â€” it names the
+  // reads "feeds are South African", because they are not — it names the
   // country that has none, which is a thing that can be fixed by building one.
   return countryWithoutFeeds
     ? `${withProblems} No retailer feed covers ${countryFromCode(countryWithoutFeeds).name} yet, so it swept shops only.`
