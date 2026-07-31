@@ -4,8 +4,50 @@ import {
   parsePromotionVouchers,
   termsForRun,
 } from './retailerPromotionVouchers'
+import { normalizeVoucher } from './voucherStore'
 
 const CAPTURED_AT = '2026-07-31T08:00:00.000Z'
+
+describe('every parsed voucher clears the store gate', () => {
+  // The first production sweep failed with "code is required for a reusable
+  // public voucher": the parser's candidates had never been run through the
+  // store's own validation before they met it live. Now they are.
+  it('accepts a Pick n Pay loyalty offer end to end', async () => {
+    const vouchers = parsePromotionVouchers('pick-n-pay', {
+      products: [{
+        name: 'PnP Full Cream Fresh Milk 2L',
+        url: '/pnp-full-cream-fresh-milk-2l/p/000000000000357781_EA',
+        potentialPromotions: [{
+          code: 'SCRIPT20260625001408-3000679727',
+          endDate: '2099-10-06T21:59:59+0000',
+          promotionDisplayType: 'SMART_SHOPPER',
+          promotionTextMessage: 'Combo For R49.99',
+          startDate: '2026-06-24T22:00:00+0000',
+        }],
+      }],
+    }, CAPTURED_AT)
+
+    expect(vouchers).toHaveLength(1)
+    await expect(normalizeVoucher(vouchers[0], 'pick-n-pay', 0)).resolves
+      .toMatchObject({ publicReusable: false, redemptionMode: 'loyalty' })
+  })
+
+  it('accepts a Shoprite Group markdown end to end', async () => {
+    const vouchers = parsePromotionVouchers('shoprite', {
+      products: [{
+        id: 'abc123',
+        name: 'Darling Fresh Full Cream Milk Bottle 2L',
+        oldPrice: 4299,
+        price: 37.99,
+        priceFactor: 100,
+      }],
+    }, CAPTURED_AT)
+
+    expect(vouchers).toHaveLength(1)
+    await expect(normalizeVoucher(vouchers[0], 'shoprite', 0)).resolves
+      .toMatchObject({ accountRequired: true, publicReusable: false })
+  })
+})
 
 describe('staying inside the Worker subrequest budget', () => {
   it('sweeps a slice of the basket per run, not the whole thing', () => {

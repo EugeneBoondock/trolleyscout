@@ -246,8 +246,12 @@ function voucher(input: {
     externalId: input.externalId,
     imageUrl: input.imageUrl,
     productTitle: input.productTitle,
-    // No code to type, but any shopper with the free card gets the same price.
-    publicReusable: true,
+    // Any shopper with the free card gets the same price, but publicReusable
+    // is the store's "this carries a shareable code" flag and rejects a
+    // candidate without one — the first production sweep failed on exactly
+    // that. A loyalty offer has no code, so it is not "reusable" in that
+    // sense.
+    publicReusable: false,
     redemptionMode: input.redemptionMode,
     redemptionUrl: input.redemptionUrl,
     retailerId: input.retailerId,

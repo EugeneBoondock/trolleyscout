@@ -383,7 +383,10 @@ function requireDatabase(env: TrolleyScoutEnv): TrolleyScoutD1Env['DB'] {
   return env.DB
 }
 
-async function normalizeVoucher(
+// Exported so producers can prove their candidates clear this gate in tests.
+// The first Smart Shopper sweep shipped candidates this function rejects, and
+// nothing before production ever ran them through it.
+export async function normalizeVoucher(
   candidate: VoucherCandidate,
   expectedRetailerId: string,
   index: number,
