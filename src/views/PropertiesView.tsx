@@ -18,6 +18,7 @@ import {
 } from '@phosphor-icons/react'
 import { getMemberState, searchProperties, setMemberState } from '../services/apiClient'
 import { ScoutMascot } from '../components/ScoutMascot'
+import { recordUsage } from '../services/memberUsage'
 import { useSavedProperties } from '../hooks/useSavedProperties'
 import type { CountryContext, MemberAccount, PropertyListing, PropertyListingType } from '../types'
 
@@ -506,6 +507,7 @@ function PropertyCard({ listing, saved, onToggleSave, onShare }: CardProps) {
         <a
           className="property-card-view"
           href={listing.listingUrl}
+          onClick={() => recordUsage('property_view', listing.listingUrl)}
           target="_blank"
           rel="noopener noreferrer"
         >

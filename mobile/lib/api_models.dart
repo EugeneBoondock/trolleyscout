@@ -46,6 +46,9 @@ class MemberAccount {
     this.banReason,
     this.lastSeenAt,
     this.dealViewCount = 0,
+    this.propertyViewCount = 0,
+    this.voucherViewCount = 0,
+    this.windowShoppingSeconds = 0,
   });
 
   final String id;
@@ -76,9 +79,13 @@ class MemberAccount {
   final String? bannedAt;
   final String? banReason;
   final String? lastSeenAt;
-  // Deals this member has opened. Only counted while they leave deal learning
-  // on, so a zero can mean "opted out" rather than "never looked".
+  // Counters kept for the admin console. Recorded for every member, including
+  // those who opted out of deal learning - how much of the app someone uses is
+  // an operational figure, not a profile of their shopping.
   final int dealViewCount;
+  final int propertyViewCount;
+  final int voucherViewCount;
+  final int windowShoppingSeconds;
 
   bool get isAdmin => role == 'admin';
 
@@ -113,6 +120,9 @@ class MemberAccount {
         banReason: _optionalString(json['banReason']),
         lastSeenAt: _optionalString(json['lastSeenAt']),
         dealViewCount: _int(json['dealViewCount']),
+        propertyViewCount: _int(json['propertyViewCount']),
+        voucherViewCount: _int(json['voucherViewCount']),
+        windowShoppingSeconds: _int(json['windowShoppingSeconds']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -1473,6 +1483,7 @@ class AdminOverview {
       flag: '🇿🇦',
       name: 'South Africa',
     ),
+    this.memberCountries = const [],
     this.storeCount = 0,
     this.support = const [],
     this.supportOpenCount = 0,
@@ -1486,6 +1497,8 @@ class AdminOverview {
   final int leafletCount;
   final int sourceCount;
   final List<CountryOption> countries;
+  /// Countries that actually have members, most populous first.
+  final List<MemberCountryTally> memberCountries;
   final CountryOption selectedCountry;
   final int storeCount;
   final List<SupportMessage> support;
@@ -1504,6 +1517,9 @@ class AdminOverview {
       sourceCount: _int(scout['sourceCount']),
       countries:
           _mapList(json['countries']).map(CountryOption.fromJson).toList(),
+      memberCountries: _mapList(json['memberCountries'])
+          .map(MemberCountryTally.fromJson)
+          .toList(),
       selectedCountry:
           CountryOption.fromJson(_mapOrEmpty(json['selectedCountry'])),
       storeCount: _int(scout['storeCount']),
@@ -1512,6 +1528,39 @@ class AdminOverview {
       lastScoutedAt: _optionalString(scout['lastScoutedAt']),
     );
   }
+}
+
+/// A country that has members, with how many. Drives the console's country
+/// filter, so it offers the countries worth picking rather than the world.
+class MemberCountryTally {
+  const MemberCountryTally({
+    required this.code,
+    required this.memberCount,
+    required this.name,
+  });
+
+  final String code;
+  final int memberCount;
+  final String name;
+
+  factory MemberCountryTally.fromJson(Map<String, dynamic> json) =>
+      MemberCountryTally(
+        code: _string(json['code']).toUpperCase(),
+        memberCount: _int(json['memberCount']),
+        name: _string(json['name']),
+      );
+
+  Map<String, dynamic> toJson() =>
+      {'code': code, 'memberCount': memberCount, 'name': name};
+}
+
+/// A regional-indicator pair renders as the country's flag on every platform.
+String countryFlag(String code) {
+  final upper = code.trim().toUpperCase();
+  if (upper.length != 2 || !RegExp(r'^[A-Z]{2}$').hasMatch(upper)) return '🏳️';
+  return String.fromCharCodes([
+    for (final unit in upper.codeUnits) 0x1F1E6 + unit - 65,
+  ]);
 }
 
 class NearbyResult {

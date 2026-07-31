@@ -98,24 +98,24 @@ void main() {
       expect(sorted.map((d) => d.id), ['a', 'b', 'c']);
     });
 
-    test('latest orders by capturedAt descending, empties last', () {
+    test('newest orders by first sighting descending, undated last', () {
       final deals = [
         _deal(id: 'old', capturedAt: '2026-01-01T00:00:00Z'),
         _deal(id: 'none'),
         _deal(id: 'new', capturedAt: '2026-06-01T00:00:00Z'),
       ];
-      final sorted = sortDeals(deals, DealSort.latest);
+      final sorted = sortDeals(deals, DealSort.newest);
       expect(sorted.map((d) => d.id), ['new', 'old', 'none']);
     });
 
-    test('latest uses a deterministic identity tie-break', () {
+    test('newest uses a deterministic identity tie-break', () {
       final deals = [
         _deal(id: 'zulu', capturedAt: '2026-06-01T00:00:00Z'),
         _deal(id: 'alpha', capturedAt: '2026-06-01T00:00:00Z'),
       ];
 
       expect(
-        sortDeals(deals, DealSort.latest).map((deal) => deal.id),
+        sortDeals(deals, DealSort.newest).map((deal) => deal.id),
         ['alpha', 'zulu'],
       );
     });

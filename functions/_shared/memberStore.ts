@@ -44,6 +44,11 @@ import {
   protectEmail,
   revealEmail,
 } from './emailProtection'
+import {
+  EMPTY_USAGE,
+  readUsageForAccounts,
+  type MemberUsageCounts,
+} from './memberUsageStore'
 
 const sessionCookieName = 'ts_member_session'
 const adminCountryCookieName = 'ts_admin_country'
@@ -807,30 +812,89 @@ export async function deleteMemberAccount(
 
 // Admin console data. Only ever called after the caller's admin role is
 // checked at the endpoint; never exposes password hashes.
-export async function getAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA') {
+/**
+ * SQL ordering for the console list. Written as a fixed lookup rather than
+ * interpolated input, so a sort choice can never reach the query as text.
+ */
+function adminAccountOrder(sort: AdminOverviewFilters['sort']): string {
+  if (sort === 'joined-oldest') return 'created_at ASC'
+  if (sort === 'name') return 'display_name COLLATE NOCASE ASC'
+  // most-active is ordered after the counters are read, so it starts from the
+  // newest members and is re-sorted in memory.
+  return 'created_at DESC'
+}
+
+export interface AdminOverviewFilters {
+  /**
+   * The admin's working country. Drives the scout figures and the app test
+   * location — not the member list, which spans every country by default.
+   */
+  countryCode?: string
+  /** ALL lists members everywhere; anything else scopes the list. */
+  accountCountryCode?: string
+  planId?: string
+  /** Free-text over display name and country. */
+  query?: string
+  sort?: 'joined-newest' | 'joined-oldest' | 'most-active' | 'name'
+}
+
+const ADMIN_ACCOUNT_LIMIT = 200
+const ALL_COUNTRIES = 'ALL'
+
+export async function getAdminOverview(
+  env: TrolleyScoutEnv,
+  countryCode: string | AdminOverviewFilters = 'ZA',
+) {
   if (!hasMemberStore(env)) {
     return undefined
   }
 
-  const selectedCountry = countryFromCode(countryCode)
+  const filters: AdminOverviewFilters = typeof countryCode === 'string'
+    ? { countryCode }
+    : countryCode
+  // The admin's working country still drives the scout figures and the app
+  // test location.
+  const selectedCountry = countryFromCode(filters.countryCode ?? 'ZA')
+  // The member list is a different question. It opened on one country and
+  // offered no way out, so an admin could not see who had signed up anywhere
+  // else. Everywhere is the default now, and a country is what you narrow to.
+  const wantedAccountCountry = (filters.accountCountryCode ?? ALL_COUNTRIES).toUpperCase()
+  const scopedCountry = wantedAccountCountry === ALL_COUNTRIES
+    ? undefined
+    : countryFromCode(wantedAccountCountry).code
+
+  const accountWhere: string[] = []
+  const accountBindings: unknown[] = []
+  if (scopedCountry) {
+    accountWhere.push('country_code = ?')
+    accountBindings.push(scopedCountry)
+  }
+  if (filters.planId && filters.planId !== 'all') {
+    accountWhere.push('plan_id = ?')
+    accountBindings.push(filters.planId)
+  }
+  const search = filters.query?.trim().slice(0, 80)
+  if (search) {
+    // Email is encrypted at rest, so it cannot be searched here — display name
+    // and country are what an admin actually has to go on.
+    accountWhere.push('(display_name LIKE ? OR country_name LIKE ?)')
+    accountBindings.push(`%${search}%`, `%${search}%`)
+  }
+  const whereClause = accountWhere.length ? `WHERE ${accountWhere.join(' AND ')}` : ''
+
   const [accounts, planRows, storeStats, pendingEmailRow] = await Promise.all([
-    // The deal-view count rides along as a correlated subquery so the console
-    // gets "how many deals have they opened" without a second round trip or an
-    // N+1 per member.
     env.DB.prepare(
-      `SELECT ${ACCOUNT_COLUMNS},
-        (SELECT COUNT(*) FROM member_deal_activity
-          WHERE member_deal_activity.account_id = member_accounts.id
-          AND member_deal_activity.event_type = 'deal_opened') AS deal_view_count
+      `SELECT ${ACCOUNT_COLUMNS}
         FROM member_accounts
-        WHERE country_code = ?
-        ORDER BY created_at DESC
-        LIMIT 100`,
-    ).bind(selectedCountry.code).all<MemberAccountRow>(),
+        ${whereClause}
+        ORDER BY ${adminAccountOrder(filters.sort)}
+        LIMIT ${ADMIN_ACCOUNT_LIMIT}`,
+    ).bind(...accountBindings).all<MemberAccountRow>(),
     env.DB.prepare(
-      `SELECT plan_id, COUNT(*) AS total FROM member_accounts
-        WHERE country_code = ? GROUP BY plan_id`,
-    ).bind(selectedCountry.code).all<{
+      scopedCountry
+        ? 'SELECT plan_id, COUNT(*) AS total FROM member_accounts WHERE country_code = ? GROUP BY plan_id'
+        : 'SELECT plan_id, COUNT(*) AS total FROM member_accounts GROUP BY plan_id',
+    ).bind(...(scopedCountry ? [scopedCountry] : [])).all<{
       plan_id: string
       total: number
     }>(),
@@ -863,10 +927,47 @@ export async function getAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA')
     leaflet_count: number | null
   }>()
 
-  const memberRows = await Promise.all(accounts.results.map((row) => accountRowToMember(env, row)))
+  // Counters come from member_usage_counters in one batched read, so the
+  // console never runs a query per member.
+  const [memberRows, usage, countryCounts] = await Promise.all([
+    Promise.all(accounts.results.map((row) => accountRowToMember(env, row))),
+    readUsageForAccounts(env, accounts.results.map((row) => row.id)).catch(
+      () => new Map<string, MemberUsageCounts>(),
+    ),
+    env.DB.prepare(
+      `SELECT country_code, country_name, COUNT(*) AS total
+        FROM member_accounts GROUP BY country_code, country_name
+        ORDER BY total DESC`,
+    ).all<{ country_code: string; country_name: string | null; total: number }>()
+      .catch(() => ({ results: [] })),
+  ])
+
+  const accountsWithUsage = memberRows.map((member) => {
+    const counts = usage.get(member.id) ?? EMPTY_USAGE
+    return {
+      ...member,
+      dealViewCount: counts.dealViewCount,
+      propertyViewCount: counts.propertyViewCount,
+      voucherViewCount: counts.voucherViewCount,
+      windowShoppingSeconds: counts.windowShoppingSeconds,
+    }
+  })
+
+  const sorted = filters.sort === 'most-active'
+    ? [...accountsWithUsage].sort((left, right) =>
+      (right.dealViewCount + right.propertyViewCount + right.voucherViewCount) -
+      (left.dealViewCount + left.propertyViewCount + left.voucherViewCount))
+    : accountsWithUsage
 
   return {
-    accounts: memberRows,
+    accounts: sorted,
+    // Every country that actually has members, so the filter offers the ones
+    // worth picking rather than the whole world list.
+    memberCountries: countryCounts.results.map((row) => ({
+      code: (row.country_code ?? 'ZA').toUpperCase(),
+      memberCount: Number(row.total),
+      name: row.country_name ?? countryFromCode(row.country_code ?? 'ZA').name,
+    })),
     countries: listCountryOptions(),
     emailProtection: {
       configured: hasEmailProtection(env),

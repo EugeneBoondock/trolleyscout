@@ -17,6 +17,7 @@ import {
 } from '../_shared/supportStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import type { AdminOverview } from '../../src/types'
+import type { AdminOverviewFilters } from '../_shared/memberStore'
 import { hasEmailProtection } from '../_shared/emailProtection'
 
 const privateHeaders = {
@@ -35,10 +36,20 @@ interface AdminActionBody {
   countryCode?: string
 }
 
+const ACCOUNT_SORTS = ['joined-newest', 'joined-oldest', 'most-active', 'name'] as const
+
+/** Only a sort we recognise reaches the store; anything else is the default. */
+function readAccountSort(value: string | null): AdminOverviewFilters['sort'] {
+  return ACCOUNT_SORTS.find((sort) => sort === value) ?? 'joined-newest'
+}
+
 // Support messages live in their own store to avoid a circular import between
 // memberStore and supportStore, so the console overview is assembled here.
-async function buildAdminOverview(env: TrolleyScoutEnv, countryCode = 'ZA'): Promise<AdminOverview | undefined> {
-  const base = await getAdminOverview(env, countryCode)
+async function buildAdminOverview(
+  env: TrolleyScoutEnv,
+  filters: AdminOverviewFilters = {},
+): Promise<AdminOverview | undefined> {
+  const base = await getAdminOverview(env, filters)
 
   if (!base) {
     return undefined
@@ -96,7 +107,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update access.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env, body.countryCode)
+      const overview = await buildAdminOverview(env, { countryCode: body.countryCode })
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -120,7 +131,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
           'issues' in result && result.issues?.length ? result.issues[0] : 'Could not update the account.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env, body.countryCode)
+      const overview = await buildAdminOverview(env, { countryCode: body.countryCode })
       return json(
         {
           account: result.account,
@@ -141,7 +152,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
           { headers: privateHeaders, status: 400 },
         )
       }
-      const overview = await buildAdminOverview(env, requestedCode)
+      const overview = await buildAdminOverview(env, { countryCode: requestedCode })
       if (!overview || overview.selectedCountry.code !== requestedCode) {
         return json(
           { message: 'Choose a valid country.' },
@@ -177,7 +188,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
             : 'Could not update plan.'
         return json({ message }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env, body.countryCode)
+      const overview = await buildAdminOverview(env, { countryCode: body.countryCode })
       return json({ account: result.account, ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -192,7 +203,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       if ('issues' in result) {
         return json({ message: result.issues[0] }, { headers: privateHeaders, status: 400 })
       }
-      const overview = await buildAdminOverview(env, body.countryCode)
+      const overview = await buildAdminOverview(env, { countryCode: body.countryCode })
       return json({ ...(overview ?? {}) }, { headers: privateHeaders })
     }
 
@@ -207,7 +218,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         protectLegacyMemberEmails(env),
         protectLegacySupportEmails(env),
       ])
-      const overview = await buildAdminOverview(env, body.countryCode)
+      const overview = await buildAdminOverview(env, { countryCode: body.countryCode })
       return json(
         {
           ...(overview ?? {}),
@@ -220,10 +231,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json({ message: 'Unknown admin action.' }, { headers: privateHeaders, status: 400 })
   }
 
-  const countryCode =
-    new URL(request.url).searchParams.get('country') ??
-    session.account.countryCode
-  const overview = await buildAdminOverview(env, countryCode)
+  const params = new URL(request.url).searchParams
+  const overview = await buildAdminOverview(env, {
+    // Which country's members to list. Absent means everywhere, which is what
+    // the console now opens on.
+    accountCountryCode: params.get('userCountry') ?? undefined,
+    countryCode: params.get('country') ?? session.account.countryCode,
+    planId: params.get('plan') ?? undefined,
+    query: params.get('q') ?? undefined,
+    sort: readAccountSort(params.get('sort')),
+  })
 
   if (!overview) {
     return json(

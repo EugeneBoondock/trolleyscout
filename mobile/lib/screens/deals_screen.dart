@@ -792,6 +792,7 @@ class _DealsScreenState extends State<DealsScreen> {
             ),
           for (final deal in slice)
             _DealRow(
+              api: widget.api,
               deal: deal,
               isNew: _previousDealIds.isNotEmpty &&
                   deal.id.isNotEmpty &&
@@ -1356,6 +1357,7 @@ class _DealsScreenState extends State<DealsScreen> {
 
 class _DealRow extends StatelessWidget {
   const _DealRow({
+    required this.api,
     required this.deal,
     required this.isSaved,
     this.isNew = false,
@@ -1363,6 +1365,7 @@ class _DealRow extends StatelessWidget {
     this.onAddToBasket,
     this.isAddingToBasket = false,
   });
+  final Api api;
   final Deal deal;
   final bool isSaved;
   final bool isNew;
@@ -1380,11 +1383,16 @@ class _DealRow extends StatelessWidget {
     return InkWell(
       onTap: deal.productUrl == null
           ? null
-          : () => showInAppBrowser(
+          : () {
+              // Counted for the admin console. Fire and forget, because a
+              // counter must never delay opening what the shopper tapped.
+              unawaited(api.recordUsage('deal_view'));
+              showInAppBrowser(
                 context,
                 deal.productUrl,
                 title: deal.retailerName,
-              ),
+              );
+            },
       child: Container(
         key: Key('deal-card-${deal.id}'),
         margin: const EdgeInsets.only(bottom: 10),

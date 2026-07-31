@@ -9388,3 +9388,105 @@ a.auto-compare-title:hover {
   display: inline-flex;
   padding: 0.25rem 0.45rem;
 }
+
+/* Admin member cards. The list used to be a one-country table; it now spans
+   every country, so each card leads with its flag and a card opens a modal. */
+.admin-member-filters {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.admin-member-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.admin-member-card {
+  background: var(--ts-surface, #fff);
+  border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: 0.9rem;
+  cursor: pointer;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.9rem;
+  text-align: left;
+}
+
+.admin-member-card:hover { border-color: rgb(0 0 0 / 0.32); }
+.admin-member-card.is-banned { opacity: 0.7; outline: 2px solid #d92d20; }
+.admin-member-flag { font-size: 1.5rem; line-height: 1; }
+.admin-member-identity { display: grid; gap: 0.1rem; min-width: 0; }
+.admin-member-identity strong,
+.admin-member-identity small { overflow-wrap: anywhere; }
+.admin-member-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.admin-member-badges mark.is-danger { background: #ffdad6; }
+
+.admin-member-counts {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  gap: 0.6rem;
+}
+
+.admin-member-joined { color: var(--ts-ink-soft, #4a5568); font-size: 0.75rem; }
+
+.admin-modal-backdrop {
+  align-items: center;
+  background: rgb(0 0 0 / 0.5);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 60;
+}
+
+.admin-modal {
+  background: var(--ts-surface, #fff);
+  border-radius: 1rem;
+  max-height: 90vh;
+  max-width: 640px;
+  overflow-y: auto;
+  padding: 1.25rem;
+  width: 100%;
+}
+
+.admin-modal header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.admin-modal-stats {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin-bottom: 1.25rem;
+}
+
+.admin-stat {
+  background: rgb(0 0 0 / 0.04);
+  border-radius: 0.6rem;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem;
+}
+
+.admin-stat b { font-size: 1.25rem; }
+.admin-stat small { color: var(--ts-ink-soft, #4a5568); }
+
+.admin-modal-controls {
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 1rem;
+}
+
+.admin-modal-controls h4 { margin: 0; }
+.admin-modal-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.admin-limit-check { align-items: center; display: flex; gap: 0.4rem; }

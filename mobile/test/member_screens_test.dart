@@ -516,7 +516,13 @@ class _FeatureApi extends Api {
       );
 
   @override
-  Future<AdminOverview> adminOverview() async => const AdminOverview(
+  Future<AdminOverview> adminOverview({
+    String? memberCountry,
+    String? plan,
+    String? query,
+    String? sort,
+  }) async =>
+      const AdminOverview(
         accounts: [_memberAccount],
         accountCount: 1,
         planCounts: {'free': 1},

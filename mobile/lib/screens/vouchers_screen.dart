@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -192,6 +193,7 @@ class _VouchersScreenState extends State<VouchersScreen> {
             _VoucherCard(
               voucher: voucher,
               onToggleClaim: () => _toggleClaim(voucher),
+              onRecordView: () => widget.api.recordUsage('voucher_view'),
             ),
         ],
       ),
@@ -203,10 +205,13 @@ class _VoucherCard extends StatelessWidget {
   const _VoucherCard({
     required this.voucher,
     required this.onToggleClaim,
+    this.onRecordView,
   });
 
   final Voucher voucher;
   final VoidCallback onToggleClaim;
+  /// Counts the view for the admin console. Absent in tests and previews.
+  final Future<void> Function()? onRecordView;
 
   @override
   Widget build(BuildContext context) {
@@ -311,11 +316,16 @@ class _VoucherCard extends StatelessWidget {
                   label: const Text('Save voucher'),
                 ),
               OutlinedButton.icon(
-                onPressed: () => showInAppBrowser(
-                  context,
-                  voucher.redemptionUrl,
-                  title: voucher.title,
-                ),
+                onPressed: () {
+                  // Counted for the admin console, never allowed to delay the
+                  // shopper getting to the retailer.
+                  unawaited(onRecordView?.call() ?? Future<void>.value());
+                  showInAppBrowser(
+                    context,
+                    voucher.redemptionUrl,
+                    title: voucher.title,
+                  );
+                },
                 icon: const Icon(Icons.open_in_new, size: 17),
                 label: const Text('Redeem at retailer'),
               ),

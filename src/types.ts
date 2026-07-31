@@ -523,8 +523,12 @@ export interface MemberAccount {
   banReason?: string
   bannedAt?: string
   lastSeenAt?: string
-  // Only populated on admin reads — how many deals this member has opened.
+  // Only populated on admin reads. Counters, not personalisation: they are
+  // recorded for every member, including those who opted out of deal learning.
   dealViewCount?: number
+  propertyViewCount?: number
+  voucherViewCount?: number
+  windowShoppingSeconds?: number
   billingCycle?: BillingCycle
   // End of the period already paid for, and the downgrade queued to land on it.
   // Both are absent unless the member has an active paid subscription; the
@@ -725,9 +729,43 @@ export interface AdminAnalyticsReport {
   windowDays: number
 }
 
+export interface MemberCountryTally {
+  code: string
+  memberCount: number
+  name: string
+}
+
+/** Per-member ceilings an admin sets by hand. Absent means "use the plan". */
+export interface MemberLimitOverrides {
+  compareBlocked: boolean
+  note?: string
+  scoutChatBlocked: boolean
+  scoutMessagesPerDay?: number
+  updatedAt?: string
+  visibleCatalogues?: number
+  visibleDeals?: number
+}
+
+/** The deeper read behind a member's card in the console. */
+export interface MemberDetailStats {
+  basketItemCount: number
+  dealViewCount: number
+  limits: MemberLimitOverrides
+  propertyViewCount: number
+  savedDealCount: number
+  savedPropertyCount: number
+  scoutMessageCount: number
+  voucherClaimedCount: number
+  voucherViewCount: number
+  windowShoppingSaveCount: number
+  windowShoppingSeconds: number
+}
+
 export interface AdminOverview {
   accounts: MemberAccount[]
   countries: CountryOption[]
+  /** Countries that actually have members, most populous first. */
+  memberCountries?: MemberCountryTally[]
   emailProtection: {
     configured: boolean
     pendingAccounts: number

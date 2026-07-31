@@ -565,8 +565,68 @@ class Api {
     );
   }
 
-  Future<AdminOverview> adminOverview() async {
-    return AdminOverview.fromJson(await _request('GET', '/api/admin'));
+  /// The console overview. Without [memberCountry] the member list spans every
+  /// country, which is what the console opens on.
+  Future<AdminOverview> adminOverview({
+    String? memberCountry,
+    String? plan,
+    String? query,
+    String? sort,
+  }) async {
+    final params = <String, String>{};
+    if (memberCountry != null && memberCountry.isNotEmpty) {
+      params['userCountry'] = memberCountry;
+    }
+    if (plan != null && plan.isNotEmpty && plan != 'all') params['plan'] = plan;
+    if (query != null && query.trim().isNotEmpty) params['q'] = query.trim();
+    if (sort != null && sort.isNotEmpty) params['sort'] = sort;
+    final suffix = params.isEmpty
+        ? ''
+        : '?${params.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
+    return AdminOverview.fromJson(await _request('GET', '/api/admin$suffix'));
+  }
+
+  /// The deeper read behind one member's card.
+  Future<Map<String, dynamic>> adminMemberStats(String accountId) async {
+    final data = await _request(
+      'GET',
+      '/api/admin/member-stats?accountId=${Uri.encodeQueryComponent(accountId)}',
+    );
+    final stats = data['stats'];
+    return stats is Map<String, dynamic> ? stats : <String, dynamic>{};
+  }
+
+  Future<void> setMemberLimits(
+    String accountId, {
+    int? visibleDeals,
+    int? visibleCatalogues,
+    int? scoutMessagesPerDay,
+    bool scoutChatBlocked = false,
+    bool compareBlocked = false,
+    String? note,
+  }) async {
+    await _request('POST', '/api/admin/member-stats', body: {
+      'accountId': accountId,
+      'compareBlocked': compareBlocked,
+      'scoutChatBlocked': scoutChatBlocked,
+      if (note != null) 'note': note,
+      if (scoutMessagesPerDay != null) 'scoutMessagesPerDay': scoutMessagesPerDay,
+      if (visibleCatalogues != null) 'visibleCatalogues': visibleCatalogues,
+      if (visibleDeals != null) 'visibleDeals': visibleDeals,
+    });
+  }
+
+  /// Counts a surface a shopper opened. Never allowed to fail their action, so
+  /// a rejection is swallowed.
+  Future<void> recordUsage(String metric, {int amount = 1}) async {
+    try {
+      await _request('POST', '/api/member-usage', body: {
+        'amount': amount,
+        'metric': metric,
+      });
+    } catch (_) {
+      // A counter is not worth surfacing an error for.
+    }
   }
 
   Future<List<OrganizationApplication>> adminOrganizationApplications() async {

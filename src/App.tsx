@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { AdminMembersPanel, type MemberFilters } from './components/AdminMembersPanel'
+import { recordUsage } from './services/memberUsage'
 import { withReferralSource } from './services/outboundLink'
 import type { CSSProperties, ReactNode } from 'react'
 import {
@@ -4138,12 +4140,26 @@ function AdminConsole({
   const [scoutNotice, setScoutNotice] = useState<string>()
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>()
   const [adminTab, setAdminTab] = useState<AdminTab>('overview')
+  // The member list spans every country until an admin narrows it, which is
+  // separate from the country they are working in.
+  const [memberFilters, setMemberFilters] = useState<MemberFilters>({
+    memberCountry: 'ALL',
+    plan: 'all',
+    query: '',
+    sort: 'joined-newest',
+  })
+  const debouncedMemberQuery = useDebouncedValue(memberFilters.query, 300)
 
   useEffect(() => {
     const controller = new AbortController()
 
     setMessage('Loading admin data.')
-    loadAdminOverview(controller.signal, selectedCountryCode)
+    loadAdminOverview(controller.signal, selectedCountryCode, {
+      memberCountry: memberFilters.memberCountry,
+      plan: memberFilters.plan,
+      query: debouncedMemberQuery,
+      sort: memberFilters.sort,
+    })
       .then((result) => {
         setOverview(result.data)
         if (result.data) {
@@ -4158,7 +4174,13 @@ function AdminConsole({
       })
 
     return () => controller.abort()
-  }, [selectedCountryCode])
+  }, [
+    debouncedMemberQuery,
+    memberFilters.memberCountry,
+    memberFilters.plan,
+    memberFilters.sort,
+    selectedCountryCode,
+  ])
 
   const activeCountryCode =
     selectedCountryCode ?? overview?.selectedCountry.code ?? 'ZA'
@@ -4492,102 +4514,14 @@ function AdminConsole({
       )}
 
       {overview && adminTab === 'members' && (
-        <>
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Members</p>
-              <h2>Recent accounts</h2>
-              <p className="section-lede">
-                Deals opened only counts members who left deal learning on, so a zero can mean
-                "opted out" rather than "never looked".
-              </p>
-            </div>
-          </div>
-
-          <div className="admin-table admin-table-members" role="table" aria-label="Member accounts">
-            <div className="admin-row admin-row-head" role="row">
-              <span role="columnheader">Member</span>
-              <span role="columnheader">Plan</span>
-              <span role="columnheader">Role</span>
-              <span role="columnheader">Properties</span>
-              <span role="columnheader">Deals opened</span>
-              <span role="columnheader">Last online</span>
-              <span role="columnheader">Joined</span>
-              <span role="columnheader">Access</span>
-            </div>
-            {overview.accounts.map((member) => {
-              // Household and admins always have access via their plan/role, so
-              // the grant toggle is only meaningful for other members.
-              const planBased = member.planId === 'household' || member.role === 'admin'
-              const isBanned = member.status === 'banned'
-              return (
-                <div className={clsx('admin-row', isBanned && 'is-banned')} key={member.id} role="row">
-                  <span role="cell">
-                    <strong>{member.displayName}</strong>
-                    <small>{member.email}</small>
-                    <small>{member.countryName}</small>
-                    {isBanned && (
-                      <small className="admin-ban-note">
-                        Banned{member.banReason ? `: ${member.banReason}` : ''}
-                      </small>
-                    )}
-                  </span>
-                  <span role="cell">
-                    <select
-                      value={member.planId}
-                      onChange={(e) => onChangePlan(member.id, e.target.value)}
-                      disabled={pendingId === member.id}
-                      className="admin-plan-select"
-                    >
-                      <option value="free">Free</option>
-                      <option value="scout">Scout</option>
-                      <option value="household">Household</option>
-                      <option value="organization">Organisation</option>
-                      <option value="developers">Developers</option>
-                    </select>
-                  </span>
-                  <span role="cell">
-                    {member.role === 'admin' ? <mark>admin</mark> : 'member'}
-                  </span>
-                  <span role="cell">
-                    {planBased ? (
-                      <span className="admin-access-note">Via plan</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className={clsx(
-                          'admin-access-toggle',
-                          member.propertiesAccess && 'is-on',
-                        )}
-                        disabled={pendingId === member.id}
-                        onClick={() => onToggleAccess(member)}
-                      >
-                        {member.propertiesAccess ? 'Granted' : 'Grant'}
-                      </button>
-                    )}
-                  </span>
-                  <span role="cell">{member.dealViewCount ?? 0}</span>
-                  <span role="cell">{describeLastSeen(member.lastSeenAt)}</span>
-                  <span role="cell">{member.createdAt.slice(0, 10)}</span>
-                  <span role="cell">
-                    {member.role === 'admin' ? (
-                      <span className="admin-access-note">Owner</span>
-                    ) : (
-                      <button
-                        className={clsx('admin-access-toggle', isBanned && 'is-danger')}
-                        disabled={pendingId === member.id}
-                        onClick={() => void onToggleBan(member)}
-                        type="button"
-                      >
-                        {isBanned ? 'Unban' : 'Ban'}
-                      </button>
-                    )}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </>
+        <AdminMembersPanel
+          onChangePlan={onChangePlan}
+          onFiltersChange={setMemberFilters}
+          onToggleAccess={onToggleAccess}
+          onToggleBan={onToggleBan}
+          overview={overview}
+          pendingId={pendingId}
+        />
       )}
 
       {overview && adminTab === 'support' && (
@@ -4673,24 +4607,6 @@ const ADMIN_TABS: Array<[AdminTab, string]> = [
 
 /// "3 hours ago" beats a timestamp for the question this column answers, which
 /// is always "are they still around".
-function describeLastSeen(lastSeenAt?: string): string {
-  if (!lastSeenAt) {
-    return 'Never'
-  }
-  const seenAt = Date.parse(lastSeenAt)
-  if (!Number.isFinite(seenAt)) {
-    return 'Never'
-  }
-  const minutes = Math.max(0, Math.round((Date.now() - seenAt) / 60000))
-  if (minutes < 5) return 'Just now'
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} hr ago`
-  const days = Math.round(hours / 24)
-  if (days < 31) return `${days} day${days === 1 ? '' : 's'} ago`
-  return lastSeenAt.slice(0, 10)
-}
-
 function formatCompact(value: number): string {
   return new Intl.NumberFormat('en-ZA', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
@@ -5909,6 +5825,7 @@ function MarketplaceImageViewer({
             onClick={() => {
               recordBusinessPublicationEvent(deal, 'image_view')
               recordBusinessPublicationEvent(deal, 'link_click')
+              recordUsage('deal_view', deal.id)
             }}
             rel="noreferrer"
             target="_blank"
@@ -6280,6 +6197,7 @@ function DiscoveryPanel({
                     onClick={() => {
                       setPreviewDeal(deal)
                       recordBusinessPublicationEvent(deal, 'image_view')
+                      recordUsage('deal_view', deal.id)
                     }}
                     type="button"
                   >

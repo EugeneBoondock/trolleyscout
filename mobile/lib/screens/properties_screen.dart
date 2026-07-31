@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -270,6 +271,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     final uri = Uri.tryParse(listing.listingUrl);
     if (uri == null || !uri.hasScheme) return;
     uxTap();
+    // Counted for the admin console, never allowed to delay the open.
+    unawaited(widget.api.recordUsage('property_view'));
     await showInAppBrowser(context, uri.toString(), title: listing.portalName);
   }
 

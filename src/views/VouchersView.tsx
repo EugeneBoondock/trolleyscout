@@ -8,6 +8,7 @@ import {
 } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScoutMark } from '../components/ScoutMark'
+import { recordUsage } from '../services/memberUsage'
 import {
   safeVoucherImageUrl,
   safeVoucherRetailerUrl,
@@ -267,6 +268,7 @@ export function VouchersView({
                       <a
                         className="ghost-button"
                         href={redemptionUrl}
+                        onClick={() => recordUsage('voucher_view', voucher.id)}
                         rel="noopener noreferrer"
                         target="_blank"
                       >

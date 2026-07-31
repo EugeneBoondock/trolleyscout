@@ -28,6 +28,8 @@ import type {
 import type {
   AdminAnalyticsReport,
   AdminOverview,
+  MemberDetailStats,
+  MemberLimitOverrides,
   SupportChatAnswer,
   SupportChatTurn,
   Basket,
@@ -1256,12 +1258,27 @@ export async function loadNearbyStores(
   }
 }
 
+export interface AdminMemberFilters {
+  /** ALL, or absent, lists members from every country. */
+  memberCountry?: string
+  plan?: string
+  query?: string
+  sort?: 'joined-newest' | 'joined-oldest' | 'most-active' | 'name'
+}
+
 export async function loadAdminOverview(
   signal?: AbortSignal,
   countryCode?: string,
+  filters: AdminMemberFilters = {},
 ): Promise<{ data?: AdminOverview; message: string; status: 'ready' | 'error' }> {
   try {
-    const suffix = countryCode ? `?country=${encodeURIComponent(countryCode)}` : ''
+    const params = new URLSearchParams()
+    if (countryCode) params.set('country', countryCode)
+    if (filters.memberCountry) params.set('userCountry', filters.memberCountry)
+    if (filters.plan && filters.plan !== 'all') params.set('plan', filters.plan)
+    if (filters.query?.trim()) params.set('q', filters.query.trim())
+    if (filters.sort) params.set('sort', filters.sort)
+    const suffix = params.size > 0 ? `?${params.toString()}` : ''
     const response = await fetch(`/api/admin${suffix}`, {
       headers: { accept: 'application/json' },
       signal,
@@ -1283,6 +1300,41 @@ export async function loadAdminOverview(
     }
 
     return { message: 'Admin data unavailable.', status: 'error' }
+  }
+}
+
+export async function loadMemberStats(
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<MemberDetailStats | undefined> {
+  try {
+    const response = await fetch(
+      `/api/admin/member-stats?accountId=${encodeURIComponent(accountId)}`,
+      { headers: { accept: 'application/json' }, signal },
+    )
+    if (!response.ok) return undefined
+    const envelope = (await response.json()) as { data?: { stats?: MemberDetailStats } }
+    return envelope.data?.stats
+  } catch {
+    return undefined
+  }
+}
+
+export async function saveMemberLimits(
+  accountId: string,
+  limits: MemberLimitOverrides,
+): Promise<MemberLimitOverrides | undefined> {
+  try {
+    const response = await fetch('/api/admin/member-stats', {
+      body: JSON.stringify({ accountId, ...limits }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    if (!response.ok) return undefined
+    const envelope = (await response.json()) as { data?: { limits?: MemberLimitOverrides } }
+    return envelope.data?.limits
+  } catch {
+    return undefined
   }
 }
 

@@ -15,15 +15,34 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
-  late Future<AdminOverview> _future = widget.api.adminOverview();
+  late Future<AdminOverview> _future = _loadOverview();
   bool _changingCountry = false;
   bool _refreshingDeals = false;
   String? _lastRefreshSummary;
   int? _storesPending;
+  // The member list spans every country until an admin narrows it.
+  String _memberCountry = 'ALL';
+  String _memberPlan = 'all';
+  String _memberSort = 'joined-newest';
+
+  Future<AdminOverview> _loadOverview() => widget.api.adminOverview(
+        memberCountry: _memberCountry,
+        plan: _memberPlan,
+        sort: _memberSort,
+      );
 
   void _reload() => setState(() {
-        _future = widget.api.adminOverview();
+        _future = _loadOverview();
       });
+
+  void _reloadMembers({String? country, String? plan, String? sort}) {
+    setState(() {
+      if (country != null) _memberCountry = country;
+      if (plan != null) _memberPlan = plan;
+      if (sort != null) _memberSort = sort;
+      _future = _loadOverview();
+    });
+  }
 
   Future<void> _refreshDeals() async {
     if (_refreshingDeals) return;
@@ -325,24 +344,103 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _membersTab(AdminOverview overview) {
+    final countries = overview.memberCountries;
+    final total = countries.fold<int>(0, (sum, entry) => sum + entry.memberCount);
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Recent accounts',
+        Text('Accounts',
             style: Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
         const SizedBox(height: 4),
         Text(
-          'Deals opened is only counted while a member leaves deal learning on, '
-          'so a zero can mean they opted out rather than never looked.',
+          'Every country by default. Tap a card for what a member actually uses '
+          'and to set their ceilings.',
           style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
         ),
         const SizedBox(height: 12),
+        Wrap(
+          runSpacing: 8,
+          spacing: 8,
+          children: [
+            SizedBox(
+              width: 190,
+              child: DropdownButtonFormField<String>(
+                key: const Key('admin-member-country'),
+                initialValue: _memberCountry,
+                decoration: const InputDecoration(labelText: 'Country'),
+                isExpanded: true,
+                items: [
+                  DropdownMenuItem(
+                    value: 'ALL',
+                    child: Text('All countries${total > 0 ? ' ($total)' : ''}'),
+                  ),
+                  for (final entry in countries)
+                    DropdownMenuItem(
+                      value: entry.code,
+                      child: Text(
+                        '${countryFlag(entry.code)} ${entry.name} (${entry.memberCount})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) =>
+                    _reloadMembers(country: value ?? 'ALL'),
+              ),
+            ),
+            SizedBox(
+              width: 175,
+              child: DropdownButtonFormField<String>(
+                key: const Key('admin-member-plan'),
+                initialValue: _memberPlan,
+                decoration: const InputDecoration(labelText: 'Membership'),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('All memberships')),
+                  DropdownMenuItem(value: 'free', child: Text('Free')),
+                  DropdownMenuItem(value: 'scout', child: Text('Scout')),
+                  DropdownMenuItem(value: 'household', child: Text('Household')),
+                  DropdownMenuItem(
+                      value: 'organization', child: Text('Organisation')),
+                  DropdownMenuItem(value: 'developers', child: Text('Developers')),
+                ],
+                onChanged: (value) => _reloadMembers(plan: value ?? 'all'),
+              ),
+            ),
+            SizedBox(
+              width: 190,
+              child: DropdownButtonFormField<String>(
+                key: const Key('admin-member-sort'),
+                initialValue: _memberSort,
+                decoration: const InputDecoration(labelText: 'Sort'),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(
+                      value: 'joined-newest', child: Text('Recently joined')),
+                  DropdownMenuItem(
+                      value: 'joined-oldest', child: Text('Oldest members')),
+                  DropdownMenuItem(
+                      value: 'most-active', child: Text('Most active')),
+                  DropdownMenuItem(value: 'name', child: Text('Name (A-Z)')),
+                ],
+                onChanged: (value) =>
+                    _reloadMembers(sort: value ?? 'joined-newest'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         if (overview.accounts.isEmpty)
-          Text('No accounts yet.', style: TextStyle(color: TS.mutedOf(context)))
+          Text('No members match these filters.',
+              style: TextStyle(color: TS.mutedOf(context)))
         else
           for (final account in overview.accounts)
-            _MemberAccessTile(
-                key: ValueKey(account.id), api: widget.api, account: account),
+            _MemberCard(
+              key: ValueKey(account.id),
+              account: account,
+              api: widget.api,
+            ),
       ],
     );
   }
@@ -605,12 +703,327 @@ class _OrganizationApplicationReviewSectionState
       );
 }
 
+/// What a member actually does here, and the ceilings an admin can set on it.
+/// The access toggles stay on the existing tile, which already owns them.
+class _MemberDetailSheet extends StatefulWidget {
+  const _MemberDetailSheet({required this.account, required this.api});
+
+  final MemberAccount account;
+  final Api api;
+
+  @override
+  State<_MemberDetailSheet> createState() => _MemberDetailSheetState();
+}
+
+class _MemberDetailSheetState extends State<_MemberDetailSheet> {
+  Map<String, dynamic>? _stats;
+  String? _error;
+  bool _saving = false;
+  final _dealsCtl = TextEditingController();
+  final _cataloguesCtl = TextEditingController();
+  final _messagesCtl = TextEditingController();
+  bool _scoutBlocked = false;
+  bool _compareBlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _dealsCtl.dispose();
+    _cataloguesCtl.dispose();
+    _messagesCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final stats = await widget.api.adminMemberStats(widget.account.id);
+      if (!mounted) return;
+      final limits = stats['limits'];
+      setState(() {
+        _stats = stats;
+        if (limits is Map<String, dynamic>) {
+          _dealsCtl.text = _limitText(limits['visibleDeals']);
+          _cataloguesCtl.text = _limitText(limits['visibleCatalogues']);
+          _messagesCtl.text = _limitText(limits['scoutMessagesPerDay']);
+          _scoutBlocked = limits['scoutChatBlocked'] == true;
+          _compareBlocked = limits['compareBlocked'] == true;
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not load this member.');
+    }
+  }
+
+  String _limitText(Object? value) =>
+      value is num && value > 0 ? '${value.toInt()}' : '';
+
+  int? _limitValue(TextEditingController controller) {
+    final parsed = int.tryParse(controller.text.trim());
+    return parsed != null && parsed > 0 ? parsed : null;
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await widget.api.setMemberLimits(
+        widget.account.id,
+        compareBlocked: _compareBlocked,
+        scoutChatBlocked: _scoutBlocked,
+        scoutMessagesPerDay: _limitValue(_messagesCtl),
+        visibleCatalogues: _limitValue(_cataloguesCtl),
+        visibleDeals: _limitValue(_dealsCtl),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Limits saved.')));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not save those limits.')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  int _stat(String key) {
+    final value = _stats?[key];
+    return value is num ? value.toInt() : 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${countryFlag(account.countryCode)} ${account.displayName}',
+                style: Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
+            Text('${account.email} · ${account.countryName} · ${account.planName}',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5)),
+            const SizedBox(height: 14),
+            if (_error != null)
+              Text(_error!, style: TextStyle(color: TS.redOf(context)))
+            else if (_stats == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              Wrap(
+                runSpacing: 10,
+                spacing: 10,
+                children: [
+                  _statTile('Deals viewed', '${_stat('dealViewCount')}'),
+                  _statTile('Properties viewed', '${_stat('propertyViewCount')}'),
+                  _statTile('Vouchers viewed', '${_stat('voucherViewCount')}'),
+                  _statTile('Vouchers saved', '${_stat('voucherClaimedCount')}'),
+                  _statTile('Mr Scout messages', '${_stat('scoutMessageCount')}'),
+                  _statTile('Saved deals', '${_stat('savedDealCount')}'),
+                  _statTile('Basket items', '${_stat('basketItemCount')}'),
+                  _statTile(
+                      'Saved properties', '${_stat('savedPropertyCount')}'),
+                  _statTile('Window saves', '${_stat('windowShoppingSaveCount')}'),
+                  _statTile('Window shopping',
+                      _formatDuration(_stat('windowShoppingSeconds'))),
+                ],
+              ),
+            const SizedBox(height: 18),
+            Text('Access', style: TS.display.copyWith(fontSize: 16)),
+            _MemberAccessTile(api: widget.api, account: account),
+            const SizedBox(height: 12),
+            Text('Limits', style: TS.display.copyWith(fontSize: 16)),
+            Text('Leave a field empty to use whatever the plan allows.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
+            const SizedBox(height: 8),
+            _limitField('Deals visible', _dealsCtl, 'admin-limit-deals'),
+            _limitField(
+                'Catalogues visible', _cataloguesCtl, 'admin-limit-catalogues'),
+            _limitField('Mr Scout messages a day', _messagesCtl,
+                'admin-limit-messages'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Block Mr Scout'),
+              value: _scoutBlocked,
+              onChanged: (value) => setState(() => _scoutBlocked = value),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Block Compare'),
+              value: _compareBlocked,
+              onChanged: (value) => setState(() => _compareBlocked = value),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const Key('admin-save-limits'),
+                onPressed: _saving ? null : () { _save(); },
+                child: Text(_saving ? 'Saving...' : 'Save limits'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statTile(String label, String value) => Container(
+        width: 150,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: TS.surfaceOf(context),
+          border: Border.all(color: TS.lineSoftOf(context)),
+          borderRadius: BorderRadius.circular(TS.controlRadius),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Text(label,
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 11.5)),
+          ],
+        ),
+      );
+
+  Widget _limitField(String label, TextEditingController controller, String key) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: TextField(
+          key: Key(key),
+          controller: controller,
+          decoration: InputDecoration(
+              labelText: label, hintText: 'Plan default'),
+          keyboardType: TextInputType.number,
+        ),
+      );
+}
+
+String _formatDuration(int seconds) {
+  if (seconds <= 0) return 'None yet';
+  final hours = seconds ~/ 3600;
+  final minutes = ((seconds % 3600) / 60).round();
+  if (hours > 0) return '${hours}h ${minutes}m';
+  if (minutes > 0) return '${minutes}m';
+  return '${seconds}s';
+}
+
+/// A member's card: who they are, where they are, and what they have opened.
+/// Tapping it opens the detail sheet with their fuller usage and their limits.
+class _MemberCard extends StatelessWidget {
+  const _MemberCard({super.key, required this.account, required this.api});
+
+  final MemberAccount account;
+  final Api api;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TS.cardRadius),
+        side: BorderSide(
+          color: account.isBanned ? TS.redOf(context) : TS.lineSoftOf(context),
+          width: account.isBanned ? 2 : 1,
+        ),
+      ),
+      child: InkWell(
+        key: Key('admin-member-card-${account.id}'),
+        borderRadius: BorderRadius.circular(TS.cardRadius),
+        onTap: () {
+          uxTap();
+          showModalBottomSheet<void>(
+            context: context,
+            isScrollControlled: true,
+            showDragHandle: true,
+            builder: (_) => _MemberDetailSheet(account: account, api: api),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(countryFlag(account.countryCode),
+                      style: const TextStyle(fontSize: 22)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(account.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800)),
+                        Text('${account.email} · ${account.countryName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: TS.mutedOf(context), fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Chip(
+                    label: Text(account.planName,
+                        style: const TextStyle(fontSize: 11)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  _countChip('${account.dealViewCount}', 'deals', context),
+                  _countChip('${account.propertyViewCount}', 'properties', context),
+                  _countChip('${account.voucherViewCount}', 'vouchers', context),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Joined ${account.createdAt.split('T').first}'
+                '${account.isBanned ? ' · banned' : ''}',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 11.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _countChip(String value, String label, BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(width: 3),
+          Text(label,
+              style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
+        ],
+      );
+}
+
 /// One member row with a Properties Scout access toggle. Household plans and
 /// admins always have access via their plan/role, so the toggle only appears for
 /// other members; granting one flips their access on immediately.
 class _MemberAccessTile extends StatefulWidget {
-  const _MemberAccessTile(
-      {super.key, required this.api, required this.account});
+  const _MemberAccessTile({required this.api, required this.account});
 
   final Api api;
   final MemberAccount account;
