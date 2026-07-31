@@ -9,6 +9,7 @@ import {
   STAPLE_SWEEP_TERMS,
   sweepRetailerPromotions,
 } from './retailerPromotionVouchers'
+import { recordVoucherSourceYield } from './voucherSourceScout'
 import {
   expireVouchers,
   readVoucherSourceCursor,
@@ -154,6 +155,10 @@ export async function runVoucherScout(
         kind: 'token',
         token: JSON.stringify({ fingerprint, offset: nextOffset, version: CURSOR_VERSION }),
       })
+      // A discovered source that stops yielding is retired rather than
+      // retried forever, which is how the old hand-written list stayed broken.
+      await recordVoucherSourceYield(env, source.sourceKey, candidates.length)
+        .catch(() => undefined)
       results.push({
         checkedAt,
         discovered: candidates.length,
@@ -428,4 +433,5 @@ function boundedBodyLimit(value: number) {
   }
   return value
 }
+
 

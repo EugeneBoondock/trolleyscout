@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   buildRegistryOnlineStores: vi.fn(),
@@ -10,6 +10,23 @@ const mocks = vi.hoisted(() => ({
   refreshLeafletCache: vi.fn(),
   runStructuredRetailerFeedScout: vi.fn(),
   scoutNearbyStores: vi.fn(),
+  runVoucherScout: vi.fn(async () => ({ expired: 0, sources: [] })),
+  discoverVoucherSources: vi.fn(async () => []),
+  listDiscoveredVoucherSources: vi.fn(async () => []),
+}))
+
+// The voucher lane reaches real retailer sites, so it is stubbed out unless a
+// test is specifically about vouchers.
+vi.mock('../../_shared/voucherScout', () => ({
+  defaultVoucherSources: [
+    { parser: 'public-code', retailerId: 'yuppiechef', sourceKey: 'yuppiechef::promotion-codes', url: 'https://www.yuppiechef.com/promotions.htm' },
+  ],
+  runVoucherScout: mocks.runVoucherScout,
+}))
+
+vi.mock('../../_shared/voucherSourceScout', () => ({
+  discoverVoucherSources: mocks.discoverVoucherSources,
+  listDiscoveredVoucherSources: mocks.listDiscoveredVoucherSources,
 }))
 
 vi.mock('../../_shared/memberStore', () => ({
@@ -87,6 +104,11 @@ describe('/api/admin/scout-run', () => {
     mocks.runStructuredRetailerFeedScout.mockResolvedValue(feedResult)
     mocks.scoutNearbyStores.mockResolvedValue(undefined)
     mocks.buildRegistryOnlineStores.mockReturnValue(registryStores)
+    // clearAllMocks resets calls but keeps implementations, so a rejection set
+    // by one test would otherwise fail every test after it.
+    mocks.runVoucherScout.mockResolvedValue({ expired: 0, sources: [] })
+    mocks.discoverVoucherSources.mockResolvedValue([])
+    mocks.listDiscoveredVoucherSources.mockResolvedValue([])
     // The registry really does carry sources for more than one country now, and
     // the feed lane picks by country, so an empty list here would have every
     // press report that there is nothing to fetch.
@@ -138,6 +160,63 @@ describe('/api/admin/scout-run', () => {
     expect(response.status).toBe(403)
     expect(mocks.runStructuredRetailerFeedScout).not.toHaveBeenCalled()
     expect(mocks.scoutNearbyStores).not.toHaveBeenCalled()
+  })
+
+  it('collects vouchers on a plain press, not only on the cron', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.runVoucherScout.mockResolvedValue({
+      expired: 2,
+      sources: [
+        { discovered: 12, sourceKey: 'pick-n-pay::smart-shopper', written: 12 },
+        { discovered: 0, sourceKey: 'yuppiechef::promotion-codes', written: 0 },
+      ],
+    })
+
+    const response = await invoke(run({ lane: 'all' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.runVoucherScout).toHaveBeenCalledTimes(1)
+    expect(await response.json()).toMatchObject({
+      data: {
+        vouchers: {
+          emptySourceCount: 1,
+          expiredCount: 2,
+          failed: false,
+          ran: true,
+          voucherCount: 12,
+        },
+      },
+    })
+  })
+
+  it('looks for voucher pages nobody has registered yet', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.discoverVoucherSources.mockResolvedValue([
+      { candidateCount: 4, outcome: 'accepted', retailerId: 'clicks', url: 'https://clicks.co.za/vouchers' },
+      { candidateCount: 0, outcome: 'empty', retailerId: 'game', url: 'https://www.game.co.za/vouchers' },
+    ])
+
+    const response = await invoke(run({ lane: 'vouchers' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.discoverVoucherSources).toHaveBeenCalledTimes(1)
+    expect(await response.json()).toMatchObject({
+      data: { vouchers: { discoveredSourceCount: 1, ran: true } },
+    })
+  })
+
+  it('reports a failing voucher lane instead of throwing', async () => {
+    signedInAs('admin-1', 'admin')
+    mocks.runVoucherScout.mockRejectedValue(new Error('The voucher store is unavailable.'))
+
+    const response = await invoke(run({ lane: 'vouchers' }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        vouchers: { failed: true, message: 'The voucher store is unavailable.', ran: true },
+      },
+    })
   })
 
   it('refuses a lane it does not know', async () => {
@@ -263,14 +342,14 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         lane: 'all',
-        message: '10 sources checked, 240 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed.',
+        message: '10 sources checked, 240 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed, 0 vouchers collected.',
       },
     })
   })
 
   it('reaches the sources that have gone longest unread, not just the first few', async () => {
     // A bounded run walks the list from the front and stops at the cap, so the
-    // sources registered last — Takealot's campaign shards among them — were
+    // sources registered last â€” Takealot's campaign shards among them â€” were
     // never reached however many times the button was pressed.
     signedInAs('admin-1', 'admin')
     mocks.getStructuredRetailerSources.mockReturnValue([
@@ -315,7 +394,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({ data: { country: 'NL' } })
   })
 
-  // Not because the lane is South African — it is not, any more — but because
+  // Not because the lane is South African â€” it is not, any more â€” but because
   // no feed has been built for the Netherlands yet, so the whole budget is
   // better spent on the shops that do serve it.
   it('skips the retailer feeds for a country that has none, and says why', async () => {
@@ -407,7 +486,7 @@ describe('/api/admin/scout-run', () => {
     expect(await response.json()).toMatchObject({
       data: {
         feeds: { failed: true, message: 'Takealot refused the request.', ran: true },
-        message: '0 sources checked, 0 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed. The retailer feeds could not run.',
+        message: '0 sources checked, 0 deals added, 2 stores swept, 1 still to sweep, 2 catalogues refreshed, 0 vouchers collected. The retailer feeds could not run.',
         stores: { failed: false, ran: true },
       },
     })
@@ -523,3 +602,4 @@ function scoutLogDatabase(held = 1) {
 function invoke(request: Request, db: unknown = scoutLogDatabase()) {
   return onRequest({ env: { DB: db }, request } as never)
 }
+

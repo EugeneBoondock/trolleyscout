@@ -1,4 +1,4 @@
-// Admin-only, on-demand run of the scout lanes the older "refresh deal
+﻿// Admin-only, on-demand run of the scout lanes the older "refresh deal
 // sources" control never reached: the structured retailer feeds (Takealot
 // campaign shards, Woolworths, Clicks, Dis-Chem, Makro, Game, Builders, Mr
 // Price, Loot, Evetech, Wootware, Bob Shop, Decathlon) and the online-only
@@ -24,6 +24,16 @@ import {
   type RetailerFeedSource,
 } from '../../_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../../_shared/storeScout'
+import {
+  defaultVoucherSources,
+  runVoucherScout,
+  type VoucherScoutSource,
+} from '../../_shared/voucherScout'
+import {
+  discoverVoucherSources,
+  listDiscoveredVoucherSources,
+} from '../../_shared/voucherSourceScout'
+import { getStaticRetailersPayload } from '../../../src/api/staticData'
 import { leafletTargets } from '../../../src/services/leafletDiscovery'
 import type { StoreLeaflet } from '../../../src/types'
 import { refreshLeafletCache } from '../discovery'
@@ -32,7 +42,7 @@ const privateHeaders = {
   'cache-control': 'private, no-store',
 }
 
-const SCOUT_LANES = ['all', 'catalogues', 'feeds', 'stores'] as const
+const SCOUT_LANES = ['all', 'catalogues', 'feeds', 'stores', 'vouchers'] as const
 
 // Opts a press out of country scoping and back into every registered country.
 const ALL_COUNTRIES = 'ALL'
@@ -42,16 +52,20 @@ export type ScoutLane = (typeof SCOUT_LANES)[number]
 interface LaneBounds {
   feedRequestCap: number
   storeLimit: number
+  // How many voucher sources a press may sweep. Each source costs several
+  // subrequests, so "all" takes a small slice and the cursor carries the rest.
+  voucherSourceLimit: number
 }
 
 // Deliberately modest next to the cron (45 feed requests, 40 storefronts): a
 // single press has to answer inside the edge request window. A lane run on its
 // own gets the larger slice; "all" splits the budget across both.
 const LANE_BOUNDS: Record<ScoutLane, LaneBounds> = {
-  all: { feedRequestCap: 6, storeLimit: 10 },
-  catalogues: { feedRequestCap: 0, storeLimit: 0 },
-  feeds: { feedRequestCap: 10, storeLimit: 0 },
-  stores: { feedRequestCap: 0, storeLimit: 24 },
+  all: { feedRequestCap: 6, storeLimit: 10, voucherSourceLimit: 2 },
+  catalogues: { feedRequestCap: 0, storeLimit: 0, voucherSourceLimit: 0 },
+  feeds: { feedRequestCap: 10, storeLimit: 0, voucherSourceLimit: 0 },
+  stores: { feedRequestCap: 0, storeLimit: 24, voucherSourceLimit: 0 },
+  vouchers: { feedRequestCap: 0, storeLimit: 0, voucherSourceLimit: 6 },
 }
 
 // Shorter than the scout's own 12s default so one stalled source cannot eat the
@@ -107,16 +121,31 @@ interface CatalogueLaneSummary {
   sourceCount: number
 }
 
+interface VoucherLaneSummary {
+  // Voucher pages the sweep found for itself this press.
+  discoveredSourceCount: number
+  // Vouchers whose validity ran out during this press.
+  expiredCount: number
+  failed: boolean
+  message?: string
+  ran: boolean
+  sourceCount: number
+  // Sources that answered with nothing usable, which is the signal that a
+  // voucher page has moved or gone behind a login.
+  emptySourceCount: number
+  voucherCount: number
+}
+
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   // A scout run has side effects (writes deals, claims shops), so it is POST
-  // only — never reachable by a link or a prefetch.
+  // only â€” never reachable by a link or a prefetch.
   if (request.method !== 'POST') {
     return methodNotAllowed(request.method, 'POST')
   }
 
   const session = await getMemberSession(env, request)
 
-  // The role is read from the account row server-side — never from the client.
+  // The role is read from the account row server-side â€” never from the client.
   // Nothing above this line has started any work.
   if (session.account?.role !== 'admin') {
     return json(
@@ -174,7 +203,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const feedsApply = feedSources.length > 0
   const bounds = feedsApply
     ? LANE_BOUNDS[lane]
-    : { feedRequestCap: 0, storeLimit: LANE_BOUNDS[lane].storeLimit || LANE_BOUNDS.stores.storeLimit }
+    : {
+      feedRequestCap: 0,
+      storeLimit: LANE_BOUNDS[lane].storeLimit || LANE_BOUNDS.stores.storeLimit,
+      voucherSourceLimit: LANE_BOUNDS[lane].voucherSourceLimit,
+    }
   const startedAtMs = Date.now()
   const startedAt = new Date(startedAtMs).toISOString()
   const databaseAvailable = hasTrolleyScoutDatabase(env)
@@ -196,6 +229,11 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   const catalogues = lane === 'all' || lane === 'catalogues'
     ? await runCatalogueLane(env, wholeWorld ? undefined : country)
     : skippedCatalogueLane()
+  // Vouchers ride along with a plain press. They were only ever collected by
+  // the 3-hourly cron, so after a deploy there was no way to fill the wall.
+  const vouchers = bounds.voucherSourceLimit > 0 && databaseAvailable
+    ? await runVoucherLane(env, bounds.voucherSourceLimit)
+    : skippedVoucherLane()
 
   return json(
     {
@@ -210,14 +248,112 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         catalogues,
         feeds,
         stores,
+        vouchers,
         databaseAvailable,
         wantsFeeds && !feedsApply ? country : undefined,
       ),
       startedAt,
       stores,
+      vouchers,
     },
     { headers: privateHeaders },
   )
+}
+
+/**
+ * One bounded pass over the voucher sources, least recently run first so
+ * pressing repeatedly walks the whole list rather than re-sweeping the front
+ * of it. Discovered sources come first â€” they are the ones nobody has vetted.
+ */
+async function runVoucherLane(
+  env: TrolleyScoutEnv,
+  sourceLimit: number,
+): Promise<VoucherLaneSummary> {
+  try {
+    const sources = (await voucherSourcesForRun(env)).slice(0, sourceLimit)
+    if (sources.length === 0) {
+      return { ...skippedVoucherLane(), ran: true }
+    }
+
+    const result = await runVoucherScout(env, { sources })
+    // A press also looks for pages nobody has registered yet, so the source
+    // list grows on its own instead of waiting for someone to notice a URL
+    // has rotted.
+    const found = await discoverVoucherSources(env, {
+      jinaApiKey: env.JINA_API_KEY,
+      maxProbes: 4,
+      retailers: voucherProbeTargets(),
+    }).catch(() => [])
+
+    return {
+      discoveredSourceCount: found.filter((probe) => probe.outcome === 'accepted').length,
+      emptySourceCount: result.sources.filter((source) => source.discovered === 0).length,
+      expiredCount: result.expired,
+      failed: false,
+      ran: true,
+      sourceCount: result.sources.length,
+      voucherCount: result.sources.reduce((total, source) => total + source.written, 0),
+    }
+  } catch (error) {
+    return {
+      ...skippedVoucherLane(),
+      failed: true,
+      message: describeError(error),
+      ran: true,
+    }
+  }
+}
+
+/**
+ * Shops worth probing for a voucher page: the official origin of every
+ * retailer in the directory. Only hosts we already trust are probed, so
+ * discovery can never wander onto an aggregator.
+ */
+function voucherProbeTargets(): Array<{ origin: string; retailerId: string }> {
+  const targets = new Map<string, string>()
+
+  for (const retailer of getStaticRetailersPayload().retailers) {
+    for (const source of retailer.sources) {
+      try {
+        const origin = new URL(source.url).origin
+        if (origin.startsWith('https://') && !targets.has(retailer.id)) {
+          targets.set(retailer.id, origin)
+        }
+      } catch {
+        // A source without a readable URL simply offers no origin to probe.
+      }
+    }
+  }
+
+  return [...targets.entries()].map(([retailerId, origin]) => ({ origin, retailerId }))
+}
+
+async function voucherSourcesForRun(
+  env: TrolleyScoutEnv,
+): Promise<readonly VoucherScoutSource[]> {
+  const discovered = await listDiscoveredVoucherSources(env).catch(() => [])
+  const sources = [...discovered, ...defaultVoucherSources]
+
+  if (!env.DB) {
+    return sources
+  }
+
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT source_key, MAX(finished_at) AS last_run
+        FROM voucher_source_runs GROUP BY source_key`,
+    ).all<{ source_key: string; last_run: string | null }>()
+    const lastRun = new Map(rows.results.map((row) => [row.source_key, row.last_run ?? '']))
+
+    // Never run sorts first; ties keep registration order.
+    return sources
+      .map((source, index) => ({ index, key: lastRun.get(source.sourceKey) ?? '', source }))
+      .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index)
+      .map((entry) => entry.source)
+  } catch {
+    // Without the audit table, registration order is still a valid pass.
+    return sources
+  }
 }
 
 async function runCatalogueLane(
@@ -298,7 +434,7 @@ function readLane(value: unknown, url: string): ScoutLane | undefined {
 
 // A bounded run walks the source list from the front, so with the cap this
 // endpoint has to keep, it could only ever reach the first handful of sources
-// — the ones registered last, Takealot's campaign shards among them, were
+// â€” the ones registered last, Takealot's campaign shards among them, were
 // never reached however many times the button was pressed. Ordering by how
 // long a source has gone unread makes each press advance whatever is most
 // overdue, so pressing repeatedly walks the whole list.
@@ -512,10 +648,23 @@ function skippedCatalogueLane(): CatalogueLaneSummary {
   }
 }
 
+function skippedVoucherLane(): VoucherLaneSummary {
+  return {
+    discoveredSourceCount: 0,
+    emptySourceCount: 0,
+    expiredCount: 0,
+    failed: false,
+    ran: false,
+    sourceCount: 0,
+    voucherCount: 0,
+  }
+}
+
 function summaryMessage(
   catalogues: CatalogueLaneSummary,
   feeds: FeedLaneSummary,
   stores: StoreLaneSummary,
+  vouchers: VoucherLaneSummary,
   databaseAvailable: boolean,
   countryWithoutFeeds?: string,
 ): string {
@@ -542,6 +691,14 @@ function summaryMessage(
     done.push(`${count(catalogues.catalogueCount, 'catalogue')} refreshed`)
   }
 
+  if (vouchers.ran) {
+    done.push(`${count(vouchers.voucherCount, 'voucher')} collected`)
+
+    if (vouchers.expiredCount > 0) {
+      done.push(`${vouchers.expiredCount} expired`)
+    }
+  }
+
   const problems: string[] = []
 
   if (feeds.failed) {
@@ -558,13 +715,21 @@ function summaryMessage(
     problems.push('the catalogue sweep could not run')
   }
 
+  if (vouchers.failed) {
+    problems.push('the voucher sweep could not run')
+  } else if (vouchers.ran && vouchers.emptySourceCount > 0) {
+    // A voucher page that answers with nothing has usually moved or gone
+    // behind a login, which is worth saying rather than reporting zero.
+    problems.push(`${count(vouchers.emptySourceCount, 'voucher source')} returned nothing`)
+  }
+
   const summary = done.length ? `${done.join(', ')}.` : 'Nothing ran.'
   const withProblems = problems.length
     ? `${summary} ${sentence(problems.join(' and '))}.`
     : summary
 
   // Said plainly rather than left as a suspiciously small number. It no longer
-  // reads "feeds are South African", because they are not — it names the
+  // reads "feeds are South African", because they are not â€” it names the
   // country that has none, which is a thing that can be fixed by building one.
   return countryWithoutFeeds
     ? `${withProblems} No retailer feed covers ${countryFromCode(countryWithoutFeeds).name} yet, so it swept shops only.`
@@ -584,3 +749,4 @@ function describeError(error: unknown): string {
     ? error.message
     : 'The lane stopped with an unexpected error.'
 }
+
