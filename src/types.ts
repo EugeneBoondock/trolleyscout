@@ -729,6 +729,38 @@ export interface AdminAnalyticsReport {
   windowDays: number
 }
 
+/**
+ * A code a shopper pastes into a promo-code box at checkout. Distinct from a
+ * Voucher, which is a loyalty price or a clip coupon — those are redeemed in
+ * the shop or on the product page, not typed at checkout.
+ */
+export interface VoucherCode {
+  benefitText: string
+  code: string
+  createdAt: string
+  failedCount: number
+  id: string
+  lastWorkedAt?: string
+  minimumSpendText?: string
+  retailerId: string
+  /** 'member', or 'affiliate:<network>' for a licensed feed. */
+  source: string
+  sourceUrl?: string
+  termsText?: string
+  validTo?: string
+  workedCount: number
+  yourVote?: 'failed' | 'worked'
+}
+
+export interface VoucherCodeDraft {
+  benefitText: string
+  code: string
+  minimumSpendText?: string
+  retailerId: string
+  termsText?: string
+  validTo?: string
+}
+
 export interface MemberCountryTally {
   code: string
   memberCount: number

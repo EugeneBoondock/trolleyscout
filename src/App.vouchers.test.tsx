@@ -56,6 +56,6 @@ it('opens the public voucher board from the main navigation', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Vouchers' }))
 
-  expect(await screen.findByRole('heading', { name: 'Current retailer vouchers' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'Vouchers and codes' })).toBeTruthy()
   expect(await screen.findByText('SAVE25')).toBeTruthy()
 })

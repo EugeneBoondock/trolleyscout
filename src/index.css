@@ -9490,3 +9490,75 @@ a.auto-compare-title:hover {
 .admin-modal-controls h4 { margin: 0; }
 .admin-modal-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .admin-limit-check { align-items: center; display: flex; gap: 0.4rem; }
+
+/* Checkout codes: the thing you paste into a promo-code box. Ranked by what
+   worked for other shoppers, because we cannot test one at a retailer's till. */
+.voucher-codes { margin-bottom: 1.75rem; }
+.voucher-code-list { display: grid; gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
+
+.voucher-code-row {
+  background: var(--ts-surface, #fff);
+  border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: 0.8rem;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem;
+}
+
+.voucher-code-main { align-items: center; display: flex; gap: 0.6rem; }
+
+.voucher-code-main code {
+  background: rgb(0 0 0 / 0.06);
+  border-radius: 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+  padding: 0.3rem 0.6rem;
+}
+
+.voucher-code-main button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.voucher-code-benefit { font-weight: 700; margin: 0; }
+.voucher-code-terms,
+.voucher-code-confidence {
+  color: var(--ts-ink-soft, #4a5568);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.voucher-code-vote { align-items: center; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.voucher-code-vote span { color: var(--ts-ink-soft, #4a5568); font-size: 0.82rem; }
+
+.voucher-code-vote button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.voucher-code-vote button.is-on { border-color: currentColor; font-weight: 800; }
+
+.voucher-code-share {
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.voucher-code-share h3 { margin: 0; }
+.voucher-code-notice { margin-top: 0.6rem; }

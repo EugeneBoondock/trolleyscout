@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScoutMark } from '../components/ScoutMark'
 import { recordUsage } from '../services/memberUsage'
+import { VoucherCodesPanel } from './VoucherCodesPanel'
 import {
   safeVoucherImageUrl,
   safeVoucherRetailerUrl,
@@ -124,13 +125,34 @@ export function VouchersView({
       <div className="section-heading">
         <div>
           <p className="eyebrow">Voucher scout</p>
-          <h1>Current retailer vouchers</h1>
+          <h1>Vouchers and codes</h1>
           <p>
-            Verified public codes, product coupons, and loyalty offers from official retailer
-            sources. Personal single-use codes are never stored.
+            Codes to paste at checkout, plus the loyalty prices and clip coupons you
+            redeem in the shop. Personal single-use codes are never stored.
           </p>
         </div>
         <Ticket size={30} weight="duotone" />
+      </div>
+
+      <VoucherCodesPanel
+        isAuthenticated={isAuthenticated}
+        onRequireAuth={onRequireAuth}
+        retailerId={retailerId}
+        retailerOptions={retailers.map((retailer) => ({
+          id: retailer,
+          name: formatRetailer(retailer),
+        }))}
+      />
+
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">In-store and on-site</p>
+          <h2>Loyalty prices and clip coupons</h2>
+          <p className="section-lede">
+            Not typed at checkout. These are scanned at the till or clipped on the
+            product page.
+          </p>
+        </div>
       </div>
 
       <div className="voucher-filter-bar">

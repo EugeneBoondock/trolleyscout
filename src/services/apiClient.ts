@@ -64,6 +64,8 @@ import type {
   SubscriptionCheckoutRequest,
   SupportMessage,
   VerifiedOffer,
+  VoucherCode,
+  VoucherCodeDraft,
 } from '../types'
 
 export async function loadDeveloperKeys(): Promise<DeveloperKeyResource> {
@@ -1333,6 +1335,63 @@ export async function saveMemberLimits(
     if (!response.ok) return undefined
     const envelope = (await response.json()) as { data?: { limits?: MemberLimitOverrides } }
     return envelope.data?.limits
+  } catch {
+    return undefined
+  }
+}
+
+export async function loadVoucherCodes(
+  retailerId?: string,
+  signal?: AbortSignal,
+): Promise<VoucherCode[]> {
+  try {
+    const suffix = retailerId && retailerId !== 'all'
+      ? `?retailerId=${encodeURIComponent(retailerId)}`
+      : ''
+    const response = await fetch(`/api/voucher-codes${suffix}`, {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+    if (!response.ok) return []
+    const envelope = (await response.json()) as { data?: { codes?: VoucherCode[] } }
+    return envelope.data?.codes ?? []
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return []
+  }
+}
+
+export async function shareVoucherCode(
+  draft: VoucherCodeDraft,
+): Promise<{ issues?: string[]; voucherCode?: VoucherCode }> {
+  try {
+    const response = await fetch('/api/voucher-codes', {
+      body: JSON.stringify(draft),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    const envelope = (await response.json()) as {
+      data?: { issues?: string[]; voucherCode?: VoucherCode }
+    }
+    return envelope.data ?? { issues: ['Could not share that code.'] }
+  } catch {
+    return { issues: ['Could not share that code.'] }
+  }
+}
+
+export async function rateVoucherCode(
+  voucherCodeId: string,
+  worked: boolean,
+): Promise<VoucherCode | undefined> {
+  try {
+    const response = await fetch('/api/voucher-codes', {
+      body: JSON.stringify({ action: 'vote', voucherCodeId, worked }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    if (!response.ok) return undefined
+    const envelope = (await response.json()) as { data?: { voucherCode?: VoucherCode } }
+    return envelope.data?.voucherCode
   } catch {
     return undefined
   }

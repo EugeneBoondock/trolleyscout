@@ -3,7 +3,7 @@
 -- Voucher pages were a hand-written list of four URLs. Two of them had rotted
 -- silently — the Woolworths one served a store-card article and Yuppiechef had
 -- moved /specials.htm to /promotions.htm — and nothing noticed, so the wall sat
--- on Amazon alone. Deals already discover their own sources; vouchers now do
+-- on Amazon alone. Deals already discover their own sources, and vouchers do
 -- the same, and a source that stops yielding is retired rather than retried
 -- forever.
 CREATE TABLE IF NOT EXISTS voucher_discovered_sources (

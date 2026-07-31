@@ -115,7 +115,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites,
         refreshDiscovery,
-        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -192,7 +192,7 @@ describe('runScheduledScout', () => {
             sources: [],
           }
         },
-        runVoucherScout: async () => { order.push('vouchers'); return { expired: 0, sources: [] } },
+        runVoucherScout: async () => { order.push('vouchers'); return { codes: { collected: 0, networks: [] }, expired: 0, sources: [] } },
         scoutNearbyStores: async () => { order.push('stores') },
         snapshotDealAlertKeys,
       },
@@ -255,7 +255,7 @@ describe('runScheduledScout', () => {
           physicalRequestCount: 0,
           sources: [],
         }),
-        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
         scoutNearbyStores: async () => undefined,
         snapshotDealAlertKeys,
       },
@@ -330,6 +330,7 @@ describe('runScheduledScout', () => {
         runVoucherScout: async () => {
           order.push('vouchers')
           return {
+            codes: { collected: 0, networks: [] },
             expired: 3,
             sources: [
               {
@@ -433,7 +434,7 @@ describe('runScheduledScout', () => {
         refreshDiscovery: async () => {
           throw new Error('legacy discovery unavailable')
         },
-        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,
@@ -516,7 +517,7 @@ describe('runScheduledScout', () => {
         },
         runVoucherScout: async () => {
           order.push('vouchers')
-          return { expired: 0, sources: [] }
+          return { codes: { collected: 0, networks: [] }, expired: 0, sources: [] }
         },
         scoutNearbyStores: async () => {
           order.push('store')
@@ -597,7 +598,7 @@ describe('runScheduledScout', () => {
         retailerName: 'SPAR',
         url: 'https://legacy.test/specials',
       }]),
-      runVoucherScout: async () => ({ expired: 0, sources: [] }),
+      runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
       runCatalogueScout: runCatalogue,
       saveLeafletSnapshot,
       runStructuredRetailerFeedScout: async () => ({
@@ -769,7 +770,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites: async () => 0,
         refreshDiscovery: async () => discoveryRun(),
-        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
         runCatalogueScout,
         runStructuredRetailerFeedScout: async () => ({
           acceptedDealCount: 0,
@@ -900,7 +901,7 @@ describe('runScheduledScout', () => {
         }),
         runVoucherScout: async () => {
           order.push('vouchers')
-          return { expired: 0, sources: [] }
+          return { codes: { collected: 0, networks: [] }, expired: 0, sources: [] }
         },
         scoutNearbyStores: async () => undefined,
       },
@@ -957,7 +958,7 @@ describe('runScheduledScout', () => {
         readDueDiscoveredStores: async () => [],
         refreshDealSites: async () => 0,
         refreshDiscovery: async () => discoveryRun(),
-        runVoucherScout: async () => ({ expired: 0, sources: [] }),
+        runVoucherScout: async () => ({ codes: { collected: 0, networks: [] }, expired: 0, sources: [] }),
         runCatalogueScout: async () => ({
           dealCount: 0,
           discoveredLeafletCount: 0,

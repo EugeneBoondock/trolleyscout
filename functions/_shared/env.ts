@@ -22,6 +22,12 @@ export interface TrolleyScoutEnv {
   // Optional: a free r.jina.ai key makes the search-proxy fallback reliable;
   // without it the keyless tier applies and scouts retry hourly.
   JINA_API_KEY?: string
+  // Licensed voucher-code feeds. Both need a publisher account; without them
+  // the checkout codes are whatever shoppers have shared. See
+  // affiliateVoucherFeeds.ts.
+  AWIN_API_TOKEN?: string
+  AWIN_PUBLISHER_ID?: string
+  ADMITAD_ACCESS_TOKEN?: string
   PAYFAST_MERCHANT_ID?: string
   PAYFAST_MERCHANT_KEY?: string
   PAYFAST_MODE?: 'sandbox' | 'live'

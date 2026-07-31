@@ -9,6 +9,8 @@ import {
   STAPLE_SWEEP_TERMS,
   sweepRetailerPromotions,
 } from './retailerPromotionVouchers'
+import { fetchAffiliateVoucherFeeds } from './affiliateVoucherFeeds'
+import { submitVoucherCode } from './voucherCodeStore'
 import { recordVoucherSourceYield } from './voucherSourceScout'
 import {
   expireVouchers,
@@ -20,6 +22,8 @@ import {
 const MAX_VOUCHERS_PER_SOURCE_RUN = 100
 const DEFAULT_MAX_BODY_BYTES = 4_000_000
 const CURSOR_VERSION = 1
+// A single run never floods the store from one feed; the rest arrive next run.
+const MAX_AFFILIATE_CODES_PER_RUN = 60
 
 export interface VoucherScoutSource {
   parser: 'amazon' | 'promotion-sweep' | 'public-code'
@@ -54,13 +58,14 @@ export interface VoucherScoutSourceResult {
 }
 
 /**
- * Where real, redeemable South African vouchers come from.
+ * In-store and on-site offers: loyalty prices and clip coupons.
  *
- * The loyalty sweeps lead because they are what shoppers actually redeem.
- * Probing every official promo-code page we could find — Clicks, Zando,
- * Yuppiechef, Faithful to Nature, NetFlorist, Superbalist, Loot, Takealot,
- * Builders — produced not one public code between them, so a scanner pointed
- * only at those pages left Amazon as the sole voucher in the app.
+ * These are not checkout codes, and they are no longer presented as if they
+ * were — a voucher, to a shopper, is something they paste into a promo-code
+ * box. Codes live in voucherCodeStore, and come from shoppers and from
+ * licensed affiliate feeds, because they cannot be scraped: retailers do not
+ * publish them, and the coupon aggregators hide the value behind a reveal
+ * click that only resolves on their own outbound redirect.
  */
 export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   {
@@ -194,7 +199,39 @@ export async function runVoucherScout(
   }
 
   const expired = await repository.expire()
-  return { expired, sources: results }
+  const codes = await collectAffiliateCodes(env, fetchImpl)
+  return { codes, expired, sources: results }
+}
+
+/**
+ * Pulls checkout codes from any affiliate network that has credentials, into
+ * the same store the shopper-submitted ones live in. A network without
+ * credentials reports why rather than failing.
+ */
+async function collectAffiliateCodes(
+  env: TrolleyScoutEnv,
+  fetchImpl: typeof fetch,
+): Promise<{ collected: number; networks: string[] }> {
+  const networks: string[] = []
+  let collected = 0
+
+  try {
+    for (const feed of await fetchAffiliateVoucherFeeds(env, fetchImpl)) {
+      if (feed.vouchers.length === 0) {
+        if (feed.message) networks.push(`${feed.network}: ${feed.message}`)
+        continue
+      }
+      for (const draft of feed.vouchers.slice(0, MAX_AFFILIATE_CODES_PER_RUN)) {
+        const saved = await submitVoucherCode(env, draft).catch(() => undefined)
+        if (saved?.voucherCode) collected += 1
+      }
+      networks.push(`${feed.network}: ${feed.vouchers.length} codes`)
+    }
+  } catch {
+    // Codes are additive; a feed failure never costs the voucher sweep.
+  }
+
+  return { collected, networks }
 }
 
 async function scrapeVoucherCandidates(
