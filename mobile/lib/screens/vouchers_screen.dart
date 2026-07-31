@@ -26,6 +26,7 @@ class VouchersScreen extends StatefulWidget {
 
 class _VouchersScreenState extends State<VouchersScreen> {
   List<Voucher> _vouchers = const [];
+  List<VoucherCode> _codes = const [];
   bool _loading = true;
   String? _error;
   String _query = '';
@@ -36,6 +37,61 @@ class _VouchersScreenState extends State<VouchersScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadCodes();
+  }
+
+  Future<void> _loadCodes() async {
+    try {
+      final codes = await widget.api.voucherCodes();
+      if (mounted) setState(() => _codes = codes);
+    } catch (_) {
+      // Codes are additive: the loyalty wall still loads without them.
+    }
+  }
+
+  Future<void> _rateCode(VoucherCode voucherCode, bool worked) async {
+    if (!widget.isAuthenticated) {
+      widget.onRequireAuth();
+      return;
+    }
+    uxTap();
+    try {
+      final updated = await widget.api.rateVoucherCode(voucherCode.id, worked);
+      if (!mounted || updated == null) return;
+      setState(() => _codes = [
+            for (final entry in _codes)
+              if (entry.id == updated.id) updated else entry,
+          ]);
+      if (worked) uxReward();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(worked
+            ? 'Thanks, that helps the next shopper.'
+            : 'Noted, thanks.'),
+      ));
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
+  Future<void> _shareCode() async {
+    if (!widget.isAuthenticated) {
+      widget.onRequireAuth();
+      return;
+    }
+    final shared = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _ShareCodeSheet(
+        api: widget.api,
+        retailerIds: _vouchers.map((voucher) => voucher.retailerId).toSet().toList()
+          ..sort(),
+      ),
+    );
+    if (shared == true) await _loadCodes();
   }
 
   Future<void> _load() async {
@@ -146,14 +202,62 @@ class _VouchersScreenState extends State<VouchersScreen> {
           Text('VOUCHER SCOUT', style: TS.eyebrowOf(context)),
           const SizedBox(height: 4),
           const Text(
-            'Current retailer vouchers',
+            'Vouchers and codes',
             style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           Text(
-            'Public codes, product coupons, and loyalty offers from official retailer sources. '
-            'Personal single-use codes are never stored.',
+            'Codes to paste at checkout, plus the loyalty prices and clip coupons '
+            'you redeem in the shop. Personal single-use codes are never stored.',
             style: TextStyle(color: TS.mutedOf(context)),
+          ),
+          const SizedBox(height: 18),
+
+          // Checkout codes lead, because that is what a shopper means when
+          // they ask for a voucher.
+          Row(
+            children: [
+              Expanded(
+                child: Text('CHECKOUT CODES', style: TS.eyebrowOf(context)),
+              ),
+              TextButton.icon(
+                key: const Key('share-voucher-code'),
+                onPressed: () => unawaited(_shareCode()),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Share a code'),
+              ),
+            ],
+          ),
+          Text(
+            'Shared by shoppers and ranked by what actually worked. We cannot test '
+            'these at the shop, so try the top one first and say how it went.',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+          ),
+          const SizedBox(height: 10),
+          if (_codes.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: TS.card(context),
+              child: const Text(
+                'No codes yet. If you have one that works, share it so the next '
+                'shopper does not pay full price.',
+              ),
+            )
+          else
+            for (final voucherCode in _codes)
+              _VoucherCodeCard(
+                key: Key('voucher-code-${voucherCode.id}'),
+                voucherCode: voucherCode,
+                onRate: (worked) => _rateCode(voucherCode, worked),
+              ),
+
+          const SizedBox(height: 22),
+          Text('IN-STORE AND ON-SITE', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 4),
+          Text(
+            'Loyalty prices and clip coupons. Not typed at checkout. These are '
+            'scanned at the till or clipped on the product page.',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -199,6 +303,261 @@ class _VouchersScreenState extends State<VouchersScreen> {
       ),
     );
   }
+}
+
+/// One checkout code: copy it, then say whether it worked. The verdict is the
+/// only ranking signal there is, so both buttons carry their running count.
+class _VoucherCodeCard extends StatelessWidget {
+  const _VoucherCodeCard({
+    super.key,
+    required this.voucherCode,
+    required this.onRate,
+  });
+
+  final VoucherCode voucherCode;
+  final Future<void> Function(bool worked) onRate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: TS.card(context, width: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: TS.surfaceSoftOf(context),
+                    borderRadius: BorderRadius.circular(TS.controlRadius),
+                  ),
+                  child: Text(
+                    voucherCode.code,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                key: Key('copy-code-${voucherCode.id}'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: TS.yellow,
+                  foregroundColor: TS.ink,
+                ),
+                onPressed: () {
+                  uxTap();
+                  Clipboard.setData(ClipboardData(text: voucherCode.code));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(
+                        '${voucherCode.code} copied. Paste it at checkout.'),
+                  ));
+                },
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(voucherCode.benefitText,
+              style: const TextStyle(fontWeight: FontWeight.w800)),
+          if (voucherCode.minimumSpendText != null)
+            Text(voucherCode.minimumSpendText!,
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5)),
+          const SizedBox(height: 4),
+          Text(
+            voucherCode.isFromAffiliate
+                ? '${voucherCode.confidenceText} · from '
+                    '${voucherCode.source.replaceFirst('affiliate:', '')}'
+                : voucherCode.confidenceText,
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text('Did it work?',
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5)),
+              const SizedBox(width: 8),
+              _VoteChip(
+                key: Key('code-worked-${voucherCode.id}'),
+                icon: Icons.thumb_up_alt_outlined,
+                count: voucherCode.workedCount,
+                selected: voucherCode.yourVote == 'worked',
+                onPressed: () => unawaited(onRate(true)),
+              ),
+              const SizedBox(width: 6),
+              _VoteChip(
+                key: Key('code-failed-${voucherCode.id}'),
+                icon: Icons.thumb_down_alt_outlined,
+                count: voucherCode.failedCount,
+                selected: voucherCode.yourVote == 'failed',
+                onPressed: () => unawaited(onRate(false)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoteChip extends StatelessWidget {
+  const _VoteChip({
+    super.key,
+    required this.icon,
+    required this.count,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final int count;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          side: BorderSide(
+            color: selected ? TS.yellow : TS.lineSoftOf(context),
+            width: selected ? 2 : 1,
+          ),
+          visualDensity: VisualDensity.compact,
+        ),
+        icon: Icon(icon, size: 15),
+        label: Text('$count'),
+      );
+}
+
+/// Where a shopper adds a code they have just used successfully.
+class _ShareCodeSheet extends StatefulWidget {
+  const _ShareCodeSheet({required this.api, required this.retailerIds});
+
+  final Api api;
+  final List<String> retailerIds;
+
+  @override
+  State<_ShareCodeSheet> createState() => _ShareCodeSheetState();
+}
+
+class _ShareCodeSheetState extends State<_ShareCodeSheet> {
+  final _codeController = TextEditingController();
+  final _benefitController = TextEditingController();
+  final _minimumController = TextEditingController();
+  String? _retailerId;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _benefitController.dispose();
+    _minimumController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final retailerId = _retailerId;
+    if (retailerId == null || _codeController.text.trim().isEmpty) {
+      setState(() => _error = 'Choose a shop and enter the code.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.shareVoucherCode(
+        retailerId: retailerId,
+        code: _codeController.text,
+        benefitText: _benefitController.text,
+        minimumSpendText: _minimumController.text,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Share a code that worked',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                key: const Key('share-code-shop'),
+                initialValue: _retailerId,
+                decoration: const InputDecoration(labelText: 'Shop'),
+                isExpanded: true,
+                items: [
+                  for (final retailerId in widget.retailerIds)
+                    DropdownMenuItem(
+                        value: retailerId, child: Text(_retailerName(retailerId))),
+                ],
+                onChanged: (value) => setState(() => _retailerId = value),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                key: const Key('share-code-value'),
+                controller: _codeController,
+                decoration: const InputDecoration(
+                    labelText: 'Code', hintText: 'SAVE20'),
+                textCapitalization: TextCapitalization.characters,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                key: const Key('share-code-benefit'),
+                controller: _benefitController,
+                decoration: const InputDecoration(
+                    labelText: 'What it gives you',
+                    hintText: '20% off your order'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _minimumController,
+                decoration: const InputDecoration(
+                    labelText: 'Minimum spend (optional)',
+                    hintText: 'Spend R500 or more'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: TextStyle(color: TS.redOf(context))),
+              ],
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const Key('share-code-submit'),
+                  onPressed: _saving ? null : () => unawaited(_submit()),
+                  child: Text(_saving ? 'Sharing...' : 'Share code'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _VoucherCard extends StatelessWidget {

@@ -114,6 +114,99 @@ class Voucher {
       );
 }
 
+/// A code a shopper pastes into a promo-code box at checkout.
+///
+/// Distinct from a [Voucher], which is a loyalty price or a clip coupon: those
+/// are scanned at the till or clipped on the product page, never typed. We
+/// cannot test a code at a retailer's checkout, so nothing here is ever
+/// labelled verified; the counts below are what other shoppers reported.
+class VoucherCode {
+  const VoucherCode({
+    required this.id,
+    required this.retailerId,
+    required this.code,
+    required this.benefitText,
+    required this.workedCount,
+    required this.failedCount,
+    required this.source,
+    required this.createdAt,
+    this.minimumSpendText,
+    this.termsText,
+    this.validTo,
+    this.lastWorkedAt,
+    this.yourVote,
+  });
+
+  final String id;
+  final String retailerId;
+  final String code;
+  final String benefitText;
+  final int workedCount;
+  final int failedCount;
+
+  /// 'member', or 'affiliate:<network>' for a licensed feed.
+  final String source;
+  final String createdAt;
+  final String? minimumSpendText;
+  final String? termsText;
+  final String? validTo;
+  final String? lastWorkedAt;
+
+  /// This shopper's own verdict: 'worked', 'failed', or absent.
+  final String? yourVote;
+
+  bool get isFromAffiliate => source.startsWith('affiliate:');
+
+  /// How much to trust the code, said plainly rather than as a badge.
+  String get confidenceText {
+    if (workedCount == 0 && failedCount == 0) {
+      return 'Just shared, nobody has tried it yet';
+    }
+    if (workedCount == 0) {
+      return 'Did not work for $failedCount '
+          '${failedCount == 1 ? 'shopper' : 'shoppers'}';
+    }
+    final suffix = failedCount > 0 ? ', failed for $failedCount' : '';
+    return 'Worked for $workedCount '
+        '${workedCount == 1 ? 'shopper' : 'shoppers'}$suffix';
+  }
+
+  VoucherCode copyWith({int? workedCount, int? failedCount, String? yourVote}) =>
+      VoucherCode(
+        id: id,
+        retailerId: retailerId,
+        code: code,
+        benefitText: benefitText,
+        workedCount: workedCount ?? this.workedCount,
+        failedCount: failedCount ?? this.failedCount,
+        source: source,
+        createdAt: createdAt,
+        minimumSpendText: minimumSpendText,
+        termsText: termsText,
+        validTo: validTo,
+        lastWorkedAt: lastWorkedAt,
+        yourVote: yourVote ?? this.yourVote,
+      );
+
+  factory VoucherCode.fromJson(Map<String, dynamic> json) => VoucherCode(
+        id: _text(json['id']),
+        retailerId: _text(json['retailerId']),
+        code: _text(json['code']),
+        benefitText: _text(json['benefitText']),
+        workedCount: _count(json['workedCount']),
+        failedCount: _count(json['failedCount']),
+        source: _text(json['source']),
+        createdAt: _text(json['createdAt']),
+        minimumSpendText: _optionalText(json['minimumSpendText']),
+        termsText: _optionalText(json['termsText']),
+        validTo: _optionalText(json['validTo']),
+        lastWorkedAt: _optionalText(json['lastWorkedAt']),
+        yourVote: _optionalText(json['yourVote']),
+      );
+}
+
+int _count(Object? value) => value is num ? value.toInt() : 0;
+
 String _text(Object? value) => value is String ? value : '';
 
 String? _optionalText(Object? value) =>

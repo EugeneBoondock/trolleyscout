@@ -284,6 +284,44 @@ class Api {
     return _maps(data['vouchers']).map(Voucher.fromJson).toList();
   }
 
+  /// Checkout codes: what a shopper pastes into a promo-code box. Separate
+  /// from vouchers(), which returns loyalty prices and clip coupons.
+  Future<List<VoucherCode>> voucherCodes({String? retailerId}) async {
+    final suffix = retailerId != null && retailerId.isNotEmpty && retailerId != 'all'
+        ? '?retailerId=${Uri.encodeQueryComponent(retailerId)}'
+        : '';
+    final data = await _request('GET', '/api/voucher-codes$suffix');
+    return _maps(data['codes']).map(VoucherCode.fromJson).toList();
+  }
+
+  Future<VoucherCode?> shareVoucherCode({
+    required String retailerId,
+    required String code,
+    required String benefitText,
+    String? minimumSpendText,
+  }) async {
+    final data = await _request('POST', '/api/voucher-codes', body: {
+      'benefitText': benefitText,
+      'code': code,
+      'retailerId': retailerId,
+      if (minimumSpendText != null && minimumSpendText.isNotEmpty)
+        'minimumSpendText': minimumSpendText,
+    });
+    final saved = data['voucherCode'];
+    return saved is Map<String, dynamic> ? VoucherCode.fromJson(saved) : null;
+  }
+
+  /// Records whether a code worked. This is the whole ranking signal.
+  Future<VoucherCode?> rateVoucherCode(String voucherCodeId, bool worked) async {
+    final data = await _request('POST', '/api/voucher-codes', body: {
+      'action': 'vote',
+      'voucherCodeId': voucherCodeId,
+      'worked': worked,
+    });
+    final rated = data['voucherCode'];
+    return rated is Map<String, dynamic> ? VoucherCode.fromJson(rated) : null;
+  }
+
   Future<int> voucherCount() async {
     final data = await _request('GET', '/api/vouchers?summary=1');
     return (data['summary']?['activeVoucherCount'] as num?)?.toInt() ?? 0;
