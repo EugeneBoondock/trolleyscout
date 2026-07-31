@@ -10,7 +10,8 @@ import 'taste_profile.dart';
 enum DealSort {
   forYou,
   store,
-  latest,
+  newest,
+  oldest,
   mostSaved,
   biggestDiscount,
   priceLowToHigh
@@ -25,11 +26,32 @@ class DealSortOption {
 const dealSortOptions = <DealSortOption>[
   DealSortOption(DealSort.forYou, 'For you'),
   DealSortOption(DealSort.store, 'Store order'),
-  DealSortOption(DealSort.latest, 'Latest'),
+  DealSortOption(DealSort.newest, 'Newest first'),
+  DealSortOption(DealSort.oldest, 'Oldest first'),
   DealSortOption(DealSort.mostSaved, 'Most saved'),
   DealSortOption(DealSort.biggestDiscount, 'Biggest discount'),
   DealSortOption(DealSort.priceLowToHigh, 'Price: low to high'),
 ];
+
+/// When a deal first appeared to us, which is what a shopper means by newest.
+///
+/// `capturedAt` is restamped every time a source is rescanned, so ordering by
+/// it put a fortnight-old shelf price above something listed this morning.
+/// `addedAt` is the first sighting and only falls back when an older row
+/// predates that column.
+DateTime? dealFirstSeenAt(Deal deal) {
+  final added = deal.addedAt.isNotEmpty ? DateTime.tryParse(deal.addedAt) : null;
+  return added ?? DateTime.tryParse(deal.capturedAt);
+}
+
+/// An auction listing rather than a price. BobShop runs English auctions and
+/// marks them "Current bid", so what looks like a bargain is an opening bid
+/// that climbs until the auction closes.
+bool isBidDeal(Deal deal) {
+  final qualifier = deal.unitText;
+  if (qualifier == null || qualifier.isEmpty) return false;
+  return qualifier.toLowerCase().contains('bid');
+}
 
 /// The rand a deal saves, computed from the marked-down and previous prices,
 /// falling back to an amount the saving text names as a saving ("Save R10").
@@ -132,14 +154,18 @@ List<Deal> sortDeals(List<Deal> deals, DealSort sort, {TasteProfile? taste}) {
   }
 
   switch (sort) {
-    case DealSort.latest:
+    case DealSort.newest:
+    case DealSort.oldest:
+      final newestFirst = sort == DealSort.newest;
       sorted.sort((a, b) {
-        final aAt = DateTime.tryParse(a.capturedAt);
-        final bAt = DateTime.tryParse(b.capturedAt);
+        final aAt = dealFirstSeenAt(a);
+        final bAt = dealFirstSeenAt(b);
         if (aAt == null && bAt == null) return byIdentity(a, b);
+        // A deal with no date is never the newest or the oldest — it goes
+        // last either way rather than winning by absence.
         if (aAt == null) return 1;
         if (bAt == null) return -1;
-        final byTime = bAt.compareTo(aAt);
+        final byTime = newestFirst ? bAt.compareTo(aAt) : aAt.compareTo(bAt);
         return byTime != 0 ? byTime : byIdentity(a, b);
       });
     case DealSort.mostSaved:
@@ -173,7 +199,7 @@ List<Deal> filterDeals(
   bool imagesOnly = false,
   bool savingsOnly = false,
   bool hideSoldOut = false,
-  DateTime? recentlyAddedAfter,
+  bool hideBids = false,
   DealCategory? category,
   FoodSubcategory? foodSubcategory,
 }) {
@@ -192,11 +218,7 @@ List<Deal> filterDeals(
         deal.savingText != null ||
         deal.previousPriceText != null;
     final matchesAvailability = !hideSoldOut || !deal.soldOut;
-    final addedAt = DateTime.tryParse(
-      deal.addedAt.isNotEmpty ? deal.addedAt : deal.capturedAt,
-    )?.toUtc();
-    final matchesRecentlyAdded = recentlyAddedAfter == null ||
-        (addedAt != null && !addedAt.isBefore(recentlyAddedAfter.toUtc()));
+    final matchesBidPreference = !hideBids || !isBidDeal(deal);
 
     var matchesCategory = true;
     if (category != null || foodSubcategory != null) {
@@ -222,7 +244,7 @@ List<Deal> filterDeals(
         matchesImage &&
         matchesSaving &&
         matchesAvailability &&
-        matchesRecentlyAdded &&
+        matchesBidPreference &&
         matchesCategory;
   }).toList();
 }

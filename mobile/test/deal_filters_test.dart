@@ -73,66 +73,72 @@ void main() {
     );
   });
 
-  test('keeps only deals first added on or after the recent cutoff', () {
-    const recentDeals = [
+  test('hides auction listings when the shopper does not want bids', () {
+    // BobShop labels English auctions "Current bid", so the figure shown is an
+    // opening bid that climbs, not a price anyone can pay today.
+    const mixed = [
+      Deal(id: 'plain-camera', title: 'Camera', retailerName: 'Takealot'),
       Deal(
-        id: 'recent-rice',
-        title: 'Rice 2kg',
-        retailerName: 'Local Market',
-        addedAt: '2026-07-24T08:00:00.000Z',
-        capturedAt: '2026-07-30T08:00:00.000Z',
-      ),
-      Deal(
-        id: 'refreshed-old-milk',
-        title: 'Milk 2L',
-        retailerName: 'Shoprite',
-        addedAt: '2026-07-20T08:00:00.000Z',
-        capturedAt: '2026-07-30T08:00:00.000Z',
-      ),
-      Deal(
-        id: 'legacy-cutoff-deal',
-        title: 'Bread',
-        retailerName: 'Local Market',
-        capturedAt: '2026-07-23T08:00:00.000Z',
+        id: 'camera-auction',
+        title: 'Camera auction',
+        retailerName: 'BobShop',
+        unitText: 'Current bid',
       ),
     ];
 
     expect(
-      filterDeals(
-        recentDeals,
-        recentlyAddedAfter: DateTime.utc(2026, 7, 23, 8),
-      ).map((deal) => deal.id),
-      ['recent-rice', 'legacy-cutoff-deal'],
+      filterDeals(mixed, hideBids: true).map((deal) => deal.id),
+      ['plain-camera'],
+    );
+    expect(
+      filterDeals(mixed).map((deal) => deal.id),
+      ['plain-camera', 'camera-auction'],
     );
   });
 
-  test('combines recently added with search and category filters', () {
-    const recentDeals = [
+  test('orders by first sighting, not by when a source was last rescanned', () {
+    // capturedAt is restamped on every rescan, so ordering by it put a
+    // fortnight-old shelf price above something listed this morning.
+    const dated = [
       Deal(
-        id: 'recent-rice',
+        id: 'old-but-rescanned',
         title: 'Rice 2kg',
         retailerName: 'Local Market',
-        sourceLabel: 'Food specials',
-        addedAt: '2026-07-29T08:00:00.000Z',
+        addedAt: '2026-07-20T08:00:00.000Z',
+        capturedAt: '2026-07-31T08:00:00.000Z',
       ),
       Deal(
-        id: 'old-milk',
+        id: 'genuinely-new',
         title: 'Milk 2L',
         retailerName: 'Shoprite',
-        sourceLabel: 'Food specials',
-        addedAt: '2026-07-20T08:00:00.000Z',
+        addedAt: '2026-07-29T08:00:00.000Z',
+        capturedAt: '2026-07-29T08:00:00.000Z',
       ),
     ];
 
     expect(
-      filterDeals(
-        recentDeals,
-        query: 'rice',
-        category: DealCategory.food,
-        recentlyAddedAfter: DateTime.utc(2026, 7, 23, 8),
-      ).map((deal) => deal.id),
-      ['recent-rice'],
+      sortDeals(dated, DealSort.newest).map((deal) => deal.id),
+      ['genuinely-new', 'old-but-rescanned'],
     );
+    expect(
+      sortDeals(dated, DealSort.oldest).map((deal) => deal.id),
+      ['old-but-rescanned', 'genuinely-new'],
+    );
+  });
+
+  test('sends undated deals to the end of both date sorts', () {
+    const mixed = [
+      Deal(id: 'undated', title: 'Bread', retailerName: 'Local Market'),
+      Deal(
+        id: 'dated',
+        title: 'Milk',
+        retailerName: 'Shoprite',
+        addedAt: '2026-07-29T08:00:00.000Z',
+      ),
+    ];
+
+    expect(sortDeals(mixed, DealSort.newest).last.id, 'undated');
+    expect(sortDeals(mixed, DealSort.oldest).last.id, 'undated');
   });
 
   test('filters branch and parent feed labels through the canonical store', () {

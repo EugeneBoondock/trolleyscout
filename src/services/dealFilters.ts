@@ -8,14 +8,24 @@ export interface DealFilterOptions {
   imagesOnly?: boolean
   savingsOnly?: boolean
   hideSoldOut?: boolean
+  // Auction listings, which advertise an opening bid rather than a price.
+  hideBids?: boolean
   category?: DealCategory | 'all'
   foodSubcategory?: FoodSubcategory | 'all'
-  // A deal first seen before this ISO timestamp is excluded. Legacy deals
-  // without addedAt fall back to their capture time.
-  recentlyAddedAfter?: string
   // A deal ends before this ISO date (YYYY-MM-DD) is excluded; a deal with no
   // known end date is always kept.
   endsAfter?: string
+}
+
+export type DealSortOrder = 'newest' | 'oldest' | 'store'
+
+/**
+ * An auction listing rather than a price. BobShop runs English auctions and
+ * labels them "Current bid", so the figure shown is an opening bid that climbs
+ * until the auction closes — not what the shopper would pay.
+ */
+export function isBidDeal(deal: Pick<DiscoveredDeal, 'unitText'>): boolean {
+  return Boolean(deal.unitText && /bid/i.test(deal.unitText))
 }
 
 export interface IndexedDiscoveryDeal {
@@ -57,13 +67,9 @@ export function filterIndexedDiscoveryDeals(
   const category = options.category ?? 'all'
   const foodSubcategory = options.foodSubcategory ?? 'all'
   const endsAfter = options.endsAfter?.slice(0, 10)
-  const recentlyAddedAfter = options.recentlyAddedAfter
-    ? Date.parse(options.recentlyAddedAfter)
-    : undefined
 
   return indexedDeals
     .filter(({
-      addedAtMs,
       category: dealCategory,
       deal,
       foodSubcategory: dealFoodSubcategory,
@@ -82,19 +88,12 @@ export function filterIndexedDiscoveryDeals(
       const matchesSaving =
         !options.savingsOnly || Boolean(deal.savingText || deal.previousPriceText)
       const matchesAvailability = !options.hideSoldOut || !deal.soldOut
+      const matchesBidPreference = !options.hideBids || !isBidDeal(deal)
       const matchesCategory =
         (category === 'all' || dealCategory === category) &&
         (foodSubcategory === 'all' || dealFoodSubcategory === foodSubcategory)
       const matchesExpiry =
         !endsAfter || !deal.validTo || deal.validTo.slice(0, 10) >= endsAfter
-      const matchesRecentlyAdded =
-        recentlyAddedAfter === undefined ||
-        (
-          Number.isFinite(recentlyAddedAfter) &&
-          Number.isFinite(addedAtMs) &&
-          addedAtMs >= recentlyAddedAfter
-        )
-
       return (
         matchesQuery &&
         matchesRetailer &&
@@ -102,12 +101,35 @@ export function filterIndexedDiscoveryDeals(
         matchesImage &&
         matchesSaving &&
         matchesAvailability &&
+        matchesBidPreference &&
         matchesCategory &&
-        matchesExpiry &&
-        matchesRecentlyAdded
+        matchesExpiry
       )
     })
     .map(({ deal }) => deal)
+}
+
+/**
+ * Orders deals by when we first saw them. `capturedAt` is restamped on every
+ * rescan, so it says when we last looked rather than when the deal appeared —
+ * the index keeps `addedAt` for exactly this.
+ */
+export function sortIndexedDiscoveryDeals(
+  indexedDeals: IndexedDiscoveryDeal[],
+  order: DealSortOrder,
+): IndexedDiscoveryDeal[] {
+  if (order === 'store') return indexedDeals
+
+  return [...indexedDeals].sort((left, right) => {
+    const leftAt = Number.isFinite(left.addedAtMs) ? left.addedAtMs : undefined
+    const rightAt = Number.isFinite(right.addedAtMs) ? right.addedAtMs : undefined
+    // A deal with no date is neither newest nor oldest — it sorts last either
+    // way rather than winning by absence.
+    if (leftAt === undefined && rightAt === undefined) return 0
+    if (leftAt === undefined) return 1
+    if (rightAt === undefined) return -1
+    return order === 'newest' ? rightAt - leftAt : leftAt - rightAt
+  })
 }
 
 export function filterDiscoveryDeals(

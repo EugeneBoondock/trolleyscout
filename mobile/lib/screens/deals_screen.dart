@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -72,9 +72,7 @@ class _DealsScreenState extends State<DealsScreen> {
   final bool _imagesOnly = false;
   final bool _savingsOnly = false;
   bool _hideSoldOut = false;
-  bool _recentlyAddedOnly = false;
-  final DateTime _recentlyAddedAfter =
-      DateTime.now().toUtc().subtract(const Duration(days: 7));
+  bool _hideBids = false;
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
@@ -121,7 +119,7 @@ class _DealsScreenState extends State<DealsScreen> {
 
   // Load the taste profile learned from Window Shopping. When the shopper has
   // shown taste, Find a deal defaults to "For you" so the list opens on what
-  // they like — they can still switch sort manually.
+  // they like â€” they can still switch sort manually.
   Future<void> _restoreTaste() async {
     final taste = await _tasteStore.load();
     if (!mounted || taste.isEmpty) return;
@@ -258,8 +256,8 @@ class _DealsScreenState extends State<DealsScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
             content: Text(effectiveValue
-                ? 'On. We’ll alert you when new deals land.'
-                : 'Off. You won’t get new-deal alerts.'),
+                ? 'On. Weâ€™ll alert you when new deals land.'
+                : 'Off. You wonâ€™t get new-deal alerts.'),
           ));
       }
     } finally {
@@ -381,7 +379,7 @@ class _DealsScreenState extends State<DealsScreen> {
           if (_cached != null) {
             return _buildBoard(
               _cached!.result,
-              staleNote: '${_freshnessLabel(_cached!.fetchedAt)} · refreshing…',
+              staleNote: '${_freshnessLabel(_cached!.fetchedAt)} Â· refreshingâ€¦',
               staleIsRefreshing: true,
             );
           }
@@ -392,7 +390,7 @@ class _DealsScreenState extends State<DealsScreen> {
             return _buildBoard(
               _cached!.result,
               staleNote:
-                  'Couldn’t refresh · showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}',
+                  'Couldnâ€™t refresh Â· showing deals from ${_freshnessLabel(_cached!.fetchedAt).toLowerCase()}',
             );
           }
           return _retry();
@@ -434,7 +432,7 @@ class _DealsScreenState extends State<DealsScreen> {
         imagesOnly: _imagesOnly,
         savingsOnly: _savingsOnly,
         hideSoldOut: _hideSoldOut,
-        recentlyAddedAfter: _recentlyAddedOnly ? _recentlyAddedAfter : null,
+        hideBids: _hideBids,
         category: _category,
         foodSubcategory: _foodSubcategory,
       ),
@@ -708,12 +706,17 @@ class _DealsScreenState extends State<DealsScreen> {
           const SizedBox(height: 10),
           _notifyToggle(),
           const SizedBox(height: 10),
-          Row(
+          // Two controls and the count do not fit one phone-width row, so the
+          // count drops to its own line rather than overflowing.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 8,
+            spacing: 8,
             children: [
-              Expanded(
-                child: Text('${deals.length} matching deals',
-                    style: TS.eyebrowOf(context)),
-              ),
+              Text('${deals.length} matching deals',
+                  style: TS.eyebrowOf(context)),
+              _visibilityFilterMenu(),
               _sortControl(),
             ],
           ),
@@ -755,13 +758,13 @@ class _DealsScreenState extends State<DealsScreen> {
                   ] else if (_query.trim().length < 3)
                     const Text('No deals match those filters.')
                   else ...[
-                    Text('No deal for “${_query.trim()}” yet.',
+                    Text('No deal for â€œ${_query.trim()}â€ yet.',
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     Text(
                       widget.isAuthenticated
                           ? 'Watch it and Trolley Scout will alert you the moment '
-                              'any scout or another shopper’s search finds one.'
+                              'any scout or another shopperâ€™s search finds one.'
                           : 'Log in and Trolley Scout can watch this item for you, '
                               'then alert you the moment a deal appears.',
                       style:
@@ -862,7 +865,7 @@ class _DealsScreenState extends State<DealsScreen> {
                 const Text('Alert me about new deals',
                     style:
                         TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                Text('We’ll notify you when fresh deals land.',
+                Text('Weâ€™ll notify you when fresh deals land.',
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 11)),
               ],
             ),
@@ -882,7 +885,7 @@ class _DealsScreenState extends State<DealsScreen> {
     int totalDealCount,
   ) {
     // Two form fields side by side stop fitting once the shopper scales text
-    // up, so they stack instead of squeezing — same rule ScreenHeader uses.
+    // up, so they stack instead of squeezing â€” same rule ScreenHeader uses.
     final stacked = MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
         MediaQuery.sizeOf(context).width < 360;
     final retailerField = RetailerFilterField(
@@ -950,38 +953,71 @@ class _DealsScreenState extends State<DealsScreen> {
                     ],
                   ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilterChip(
-                  key: const Key('hide-sold-out-filter'),
-                  label: const Text('Hide sold out'),
-                  selected: _hideSoldOut,
-                  selectedColor: TS.yellow.withValues(alpha: 0.3),
-                  side: BorderSide(color: TS.lineSoftOf(context)),
-                  onSelected: (value) => setState(() {
-                    _hideSoldOut = value;
-                    _page = 0;
-                  }),
-                ),
-                FilterChip(
-                  key: const Key('recently-added-filter'),
-                  label: const Text('Recently added · 7 days'),
-                  selected: _recentlyAddedOnly,
-                  selectedColor: TS.yellow.withValues(alpha: 0.3),
-                  side: BorderSide(color: TS.lineSoftOf(context)),
-                  onSelected: (value) => setState(() {
-                    _recentlyAddedOnly = value;
-                    _page = 0;
-                  }),
-                ),
-              ],
-            ),
+        ],
+      ),
+    );
+  }
+
+  /// Hide-this, hide-that toggles, gathered into one menu beside the sort.
+  ///
+  /// They were chips pinned above the list, which cost a row of the screen
+  /// permanently to two settings most shoppers set once and forget.
+  Widget _visibilityFilterMenu() {
+    final activeCount = (_hideSoldOut ? 1 : 0) + (_hideBids ? 1 : 0);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: TS.surfaceOf(context),
+        border: Border.all(color: TS.lineSoftOf(context), width: 2),
+        borderRadius: BorderRadius.circular(TS.controlRadius),
+      ),
+      child: PopupMenuButton<String>(
+        key: const Key('visibility-filter-menu'),
+        tooltip: 'Filters',
+        position: PopupMenuPosition.under,
+        borderRadius: BorderRadius.circular(TS.controlRadius),
+        // The menu stays open so both toggles can be set in one visit.
+        onSelected: (value) {
+          uxTap();
+          setState(() {
+            if (value == 'sold-out') _hideSoldOut = !_hideSoldOut;
+            if (value == 'bids') _hideBids = !_hideBids;
+            _page = 0;
+          });
+        },
+        itemBuilder: (context) => [
+          CheckedPopupMenuItem(
+            key: const Key('hide-sold-out-filter'),
+            value: 'sold-out',
+            checked: _hideSoldOut,
+            child: const Text('Hide sold out'),
+          ),
+          CheckedPopupMenuItem(
+            key: const Key('hide-bids-filter'),
+            value: 'bids',
+            checked: _hideBids,
+            child: const Text('Hide bids'),
           ),
         ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_list, size: 16, color: TS.mutedOf(context)),
+              const SizedBox(width: 4),
+              Text(
+                activeCount == 0 ? 'Filters' : 'Filters Â· $activeCount',
+                style: TextStyle(
+                  color: TS.inkOf(context),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2035,7 +2071,7 @@ class _CatalogueSearchEmpty extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'No store or catalogue matches “${query.trim()}”.',
+                'No store or catalogue matches â€œ${query.trim()}â€.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context)),
               ),
@@ -2390,3 +2426,4 @@ class _CatalogueTile extends StatelessWidget {
     );
   }
 }
+

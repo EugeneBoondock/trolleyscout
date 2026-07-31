@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { withReferralSource } from './services/outboundLink'
 import type { CSSProperties, ReactNode } from 'react'
 import {
@@ -160,6 +160,8 @@ import { pickStapleDeals } from './services/stapleDeals'
 import {
   createDealSearchIndex,
   filterIndexedDiscoveryDeals,
+  sortIndexedDiscoveryDeals,
+  type DealSortOrder,
 } from './services/dealFilters'
 import { buildRetailerPickerOptions } from './services/retailerOptions'
 import {
@@ -298,7 +300,7 @@ const VIEW_TITLES: Record<ActiveView, string> = {
   // Kept identical to the <title> in index.html so the tab never flips on load.
   home: 'Trolley Scout: South African grocery specials, with sources',
   chat: 'Mr Scout: your personal deal finder | Trolley Scout',
-  discovery: 'Find a deal: this week’s grocery specials | Trolley Scout',
+  discovery: 'Find a deal: this weekâ€™s grocery specials | Trolley Scout',
   near: 'Near me: supermarkets and specials around you | Trolley Scout',
   tools: 'Tools: product and store comparison | Trolley Scout',
   sources: 'Stores: official retailer sources | Trolley Scout',
@@ -1099,7 +1101,7 @@ function App() {
       const { checkout } = result.data
 
       // Fallback: accounts without onsite payments get PayFast's classic
-      // redirect checkout — a POST form submission to PayFast.
+      // redirect checkout â€” a POST form submission to PayFast.
       if (checkout.redirectUrl && checkout.redirectFields) {
         submitPayFastRedirect(checkout.redirectUrl, checkout.redirectFields)
         return
@@ -2515,9 +2517,9 @@ function MemberDashboard({
         savedDealCount={savedDealCount}
       />
 
-      <section aria-label="Today’s savings">
+      <section aria-label="Todayâ€™s savings">
         <div className="dash-section-heading">
-          <h2 className="dash-section-label">Today’s savings</h2>
+          <h2 className="dash-section-label">Todayâ€™s savings</h2>
           <button className="ghost-button" onClick={() => onSetView('discovery')} type="button">
             Browse deals
           </button>
@@ -2570,7 +2572,7 @@ function MemberDashboard({
           >
             <Wallet aria-hidden="true" size={24} />
             {savedDealsLoading
-              ? 'Loading your saved deals…'
+              ? 'Loading your saved dealsâ€¦'
               : 'Save a deal and it will appear here with its product image.'}
           </button>
         )}
@@ -2705,7 +2707,7 @@ function SavingsHero({
       <button className="dash-savings-foot" onClick={() => onSetView('basket')} type="button">
         <ShoppingCart size={17} />
         <span>
-          {basketItemCount} {basketItemCount === 1 ? 'item' : 'items'} in your basket · you pay{' '}
+          {basketItemCount} {basketItemCount === 1 ? 'item' : 'items'} in your basket Â· you pay{' '}
           {formatRand(totalCents)}
         </span>
         <ArrowRight size={16} />
@@ -3457,7 +3459,7 @@ export function SubscriptionPanel({
               </p>
               {plan.isPaid && billingCycle === 'annual' && (
                 <p className="plan-price-equiv">
-                  ≈{' '}
+                  â‰ˆ{' '}
                   {localPrices
                     ? formatPlanPrice(
                         localPrices.annual / 12,
@@ -3489,7 +3491,7 @@ export function SubscriptionPanel({
               )}
               {plan.isPaid && isForeignQuote && (
                 <p className="plan-settlement-note">
-                  Charged as {formatRand(priceCents)} by PayFast, at today’s rate.
+                  Charged as {formatRand(priceCents)} by PayFast, at todayâ€™s rate.
                 </p>
               )}
               <p>{plan.description}</p>
@@ -3570,7 +3572,7 @@ function MemberProfilePanel({
 }
 
 // Account management: change your display name and set your own password.
-// The password never leaves this form — it goes straight to /api/account,
+// The password never leaves this form â€” it goes straight to /api/account,
 // which hashes it server-side.
 function AccountSettings({ account }: { account: NonNullable<MemberSession['account']> }) {
   const [displayName, setDisplayName] = useState(account.displayName)
@@ -3724,7 +3726,7 @@ function AccountSettings({ account }: { account: NonNullable<MemberSession['acco
         </label>
         {passwordsMismatch && (
           <p className="account-notice" id="password-match-error" role="alert">
-            The new passwords don’t match yet.
+            The new passwords donâ€™t match yet.
           </p>
         )}
         <button
@@ -3894,7 +3896,7 @@ function DeveloperAccessPanel() {
           <article className={key.revokedAt ? 'is-revoked' : ''} key={key.id}>
             <div>
               <strong>{key.name}</strong>
-              <code>{key.keyPrefix}••••••••</code>
+              <code>{key.keyPrefix}â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢</code>
               <small>{key.scopes.join(', ')}</small>
             </div>
             {key.revokedAt ? (
@@ -4095,7 +4097,7 @@ function planStatusText(status: NonNullable<MemberSession['account']>['planStatu
 
 // The lanes the on-demand scout endpoint understands. "feeds" is the structured
 // retailer feed sweep, "stores" the online-storefront sweep over the country
-// registries — the two lanes the legacy deal refresh never reached.
+// registries â€” the two lanes the legacy deal refresh never reached.
 type ScoutLane = 'all' | 'catalogues' | 'feeds' | 'stores'
 
 // Admin-only: run one bounded slice of those lanes now instead of waiting for
@@ -4279,7 +4281,7 @@ function AdminConsole({
   async function onToggleBan(member: MemberAccount) {
     const banning = member.status !== 'banned'
     // A ban is not reversible from the member's side, so it is confirmed, and
-    // the reason travels with it — it becomes the sign-in message they see.
+    // the reason travels with it â€” it becomes the sign-in message they see.
     const reason = banning
       ? window.prompt(
           `Ban ${member.displayName}? They are signed out everywhere and cannot sign back in.\n\n` +
@@ -4635,7 +4637,7 @@ function AdminConsole({
                         minute: '2-digit',
                         month: 'short',
                       })}
-                      {' · '}
+                      {' Â· '}
                       {msg.status === 'open' ? 'Open' : 'Resolved'}
                     </span>
                     <button
@@ -4817,7 +4819,7 @@ function AdminAnalyticsPanel({ countryCode }: { countryCode: string }) {
   )
 }
 
-/// A bar per day. Deliberately CSS-only — a chart library for six sparklines
+/// A bar per day. Deliberately CSS-only â€” a chart library for six sparklines
 /// would cost more bundle than the whole admin console.
 function AdminTrend({ days, label, values }: { days: string[]; label: string; values: number[] }) {
   const peak = Math.max(1, ...values)
@@ -4923,7 +4925,7 @@ function CatalogueGroupsBoard({
       {groups.length === 0 ? (
         <div className="discovery-empty" role="status">
           <MagnifyingGlass size={42} />
-          <h3>No catalogues match “{catalogueQuery.trim()}”</h3>
+          <h3>No catalogues match â€œ{catalogueQuery.trim()}â€</h3>
           <button className="ghost-button" onClick={() => setCatalogueQuery('')} type="button">
             Clear catalogue search
           </button>
@@ -5026,7 +5028,7 @@ function describeLeafletDates(validFrom?: string, validTo?: string): string {
   }
 
   if (validFrom && validTo) {
-    return `Valid ${format(validFrom)} – ${format(validTo)}`
+    return `Valid ${format(validFrom)} â€“ ${format(validTo)}`
   }
 
   if (validTo) {
@@ -5109,7 +5111,7 @@ function formatRand(cents: number) {
   }).format(cents / 100)
 }
 
-/// A localised plan price is a number somebody chose — $5, not $4.83 — so it
+/// A localised plan price is a number somebody chose â€” $5, not $4.83 â€” so it
 /// is shown without cents. The rand it settles at is shown separately.
 function formatPlanPrice(amount: number, currencyCode: string, locale: string, decimals = 0) {
   return new Intl.NumberFormat(locale, {
@@ -5350,7 +5352,7 @@ export function DiscoveredStoreDirectory({
       ) : isLoading ? null : storeTab === 'favourites' ? (
         <p className="directory-empty">No favourite stores yet.</p>
       ) : query ? (
-        <p className="directory-empty">No stores match “{query}”. Try a store name or suburb.</p>
+        <p className="directory-empty">No stores match â€œ{query}â€. Try a store name or suburb.</p>
       ) : (
         <p className="directory-empty">Use Near me to add the first stores in a searched area.</p>
       )}
@@ -5424,7 +5426,7 @@ export function DiscoveredStoreDirectory({
                         <strong>{cleanUiPunctuation(branch.name)}</strong>
                         {branch.address && <small>{cleanUiPunctuation(branch.address)}</small>}
                         <small>
-                          {(branch.promotions ?? []).filter((promotion) => promotion.kind === 'deal').length} deals ·{' '}
+                          {(branch.promotions ?? []).filter((promotion) => promotion.kind === 'deal').length} deals Â·{' '}
                           {(branch.promotions ?? []).filter((promotion) => promotion.kind === 'catalogue').length} catalogues
                         </small>
                       </span>
@@ -5449,12 +5451,12 @@ export function DiscoveredStoreDirectory({
                   </div>
 
                   {openBranch && branchLoadState === 'loading' && (
-                    <LoadingStrip label="Loading this store’s specials" />
+                    <LoadingStrip label="Loading this storeâ€™s specials" />
                   )}
 
                   {openBranch && branchLoadState === 'error' && (
                     <div className="directory-error" role="alert">
-                      <span>This store’s specials could not be loaded.</span>
+                      <span>This storeâ€™s specials could not be loaded.</span>
                       <button className="ghost-button" onClick={() => void openBranchDetails(branch)} type="button">
                         Try again
                       </button>
@@ -5659,7 +5661,7 @@ function SourcePanel({
       <div className="section-heading">
         <div>
           <p className="eyebrow">
-            Official sources{country ? ` · ${country.flag} ${country.name}` : ''}
+            Official sources{country ? ` Â· ${country.flag} ${country.name}` : ''}
           </p>
           <h2>{sourceRetailers.length} retailers</h2>
         </div>
@@ -5736,7 +5738,7 @@ const MEMBER_VIEW_LABELS: Partial<Record<ActiveView, string>> = {
 }
 
 // Shown in the public shell when a logged-out visitor lands on a members-only
-// view (Near me, Tools, Stores) — invites them to create a free account.
+// view (Near me, Tools, Stores) â€” invites them to create a free account.
 function PublicSignInGate({ view, onSignIn }: { view: ActiveView; onSignIn: () => void }) {
   const label = MEMBER_VIEW_LABELS[view] ?? 'This page'
   return (
@@ -6002,11 +6004,8 @@ function DiscoveryPanel({
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
   const [hideSoldOut, setHideSoldOut] = useState(false)
-  const [recentlyAddedOnly, setRecentlyAddedOnly] = useState(false)
-  const recentlyAddedAfter = useMemo(
-    () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000).toISOString(),
-    [],
-  )
+  const [hideBids, setHideBids] = useState(false)
+  const [dealSort, setDealSort] = useState<DealSortOrder>('store')
   const [category, setCategory] = useState<DealCategory | 'all'>('all')
   const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
   const sharedCatalogueId = typeof window === 'undefined'
@@ -6016,26 +6015,29 @@ function DiscoveryPanel({
     sharedCatalogueId ? 'catalogues' : 'deals',
   )
   const deals = useMemo(
-    () => filterIndexedDiscoveryDeals(dealIndex, {
-      category,
-      foodSubcategory,
-      hideSoldOut,
-      imagesOnly,
-      query: debouncedDealQuery,
-      recentlyAddedAfter: recentlyAddedOnly ? recentlyAddedAfter : undefined,
-      retailerId,
-      savingsOnly,
-      sourceLabel,
-    }),
+    () => filterIndexedDiscoveryDeals(
+      sortIndexedDiscoveryDeals(dealIndex, dealSort),
+      {
+        category,
+        foodSubcategory,
+        hideBids,
+        hideSoldOut,
+        imagesOnly,
+        query: debouncedDealQuery,
+        retailerId,
+        savingsOnly,
+        sourceLabel,
+      },
+    ),
     [
       category,
       dealIndex,
+      dealSort,
       debouncedDealQuery,
       foodSubcategory,
+      hideBids,
       hideSoldOut,
       imagesOnly,
-      recentlyAddedAfter,
-      recentlyAddedOnly,
       retailerId,
       savingsOnly,
       sourceLabel,
@@ -6089,7 +6091,8 @@ function DiscoveryPanel({
       imagesOnly,
       savingsOnly,
       hideSoldOut,
-      recentlyAddedOnly,
+      hideBids,
+      dealSort,
       category,
       foodSubcategory,
     ],
@@ -6166,7 +6169,7 @@ function DiscoveryPanel({
             type="search"
             value={dealQuery}
           />
-          {isSearchPending && <small aria-live="polite">Updating results…</small>}
+          {isSearchPending && <small aria-live="polite">Updating resultsâ€¦</small>}
         </label>
         <details className="advanced-deal-filters">
           <summary>Advanced filters</summary>
@@ -6202,12 +6205,19 @@ function DiscoveryPanel({
               Hide sold out
             </label>
             <label className="deal-filter-check">
-              <input
-                checked={recentlyAddedOnly}
-                onChange={(event) => setRecentlyAddedOnly(event.target.checked)}
-                type="checkbox"
-              />
-              Recently added (last 7 days)
+              <input checked={hideBids} onChange={(event) => setHideBids(event.target.checked)} type="checkbox" />
+              Hide bids
+            </label>
+            <label>
+              Sort
+              <select
+                onChange={(event) => setDealSort(event.target.value as DealSortOrder)}
+                value={dealSort}
+              >
+                <option value="store">Store order</option>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
             </label>
           </div>
         </details>
@@ -6380,7 +6390,7 @@ function DiscoveryPanel({
                 Previous
               </button>
               <span className="deal-pager-status">
-                Page {safePage + 1} of {pageCount} · {deals.length} deals
+                Page {safePage + 1} of {pageCount} Â· {deals.length} deals
               </span>
               <button
                 className="ghost-button"
@@ -6986,3 +6996,4 @@ function createBlankDraft(): OfferDraft {
 }
 
 export default App
+

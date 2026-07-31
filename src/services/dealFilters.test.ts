@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { filterDiscoveryDeals } from './dealFilters'
+import {
+  createDealSearchIndex,
+  filterDiscoveryDeals,
+  filterIndexedDiscoveryDeals,
+  sortIndexedDiscoveryDeals,
+} from './dealFilters'
 import * as dealFiltersModule from './dealFilters'
 import type { DiscoveredDeal } from '../types'
 
@@ -68,55 +73,54 @@ describe('filterDiscoveryDeals', () => {
     ).toEqual(['rice', 'metadata-food'])
   })
 
-  it('keeps only deals first added on or after the recent cutoff', () => {
-    const recentDeals: DiscoveredDeal[] = [
-      {
-        ...deals[0],
-        addedAt: '2026-07-24T08:00:00.000Z',
-        capturedAt: '2026-07-30T08:00:00.000Z',
-        id: 'recent-rice',
-      },
-      {
-        ...deals[1],
-        addedAt: '2026-07-20T08:00:00.000Z',
-        capturedAt: '2026-07-30T08:00:00.000Z',
-        id: 'refreshed-old-milk',
-      },
-      {
-        ...deals[2],
-        capturedAt: '2026-07-23T08:00:00.000Z',
-        id: 'legacy-cutoff-deal',
-      },
+  it('hides auction listings when the shopper does not want bids', () => {
+    // BobShop labels English auctions "Current bid", so the figure shown is an
+    // opening bid that climbs, not a price anyone can pay today.
+    const mixed: DiscoveredDeal[] = [
+      { ...deals[0], id: 'plain-rice' },
+      { ...deals[1], id: 'camera-auction', unitText: 'Current bid' },
     ]
 
     expect(
-      filterDiscoveryDeals(recentDeals, {
-        recentlyAddedAfter: '2026-07-23T08:00:00.000Z',
-      }).map((deal) => deal.id),
-    ).toEqual(['recent-rice', 'legacy-cutoff-deal'])
+      filterDiscoveryDeals(mixed, { hideBids: true }).map((deal) => deal.id),
+    ).toEqual(['plain-rice'])
+    expect(
+      filterDiscoveryDeals(mixed, {}).map((deal) => deal.id),
+    ).toEqual(['plain-rice', 'camera-auction'])
   })
 
-  it('combines recently added with search and category filters', () => {
-    const recentDeals: DiscoveredDeal[] = [
+  it('orders by when a deal was first seen, not when it was last rescanned', () => {
+    // capturedAt is restamped on every rescan; ordering by it put a fortnight
+    // old shelf price above something listed this morning.
+    const dated: DiscoveredDeal[] = [
       {
         ...deals[0],
-        addedAt: '2026-07-29T08:00:00.000Z',
-        id: 'recent-rice',
+        addedAt: '2026-07-20T08:00:00.000Z',
+        capturedAt: '2026-07-31T08:00:00.000Z',
+        id: 'old-but-rescanned',
       },
       {
         ...deals[1],
-        addedAt: '2026-07-20T08:00:00.000Z',
-        id: 'old-milk',
+        addedAt: '2026-07-29T08:00:00.000Z',
+        capturedAt: '2026-07-29T08:00:00.000Z',
+        id: 'genuinely-new',
       },
     ]
+    const index = createDealSearchIndex(dated)
 
     expect(
-      filterDiscoveryDeals(recentDeals, {
-        category: 'food',
-        query: 'rice',
-        recentlyAddedAfter: '2026-07-23T08:00:00.000Z',
-      }).map((deal) => deal.id),
-    ).toEqual(['recent-rice'])
+      filterIndexedDiscoveryDeals(sortIndexedDiscoveryDeals(index, 'newest'), {})
+        .map((deal) => deal.id),
+    ).toEqual(['genuinely-new', 'old-but-rescanned'])
+    expect(
+      filterIndexedDiscoveryDeals(sortIndexedDiscoveryDeals(index, 'oldest'), {})
+        .map((deal) => deal.id),
+    ).toEqual(['old-but-rescanned', 'genuinely-new'])
+  })
+
+  it('leaves the incoming order alone for store order', () => {
+    const index = createDealSearchIndex(deals)
+    expect(sortIndexedDiscoveryDeals(index, 'store')).toBe(index)
   })
 
   it('reuses indexed category data when the shopper changes the search text', () => {

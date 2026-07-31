@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
@@ -92,6 +92,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('deal-card-sold-out')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('visibility-filter-menu')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('hide-sold-out-filter')));
     await tester.pumpAndSettle();
 
@@ -99,8 +101,7 @@ void main() {
     expect(find.byKey(const Key('deal-card-available')), findsOneWidget);
   });
 
-  testWidgets('Marketplace filters deals added in the last seven days',
-      (tester) async {
+  testWidgets('Marketplace hides auction listings on request', (tester) async {
     await _usePhoneViewport(tester);
 
     await tester.pumpWidget(MaterialApp(
@@ -108,24 +109,24 @@ void main() {
       darkTheme: TS.darkTheme(),
       home: Scaffold(
         body: DealsScreen(
-          api: _RecentLayoutApi(),
+          api: _BidLayoutApi(),
           isAuthenticated: true,
         ),
       ),
     ));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
-    expect(
-        find.byKey(const Key('deal-card-refreshed-old-rice')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('recently-added-filter')));
+    expect(find.byKey(const Key('deal-card-bobshop-bid')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('visibility-filter-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('hide-bids-filter')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
-    expect(find.byKey(const Key('deal-card-refreshed-old-rice')), findsNothing);
+    expect(find.byKey(const Key('deal-card-bobshop-bid')), findsNothing);
+    expect(find.byKey(const Key('deal-card-plain-camera')), findsOneWidget);
   });
 
-  testWidgets('Recently added filter stays usable in dark mode on a phone',
+  testWidgets('Filters menu stays usable in dark mode on a phone',
       (tester) async {
     await _usePhoneViewport(tester);
 
@@ -142,12 +143,13 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    final filter = find.byKey(const Key('recently-added-filter'));
-    expect(filter, findsOneWidget);
-    expect(Theme.of(tester.element(filter)).brightness, Brightness.dark);
-    await tester.tap(filter);
+    final menu = find.byKey(const Key('visibility-filter-menu'));
+    expect(menu, findsOneWidget);
+    expect(Theme.of(tester.element(menu)).brightness, Brightness.dark);
+    await tester.tap(menu);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('deal-card-recent-rice')), findsOneWidget);
+    expect(find.byKey(const Key('hide-sold-out-filter')), findsOneWidget);
+    expect(find.byKey(const Key('hide-bids-filter')), findsOneWidget);
   });
 
   testWidgets('Marketplace explains a reached Free viewing allowance',
@@ -309,31 +311,6 @@ class _LayoutApi extends Api {
       const NotificationPreferences.off();
 }
 
-class _BidLayoutApi extends _LayoutApi {
-  @override
-  Future<DiscoveryResult> discovery(
-          {bool forceLive = false, bool summary = false}) async =>
-      const DiscoveryResult(
-        deals: [
-          Deal(
-            id: 'bobshop-bid',
-            retailerId: 'bobshop',
-            retailerName: 'Bob Shop',
-            sourceLabel: 'Featured listings',
-            sourceUrl: 'https://www.bobshop.co.za/',
-            productUrl: 'https://www.bobshop.co.za/camera/p/1',
-            title: 'Camera auction',
-            priceText: 'R250.00',
-            unitText: 'Current bid',
-          ),
-        ],
-        foundDealCount: 1,
-        checkedSourceCount: 1,
-        unavailableSourceCount: 0,
-        leafletCount: 0,
-      );
-}
-
 class _AvailabilityLayoutApi extends _LayoutApi {
   @override
   Future<DiscoveryResult> discovery(
@@ -354,6 +331,35 @@ class _AvailabilityLayoutApi extends _LayoutApi {
             sourceLabel: 'Sale',
             title: 'Sold-out shoe',
             soldOut: true,
+          ),
+        ],
+        foundDealCount: 2,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
+}
+
+class _BidLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [
+          Deal(
+            id: 'plain-camera',
+            retailerId: 'takealot',
+            retailerName: 'Takealot',
+            sourceLabel: 'Deals',
+            title: 'Plain camera',
+          ),
+          Deal(
+            id: 'bobshop-bid',
+            retailerId: 'bobshop',
+            retailerName: 'BobShop',
+            sourceLabel: 'Featured listings',
+            title: 'Camera auction',
+            unitText: 'Current bid',
           ),
         ],
         foundDealCount: 2,
