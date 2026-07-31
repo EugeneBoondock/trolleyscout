@@ -964,14 +964,29 @@ class _DealsScreenState extends State<DealsScreen> {
   /// They were chips pinned above the list, which cost a row of the screen
   /// permanently to two settings most shoppers set once and forget.
   Widget _visibilityFilterMenu() {
-    final activeCount = (_hideSoldOut ? 1 : 0) + (_hideBids ? 1 : 0);
+    final hasActiveFilter = _hideSoldOut || _hideBids;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
-        border: Border.all(color: TS.lineSoftOf(context), width: 2),
+        // An active filter glows rather than adding a count to the label.
+        // A changing label changes the button's width, so it slid sideways
+        // under the thumb that had just tapped it.
+        border: Border.all(
+          color: hasActiveFilter ? TS.yellow : TS.lineSoftOf(context),
+          width: 2,
+        ),
         borderRadius: BorderRadius.circular(TS.controlRadius),
+        boxShadow: hasActiveFilter
+            ? [
+                BoxShadow(
+                  color: TS.yellow.withValues(alpha: 0.55),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
       ),
       child: PopupMenuButton<String>(
         key: const Key('visibility-filter-menu'),
@@ -1006,10 +1021,16 @@ class _DealsScreenState extends State<DealsScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.filter_list, size: 16, color: TS.mutedOf(context)),
+              Icon(
+                Icons.filter_list,
+                size: 16,
+                color: hasActiveFilter ? TS.inkOf(context) : TS.mutedOf(context),
+              ),
               const SizedBox(width: 4),
+              // The label never changes, so the button never resizes and never
+              // moves out from under the thumb.
               Text(
-                activeCount == 0 ? 'Filters' : 'Filters · $activeCount',
+                'Filters',
                 style: TextStyle(
                   color: TS.inkOf(context),
                   fontWeight: FontWeight.w700,

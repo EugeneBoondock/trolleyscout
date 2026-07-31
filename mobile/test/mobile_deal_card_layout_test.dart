@@ -101,6 +101,33 @@ void main() {
     expect(find.byKey(const Key('deal-card-available')), findsOneWidget);
   });
 
+  testWidgets('Filters button stays put when a filter is turned on',
+      (tester) async {
+    // The label used to gain a count ("Filters · 1"), which widened the button
+    // and slid it sideways out from under the thumb that had just tapped it.
+    await _usePhoneViewport(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: DealsScreen(api: _AvailabilityLayoutApi(), isAuthenticated: true),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final menu = find.byKey(const Key('visibility-filter-menu'));
+    final before = tester.getRect(menu);
+
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('hide-sold-out-filter')));
+    await tester.pumpAndSettle();
+
+    expect(tester.getRect(menu), before,
+        reason: 'the Filters control must not move or resize when a filter is on');
+    expect(find.text('Filters'), findsOneWidget);
+  });
+
   testWidgets('Marketplace hides auction listings on request', (tester) async {
     await _usePhoneViewport(tester);
 
