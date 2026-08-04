@@ -270,7 +270,6 @@ describe('parseZimZoneSpecials', () => {
   })
 })
 
-<<<<<<< HEAD
 describe('parseKambudziSpecials', () => {
   it('keeps real discounted products from Kambudzi’s public search results', () => {
     const parseKambudziSpecials = (
@@ -316,9 +315,6 @@ describe('parseKambudziSpecials', () => {
     ])
   })
 })
-
-=======
->>>>>>> codex/developer-mcp-business-insights
 describe('parseHelloKumbaProducts', () => {
   it('reads active grocery products from the public Hyperzod catalogue', () => {
     const parseHelloKumbaProducts = (
