@@ -270,6 +270,7 @@ describe('parseZimZoneSpecials', () => {
   })
 })
 
+<<<<<<< HEAD
 describe('parseKambudziSpecials', () => {
   it('keeps real discounted products from Kambudzi’s public search results', () => {
     const parseKambudziSpecials = (
@@ -316,6 +317,8 @@ describe('parseKambudziSpecials', () => {
   })
 })
 
+=======
+>>>>>>> codex/developer-mcp-business-insights
 describe('parseHelloKumbaProducts', () => {
   it('reads active grocery products from the public Hyperzod catalogue', () => {
     const parseHelloKumbaProducts = (
@@ -1587,7 +1590,11 @@ describe('scheduled discovered-store scouting', () => {
     await miniflare.dispose()
   })
 
+<<<<<<< HEAD
   it('does not count full-price Z-Store stock as a deal', async () => {
+=======
+  it('uses the public WooCommerce catalogue for Z-Store Zimbabwe', async () => {
+>>>>>>> codex/developer-mcp-business-insights
     const requestedUrls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
@@ -1628,11 +1635,16 @@ describe('scheduled discovered-store scouting', () => {
 
     expect(requestedUrls.some((url) =>
       new URL(url).pathname === '/wp-json/wc/store/v1/products'
+<<<<<<< HEAD
     )).toBe(false)
+=======
+    )).toBe(true)
+>>>>>>> codex/developer-mcp-business-insights
     const row = await db.prepare(
       `SELECT title, price_text, product_url
        FROM store_promotions WHERE place_id = 'market-place'`,
     ).first<{ price_text: string; product_url: string; title: string }>()
+<<<<<<< HEAD
     expect(row).toBeNull()
   })
 
@@ -1760,6 +1772,12 @@ describe('scheduled discovered-store scouting', () => {
       product_url:
         'https://everythingzimbabwean.com/product/beifa-packing-tape-48mm/',
       title: 'Beifa Packing Tape 48mm',
+=======
+    expect(row).toEqual({
+      price_text: 'USD 60.00',
+      product_url: 'https://zstore.co.zw/basic-hamper/',
+      title: 'Basic Hamper',
+>>>>>>> codex/developer-mcp-business-insights
     })
   })
 
@@ -1892,6 +1910,7 @@ describe('scheduled discovered-store scouting', () => {
     })
   })
 
+<<<<<<< HEAD
   it('discovers and saves Kambudzi’s public specials', async () => {
     const requestedUrls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -1951,6 +1970,8 @@ describe('scheduled discovered-store scouting', () => {
     })
   })
 
+=======
+>>>>>>> codex/developer-mcp-business-insights
   it('discovers and saves Watumira Here’s public offers', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))

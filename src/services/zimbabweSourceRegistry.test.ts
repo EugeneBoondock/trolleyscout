@@ -22,9 +22,9 @@ describe('Zimbabwe source directory', () => {
     const discovery = getZimbabweDiscoverySources()
     const social = getZimbabweSocialReferenceSources()
 
-    expect(direct).toHaveLength(289)
+    expect(direct).toHaveLength(293)
     expect(discovery).toHaveLength(13)
-    expect(social).toHaveLength(32)
+    expect(social).toHaveLength(33)
     expect(
       direct.every((source) =>
         !/(?:facebook|instagram|linkedin|tiktok|whatsapp|youtube)\.com/i.test(
@@ -63,6 +63,7 @@ describe('Zimbabwe source directory', () => {
     expect(byName.get('First Class Groceries Zimbabwe')?.url).toBe(
       'https://www.firstclassgroceries.com/products',
     )
+<<<<<<< HEAD
     expect(byName.get('Kambudzi Groceries')?.url).toBe(
       'https://kambudzi.com/search?q=special',
     )
@@ -71,6 +72,8 @@ describe('Zimbabwe source directory', () => {
     expect(byName.has('MutareMart')).toBe(false)
     expect(byName.has('Online Musika')).toBe(false)
     expect(byName.has('SA to Zim')).toBe(false)
+=======
+>>>>>>> codex/developer-mcp-business-insights
   })
 
   it('exposes catalogue source pages for the catalogue scout', () => {

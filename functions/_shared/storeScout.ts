@@ -178,6 +178,12 @@ const ZIMBABWE_WOOCOMMERCE_CATALOGUES: Record<
     origin: 'https://everythingzimbabwean.com',
     shopUrl: 'https://everythingzimbabwean.com/',
   },
+  'zstore.co.zw': {
+    apiUrl: 'https://zstore.co.zw/wp-json/wc/store/v1/products',
+    label: 'Z-Store online catalogue',
+    origin: 'https://zstore.co.zw',
+    shopUrl: 'https://zstore.co.zw/shop/',
+  },
 }
 const AGGREGATOR_HOSTS = ['guzzle.co.za', 'tiendeo.co.za', 'cataloguespecials.co.za']
 const TELONE_SHOP_HOST = 'shop.telone.co.zw'
@@ -725,7 +731,6 @@ async function scoutStore(
       return kambudzi
     }
   }
-
   if (store.website) {
     const website = await scoutStoreWebsite(env, store, nowMs)
     attempts.push(website)
@@ -2296,7 +2301,6 @@ async function scoutKambudzi(
     KAMBUDZI_ORIGIN,
   )
 }
-
 function helloKumbaMerchantId(xml: string): string | undefined {
   return /<loc>\s*https:\/\/order\.hellokumba\.com\/m\/hellokumba-kwese\/([a-f0-9]{24})\s*<\/loc>/i
     .exec(xml)?.[1]
