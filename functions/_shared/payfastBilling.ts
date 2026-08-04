@@ -1,5 +1,6 @@
 import type { BillingCycle, MemberPlanId } from '../../src/types'
 import {
+  createPayFastParameterString,
   createPayFastSignature,
   getPayFastEndpoints,
   type PayFastMode,
@@ -37,10 +38,13 @@ export function createPayFastCheckoutFields(options: {
   option: PayFastBillingOption
   passphrase: string
   returnUrl: string
+  billingDate?: string
+  initialAmountCents?: number
 }) {
   const fields = new URLSearchParams()
   const names = splitDisplayName(options.account.displayName)
-  const amount = formatRand(options.option.amountCents)
+  const amount = formatRand(options.initialAmountCents ?? options.option.amountCents)
+  const recurringAmount = formatRand(options.option.amountCents)
 
   fields.append('merchant_id', options.merchantId)
   fields.append('merchant_key', options.merchantKey)
@@ -60,7 +64,10 @@ export function createPayFastCheckoutFields(options: {
   fields.append('custom_str2', options.option.planId)
   fields.append('custom_str3', options.option.billingCycle)
   fields.append('subscription_type', '1')
-  fields.append('recurring_amount', amount)
+  if (options.billingDate) {
+    fields.append('billing_date', options.billingDate)
+  }
+  fields.append('recurring_amount', recurringAmount)
   fields.append('frequency', String(options.option.frequency))
   fields.append('cycles', '0')
   fields.append('signature', createPayFastSignature(fields, options.passphrase))
@@ -136,12 +143,15 @@ export function validatePayFastItn(fields: URLSearchParams, expected: PayFastItn
 }
 
 export async function confirmPayFastItn(
-  payload: string,
+  fields: URLSearchParams,
   mode: PayFastMode,
   fetcher: Fetcher = fetch,
 ) {
+  // PayFast's server confirmation endpoint expects the notification parameter
+  // string without the signature. Including that field returns INVALID.
+  const validationPayload = createPayFastParameterString(fields)
   const response = await fetcher(getPayFastEndpoints(mode).validationUrl, {
-    body: payload,
+    body: validationPayload,
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
     },

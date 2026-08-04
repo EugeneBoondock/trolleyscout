@@ -72,6 +72,38 @@ describe('payfastBilling', () => {
     )
   })
 
+  it('builds a R0 reauthorisation whose first charge starts after paid access ends', () => {
+    const option = getPlanBillingOption('scout', 'monthly')
+
+    if (!option) throw new Error('Expected Scout billing option')
+
+    const fields = createPayFastCheckoutFields({
+      account: {
+        displayName: 'Sam Shopper',
+        email: 'sam@example.com',
+        id: 'member-test',
+      },
+      attemptId: 'billing-resume',
+      billingDate: '2026-09-04',
+      cancelUrl: 'https://trolleyscout.co.za/Subscription?payfast=cancelled',
+      initialAmountCents: 0,
+      merchantId: '10000100',
+      merchantKey: 'merchant-key',
+      notifyUrl: 'https://trolleyscout.co.za/api/payfast-itn',
+      option,
+      passphrase: 'secret phrase',
+      returnUrl: 'https://trolleyscout.co.za/Subscription?payfast=success',
+    })
+
+    expect(Object.fromEntries(fields)).toMatchObject({
+      amount: '0.00',
+      billing_date: '2026-09-04',
+      recurring_amount: '29.00',
+      subscription_type: '1',
+    })
+    expect(verifyPayFastSignature(fields, 'secret phrase')).toBe(true)
+  })
+
   it('accepts a signed completed ITN that matches the stored attempt', () => {
     const fields = new URLSearchParams()
     fields.append('m_payment_id', 'billing-test')
@@ -121,19 +153,20 @@ describe('payfastBilling', () => {
     ).toEqual({ issue: 'Payment amount does not match.', valid: false })
   })
 
-  // PayFast validates the notification byte-for-byte, so the raw request body
-  // is echoed back untouched — re-serialising the parsed fields would reorder
-  // or re-encode them and the validation would fail.
-  it('confirms an ITN by echoing the raw payload to the matching endpoint', async () => {
-    const payload =
-      'm_payment_id=billing-test&payment_status=COMPLETE&signature=signature-test'
+  // The validation request mirrors PayFast's own handler: all non-empty ITN
+  // fields in their received order, with the signature left out.
+  it('confirms an ITN without sending the signature back to PayFast', async () => {
+    const fields = new URLSearchParams()
+    fields.append('m_payment_id', 'billing-test')
+    fields.append('payment_status', 'COMPLETE')
+    fields.append('signature', 'signature-test')
     const fetcher = vi.fn().mockResolvedValue(new Response('VALID', { status: 200 }))
 
-    await expect(confirmPayFastItn(payload, 'live', fetcher)).resolves.toBe(true)
+    await expect(confirmPayFastItn(fields, 'live', fetcher)).resolves.toBe(true)
     expect(fetcher).toHaveBeenCalledWith(
       'https://www.payfast.co.za/eng/query/validate',
       expect.objectContaining({
-        body: payload,
+        body: 'm_payment_id=billing-test&payment_status=COMPLETE',
         method: 'POST',
       }),
     )

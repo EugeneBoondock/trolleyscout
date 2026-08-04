@@ -287,9 +287,10 @@ class Api {
   /// Checkout codes: what a shopper pastes into a promo-code box. Separate
   /// from vouchers(), which returns loyalty prices and clip coupons.
   Future<List<VoucherCode>> voucherCodes({String? retailerId}) async {
-    final suffix = retailerId != null && retailerId.isNotEmpty && retailerId != 'all'
-        ? '?retailerId=${Uri.encodeQueryComponent(retailerId)}'
-        : '';
+    final suffix =
+        retailerId != null && retailerId.isNotEmpty && retailerId != 'all'
+            ? '?retailerId=${Uri.encodeQueryComponent(retailerId)}'
+            : '';
     final data = await _request('GET', '/api/voucher-codes$suffix');
     return _maps(data['codes']).map(VoucherCode.fromJson).toList();
   }
@@ -312,7 +313,8 @@ class Api {
   }
 
   /// Records whether a code worked. This is the whole ranking signal.
-  Future<VoucherCode?> rateVoucherCode(String voucherCodeId, bool worked) async {
+  Future<VoucherCode?> rateVoucherCode(
+      String voucherCodeId, bool worked) async {
     final data = await _request('POST', '/api/voucher-codes', body: {
       'action': 'vote',
       'voucherCodeId': voucherCodeId,
@@ -528,6 +530,11 @@ class Api {
     return SubscriptionCheckout.fromJson(_map(data['checkout']));
   }
 
+  Future<MemberAccount> cancelScheduledPlanChange() async {
+    final data = await _request('DELETE', '/api/subscription');
+    return MemberAccount.fromJson(_map(data['account']));
+  }
+
   Future<MapRoute?> mapRoute(
       double fromLat, double fromLon, double toLat, double toLon) async {
     try {
@@ -648,7 +655,8 @@ class Api {
       'compareBlocked': compareBlocked,
       'scoutChatBlocked': scoutChatBlocked,
       if (note != null) 'note': note,
-      if (scoutMessagesPerDay != null) 'scoutMessagesPerDay': scoutMessagesPerDay,
+      if (scoutMessagesPerDay != null)
+        'scoutMessagesPerDay': scoutMessagesPerDay,
       if (visibleCatalogues != null) 'visibleCatalogues': visibleCatalogues,
       if (visibleDeals != null) 'visibleDeals': visibleDeals,
     });

@@ -1124,8 +1124,8 @@ function App() {
 
         setMemberNotice('Payment submitted. Waiting for PayFast confirmation.')
 
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 800 : 1_500))
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 500 : 2_000))
           const subscription = await loadSubscription()
           setSubscriptionState(subscription)
 
@@ -3188,8 +3188,20 @@ export function SubscriptionPanel({
                 : `You keep ${billingAccount.planName} until then, and nothing is charged today.`}
             </p>
           </div>
-          <button className="ghost-button" onClick={onCancelScheduledChange} type="button">
-            Keep {billingAccount.planName}
+          <button
+            className="ghost-button"
+            onClick={() => {
+              if (pendingPlanId === 'free') {
+                void onCheckout(billingAccount.planId, planCycle ?? billingCycle)
+                return
+              }
+              onCancelScheduledChange()
+            }}
+            type="button"
+          >
+            {pendingPlanId === 'free'
+              ? `Resume ${billingAccount.planName}`
+              : `Keep ${billingAccount.planName}`}
           </button>
         </div>
       )}
@@ -3525,6 +3537,22 @@ export function SubscriptionPanel({
                 <Wallet size={18} />
                 {checkoutPlanId === plan.id ? 'Checking' : buttonText}
               </button>
+              {plan.isPaid && isCurrent && !pendingPlanId && (
+                <button
+                  className="ghost-button plan-cancel-button"
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      `Cancel ${billingAccount.planName}? You keep access until the end of the period you already paid for.`,
+                    )
+                    if (confirmed) {
+                      void onCheckout('free', planCycle ?? billingCycle)
+                    }
+                  }}
+                  type="button"
+                >
+                  Cancel subscription
+                </button>
+              )}
               {plan.isPaid && !isCurrent && !isComingSoon && !isDowngrade && (
                 <p className="plan-reassure">Switch or cancel anytime</p>
               )}

@@ -10,7 +10,10 @@ export interface PayFastBillingAttempt {
   accountId: string
   amountCents: number
   billingCycle: BillingCycle
+  billingStartsAt?: string
   id: string
+  initialAmountCents?: number
+  initialPaymentId?: string
   planId: PaidPlanId
 }
 
@@ -27,6 +30,8 @@ export interface PayFastBillingRepository {
     accountId: string
     attemptId: string
     billingCycle: BillingCycle
+    currentPeriodEnd?: string
+    initialPaymentId?: string
     paymentId: string
     planId: PaidPlanId
     token: string
@@ -41,7 +46,6 @@ export async function processPayFastNotification(options: {
   merchantId: string
   mode: PayFastMode
   passphrase: string
-  payload: string
   repository: PayFastBillingRepository
 }) {
   const attemptId = options.fields.get('m_payment_id')?.trim()
@@ -56,8 +60,12 @@ export async function processPayFastNotification(options: {
     return rejected('Payment reference was not found.')
   }
 
+  const notifiedPaymentId = options.fields.get('pf_payment_id')?.trim()
+  const isInitialAuthorization =
+    attempt.initialAmountCents !== undefined &&
+    (!attempt.initialPaymentId || attempt.initialPaymentId === notifiedPaymentId)
   const validation = validatePayFastItn(options.fields, {
-    amountCents: attempt.amountCents,
+    amountCents: isInitialAuthorization ? attempt.initialAmountCents! : attempt.amountCents,
     attemptId: attempt.id,
     merchantId: options.merchantId,
     passphrase: options.passphrase,
@@ -67,7 +75,7 @@ export async function processPayFastNotification(options: {
     return rejected(validation.issue)
   }
 
-  const providerConfirmed = await confirmPayFastItn(options.payload, options.mode, options.fetcher)
+  const providerConfirmed = await confirmPayFastItn(options.fields, options.mode, options.fetcher)
 
   if (!providerConfirmed) {
     return rejected('PayFast did not validate the notification.')
@@ -104,6 +112,9 @@ export async function processPayFastNotification(options: {
     accountId: attempt.accountId,
     attemptId: attempt.id,
     billingCycle: attempt.billingCycle,
+    ...(isInitialAuthorization && validation.amountCents === 0 && attempt.billingStartsAt
+      ? { currentPeriodEnd: attempt.billingStartsAt, initialPaymentId: validation.paymentId }
+      : {}),
     paymentId: validation.paymentId,
     planId: attempt.planId,
     token: validation.token,

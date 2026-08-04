@@ -63,6 +63,7 @@ describe('applyDuePlanChanges', () => {
     pendingEffectiveAt: string
     pendingPlanId: string
     planId: string
+    subscriptionStatus?: string
   }) {
     await db
       .prepare(
@@ -78,11 +79,12 @@ describe('applyDuePlanChanges', () => {
             id, account_id, provider, plan_id, billing_cycle, status,
             provider_token, provider_payment_id, current_period_end,
             pending_plan_id, pending_billing_cycle, pending_effective_at
-          ) VALUES ('sub-1', 'acc-1', 'payfast', ?, 'monthly', 'active',
+          ) VALUES ('sub-1', 'acc-1', 'payfast', ?, 'monthly', ?,
             'token-1', 'pay-1', ?, ?, ?, ?)`,
       )
       .bind(
         input.planId,
+        input.subscriptionStatus ?? 'active',
         input.pendingEffectiveAt,
         input.pendingPlanId,
         input.pendingBillingCycle ?? 'monthly',
@@ -203,6 +205,25 @@ describe('applyDuePlanChanges', () => {
     expect(result).toMatchObject({ applied: 1, failed: 0 })
     expect(cancelCalls).toEqual(['token-1'])
     expect(adjustCalls).toEqual([])
+    expect(await readAccountPlan()).toBe('free')
+    expect(await readSubscription()).toMatchObject({
+      pending_plan_id: null,
+      status: 'cancelled',
+    })
+  })
+
+  it('drops paid access at period end without cancelling an already-cancelled token twice', async () => {
+    await seed({
+      pendingEffectiveAt: PAST,
+      pendingPlanId: 'free',
+      planId: 'scout',
+      subscriptionStatus: 'cancelled',
+    })
+
+    const result = await applyDuePlanChanges(db, dependencies(), NOW)
+
+    expect(result).toMatchObject({ applied: 1, failed: 0 })
+    expect(cancelCalls).toEqual([])
     expect(await readAccountPlan()).toBe('free')
     expect(await readSubscription()).toMatchObject({
       pending_plan_id: null,

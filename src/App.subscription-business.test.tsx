@@ -13,7 +13,10 @@ import { SubscriptionPanel } from './App'
 import type { ResourceState, SubscriptionResource } from './services/apiClient'
 import type { CountryContext, MemberAccount } from './types'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe('Organisation subscription application', () => {
   it('opens the business details form before checkout', () => {
@@ -37,6 +40,27 @@ describe('Organisation subscription application', () => {
       'owner@example.co.za',
     )
     expect(onCheckout).not.toHaveBeenCalled()
+  })
+})
+
+describe('current subscription controls', () => {
+  it('shows cancellation directly on the current paid plan', () => {
+    const onCheckout = vi.fn().mockResolvedValue(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(
+      <SubscriptionPanel
+        account={paidAccount}
+        country={country}
+        onCancelScheduledChange={vi.fn()}
+        onCheckout={onCheckout}
+        subscriptionState={paidSubscription}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel subscription' }))
+
+    expect(onCheckout).toHaveBeenCalledWith('free', 'monthly')
   })
 })
 
@@ -64,6 +88,46 @@ const country: CountryContext = {
   flag: '🇿🇦',
   locale: 'en-ZA',
   name: 'South Africa',
+}
+
+const paidAccount: MemberAccount = {
+  ...account,
+  billingCycle: 'monthly',
+  planId: 'scout',
+  planName: 'Scout',
+}
+
+const paidSubscription: ResourceState<SubscriptionResource> = {
+  data: {
+    account: paidAccount,
+    billingReady: true,
+    businessApplications: [],
+    plans: [
+      {
+        badge: 'Paid',
+        description: 'More room for one shopper.',
+        features: ['Larger saved lists'],
+        id: 'scout',
+        isPaid: true,
+        limits: {
+          basketItems: 100,
+          savedDeals: 100,
+          savedSources: 20,
+          visibleCatalogues: 20,
+          visibleDeals: 1000,
+        },
+        name: 'Scout',
+        prices: { annual: 29000, monthly: 2900 },
+        statusText: 'Available',
+      },
+    ],
+  },
+  message: 'Subscription loaded.',
+  meta: {
+    generatedAt: '2026-07-26T00:00:00.000Z',
+    source: 'cloudflare-pages',
+  },
+  status: 'ready',
 }
 
 const subscription: ResourceState<SubscriptionResource> = {

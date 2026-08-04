@@ -11,7 +11,10 @@ interface BillingAttemptRow {
   account_id: string
   amount_cents: number
   billing_cycle: string
+  billing_starts_at: string | null
   id: string
+  initial_amount_cents: number | null
+  initial_payment_id: string | null
   plan_id: string
 }
 
@@ -54,23 +57,23 @@ export function createPayFastBillingRepository(
       const subscriptionId = `payfast-${input.accountId}`
       // What the member has now paid up to. This is the date a later downgrade
       // is scheduled to land on, so it has to be recorded on every payment.
-      const currentPeriodEnd = computePeriodEnd(timestamp, input.billingCycle)
+      const currentPeriodEnd = input.currentPeriodEnd ?? computePeriodEnd(timestamp, input.billingCycle)
       // Read the outgoing token before the upsert overwrites it. A member
       // switching cycle or plan keeps paying on the old subscription until it
       // is cancelled, so this is the only chance to learn what to cancel.
       const superseded = await db.prepare(
-        `SELECT provider_token FROM billing_subscriptions
+        `SELECT provider_token, status FROM billing_subscriptions
           WHERE account_id = ? AND provider = 'payfast'`,
       )
         .bind(input.accountId)
-        .first<{ provider_token: string }>()
+        .first<{ provider_token: string; status: string }>()
 
       await db.batch([
         db.prepare(
           `UPDATE billing_attempts
-            SET status = 'complete', updated_at = ?
+            SET status = 'complete', initial_payment_id = COALESCE(initial_payment_id, ?), updated_at = ?
             WHERE id = ? AND account_id = ?`,
-        ).bind(timestamp, input.attemptId, input.accountId),
+        ).bind(input.initialPaymentId ?? null, timestamp, input.attemptId, input.accountId),
         db.prepare(
           // A fresh payment supersedes anything queued: a member who upgrades
           // while a downgrade is pending has just told us what they want, so
@@ -114,7 +117,12 @@ export function createPayFastBillingRepository(
       // surfaced in the admin console for follow-up.
       const previousToken = superseded?.provider_token?.trim()
 
-      if (cancelSuperseded && previousToken && previousToken !== input.token) {
+      if (
+        cancelSuperseded &&
+        superseded?.status === 'active' &&
+        previousToken &&
+        previousToken !== input.token
+      ) {
         const result = await cancelSuperseded(previousToken)
 
         await recordCancellation(db, {
@@ -128,7 +136,8 @@ export function createPayFastBillingRepository(
 
     async findAttempt(attemptId) {
       const row = await db.prepare(
-        `SELECT id, account_id, plan_id, billing_cycle, amount_cents
+        `SELECT id, account_id, plan_id, billing_cycle, amount_cents,
+                initial_amount_cents, billing_starts_at, initial_payment_id
           FROM billing_attempts
           WHERE id = ? AND provider = 'payfast'
           LIMIT 1`,
@@ -195,7 +204,12 @@ function billingAttemptFromRow(row: BillingAttemptRow): PayFastBillingAttempt | 
     accountId: row.account_id,
     amountCents: row.amount_cents,
     billingCycle: row.billing_cycle as BillingCycle,
+    ...(row.billing_starts_at ? { billingStartsAt: row.billing_starts_at } : {}),
     id: row.id,
+    ...(row.initial_amount_cents !== null
+      ? { initialAmountCents: row.initial_amount_cents }
+      : {}),
+    ...(row.initial_payment_id ? { initialPaymentId: row.initial_payment_id } : {}),
     planId: row.plan_id,
   }
 }

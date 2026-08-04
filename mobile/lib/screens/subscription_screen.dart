@@ -11,10 +11,14 @@ class SubscriptionScreen extends StatefulWidget {
     super.key,
     required this.api,
     this.openCheckout,
+    this.confirmationPollInterval = const Duration(seconds: 2),
+    this.confirmationPolls = 60,
   });
 
   final Api api;
   final Future<bool> Function(BuildContext, SubscriptionCheckout)? openCheckout;
+  final Duration confirmationPollInterval;
+  final int confirmationPolls;
 
   @override
   State<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -44,6 +48,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void _reload() => setState(() {
         _future = widget.api.subscription();
       });
+
+  Future<void> _keepCurrentPlan() async {
+    try {
+      await widget.api.cancelScheduledPlanChange();
+      if (!mounted) return;
+      _reload();
+      showNotice(context, 'Scheduled change cancelled. Your plan continues.');
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    }
+  }
 
   Future<void> _choose(MemberPlan plan, String? currentPlanId) async {
     if (!plan.isPaid && currentPlanId != null && currentPlanId != 'free') {
@@ -81,10 +96,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       );
       if (!mounted) return;
       if (opened) {
-        _reload();
+        showNotice(context, 'Payment received. Activating your plan...');
+        final activated = await _waitForPlanActivation(plan.id);
+        if (!mounted) return;
         showNotice(
           context,
-          'Checkout opened. Your plan updates after PayFast confirms payment.',
+          activated
+              ? 'Your ${plan.name} plan is active.'
+              : 'Payment received. Your plan is still being confirmed.',
         );
       } else {
         showNotice(context, 'Checkout closed. No plan change was made.');
@@ -94,6 +113,32 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     } finally {
       if (mounted) setState(() => _busyPlan = null);
     }
+  }
+
+  Future<bool> _waitForPlanActivation(String planId) async {
+    for (var attempt = 0; attempt < widget.confirmationPolls; attempt += 1) {
+      if (attempt > 0) {
+        await Future<void>.delayed(widget.confirmationPollInterval);
+      }
+
+      try {
+        final data = await widget.api.subscription();
+        if (!mounted) return false;
+        setState(() {
+          _future = Future.value(data);
+        });
+
+        if (data.account?.planId == planId &&
+            data.account?.planStatus == 'active') {
+          return true;
+        }
+      } on ApiException {
+        // Keep checking through a brief network failure while the payment
+        // notification may still be reaching the server.
+      }
+    }
+
+    return false;
   }
 
   Future<void> _startBusinessPlan(
@@ -132,6 +177,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               message: 'Could not load subscription plans.', onRetry: _reload);
         }
         final data = snapshot.data!;
+        final account = data.account;
+        final pendingDate = account?.pendingEffectiveAt?.split('T').first;
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -141,6 +188,54 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               description:
                   'Core price tools, deals, and catalogues stay free. Paid plans add larger saved lists.',
             ),
+            if (account?.hasScheduledPlanChange == true) ...[
+              PaperCard(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      account!.pendingPlanId == 'free'
+                          ? 'SUBSCRIPTION CANCELLED'
+                          : 'PLAN CHANGE SCHEDULED',
+                      style: TS.eyebrowOf(context),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'You keep ${account.planName} until $pendingDate.',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      account.pendingPlanId == 'free'
+                          ? 'Resume with PayFast before then and nothing is charged today. Billing restarts after your paid period ends.'
+                          : 'Keep your current plan to remove this scheduled change.',
+                      style: TextStyle(color: TS.mutedOf(context)),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _busyPlan != null
+                            ? null
+                            : account.pendingPlanId == 'free'
+                                ? () {
+                                    final currentPlan =
+                                        _findPlan(data.plans, account.planId);
+                                    if (currentPlan != null) {
+                                      _choose(currentPlan, account.planId);
+                                    }
+                                  }
+                                : _keepCurrentPlan,
+                        child: Text(account.pendingPlanId == 'free'
+                            ? 'Resume ${account.planName}'
+                            : 'Keep ${account.planName}'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(value: 'monthly', label: Text('Monthly')),
@@ -266,6 +361,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         ),
                       ),
                     ),
+                    if (plan.isPaid &&
+                        data.account?.planId == plan.id &&
+                        data.account?.hasScheduledPlanChange != true) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: _busyPlan != null
+                              ? null
+                              : () {
+                                  final freePlan =
+                                      _findPlan(data.plans, 'free');
+                                  if (freePlan != null) {
+                                    _choose(freePlan, data.account?.planId);
+                                  }
+                                },
+                          child: const Text('Cancel subscription'),
+                        ),
+                      ),
+                    ],
                     // Safety-net reassurance: choosing a paid plan isn't a trap.
                     if (plan.isPaid && data.account?.planId != plan.id) ...[
                       const SizedBox(height: 6),
@@ -285,6 +400,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       },
     );
   }
+}
+
+MemberPlan? _findPlan(List<MemberPlan> plans, String planId) {
+  for (final plan in plans) {
+    if (plan.id == planId) return plan;
+  }
+  return null;
 }
 
 class _BusinessApplicationSheet extends StatefulWidget {

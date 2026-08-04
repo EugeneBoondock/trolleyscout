@@ -40,7 +40,6 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     merchantId: payfast.merchantId,
     mode: payfast.mode,
     passphrase: payfast.passphrase ?? '',
-    payload,
     repository: createPayFastBillingRepository(env.DB, (token) =>
       cancelPayFastSubscription(token, {
         merchantId: payfast.merchantId,

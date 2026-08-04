@@ -30,6 +30,32 @@ void main() {
     expect(find.text('Your change is scheduled for 1 August.'), findsOneWidget);
   });
 
+  testWidgets('shows cancellation directly on the current paid plan',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Your cancellation is scheduled.',
+        planId: 'free',
+        billingCycle: 'monthly',
+        status: 'scheduled',
+      ),
+      plan: _scoutPlan,
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    final cancelButton =
+        find.widgetWithText(OutlinedButton, 'Cancel subscription');
+    expect(cancelButton, findsOneWidget);
+    await tester.tap(cancelButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Switch to Free?'), findsOneWidget);
+    expect(api.checkoutCalls, 0);
+  });
+
   testWidgets('quotes an American in dollars and names the rand charge',
       (tester) async {
     // The price is a whole number in the shopper's own money. PayFast still
@@ -104,6 +130,88 @@ void main() {
         find.text('Checkout closed. No plan change was made.'), findsOneWidget);
   });
 
+  testWidgets('activates the paid plan as soon as the server confirms it',
+      (tester) async {
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'household',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+        redirectUrl: 'https://www.payfast.co.za/eng/process',
+        redirectFields: {'signature': 'signed'},
+      ),
+      accountResponses: const [_paidAccount, _householdAccount],
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(
+      api: api,
+      confirmationPollInterval: Duration.zero,
+      openCheckout: (_, __) async => true,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start Household'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your Household plan is active.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Current plan'), findsOneWidget);
+  });
+
+  testWidgets('resumes a cancelled plan without promising another charge today',
+      (tester) async {
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Nothing is charged today.',
+        planId: 'scout',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+        redirectUrl: 'https://www.payfast.co.za/eng/process',
+        redirectFields: {
+          'amount': '0.00',
+          'billing_date': '2026-09-04',
+          'recurring_amount': '29.00',
+        },
+      ),
+      accountResponses: const [_cancelledScoutAccount],
+      plan: _scoutPlan,
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(
+      api: api,
+      openCheckout: (_, checkout) async {
+        expect(checkout.redirectFields['amount'], '0.00');
+        return false;
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('nothing is charged today'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Resume Scout'));
+    await tester.pumpAndSettle();
+
+    expect(api.checkoutCalls, 1);
+  });
+
+  testWidgets('keeps the current plan when a non-cancellation change is queued',
+      (tester) async {
+    final api = _SubscriptionApi(
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Unused.',
+        planId: 'household',
+        billingCycle: 'monthly',
+        status: 'scheduled',
+      ),
+      accountResponses: const [_scheduledDowngradeAccount],
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Keep Household'));
+    await tester.pumpAndSettle();
+
+    expect(api.cancelScheduledCalls, 1);
+    expect(api.checkoutCalls, 0);
+  });
+
   testWidgets('opens the business application before Organisation checkout',
       (tester) async {
     final api = _SubscriptionApi(
@@ -144,6 +252,7 @@ class _SubscriptionApi extends Api {
     ),
     this.currencyCode = 'ZAR',
     this.plan = _householdPlan,
+    this.accountResponses = const [],
   }) : super(baseUrl: 'https://example.test');
 
   final SubscriptionCheckout checkoutResult;
@@ -154,17 +263,28 @@ class _SubscriptionApi extends Api {
 
   /// The paid plan the server priced for this shopper.
   final MemberPlan plan;
+  final List<MemberAccount> accountResponses;
   int checkoutCalls = 0;
+  int cancelScheduledCalls = 0;
+  int subscriptionCalls = 0;
 
   @override
   String get effectiveCurrencyCode => currencyCode;
 
   @override
-  Future<SubscriptionData> subscription() async => SubscriptionData(
-        billingReady: true,
-        plans: [_freePlan, plan],
-        account: _paidAccount,
-      );
+  Future<SubscriptionData> subscription() async {
+    final account = subscriptionCalls < accountResponses.length
+        ? accountResponses[subscriptionCalls]
+        : accountResponses.isEmpty
+            ? _paidAccount
+            : accountResponses.last;
+    subscriptionCalls += 1;
+    return SubscriptionData(
+      billingReady: true,
+      plans: [_freePlan, plan],
+      account: account,
+    );
+  }
 
   @override
   Future<CountryPricing> country() async => countryPricing;
@@ -174,6 +294,12 @@ class _SubscriptionApi extends Api {
       String planId, String billingCycle) async {
     checkoutCalls += 1;
     return checkoutResult;
+  }
+
+  @override
+  Future<MemberAccount> cancelScheduledPlanChange() async {
+    cancelScheduledCalls += 1;
+    return _householdAccount;
   }
 }
 
@@ -189,6 +315,54 @@ const _paidAccount = MemberAccount(
   propertiesAccess: false,
   createdAt: '2026-07-22T00:00:00.000Z',
   updatedAt: '2026-07-22T00:00:00.000Z',
+);
+
+const _householdAccount = MemberAccount(
+  id: 'member-1',
+  email: 'sam@example.test',
+  displayName: 'Sam Shopper',
+  initials: 'SS',
+  planId: 'household',
+  planName: 'Household',
+  planStatus: 'active',
+  role: 'member',
+  propertiesAccess: false,
+  createdAt: '2026-07-22T00:00:00.000Z',
+  updatedAt: '2026-07-22T00:01:00.000Z',
+);
+
+const _cancelledScoutAccount = MemberAccount(
+  id: 'member-1',
+  email: 'sam@example.test',
+  displayName: 'Sam Shopper',
+  initials: 'SS',
+  planId: 'scout',
+  planName: 'Scout',
+  planStatus: 'active',
+  role: 'member',
+  propertiesAccess: false,
+  billingCycle: 'monthly',
+  pendingPlanId: 'free',
+  pendingEffectiveAt: '2026-09-04T15:45:00.000Z',
+  createdAt: '2026-07-22T00:00:00.000Z',
+  updatedAt: '2026-08-04T00:00:00.000Z',
+);
+
+const _scheduledDowngradeAccount = MemberAccount(
+  id: 'member-1',
+  email: 'sam@example.test',
+  displayName: 'Sam Shopper',
+  initials: 'SS',
+  planId: 'household',
+  planName: 'Household',
+  planStatus: 'active',
+  role: 'member',
+  propertiesAccess: false,
+  billingCycle: 'monthly',
+  pendingPlanId: 'scout',
+  pendingEffectiveAt: '2026-09-04T15:45:00.000Z',
+  createdAt: '2026-07-22T00:00:00.000Z',
+  updatedAt: '2026-08-04T00:00:00.000Z',
 );
 
 const _freePlan = MemberPlan(
@@ -213,6 +387,18 @@ const _householdPlan = MemberPlan(
   features: ['Larger saved lists'],
   monthlyCents: 9900,
   annualCents: 99000,
+);
+
+const _scoutPlan = MemberPlan(
+  id: 'scout',
+  name: 'Scout',
+  description: 'More room for one shopper.',
+  badge: 'Paid',
+  isPaid: true,
+  statusText: 'Available',
+  features: ['Larger saved lists'],
+  monthlyCents: 2900,
+  annualCents: 29000,
 );
 
 const _organizationPlan = MemberPlan(

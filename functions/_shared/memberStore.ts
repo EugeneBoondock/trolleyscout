@@ -35,6 +35,7 @@ import {
   createPayFastCheckoutFields,
   requestPayFastOnsitePayment,
 } from './payfastBilling'
+import { cancelPayFastSubscription } from './payfastSubscriptionApi'
 import { countryFromCode, getRateFromZar, listCountryOptions } from './countryContext'
 import { resolveBillingCurrency, SETTLEMENT_CURRENCY } from '../../src/data/planPricing'
 import {
@@ -112,7 +113,7 @@ const ACCOUNT_BILLING_COLUMNS = `member_accounts.id, member_accounts.email, memb
 
 const ACCOUNT_BILLING_JOIN = `LEFT JOIN billing_subscriptions
   ON billing_subscriptions.account_id = member_accounts.id
-  AND billing_subscriptions.status = 'active'`
+  AND billing_subscriptions.status IN ('active', 'cancelled')`
 
 const ACCOUNT_WITH_BILLING_SELECT = `SELECT ${ACCOUNT_BILLING_COLUMNS}
   FROM member_accounts
@@ -1562,6 +1563,9 @@ export async function startSubscriptionCheckout(
   planId: MemberPlanId,
   billingCycle: BillingCycle,
   preferRedirect = false,
+  dependencies: {
+    cancelSubscription?: typeof cancelPayFastSubscription
+  } = {},
 ): Promise<SubscriptionCheckoutResult> {
   if (!hasMemberStore(env) || !account) {
     return {
@@ -1583,20 +1587,55 @@ export async function startSubscriptionCheckout(
     nextBillingCycle: billingCycle,
     nextPlanId: planId,
   })
+  const payfast = resolvePayFastConfig(env)
+  let billingStartsAt: string | undefined
 
   if (change === 'none') {
-    return {
-      billingCycle,
-      billingReady: true,
-      message: `${getMemberPlan(planId).name} is already your plan.`,
-      planId,
-      provider: 'payfast' as const,
-      status: 'active' as MemberPlanStatus,
+    const pendingSubscription = account.pendingPlanId
+      ? await findPayFastSubscription(env, account.id)
+      : undefined
+
+    if (pendingSubscription?.status === 'active') {
+      await clearPendingPlanChange(env, account.id)
+
+      return {
+        billingCycle,
+        billingReady: true,
+        message: `Your scheduled cancellation is removed. ${getMemberPlan(planId).name} stays active and nothing is charged today.`,
+        planId,
+        provider: 'payfast' as const,
+        status: 'active' as MemberPlanStatus,
+      }
+    }
+
+    if (
+      pendingSubscription?.status === 'cancelled' &&
+      isFutureDate(pendingSubscription.current_period_end)
+    ) {
+      // PayFast cancellation is final, so keeping the plan requires a fresh
+      // card authorisation. The initial amount is R0 and the first real charge
+      // is delayed until the member's existing paid period ends.
+      billingStartsAt = new Date(pendingSubscription.current_period_end!).toISOString()
+    } else {
+      return {
+        billingCycle,
+        billingReady: true,
+        message: `${getMemberPlan(planId).name} is already your plan.`,
+        planId,
+        provider: 'payfast' as const,
+        status: 'active' as MemberPlanStatus,
+      }
     }
   }
 
   if (change === 'downgrade') {
-    return schedulePlanDowngrade(env, { account, billingCycle, planId })
+    return schedulePlanDowngrade(env, {
+      account,
+      billingCycle,
+      cancelSubscription: dependencies.cancelSubscription ?? cancelPayFastSubscription,
+      payfast,
+      planId,
+    })
   }
 
   const billingOption = getPlanBillingOption(
@@ -1604,8 +1643,6 @@ export async function startSubscriptionCheckout(
     billingCycle,
     await resolveMemberPricing(env, account.countryCode),
   )
-  const payfast = resolvePayFastConfig(env)
-
   if (!billingOption || !payfast) {
     return {
       billingCycle,
@@ -1625,8 +1662,8 @@ export async function startSubscriptionCheckout(
   await env.DB.prepare(
     `INSERT INTO billing_attempts (
       id, account_id, provider, plan_id, billing_cycle, amount_cents,
-      status, created_at, updated_at, expires_at
-    ) VALUES (?, ?, 'payfast', ?, ?, ?, 'created', ?, ?, ?)`,
+      initial_amount_cents, billing_starts_at, status, created_at, updated_at, expires_at
+    ) VALUES (?, ?, 'payfast', ?, ?, ?, ?, ?, 'created', ?, ?, ?)`,
   )
     .bind(
       attemptId,
@@ -1634,6 +1671,8 @@ export async function startSubscriptionCheckout(
       planId,
       billingCycle,
       billingOption.amountCents,
+      billingStartsAt ? 0 : null,
+      billingStartsAt ?? null,
       timestamp,
       timestamp,
       expiresAt,
@@ -1650,6 +1689,9 @@ export async function startSubscriptionCheckout(
     option: billingOption,
     passphrase: payfast.passphrase ?? '',
     returnUrl: new URL('/Subscription?payfast=success', origin).toString(),
+    ...(billingStartsAt
+      ? { billingDate: billingStartsAt.slice(0, 10), initialAmountCents: 0 }
+      : {}),
   })
 
   let onsiteUuid: string | undefined
@@ -1677,7 +1719,9 @@ export async function startSubscriptionCheckout(
     return {
       billingCycle,
       billingReady: true,
-      message: 'Redirecting to PayFast to complete your payment.',
+      message: billingStartsAt
+        ? `Redirecting to PayFast to resume billing. Nothing is charged today, and the next payment is due on ${billingStartsAt.slice(0, 10)}.`
+        : 'Redirecting to PayFast to complete your payment.',
       planId,
       provider: 'payfast' as const,
       redirectFields: Object.fromEntries(fields),
@@ -1698,7 +1742,9 @@ export async function startSubscriptionCheckout(
     billingCycle,
     billingReady: true,
     engineUrl: getPayFastEndpoints(payfast.mode).engineUrl,
-    message: 'PayFast checkout is ready.',
+    message: billingStartsAt
+      ? `PayFast is ready to resume billing. Nothing is charged today, and the next payment is due on ${billingStartsAt.slice(0, 10)}.`
+      : 'PayFast checkout is ready.',
     onsiteUuid,
     planId,
     provider: 'payfast' as const,
@@ -1714,17 +1760,24 @@ async function schedulePlanDowngrade(
   input: {
     account: MemberAccount
     billingCycle: BillingCycle
+    cancelSubscription: typeof cancelPayFastSubscription
+    payfast: ReturnType<typeof resolvePayFastConfig>
     planId: MemberPlanId
   },
 ): Promise<SubscriptionCheckoutResult> {
   const now = new Date()
   const timestamp = now.toISOString()
   const subscription = await env.DB.prepare(
-    `SELECT billing_cycle, current_period_end FROM billing_subscriptions
+    `SELECT billing_cycle, current_period_end, provider_token, status FROM billing_subscriptions
       WHERE account_id = ? AND provider = 'payfast' AND status = 'active'`,
   )
     .bind(input.account.id)
-    .first<{ billing_cycle: string | null; current_period_end: string | null }>()
+    .first<{
+      billing_cycle: string | null
+      current_period_end: string | null
+      provider_token: string | null
+      status: string
+    }>()
 
   if (!subscription) {
     await env.DB.prepare(
@@ -1750,12 +1803,51 @@ async function schedulePlanDowngrade(
     now,
   })
 
+  if (input.planId === 'free') {
+    const token = subscription.provider_token?.trim()
+
+    if (!input.payfast || !token) {
+      return {
+        billingCycle: input.billingCycle,
+        billingReady: false,
+        message: 'PayFast cancellation is unavailable. Your current plan has not changed.',
+        planId: input.planId,
+        provider: 'payfast' as const,
+        status: 'billing_not_configured' as MemberPlanStatus,
+      }
+    }
+
+    const cancelled = await input.cancelSubscription(token, {
+      merchantId: input.payfast.merchantId,
+      mode: input.payfast.mode,
+      passphrase: input.payfast.passphrase,
+    })
+
+    if (!cancelled.cancelled) {
+      return {
+        billingCycle: input.billingCycle,
+        billingReady: true,
+        message: 'PayFast could not cancel future billing. Your current plan has not changed.',
+        planId: input.planId,
+        provider: 'payfast' as const,
+        status: 'checkout_required' as MemberPlanStatus,
+      }
+    }
+  }
+
   await env.DB.prepare(
     `UPDATE billing_subscriptions
-      SET pending_plan_id = ?, pending_billing_cycle = ?, pending_effective_at = ?, updated_at = ?
+      SET status = ?, pending_plan_id = ?, pending_billing_cycle = ?, pending_effective_at = ?, updated_at = ?
       WHERE account_id = ? AND provider = 'payfast' AND status = 'active'`,
   )
-    .bind(input.planId, input.billingCycle, effectiveAt, timestamp, input.account.id)
+    .bind(
+      input.planId === 'free' ? 'cancelled' : 'active',
+      input.planId,
+      input.billingCycle,
+      effectiveAt,
+      timestamp,
+      input.account.id,
+    )
     .run()
 
   const effectiveDate = effectiveAt.slice(0, 10)
@@ -1783,17 +1875,10 @@ export async function cancelPendingPlanChange(
     return { issues: ['Sign in to manage your plan.'] }
   }
 
-  const result = await env.DB.prepare(
-    `UPDATE billing_subscriptions
-      SET pending_plan_id = NULL, pending_billing_cycle = NULL,
-          pending_effective_at = NULL, updated_at = ?
-      WHERE account_id = ? AND provider = 'payfast' AND pending_plan_id IS NOT NULL`,
-  )
-    .bind(new Date().toISOString(), account.id)
-    .run()
+  const result = await clearPendingPlanChange(env, account.id)
 
-  if (result.meta.changes === 0) {
-    return { issues: ['There is no scheduled plan change to cancel.'] }
+  if (!result) {
+    return { issues: ['There is no reversible scheduled plan change.'] }
   }
 
   const row = await env.DB.prepare(`${ACCOUNT_WITH_BILLING_SELECT} WHERE member_accounts.id = ?`)
@@ -1801,6 +1886,48 @@ export async function cancelPendingPlanChange(
     .first<MemberAccountRow>()
 
   return row ? { account: await accountRowToMember(env, row) } : { issues: ['Account could not be loaded.'] }
+}
+
+async function clearPendingPlanChange(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  accountId: string,
+) {
+  const result = await env.DB.prepare(
+    `UPDATE billing_subscriptions
+      SET pending_plan_id = NULL, pending_billing_cycle = NULL,
+          pending_effective_at = NULL, updated_at = ?
+      WHERE account_id = ? AND provider = 'payfast' AND status = 'active'
+        AND pending_plan_id IS NOT NULL`,
+  )
+    .bind(new Date().toISOString(), accountId)
+    .run()
+
+  return result.meta.changes > 0
+}
+
+interface PayFastSubscriptionRow {
+  billing_cycle: string | null
+  current_period_end: string | null
+  provider_token: string | null
+  status: string
+}
+
+async function findPayFastSubscription(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  accountId: string,
+) {
+  return env.DB.prepare(
+    `SELECT billing_cycle, current_period_end, provider_token, status
+      FROM billing_subscriptions WHERE account_id = ? AND provider = 'payfast'`,
+  )
+    .bind(accountId)
+    .first<PayFastSubscriptionRow>()
+}
+
+function isFutureDate(value: string | null | undefined) {
+  if (!value) return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getTime() > Date.now()
 }
 
 interface TrustedSavedDeal {

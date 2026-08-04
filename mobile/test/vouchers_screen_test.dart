@@ -184,10 +184,10 @@ class _VoucherApi extends Api {
           createdAt: '2026-07-16T10:00:00.000Z',
           updatedAt: '2026-07-16T10:00:00.000Z',
           lastSeenAt: '2026-07-16T10:00:00.000Z',
-          expiresAt: '2026-07-31T21:59:59.999Z',
+          expiresAt: '2026-12-31T21:59:59.999Z',
           status: 'active',
           code: 'SAVE25',
-          validTo: '2026-07-31',
+          validTo: '2026-12-31',
         ),
       ];
 

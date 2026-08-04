@@ -639,6 +639,43 @@ void main() {
       expect(checkout.redirectFields, {'signature': 'signed'});
     });
 
+    test('cancels a reversible scheduled plan change with DELETE', () async {
+      late String method;
+      final api = Api(
+        client: MockClient((request) async {
+          method = request.method;
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'account': {
+                  'id': 'member-1',
+                  'email': 'sam@example.test',
+                  'displayName': 'Sam Shopper',
+                  'initials': 'SS',
+                  'planId': 'scout',
+                  'planName': 'Scout',
+                  'planStatus': 'active',
+                  'role': 'member',
+                  'propertiesAccess': false,
+                  'createdAt': '2026-08-01T00:00:00.000Z',
+                  'updatedAt': '2026-08-04T00:00:00.000Z',
+                },
+              },
+            }),
+            200,
+          );
+        }),
+        cookieStore: MemorySessionCookieStore(),
+        useBrowserCookies: false,
+        baseUrl: 'https://example.test',
+      );
+
+      final account = await api.cancelScheduledPlanChange();
+
+      expect(method, 'DELETE');
+      expect(account.planId, 'scout');
+    });
+
     test('reads the permanent discovered store directory', () async {
       late Uri requestUri;
       final api = Api(

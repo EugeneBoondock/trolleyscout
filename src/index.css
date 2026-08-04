@@ -6913,6 +6913,11 @@ main {
   justify-self: start;
 }
 
+.plan-card .plan-cancel-button {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .subscription-panel,
 .profile-panel {
   display: grid;

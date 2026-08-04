@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  cancelPendingPlanChange: vi.fn(),
   getMemberSession: vi.fn(),
   getSubscriptionPlans: vi.fn(),
   isBillingReady: vi.fn(),
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../_shared/memberStore', () => ({
+  cancelPendingPlanChange: mocks.cancelPendingPlanChange,
   getMemberSession: mocks.getMemberSession,
   getSubscriptionPlans: mocks.getSubscriptionPlans,
   isBillingReady: mocks.isBillingReady,
@@ -42,6 +44,9 @@ describe('/api/subscription', () => {
       redirectFields: { signature: 'signed' },
       redirectUrl: 'https://www.payfast.co.za/eng/process',
       status: 'checkout_required',
+    })
+    mocks.cancelPendingPlanChange.mockResolvedValue({
+      account: { id: 'account-1', planId: 'scout' },
     })
   })
 
@@ -110,5 +115,19 @@ describe('/api/subscription', () => {
       },
     })
     expect(mocks.startSubscriptionCheckout).not.toHaveBeenCalled()
+  })
+
+  it('returns the account after a reversible scheduled change is removed', async () => {
+    const response = await onRequest({
+      env: { DB: {} },
+      request: new Request('https://trolleyscout.co.za/api/subscription', {
+        method: 'DELETE',
+      }),
+    } as never)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: { account: { id: 'account-1', planId: 'scout' } },
+    })
   })
 })

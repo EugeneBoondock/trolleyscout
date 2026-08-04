@@ -41,6 +41,7 @@ interface DuePlanChangeRow {
   pending_effective_at: string
   pending_plan_id: string
   provider_token: string | null
+  status: string
 }
 
 export async function applyDuePlanChanges(
@@ -52,11 +53,11 @@ export async function applyDuePlanChanges(
   const due = await db
     .prepare(
       `SELECT s.account_id, s.pending_plan_id, s.pending_billing_cycle,
-              s.pending_effective_at, s.provider_token, a.country_code
+              s.pending_effective_at, s.provider_token, s.status, a.country_code
         FROM billing_subscriptions s
         LEFT JOIN member_accounts a ON a.id = s.account_id
         WHERE s.provider = 'payfast'
-          AND s.status = 'active'
+          AND s.status IN ('active', 'cancelled')
           AND s.pending_plan_id IS NOT NULL
           AND s.pending_effective_at IS NOT NULL
           AND s.pending_effective_at <= ?`,
@@ -96,7 +97,9 @@ async function applyOne(
   }
 
   if (planId === 'free') {
-    const cancelled = await dependencies.cancel(token)
+    const cancelled = row.status === 'cancelled'
+      ? { cancelled: true }
+      : await dependencies.cancel(token)
 
     // Leaving the change queued is deliberate: if PayFast is still billing this
     // token, dropping the member to Free would take away access they are being
