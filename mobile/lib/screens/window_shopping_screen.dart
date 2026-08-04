@@ -14,6 +14,7 @@ import '../ux.dart';
 import '../widgets/scout_mascot.dart';
 import '../widgets/share_card.dart';
 import '../widgets/in_app_browser.dart';
+import '../widgets/embedded_youtube_player.dart';
 import '../widgets/window_ends_pill.dart';
 import '../widgets/window_next_stop_card.dart';
 import '../widgets/window_reel_skeleton.dart';
@@ -1481,14 +1482,9 @@ class _WindowCardState extends State<_WindowCard> {
                   label: 'YouTube',
                   semanticsLabel: 'Watch YouTube video review for ${deal.title}',
                   onTap: () {
-                    HapticFeedback.selectionClick();
-                    final query = Uri.encodeComponent('${deal.title} review');
-                    final youtubeUrl =
-                        'https://www.youtube.com/results?search_query=$query';
-                    showInAppBrowser(
+                    showEmbeddedYouTubeVideoModal(
                       context,
-                      youtubeUrl,
-                      title: '${deal.title} - YouTube Review',
+                      productTitle: deal.title,
                     );
                   },
                 ),
