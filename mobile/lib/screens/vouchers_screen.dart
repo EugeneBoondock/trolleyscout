@@ -560,8 +560,9 @@ class _ShareCodeSheetState extends State<_ShareCodeSheet> {
       );
 }
 
-class _VoucherCard extends StatelessWidget {
+class _VoucherCard extends StatefulWidget {
   const _VoucherCard({
+    super.key,
     required this.voucher,
     required this.onToggleClaim,
     this.onRecordView,
@@ -573,7 +574,49 @@ class _VoucherCard extends StatelessWidget {
   final Future<void> Function()? onRecordView;
 
   @override
+  State<_VoucherCard> createState() => _VoucherCardState();
+}
+
+class _VoucherCardState extends State<_VoucherCard> {
+  int _upvotes = 8;
+  int _downvotes = 0;
+  String? _userVote;
+
+  void _vote(bool up) {
+    uxTap();
+    setState(() {
+      if (up) {
+        if (_userVote == 'up') {
+          _userVote = null;
+          _upvotes -= 1;
+        } else {
+          if (_userVote == 'down') _downvotes -= 1;
+          _userVote = 'up';
+          _upvotes += 1;
+        }
+      } else {
+        if (_userVote == 'down') {
+          _userVote = null;
+          _downvotes -= 1;
+        } else {
+          if (_userVote == 'up') _upvotes -= 1;
+          _userVote = 'down';
+          _downvotes += 1;
+        }
+      }
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(
+          up ? 'Voted up! Marked as working.' : 'Voted down. Marked as expired.',
+        ),
+      ));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final voucher = widget.voucher;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -647,15 +690,36 @@ class _VoucherCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
-          Text(
-            [
-              if (voucher.validTo != null)
-                'Valid until ${voucher.validTo!.substring(0, 10)}'
-              else
-                'Recently verified',
-              if (voucher.accountRequired) 'Retailer account required',
-            ].join(' · '),
-            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  [
+                    if (voucher.validTo != null)
+                      'Valid until ${voucher.validTo!.substring(0, 10)}'
+                    else
+                      'Recently verified',
+                    if (voucher.accountRequired) 'Retailer account required',
+                  ].join(' · '),
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                ),
+              ),
+              _VoteChip(
+                key: Key('voucher-upvote-${voucher.id}'),
+                icon: Icons.thumb_up_alt_outlined,
+                count: _upvotes,
+                selected: _userVote == 'up',
+                onPressed: () => _vote(true),
+              ),
+              const SizedBox(width: 6),
+              _VoteChip(
+                key: Key('voucher-downvote-${voucher.id}'),
+                icon: Icons.thumb_down_alt_outlined,
+                count: _downvotes,
+                selected: _userVote == 'down',
+                onPressed: () => _vote(false),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -664,13 +728,13 @@ class _VoucherCard extends StatelessWidget {
             children: [
               if (voucher.claimed)
                 OutlinedButton.icon(
-                  onPressed: onToggleClaim,
+                  onPressed: widget.onToggleClaim,
                   icon: const Icon(Icons.bookmark_remove_outlined),
                   label: const Text('Remove saved'),
                 )
               else
                 FilledButton.icon(
-                  onPressed: onToggleClaim,
+                  onPressed: widget.onToggleClaim,
                   icon: const Icon(Icons.bookmark_add_outlined),
                   label: const Text('Save voucher'),
                 ),
@@ -678,7 +742,7 @@ class _VoucherCard extends StatelessWidget {
                 onPressed: () {
                   // Counted for the admin console, never allowed to delay the
                   // shopper getting to the retailer.
-                  unawaited(onRecordView?.call() ?? Future<void>.value());
+                  unawaited(widget.onRecordView?.call() ?? Future<void>.value());
                   showInAppBrowser(
                     context,
                     voucher.redemptionUrl,

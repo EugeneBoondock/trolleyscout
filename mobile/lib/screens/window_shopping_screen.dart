@@ -1474,6 +1474,24 @@ class _WindowCardState extends State<_WindowCard> {
                   semanticsLabel: 'Share this deal',
                   onTap: widget.onShare,
                 ),
+                const SizedBox(height: 18),
+                _RailButton(
+                  icon: Icons.play_circle_fill,
+                  color: const Color(0xFFFF0000),
+                  label: 'YouTube',
+                  semanticsLabel: 'Watch YouTube video review for ${deal.title}',
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    final query = Uri.encodeComponent('${deal.title} review');
+                    final youtubeUrl =
+                        'https://www.youtube.com/results?search_query=$query';
+                    showInAppBrowser(
+                      context,
+                      youtubeUrl,
+                      title: '${deal.title} - YouTube Review',
+                    );
+                  },
+                ),
               ],
             ),
           ),
