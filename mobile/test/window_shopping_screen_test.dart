@@ -277,6 +277,8 @@ void main() {
       (tester) async {
     final api = _WindowApi(initialDeals: const [_galleryDeal]);
     final platformCalls = <MethodCall>[];
+    await tester.binding.setSurfaceSize(const Size(800, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
       platformCalls.add(call);
