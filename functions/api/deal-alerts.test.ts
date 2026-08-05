@@ -82,6 +82,8 @@ describe('/api/deal-alerts', () => {
       expiringSavedDealCount: 0,
       expiringSavedDeals: [],
       latestCursor: 14,
+      priceDropCount: 0,
+      priceDrops: [],
       totalNewDealCount: 0,
     })
     expect(response.headers.get('cache-control')).toBe('private, no-store')

@@ -16,6 +16,7 @@ typedef DealAlertNotify = FutureOr<bool> Function(
   bool personalized,
 );
 typedef ExpiringDealNotify = FutureOr<bool> Function(int count, String? title);
+typedef PriceDropNotify = FutureOr<bool> Function(int count, String? title);
 
 class DealAlertPoller {
   DealAlertPoller({
@@ -26,6 +27,7 @@ class DealAlertPoller {
     TasteStore? tasteStore,
     DealAlertNotify? notify,
     ExpiringDealNotify? notifyExpiring,
+    PriceDropNotify? notifyPriceDrop,
   })  : _api = api ?? Api(),
         _preferences = preferences ?? NotificationPrefsStore(),
         _scheduler = scheduler ?? DealAlertScheduler(),
@@ -38,7 +40,10 @@ class DealAlertPoller {
                 )),
         _notifyExpiring = notifyExpiring ??
             ((count, title) => DealNotifications.instance
-                .showExpiringSavedDeals(count, firstTitle: title));
+                .showExpiringSavedDeals(count, firstTitle: title)),
+        _notifyPriceDrop = notifyPriceDrop ??
+            ((count, title) => DealNotifications.instance
+                .showSavedDealPriceDrops(count, firstTitle: title));
 
   final Api _api;
   final NotificationPrefsStore _preferences;
@@ -47,6 +52,7 @@ class DealAlertPoller {
   final TasteStore _tasteStore;
   final DealAlertNotify _notify;
   final ExpiringDealNotify _notifyExpiring;
+  final PriceDropNotify _notifyPriceDrop;
 
   Future<bool> run() async {
     await _preferences.reload();
@@ -94,6 +100,17 @@ class DealAlertPoller {
         );
         if (warned) {
           await _preferences.saveLastExpiryWarningAt(DateTime.now());
+        }
+      }
+      // Good news travels on the same daily cap as bad: a saved deal that got
+      // cheaper stays cheaper across polls, and one nudge a day is plenty.
+      if (summary.priceDropCount > 0 && await _priceDropAlertIsDue()) {
+        final told = await _notifyPriceDrop(
+          summary.priceDropCount,
+          summary.priceDropTitle,
+        );
+        if (told) {
+          await _preferences.saveLastPriceDropAlertAt(DateTime.now());
         }
       }
       await _preferences.saveDealAlertCursor(summary.latestCursor);
@@ -198,6 +215,12 @@ class DealAlertPoller {
 
   Future<bool> _expiryWarningIsDue() async {
     final last = await _preferences.loadLastExpiryWarningAt();
+    if (last == null) return true;
+    return DateTime.now().difference(last) >= const Duration(hours: 20);
+  }
+
+  Future<bool> _priceDropAlertIsDue() async {
+    final last = await _preferences.loadLastPriceDropAlertAt();
     if (last == null) return true;
     return DateTime.now().difference(last) >= const Duration(hours: 20);
   }

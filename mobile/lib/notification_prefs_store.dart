@@ -11,6 +11,7 @@ class NotificationPrefsStore {
   static const _lastAlertKey = 'notify_last_alert_iso';
   static const _dealAlertCursorKey = 'notify_deal_alert_cursor';
   static const _lastExpiryWarningKey = 'notify_last_expiry_warning_iso';
+  static const _lastPriceDropAlertKey = 'notify_last_price_drop_iso';
   static const _seenDealIdsKey = 'notify_seen_deal_ids_v1';
   // Keep this equal to functions/api/discovery.ts NORMALIZED_SAFETY_CAP. A
   // smaller baseline makes older deals beyond the cut look new after a batch.
@@ -149,6 +150,30 @@ class NotificationPrefsStore {
     }
   }
 
+  /// When the shopper last heard a saved deal got cheaper. A drop persists
+  /// across polls the same way an expiry does, so it gets the same daily cap.
+  Future<DateTime?> loadLastPriceDropAlertAt() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final raw = preferences.getString(_lastPriceDropAlertKey);
+      return raw == null ? null : DateTime.tryParse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLastPriceDropAlertAt(DateTime value) async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        _lastPriceDropAlertKey,
+        value.toUtc().toIso8601String(),
+      );
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
   Future<void> clear() async {
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -156,6 +181,7 @@ class NotificationPrefsStore {
       await preferences.remove(_lastAlertKey);
       await preferences.remove(_dealAlertCursorKey);
       await preferences.remove(_lastExpiryWarningKey);
+      await preferences.remove(_lastPriceDropAlertKey);
       await preferences.remove(_seenDealIdsKey);
     } catch (_) {
       // The next session sync retries the cleanup.

@@ -344,6 +344,33 @@ void main() {
     expect(warnings, hasLength(1));
   });
 
+  test('a saved deal that got cheaper tells the shopper once a day', () async {
+    final preferences = NotificationPrefsStore();
+    await preferences.saveOptIn(true);
+    await preferences.saveDealAlertCursor(3);
+    final drops = <String>[];
+
+    DealAlertPoller poller() => DealAlertPoller(
+          api: _AlertApi(
+            latestCursor: 4,
+            newDealCount: 0,
+            priceDropCount: 1,
+            priceDropTitle: 'Sunflower oil 2L',
+          ),
+          preferences: preferences,
+          notify: (_, __) => true,
+          notifyPriceDrop: (count, title) {
+            drops.add('$count:$title');
+            return true;
+          },
+        );
+
+    await poller().run();
+    await poller().run();
+
+    expect(drops, ['1:Sunflower oil 2L']);
+  });
+
   test('no closing warning is sent when nothing a shopper saved is ending',
       () async {
     final preferences = NotificationPrefsStore();
@@ -373,6 +400,8 @@ class _AlertApi extends Api {
     this.failure,
     this.expiringCount = 0,
     this.expiringTitle,
+    this.priceDropCount = 0,
+    this.priceDropTitle,
     this.discoveryDeals = const [_shoeDeal, _coffeeDeal],
     this.discoveryFailure = false,
     this.memberCountryCode = 'ZA',
@@ -383,6 +412,8 @@ class _AlertApi extends Api {
   final int newDealCount;
   final int expiringCount;
   final String? expiringTitle;
+  final int priceDropCount;
+  final String? priceDropTitle;
   final List<Deal> discoveryDeals;
   final bool discoveryFailure;
   final String memberCountryCode;
@@ -410,6 +441,8 @@ class _AlertApi extends Api {
     return DealAlertSummary(
       expiringSavedDealCount: expiringCount,
       expiringSavedDealTitle: expiringTitle,
+      priceDropCount: priceDropCount,
+      priceDropTitle: priceDropTitle,
       enabled: true,
       latestCursor: latestCursor,
       countCapped: countCapped,

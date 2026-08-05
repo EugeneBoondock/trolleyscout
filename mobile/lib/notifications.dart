@@ -167,4 +167,50 @@ class DealNotifications {
       return false;
     }
   }
+
+  /// A price the shopper already wanted just got better — the one alert that
+  /// is pure good news.
+  Future<bool> showSavedDealPriceDrops(int count, {String? firstTitle}) async {
+    if (count <= 0) return true;
+    if (!await _ensureInit()) return false;
+
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'saved_deal_price_drops',
+        'Saved deal price drops',
+        channelDescription:
+            'Tells you when a deal you saved gets even cheaper.',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('deal_alert'),
+      ),
+      iOS: DarwinNotificationDetails(
+        sound: 'deal_alert.wav',
+        presentSound: true,
+      ),
+    );
+
+    try {
+      final named = firstTitle != null && firstTitle.trim().isNotEmpty
+          ? firstTitle.trim()
+          : null;
+      final body = count == 1
+          ? (named != null
+              ? '$named just dropped below the price you saved it at.'
+              : 'A deal you saved just dropped in price.')
+          : '$count deals you saved just dropped in price.';
+      await _plugin.show(
+        1003,
+        count == 1 ? 'Price drop on a saved deal' : 'Price drops on saved deals',
+        body,
+        details,
+        payload: 'trolleyscout://saved',
+      );
+      return true;
+    } catch (error) {
+      debugPrint('Show notification failed: $error');
+      return false;
+    }
+  }
 }

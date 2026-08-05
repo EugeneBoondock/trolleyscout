@@ -1,6 +1,7 @@
 import { readDealAlertSummary } from '../_shared/dealAlertStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberSession, listExpiringSavedDeals } from '../_shared/memberStore'
+import { listSavedDealPriceDrops } from '../_shared/savedDealPriceDrops'
 import { getNotificationPreferences } from '../_shared/notificationStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 
@@ -13,6 +14,7 @@ const emptyState = {
   enabled: false,
   expiringSavedDealCount: 0,
   latestCursor: 0,
+  priceDropCount: 0,
   totalNewDealCount: 0,
 }
 
@@ -52,6 +54,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     // shopper hears their saved offer is closing without the app paying for a
     // second request while it is asleep.
     const expiring = await listExpiringSavedDeals(env, account.id).catch(() => [])
+    const priceDrops = await listSavedDealPriceDrops(env, account.id).catch(() => [])
     return json(
       {
         ...summary,
@@ -62,6 +65,13 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
           retailerName: deal.retailerName,
           title: deal.title,
           validTo: deal.validTo,
+        })),
+        priceDropCount: priceDrops.length,
+        priceDrops: priceDrops.slice(0, 5).map((drop) => ({
+          currentPriceCents: drop.currentPriceCents,
+          id: drop.id,
+          savedPriceCents: drop.savedPriceCents,
+          title: drop.title,
         })),
       },
       { headers: privateHeaders },

@@ -3069,12 +3069,20 @@ class DealAlertSummary {
     this.countCapped = false,
     this.expiringSavedDealCount = 0,
     this.expiringSavedDealTitle,
+    this.priceDropCount = 0,
+    this.priceDropTitle,
   });
 
   final bool enabled;
   final int latestCursor;
   final int totalNewDealCount;
   final bool countCapped;
+
+  /// Saved deals whose live price fell meaningfully below the saved price.
+  final int priceDropCount;
+
+  /// The biggest of those drops, named so a single alert can be specific.
+  final String? priceDropTitle;
 
   /// Saved offers closing within the next few days, so the shopper can be
   /// told before the price they saved disappears.
@@ -3087,6 +3095,8 @@ class DealAlertSummary {
     final expiring = json['expiringSavedDeals'];
     final first =
         expiring is List && expiring.isNotEmpty ? expiring.first : null;
+    final drops = json['priceDrops'];
+    final firstDrop = drops is List && drops.isNotEmpty ? drops.first : null;
 
     return DealAlertSummary(
       enabled: json['enabled'] == true,
@@ -3096,6 +3106,9 @@ class DealAlertSummary {
       expiringSavedDealCount: _int(json['expiringSavedDealCount']),
       expiringSavedDealTitle:
           first is Map<String, dynamic> ? _string(first['title']) : null,
+      priceDropCount: _int(json['priceDropCount']),
+      priceDropTitle:
+          firstDrop is Map<String, dynamic> ? _string(firstDrop['title']) : null,
     );
   }
 }
