@@ -121,9 +121,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted || result == StoreVisitEnableResult.enabled) return;
     showNotice(
       context,
-      result == StoreVisitEnableResult.locationOff
-          ? 'Turn on device location, then try again.'
-          : 'Allow location access to use In-store Scout.',
+      switch (result) {
+        StoreVisitEnableResult.locationOff =>
+          'Turn on device location, then try again.',
+        StoreVisitEnableResult.preciseDenied =>
+          'In-store Scout needs PRECISE location to know you are actually '
+              'inside a store. Allow precise location in settings, or it '
+              'stays off.',
+        _ => 'Allow location access to use In-store Scout.',
+      },
     );
   }
 

@@ -516,15 +516,11 @@ class _CatalogueReaderState extends State<CatalogueReader> {
                       pages[index],
                     ),
                     page: pages[index],
-                    pageImage: _CatalogueNetworkImage(
-                      urls: withProxiedFallbacks(pages[index].imageUrls),
-                      fit: BoxFit.fill,
-                      fallbackIconSize: 52,
-                      allFailed: _CataloguePageFallback(
-                        sourceUrl: sourceUrl,
-                        sourceLabel: sourceLabel,
-                        openExternal: widget.openExternal,
-                      ),
+                    imageUrls: withProxiedFallbacks(pages[index].imageUrls),
+                    allFailed: _CataloguePageFallback(
+                      sourceUrl: sourceUrl,
+                      sourceLabel: sourceLabel,
+                      openExternal: widget.openExternal,
                     ),
                   ),
                 ),
@@ -534,27 +530,45 @@ class _CatalogueReaderState extends State<CatalogueReader> {
         ),
       );
 
-  List<Deal> _dealsForPage(CataloguePage page) => widget.deals.where((deal) {
-        final crop = deal.imageCrop;
-        if (crop == null ||
-            !crop.isValid ||
-            deal.pageNumber != page.pageNumber) {
-          return false;
-        }
-        final catalogueRetailer = _catalogue.retailerId?.trim();
-        if (catalogueRetailer != null &&
-            catalogueRetailer.isNotEmpty &&
-            deal.retailerId != catalogueRetailer) {
-          return false;
-        }
-        final pageMatch = deal.imageUrl != null &&
-            _imageIdentity(deal.imageUrl!) == _imageIdentity(page.imageUrl);
-        final catalogueUrl = _catalogue.sourceUrl ?? _catalogue.url;
-        final sourceMatch = [deal.sourceUrl, deal.productUrl]
-            .whereType<String>()
-            .any((url) => _urlIdentity(url) == _urlIdentity(catalogueUrl));
-        return pageMatch || sourceMatch;
-      }).toList(growable: false);
+  /// Mirrors the web viewer's matcher: a deal belongs on this page when it
+  /// carries a valid crop for this page number of this retailer, and either
+  /// its image is one of the page's own images (fallbacks included) or any of
+  /// its links points back at this catalogue.
+  List<Deal> _dealsForPage(CataloguePage page) {
+    final pageIdentities = {
+      _imageIdentity(page.imageUrl),
+      for (final fallback in page.fallbacks) _imageIdentity(fallback),
+    }..removeWhere((identity) => identity.isEmpty);
+    final catalogueIdentities = {
+      if (_catalogue.url.isNotEmpty) _urlIdentity(_catalogue.url),
+      if (_catalogue.sourceUrl != null) _urlIdentity(_catalogue.sourceUrl!),
+    }..removeWhere((identity) => identity.isEmpty);
+
+    return widget.deals.where((deal) {
+      final crop = deal.imageCrop;
+      if (crop == null ||
+          !crop.isValid ||
+          deal.pageNumber != page.pageNumber) {
+        return false;
+      }
+      final catalogueRetailer = _catalogue.retailerId?.trim();
+      if (catalogueRetailer != null &&
+          catalogueRetailer.isNotEmpty &&
+          deal.retailerId != catalogueRetailer) {
+        return false;
+      }
+      final pageMatch = deal.imageUrl != null &&
+          pageIdentities.contains(_imageIdentity(deal.imageUrl!));
+      final sourceMatch = [
+        deal.sourceUrl,
+        deal.productUrl,
+        deal.catalogueDeepLink,
+      ]
+          .whereType<String>()
+          .any((url) => catalogueIdentities.contains(_urlIdentity(url)));
+      return pageMatch || sourceMatch;
+    }).toList(growable: false);
+  }
 
   Future<void> _showCatalogueProduct(Deal deal, CataloguePage page) async {
     await showModalBottomSheet<void>(
@@ -577,98 +591,134 @@ class _CatalogueReaderState extends State<CatalogueReader> {
   }
 }
 
-class _CataloguePageLayer extends StatelessWidget {
+/// A catalogue page with its tappable products. The page image and its
+/// hotspots share one coordinate space — a box with the page's true aspect
+/// ratio — so a hotspot always sits exactly on its product, whatever the
+/// screen size. Hotspots draw NOTHING: the page stays a clean photograph and
+/// the products themselves are the buttons.
+class _CataloguePageLayer extends StatefulWidget {
   const _CataloguePageLayer({
     required this.deals,
     required this.onDealTap,
     required this.page,
-    required this.pageImage,
+    required this.imageUrls,
+    this.allFailed,
   });
 
   final List<Deal> deals;
   final ValueChanged<Deal> onDealTap;
   final CataloguePage page;
-  final Widget pageImage;
+  final List<String> imageUrls;
+  final Widget? allFailed;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final availableWidth = constraints.maxWidth;
-          final availableHeight = constraints.maxHeight;
-          final sourceWidth =
-              (page.width ?? 0) > 0 ? page.width!.toDouble() : availableWidth;
-          final sourceHeight = (page.height ?? 0) > 0
-              ? page.height!.toDouble()
-              : availableHeight;
-          final scale = (availableWidth / sourceWidth)
-              .clamp(0, availableHeight / sourceHeight)
-              .toDouble();
-          final renderedWidth = sourceWidth * scale;
-          final renderedHeight = sourceHeight * scale;
-          final left = (availableWidth - renderedWidth) / 2;
-          final top = (availableHeight - renderedHeight) / 2;
+  State<_CataloguePageLayer> createState() => _CataloguePageLayerState();
+}
 
-          return Stack(
-            clipBehavior: Clip.none,
+class _CataloguePageLayerState extends State<_CataloguePageLayer> {
+  Size? _measuredSize;
+  ImageStream? _sizeStream;
+  ImageStreamListener? _sizeListener;
+
+  bool get _hasPageDimensions =>
+      (widget.page.width ?? 0) > 0 && (widget.page.height ?? 0) > 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _measureImageIfNeeded();
+  }
+
+  /// Many sources publish pages without width/height. The rendered bitmap
+  /// knows its own size, so hotspots wait for that instead of guessing.
+  void _measureImageIfNeeded() {
+    if (_hasPageDimensions ||
+        widget.deals.isEmpty ||
+        widget.imageUrls.isEmpty) {
+      return;
+    }
+    final stream = NetworkImage(widget.imageUrls.first)
+        .resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener(
+      (info, _) {
+        if (!mounted) return;
+        setState(() => _measuredSize = Size(
+              info.image.width.toDouble(),
+              info.image.height.toDouble(),
+            ));
+      },
+      onError: (_, __) {
+        // Without a measurable image there is nothing to align hotspots to;
+        // the page still renders through its own fallback chain.
+      },
+    );
+    stream.addListener(listener);
+    _sizeStream = stream;
+    _sizeListener = listener;
+  }
+
+  @override
+  void dispose() {
+    if (_sizeListener != null) _sizeStream?.removeListener(_sizeListener!);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sourceSize = _hasPageDimensions
+        ? Size(widget.page.width!.toDouble(), widget.page.height!.toDouble())
+        : _measuredSize;
+
+    final pageImage = _CatalogueNetworkImage(
+      urls: widget.imageUrls,
+      // Inside a box shaped exactly like the page, fill IS contain — and the
+      // hotspots below share the identical geometry by construction.
+      fit: sourceSize == null ? BoxFit.contain : BoxFit.fill,
+      fallbackIconSize: 52,
+      allFailed: widget.allFailed,
+    );
+
+    if (sourceSize == null || widget.deals.isEmpty) {
+      return Center(child: pageImage);
+    }
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: sourceSize.width / sourceSize.height,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            fit: StackFit.expand,
             children: [
-              Positioned(
-                left: left,
-                top: top,
-                width: renderedWidth,
-                height: renderedHeight,
-                child: pageImage,
-              ),
-              for (final deal in deals)
+              pageImage,
+              for (final deal in widget.deals)
                 Positioned(
-                  left: left + deal.imageCrop!.x * renderedWidth,
-                  top: top + deal.imageCrop!.y * renderedHeight,
-                  width: deal.imageCrop!.width * renderedWidth,
-                  height: deal.imageCrop!.height * renderedHeight,
+                  left: deal.imageCrop!.x * constraints.maxWidth,
+                  top: deal.imageCrop!.y * constraints.maxHeight,
+                  width: deal.imageCrop!.width * constraints.maxWidth,
+                  height: deal.imageCrop!.height * constraints.maxHeight,
                   child: Semantics(
                     button: true,
-                    label: 'View ${deal.title} from page ${page.pageNumber}',
+                    label:
+                        'View ${deal.title} from page ${widget.page.pageNumber}',
                     child: Tooltip(
                       message: deal.priceText == null
                           ? deal.title
                           : '${deal.title}, ${deal.priceText}',
-                      child: Material(
-                        color: TS.redOf(context).withValues(alpha: 0.12),
-                        shape: RoundedRectangleBorder(
-                          side: BorderSide(
-                            color: TS.redOf(context),
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: InkWell(
-                          onTap: () => onDealTap(deal),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Align(
-                            alignment: Alignment.topRight,
-                            child: Container(
-                              margin: const EdgeInsets.all(3),
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: TS.redOf(context),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.add,
-                                color: Colors.white,
-                                size: 19,
-                              ),
-                            ),
-                          ),
-                        ),
+                      child: GestureDetector(
+                        key: ValueKey('catalogue-hotspot-${deal.id}'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => widget.onDealTap(deal),
+                        child: const SizedBox.expand(),
                       ),
                     ),
                   ),
                 ),
             ],
-          );
-        },
-      );
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CatalogueProductSheet extends StatelessWidget {
@@ -991,14 +1041,29 @@ class _CatalogueCroppedImage extends StatelessWidget {
   }
 }
 
+/// One identity for the same image however it is reached: the catalogue-file
+/// relay is unwrapped to the original it proxies, then scheme, www and query
+/// noise are dropped.
 String _imageIdentity(String value) {
-  final uri = Uri.tryParse(value);
-  return uri?.replace(query: '', fragment: '').toString() ??
-      value.split('?').first;
+  var candidate = value.trim();
+  final uri = Uri.tryParse(candidate);
+  if (uri != null && uri.path.endsWith('/api/catalogue-file')) {
+    final wrapped = uri.queryParameters['src'] ?? uri.queryParameters['url'];
+    if (wrapped != null && wrapped.isNotEmpty) candidate = wrapped;
+  }
+  return _urlIdentity(candidate);
 }
 
-String _urlIdentity(String value) =>
-    value.trim().replaceFirst(RegExp(r'/$'), '');
+String _urlIdentity(String value) => value
+    .trim()
+    .replaceFirst(RegExp(r'^https?://'), '')
+    .replaceFirst(RegExp(r'^www\.'), '')
+    .split('?')
+    .first
+    .split('#')
+    .first
+    .replaceFirst(RegExp(r'/$'), '')
+    .toLowerCase();
 
 class _ReaderOverlayButton extends StatelessWidget {
   const _ReaderOverlayButton({

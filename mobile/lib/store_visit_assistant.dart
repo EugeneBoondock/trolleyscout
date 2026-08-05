@@ -8,7 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api.dart';
 import 'taste_profile.dart';
 
-enum StoreVisitEnableResult { enabled, locationOff, permissionDenied }
+enum StoreVisitEnableResult {
+  enabled,
+  locationOff,
+  permissionDenied,
+
+  /// Location granted, but only approximately. Approximate location cannot
+  /// tell a store from the street outside it, so the assistant stays off
+  /// rather than guessing.
+  preciseDenied,
+}
 
 enum StorePresenceEventType { entered, exited }
 
@@ -177,11 +186,22 @@ class StoreVisitPreferences extends ChangeNotifier {
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
+      await setEnabled(false);
       return StoreVisitEnableResult.permissionDenied;
+    }
+    // "While using" granted is not enough: Android lets the shopper choose
+    // approximate location, which is street-level at best. In-store detection
+    // without precise location produces exactly the false "you're at a store"
+    // pop-ups this gate exists to prevent.
+    final accuracy = await readDeviceLocationAccuracy();
+    if (accuracy == LocationAccuracyStatus.reduced) {
+      await setEnabled(false);
+      return StoreVisitEnableResult.preciseDenied;
     }
     await setEnabled(true);
     return StoreVisitEnableResult.enabled;
   }
+
 
   Future<void> setEnabled(bool value) async {
     await load();
@@ -293,24 +313,41 @@ class StorePresenceEvent {
 }
 
 typedef ShopperLocationReader = Future<ShopperLocation?> Function();
+typedef LocationAccuracyReader = Future<LocationAccuracyStatus> Function();
+
+Future<LocationAccuracyStatus> readDeviceLocationAccuracy() async {
+  try {
+    return await Geolocator.getLocationAccuracy();
+  } catch (_) {
+    // Platforms without the approximate/precise split (older Android, tests)
+    // grant precise by definition.
+    return LocationAccuracyStatus.precise;
+  }
+}
 
 class StoreVisitAssistant {
   StoreVisitAssistant({
     required this.api,
     StoreVisitPreferences? preferences,
     ShopperLocationReader? readLocation,
+    LocationAccuracyReader? readAccuracy,
     DateTime Function()? now,
   })  : preferences = preferences ?? StoreVisitPreferences.instance,
         _readLocation = readLocation ?? _defaultLocationReader,
+        _readAccuracy = readAccuracy ?? readDeviceLocationAccuracy,
         _now = now ?? DateTime.now;
 
-  static const inStoreDistanceM = 90.0;
-  static const maxLocationAccuracyM = 40.0;
+  // Inside the store means INSIDE: 45m covers a large supermarket floor
+  // without spilling into the parking lot, and a fix looser than 25m cannot
+  // support that claim, so it is ignored rather than trusted.
+  static const inStoreDistanceM = 45.0;
+  static const maxLocationAccuracyM = 25.0;
   static const requiredEntryConfirmations = 2;
 
   final Api api;
   final StoreVisitPreferences preferences;
   final ShopperLocationReader _readLocation;
+  final LocationAccuracyReader _readAccuracy;
   final DateTime Function() _now;
   bool _checking = false;
   String? _entryCandidateId;
@@ -322,6 +359,12 @@ class StoreVisitAssistant {
     try {
       await preferences.load();
       if (!preferences.enabled) return null;
+      // The shopper can downgrade to approximate location in settings at any
+      // time; the assistant turns itself off rather than start guessing.
+      if (await _readAccuracy() == LocationAccuracyStatus.reduced) {
+        await preferences.setEnabled(false);
+        return null;
+      }
       final location = await _readLocation();
       if (location == null) return null;
       if (!_isReliable(location, _now())) {

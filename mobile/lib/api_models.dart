@@ -650,6 +650,7 @@ class Deal {
     this.images = const [],
     this.imageCrop,
     this.pageNumber,
+    this.catalogueDeepLink,
     this.personalizationReason,
     this.soldOut = false,
   });
@@ -673,6 +674,10 @@ class Deal {
   final String? imageUrl;
   final List<String> images;
   final ImageCrop? imageCrop;
+
+  /// Deep link back to the catalogue this deal was read from — how a page
+  /// hotspot proves the deal belongs to the catalogue being viewed.
+  final String? catalogueDeepLink;
 
   List<String> get gallery {
     final seen = <String>{};
@@ -725,6 +730,7 @@ class Deal {
               )
             : null,
         pageNumber: _intOrNull(json['pageNumber']),
+        catalogueDeepLink: _optionalString(json['catalogueDeepLink']),
         personalizationReason: _optionalString(json['personalizationReason']),
         soldOut: json['soldOut'] == true,
       );
@@ -750,6 +756,7 @@ class Deal {
         if (images.isNotEmpty) 'images': images,
         if (imageCrop != null) 'imageCrop': imageCrop!.toJson(),
         'pageNumber': pageNumber,
+        if (catalogueDeepLink != null) 'catalogueDeepLink': catalogueDeepLink,
         'personalizationReason': personalizationReason,
         'soldOut': soldOut,
       };
