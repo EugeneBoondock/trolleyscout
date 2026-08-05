@@ -78,7 +78,10 @@ class _YouTubeModalContentState extends State<_YouTubeModalContent> {
           '?autoplay=1&playsinline=1&rel=0');
       return;
     }
-    _showEmbed(_searchFallbackEmbedUrl);
+    // Nothing loads until the right video is known: eagerly starting the
+    // search-playlist fallback flashed "Video unavailable" at every open,
+    // then jarringly swapped to the real review. The spinner holds the
+    // screen instead, and the fallback only appears if the lookup fails.
     _loadTopVideos();
   }
 
@@ -111,11 +114,18 @@ iframe{border:0;width:100%;height:100%}</style>
 
   Future<void> _loadTopVideos() async {
     final api = widget.api;
-    if (api == null) return;
+    if (api == null) {
+      _showEmbed(_searchFallbackEmbedUrl);
+      return;
+    }
     try {
       final videos =
           await api.productVideos('${widget.productTitle} review');
-      if (!mounted || videos.isEmpty) return;
+      if (!mounted) return;
+      if (videos.isEmpty) {
+        _showEmbed(_searchFallbackEmbedUrl);
+        return;
+      }
       setState(() {
         _videos = videos;
         _index = 0;
@@ -124,7 +134,7 @@ iframe{border:0;width:100%;height:100%}</style>
       _showEmbed('https://www.youtube.com/embed/${videos.first.videoId}'
           '?autoplay=1&playsinline=1&rel=0');
     } catch (_) {
-      // The search-playlist fallback is already playing; leave it be.
+      if (mounted) _showEmbed(_searchFallbackEmbedUrl);
     }
   }
 
