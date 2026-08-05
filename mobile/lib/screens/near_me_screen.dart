@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
 import '../catalogue_sort.dart';
+import '../multi_stop_route.dart';
 import '../nearby_history_store.dart';
+import '../store_crowd.dart';
 import '../saved_addresses_store.dart';
 import '../theme.dart';
 import '../ux.dart';
@@ -13,6 +15,7 @@ import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/sponsored_ad_card.dart';
 import '../widgets/store_map_view.dart';
+import '../widgets/trip_planner_sheet.dart';
 
 enum _LocationSettingsTarget { app, device }
 
@@ -481,6 +484,37 @@ class _NearMeScreenState extends State<NearMeScreen> {
     return query;
   }
 
+  /// The nearby store with the most live specials for the least travel — the
+  /// honest "cheapest overall trip" proxy until exact basket pricing is asked
+  /// for on the Compare page.
+  NearbyStore? _bestValueStore(List<NearbyStore> stores) {
+    NearbyStore? best;
+    var bestScore = 0.0;
+    for (final store in stores) {
+      final dealCount = store.deals.length + store.promotionCount;
+      if (dealCount == 0) continue;
+      final km = (store.distanceM ?? 2000).toDouble() / 1000;
+      final score = dealCount / (1 + km);
+      if (score > bestScore) {
+        bestScore = score;
+        best = store;
+      }
+    }
+    return best;
+  }
+
+  List<TripStop> _tripStops(List<NearbyStore> stores) => [
+        for (final store in stores)
+          if (store.lat != 0 || store.lon != 0)
+            TripStop(
+              id: store.placeId,
+              name: store.name,
+              lat: store.lat.toDouble(),
+              lon: store.lon.toDouble(),
+              address: store.address,
+            ),
+      ];
+
   @override
   Widget build(BuildContext context) {
     final visibleStores =
@@ -491,6 +525,26 @@ class _NearMeScreenState extends State<NearMeScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           sliver: SliverToBoxAdapter(child: _header(context)),
         ),
+        if (_bestValueStore(visibleStores) != null ||
+            _tripStops(visibleStores).length >= 2)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            sliver: SliverToBoxAdapter(
+              child: _ValueAndTripStrip(
+                bestValue: _bestValueStore(visibleStores),
+                canPlanTrip:
+                    _tripStops(visibleStores).length >= 2 && _currentLat != null,
+                onPlanTrip: () => showTripPlannerSheet(
+                  context,
+                  api: widget.api,
+                  startLat: _currentLat ?? 0,
+                  startLon: _currentLon ?? 0,
+                  stores: _tripStops(visibleStores),
+                  isAdmin: widget.isAdmin,
+                ),
+              ),
+            ),
+          ),
         // The store list is the section that can grow long (every nearby
         // supermarket for a signed-in shopper), so it alone builds lazily.
         SliverPadding(
@@ -907,6 +961,78 @@ class _HistoryChip extends StatelessWidget {
   }
 }
 
+/// The "which store first?" strip: names the best-value store nearby and
+/// offers the multi-stop trip planner when there is more than one worth
+/// visiting.
+class _ValueAndTripStrip extends StatelessWidget {
+  const _ValueAndTripStrip({
+    required this.bestValue,
+    required this.canPlanTrip,
+    required this.onPlanTrip,
+  });
+
+  final NearbyStore? bestValue;
+  final bool canPlanTrip;
+  final VoidCallback onPlanTrip;
+
+  @override
+  Widget build(BuildContext context) {
+    final best = bestValue;
+    return Container(
+      key: const Key('near-me-value-strip'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: TS.card(context, width: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (best != null) ...[
+            Text('BEST STORE RIGHT NOW', style: TS.eyebrowOf(context)),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                const Icon(Icons.emoji_events_outlined, size: 20),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    best.name,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '${best.deals.length + best.promotionCount} live specials'
+                '${best.distanceM == null ? '' : ' · ${best.distanceM! < 1000 ? '${best.distanceM!.round()} m' : '${(best.distanceM! / 1000).toStringAsFixed(1)} km'} away'}'
+                ' — the most savings for the least travel.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+              ),
+            ),
+          ],
+          if (canPlanTrip) ...[
+            if (best != null) const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const Key('near-me-plan-trip'),
+                onPressed: onPlanTrip,
+                icon: const Icon(Icons.route_rounded, size: 18),
+                label: const Text(
+                  'Plan a multi-stop trip',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 // One store, one compact card: name, distance, and a deal summary. The
 // deals themselves live on the store's own curated page, so the Near me
 // list stays scannable no matter how many specials a store has.
@@ -979,12 +1105,22 @@ class _StoreCard extends StatelessWidget {
                       style:
                           TextStyle(color: TS.faintOf(context), fontSize: 12)),
                 ),
-              if (store.distanceM != null)
-                Text(_distance(store.distanceM!),
-                    style: TextStyle(
-                        color: TS.mutedOf(context),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700)),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  children: [
+                    if (store.distanceM != null) ...[
+                      Text(_distance(store.distanceM!),
+                          style: TextStyle(
+                              color: TS.mutedOf(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 8),
+                    ],
+                    _CrowdChip(estimate: estimateCrowd(DateTime.now())),
+                  ],
+                ),
+              ),
               const SizedBox(height: 8),
               if (!store.hasSomething)
                 Text(
@@ -1026,6 +1162,48 @@ class _StoreCard extends StatelessWidget {
 
   String _distance(num m) =>
       m < 1000 ? '${m.round()} m' : '${(m / 1000).toStringAsFixed(1)} km';
+}
+
+/// Typical-busyness chip: colour and word, with the reasoning as a tooltip so
+/// the estimate never pretends to be a live headcount.
+class _CrowdChip extends StatelessWidget {
+  const _CrowdChip({required this.estimate});
+
+  final CrowdEstimate estimate;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (estimate.level) {
+      CrowdLevel.quiet => TS.greenOf(context),
+      CrowdLevel.moderate => TS.yellow,
+      CrowdLevel.busy => TS.redOf(context),
+    };
+    return Tooltip(
+      message: estimate.reason,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          border: Border.all(color: color, width: 1.5),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.groups_outlined, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(
+              estimate.label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // The curated per-store page: every deal and catalogue this store
