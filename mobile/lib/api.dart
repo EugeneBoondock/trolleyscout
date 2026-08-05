@@ -56,6 +56,38 @@ class AdDraft {
       };
 }
 
+/// A per-member fitting-room override an admin has set.
+class VtonOverride {
+  const VtonOverride({required this.accountId, required this.enabled});
+
+  factory VtonOverride.fromJson(Map<String, dynamic> json) => VtonOverride(
+        accountId: json['accountId']?.toString() ?? '',
+        enabled: json['enabled'] == true,
+      );
+
+  final String accountId;
+  final bool enabled;
+}
+
+/// The fitting-room kill switches, as /api/admin/vton-flags reports them.
+class VtonFlags {
+  const VtonFlags({required this.globalEnabled, required this.overrides});
+
+  factory VtonFlags.fromJson(Map<String, dynamic> json) => VtonFlags(
+        globalEnabled: json['globalEnabled'] != false,
+        overrides: json['overrides'] is List
+            ? (json['overrides'] as List)
+                .whereType<Map>()
+                .map((item) =>
+                    VtonOverride.fromJson(Map<String, dynamic>.from(item)))
+                .toList()
+            : const [],
+      );
+
+  final bool globalEnabled;
+  final List<VtonOverride> overrides;
+}
+
 /// What one on-demand scout run actually did, so the admin console can report
 /// real numbers instead of a generic "done". Mirrors /api/admin/scout-run,
 /// which runs a bounded slice of each lane and resumes from its stored cursors
@@ -768,6 +800,45 @@ class Api {
       if (visibleDeals != null) 'visibleDeals': visibleDeals,
     });
   }
+
+  /// Renders the shopper wearing the garment at [garmentImageUrl] and returns
+  /// the result as a data URI. The photo bytes travel as base64 in this one
+  /// request only — the server never stores them, and neither does this class.
+  Future<String> virtualTryOn({
+    required List<int> personImageBytes,
+    required String garmentImageUrl,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/api/virtual-try-on',
+      body: {
+        'garmentImageUrl': garmentImageUrl,
+        'personImage': base64Encode(personImageBytes),
+      },
+      // Image generation legitimately takes longer than a data read.
+      timeout: slowRequestTimeout,
+    );
+    final image = data['image'];
+    if (image is! String || image.isEmpty) {
+      throw const ApiException(
+          'The fitting room returned no image. Try again.');
+    }
+    return image;
+  }
+
+  Future<VtonFlags> adminVtonFlags() async =>
+      VtonFlags.fromJson(await _request('GET', '/api/admin/vton-flags'));
+
+  /// Without [accountId] this flips the global fitting-room switch; with one
+  /// it sets a per-member override that outranks the global flag.
+  Future<VtonFlags> setVtonFlag({
+    required bool enabled,
+    String? accountId,
+  }) async =>
+      VtonFlags.fromJson(await _request('PATCH', '/api/admin/vton-flags', body: {
+        'enabled': enabled,
+        if (accountId != null && accountId.isNotEmpty) 'accountId': accountId,
+      }));
 
   /// Counts a surface a shopper opened. Never allowed to fail their action, so
   /// a rejection is swallowed.

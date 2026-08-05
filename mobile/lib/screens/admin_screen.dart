@@ -334,6 +334,8 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        FittingRoomAdminSection(api: widget.api),
+        const SizedBox(height: 16),
         Wrap(
           spacing: 8,
           children: [
@@ -1971,6 +1973,206 @@ class _SupportInboxSectionState extends State<SupportInboxSection> {
               ),
             ),
       ],
+    );
+  }
+}
+
+/// The fitting-room kill switches: one global toggle, plus per-member
+/// overrides that outrank it either way.
+class FittingRoomAdminSection extends StatefulWidget {
+  const FittingRoomAdminSection({super.key, required this.api});
+
+  final Api api;
+
+  @override
+  State<FittingRoomAdminSection> createState() =>
+      _FittingRoomAdminSectionState();
+}
+
+class _FittingRoomAdminSectionState extends State<FittingRoomAdminSection> {
+  // Loaded on first expand rather than with the overview, so the console does
+  // not pay for a flags read the admin may never look at.
+  Future<VtonFlags>? _future;
+  bool _expanded = false;
+  final _accountController = TextEditingController();
+  bool _saving = false;
+
+  void _setExpanded(bool expanded) {
+    setState(() {
+      _expanded = expanded;
+      _future ??= expanded ? widget.api.adminVtonFlags() : null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _apply(Future<VtonFlags> Function() change) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final flags = await change();
+      if (mounted) setState(() => _future = Future.value(flags));
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } catch (_) {
+      if (mounted) {
+        showNotice(context, 'The fitting room setting could not be saved.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _setOverride(bool enabled) async {
+    final accountId = _accountController.text.trim();
+    if (accountId.isEmpty) {
+      showNotice(context, 'Enter the member account id first.');
+      return;
+    }
+    await _apply(
+        () => widget.api.setVtonFlag(enabled: enabled, accountId: accountId));
+    if (mounted) _accountController.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PaperCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            key: const Key('vton-section-toggle'),
+            onTap: () => _setExpanded(!_expanded),
+            child: Row(
+              children: [
+                Icon(Icons.checkroom_outlined, color: TS.redOf(context)),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Fitting room',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  color: TS.mutedOf(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'The virtual try-on kill switch. A per-member override outranks '
+            'the global switch either way.',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 8),
+            FutureBuilder<VtonFlags>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: LinearProgressIndicator(minHeight: 3),
+                );
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return Row(
+                  children: [
+                    const Expanded(
+                        child:
+                            Text('The fitting room flags are unavailable.')),
+                    TextButton(
+                      onPressed: () => setState(
+                          () => _future = widget.api.adminVtonFlags()),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                );
+              }
+              final flags = snapshot.data!;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    key: const Key('vton-global-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Open to members',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(
+                      flags.globalEnabled
+                          ? 'Scout members can use the fitting room.'
+                          : 'The fitting room is switched off for everyone '
+                              'without an override.',
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                    ),
+                    value: flags.globalEnabled,
+                    onChanged: _saving
+                        ? null
+                        : (enabled) => _apply(
+                            () => widget.api.setVtonFlag(enabled: enabled)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const Key('vton-override-account'),
+                    controller: _accountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Member account id',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _saving ? null : () => _setOverride(true),
+                          child: const Text('Allow member'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed:
+                              _saving ? null : () => _setOverride(false),
+                          child: const Text('Block member'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  for (final override in flags.overrides)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Icon(
+                        override.enabled
+                            ? Icons.check_circle_outline
+                            : Icons.block_outlined,
+                        color: override.enabled
+                            ? TS.greenOf(context)
+                            : TS.redOf(context),
+                        size: 20,
+                      ),
+                      title: Text(override.accountId,
+                          overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                          override.enabled ? 'Allowed' : 'Blocked',
+                          style: TextStyle(
+                              color: TS.mutedOf(context), fontSize: 12)),
+                    ),
+                ],
+              );
+            },
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

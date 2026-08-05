@@ -8,6 +8,7 @@ import 'in_app_browser.dart';
 enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
   deals('Marketplace', Icons.local_offer_outlined, false),
+  clothing('Clothing', Icons.checkroom_outlined, false),
   chat('Mr Scout', Icons.chat_bubble_outline, true),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
@@ -162,27 +163,18 @@ class AppMenuDrawer extends StatelessWidget {
                           child: Text(group.$1.toUpperCase(),
                               style: TS.eyebrowOf(context)),
                         ),
-                        for (final item in group.$2)
-                          ListTile(
-                            selected: destination == item,
-                            selectedTileColor: TS.yellow,
-                            selectedColor: TS.ink,
-                            iconColor: TS.mutedOf(context),
-                            textColor: TS.inkOf(context),
-                            shape: destination == item
-                                ? Border(
-                                    left: BorderSide(
-                                        color: TS.redOf(context), width: 5),
-                                  )
-                                : null,
-                            leading: Icon(item.icon),
-                            title: Text(item.label),
-                            trailing:
-                                item.requiresAuth && !session.isAuthenticated
-                                    ? const Icon(Icons.lock_outline, size: 16)
-                                    : null,
-                            onTap: () => onSelect(item),
-                          ),
+                        for (final item in group.$2) ...[
+                          _drawerTile(context, item),
+                          // Clothing lives inside the Marketplace: an indented
+                          // sub-entry directly under it, so the drawer reads
+                          // as a section with a child rather than two peers.
+                          if (item == AppDestination.deals)
+                            _drawerTile(
+                              context,
+                              AppDestination.clothing,
+                              nested: true,
+                            ),
+                        ],
                       ],
                     ],
                   ),
@@ -193,6 +185,34 @@ class AppMenuDrawer extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _drawerTile(
+    BuildContext context,
+    AppDestination item, {
+    bool nested = false,
+  }) {
+    return ListTile(
+      selected: destination == item,
+      selectedTileColor: TS.yellow,
+      selectedColor: TS.ink,
+      iconColor: TS.mutedOf(context),
+      textColor: TS.inkOf(context),
+      contentPadding: nested
+          ? const EdgeInsets.only(left: 36, right: 16)
+          : null,
+      shape: destination == item
+          ? Border(
+              left: BorderSide(color: TS.redOf(context), width: 5),
+            )
+          : null,
+      leading: Icon(item.icon, size: nested ? 20 : null),
+      title: Text(item.label),
+      trailing: item.requiresAuth && !session.isAuthenticated
+          ? const Icon(Icons.lock_outline, size: 16)
+          : null,
+      onTap: () => onSelect(item),
     );
   }
 }

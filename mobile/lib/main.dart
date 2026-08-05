@@ -19,6 +19,7 @@ import 'screens/auth_screen.dart';
 import 'screens/about_screen.dart';
 import 'screens/admin_screen.dart';
 import 'screens/basket_screen.dart';
+import 'screens/clothing_screen.dart';
 import 'screens/coverage_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/deals_screen.dart';
@@ -238,6 +239,7 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
   void _openAppLink(AppLinkRequest request) {
     final destination = switch (request.destination) {
       'deals' => AppDestination.deals,
+      'clothing' => AppDestination.clothing,
       'chat' => AppDestination.chat,
       'near' => AppDestination.near,
       'stores' => AppDestination.stores,
@@ -1056,6 +1058,10 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
           initialRetailerId: _dealsRetailerId,
           initialQuery: _dealsQuery,
           initialCatalogueId: _dealsCatalogueId,
+        ),
+      AppDestination.clothing => ClothingScreen(
+          api: api,
+          onUpgrade: () => _selectDestination(AppDestination.subscription),
         ),
       AppDestination.chat => ScoutChatScreen(
           api: api,

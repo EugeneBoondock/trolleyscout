@@ -96,6 +96,14 @@ void main() {
         sourceLabel: 'Weekly specials',
       ),
     );
+    // Warm the classifier first: a real category tap happens long after the
+    // app has classified its first titles, so JIT compilation of the keyword
+    // scan must not count against the responsiveness budget.
+    filterDeals(
+      largeFeed.take(200).toList(),
+      category: DealCategory.clothing,
+      classificationCache: DealClassificationCache(),
+    );
     final watch = Stopwatch()..start();
 
     final clothing = filterDeals(
