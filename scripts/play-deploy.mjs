@@ -78,13 +78,13 @@ async function run() {
         track: 'alpha',
         releases: [
           {
-            name: '1.24.4+79',
+            name: '1.24.5+80',
             versionCodes: [versionCode.toString()],
             status: 'completed',
             releaseNotes: [
               {
                 language: 'en-US',
-                text: 'Review videos now open straight to the right video with no error flash.',
+                text: 'Tap products directly on catalogue pages for details and prices. In-store detection now requires precise location and is far more accurate.',
               },
             ],
           },
