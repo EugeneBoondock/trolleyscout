@@ -664,6 +664,32 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
     }
   }
 
+  /// The store's checkout page, derived from any usable product link.
+  Uri? _checkoutUriForStore(List<ScoutGroceryPlanItem> groceryItems) {
+    for (final item in groceryItems) {
+      final uri = Uri.tryParse(item.productUrl.trim());
+      if (uri != null &&
+          (uri.scheme == 'https' || uri.scheme == 'http') &&
+          uri.host.isNotEmpty) {
+        return checkoutUriFor(uri);
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openCheckout(
+    String retailerName,
+    List<ScoutGroceryPlanItem> groceryItems,
+  ) async {
+    final checkout = _checkoutUriForStore(groceryItems);
+    if (checkout == null) return;
+    await showInAppBrowser(
+      context,
+      checkout.toString(),
+      title: '$retailerName checkout',
+    );
+  }
+
   Future<void> _shopStore(
     String retailerName,
     List<ScoutGroceryPlanItem> groceryItems,
@@ -791,6 +817,11 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
                           name: entry.key,
                           itemCount: entry.value.length,
                           onShop: () => _shopStore(entry.key, entry.value),
+                          onCheckout:
+                              _checkoutUriForStore(entry.value) == null
+                                  ? null
+                                  : () => _openCheckout(
+                                      entry.key, entry.value),
                           subtotal: _formatGroceryMoney(
                             entry.value.fold(
                               0,
@@ -905,12 +936,16 @@ class _GroceryStoreHeader extends StatelessWidget {
     required this.itemCount,
     required this.onShop,
     required this.subtotal,
+    this.onCheckout,
   });
 
   final int itemCount;
   final String name;
   final VoidCallback onShop;
   final String subtotal;
+
+  /// Jumps straight to the retailer's cart once items have been added.
+  final VoidCallback? onCheckout;
 
   @override
   Widget build(BuildContext context) {
@@ -943,14 +978,35 @@ class _GroceryStoreHeader extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 7),
-        OutlinedButton.icon(
-          key: ValueKey('grocery-shop-$keyName'),
-          onPressed: onShop,
-          icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
-          label: const Text(
-            'Shop this store',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                key: ValueKey('grocery-shop-$keyName'),
+                onPressed: onShop,
+                icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                label: const Text(
+                  'Shop this store',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+            if (onCheckout != null) ...[
+              const SizedBox(width: 7),
+              Expanded(
+                child: FilledButton.icon(
+                  key: ValueKey('grocery-checkout-$keyName'),
+                  onPressed: onCheckout,
+                  icon: const Icon(Icons.shopping_cart_checkout_rounded,
+                      size: 18),
+                  label: const Text(
+                    'Checkout',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         Padding(
           padding: const EdgeInsets.only(top: 5),

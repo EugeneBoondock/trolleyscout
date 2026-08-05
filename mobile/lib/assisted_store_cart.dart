@@ -63,6 +63,28 @@ class AssistedStoreCartResult {
   int get hashCode => Object.hash(status, label);
 }
 
+/// Where "proceed to checkout" lives per retailer platform. Most South
+/// African storefronts answer at /cart; the exceptions are named. Anything
+/// unknown still gets the /cart guess — landing on a 404 inside the assisted
+/// browser is recoverable, landing nowhere is not.
+const Map<String, String> _checkoutPathByHost = {
+  'dischem.co.za': '/checkout/cart',
+  'woolworths.co.za': '/check-out',
+};
+
+Uri checkoutUriFor(Uri productUri) {
+  final host =
+      productUri.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+  var path = '/cart';
+  for (final entry in _checkoutPathByHost.entries) {
+    if (host == entry.key || host.endsWith('.${entry.key}')) {
+      path = entry.value;
+      break;
+    }
+  }
+  return Uri(scheme: productUri.scheme, host: productUri.host, path: path);
+}
+
 bool isSameRetailerSite(Uri current, Uri product) {
   String clean(String host) =>
       host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
