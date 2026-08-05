@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
-import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
 import 'package:trolley_scout/theme.dart';

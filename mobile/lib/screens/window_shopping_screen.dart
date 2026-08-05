@@ -1513,6 +1513,7 @@ class _WindowCardState extends State<_WindowCard> {
                     showEmbeddedYouTubeVideoModal(
                       context,
                       productTitle: deal.title,
+                      api: widget.api,
                     );
                   },
                 ),

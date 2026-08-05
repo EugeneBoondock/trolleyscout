@@ -294,6 +294,15 @@ class Api {
     });
   }
 
+  /// The three most-watched YouTube reviews for a product, best first.
+  Future<List<ProductVideo>> productVideos(String query) async {
+    final data = await _request(
+      'GET',
+      '/api/video-search?q=${Uri.encodeQueryComponent(query)}',
+    );
+    return _maps(data['videos']).map(ProductVideo.fromJson).toList();
+  }
+
   Future<List<DealReport>> adminDealReports() async {
     final data = await _request('GET', '/api/admin/deal-reports');
     return _maps(data['reports']).map(DealReport.fromJson).toList();

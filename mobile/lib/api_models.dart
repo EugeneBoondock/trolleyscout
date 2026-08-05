@@ -755,6 +755,33 @@ class Deal {
       };
 }
 
+/// One YouTube review surfaced for a Window Shopping product.
+class ProductVideo {
+  const ProductVideo({
+    required this.videoId,
+    required this.title,
+    this.channel = '',
+    this.thumbnailUrl,
+    this.viewCount = 0,
+  });
+
+  factory ProductVideo.fromJson(Map<String, dynamic> json) => ProductVideo(
+        videoId: json['videoId']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        channel: json['channel']?.toString() ?? '',
+        thumbnailUrl: json['thumbnailUrl']?.toString(),
+        viewCount: json['viewCount'] is num
+            ? (json['viewCount'] as num).toInt()
+            : 0,
+      );
+
+  final String videoId;
+  final String title;
+  final String channel;
+  final String? thumbnailUrl;
+  final int viewCount;
+}
+
 class DealReport {
   const DealReport({
     required this.id,
