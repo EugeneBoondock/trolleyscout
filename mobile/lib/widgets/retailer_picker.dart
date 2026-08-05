@@ -85,7 +85,11 @@ List<RetailerOption> retailerOptionsFromDeals(
     names[retailer.id] = retailer.name;
     counts[retailer.id] = 0;
     catalogueCounts[retailer.id] = 0;
-    for (final value in [retailer.name, retailer.shortName]) {
+    for (final value in [
+      retailer.name,
+      retailer.shortName,
+      ...retailer.aliases
+    ]) {
       final key = retailerNameKey(value);
       if (key.isNotEmpty) catalogNameIds[key] = retailer.id;
     }

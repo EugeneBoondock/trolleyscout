@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/window_shopping_screen.dart';
 import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/widgets/window_ends_pill.dart';
@@ -293,7 +294,29 @@ String _visibleDealTitle(WidgetTester tester) {
 String _storeOf(String title) => title.split(' ').first;
 
 WindowShoppingScreen _window(_ReelApi api, {DateTime Function()? now}) =>
-    WindowShoppingScreen(api: api, seenStore: api.seenStore, now: now);
+    WindowShoppingScreen(
+      api: api,
+      cacheStore: _MemoryDiscoveryCache(),
+      seenStore: api.seenStore,
+      now: now,
+    );
+
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load([
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async =>
+      null;
+
+  @override
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {}
+}
 
 Widget _wrap(Widget child, {Brightness brightness = Brightness.dark}) {
   return MaterialApp(

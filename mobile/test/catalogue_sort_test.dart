@@ -3,6 +3,58 @@ import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/catalogue_sort.dart';
 
 void main() {
+  test('separates current, ending-soon, and upcoming catalogues', () {
+    final now = DateTime(2026, 8, 2, 12);
+    const catalogues = [
+      Catalogue(
+        id: 'current',
+        name: 'Current',
+        url: 'https://example.test/current',
+        validFrom: '2026-07-30',
+        validTo: '2026-08-20',
+      ),
+      Catalogue(
+        id: 'ending',
+        name: 'Ending',
+        url: 'https://example.test/ending',
+        validFrom: '2026-07-30',
+        validTo: '2026-08-03',
+      ),
+      Catalogue(
+        id: 'upcoming',
+        name: 'Upcoming',
+        url: 'https://example.test/upcoming',
+        validFrom: '2026-08-05',
+        validTo: '2026-08-18',
+      ),
+    ];
+
+    expect(
+      filterCataloguesByTiming(
+        catalogues,
+        CatalogueTimingFilter.current,
+        now: now,
+      ).map((catalogue) => catalogue.id),
+      ['current', 'ending'],
+    );
+    expect(
+      filterCataloguesByTiming(
+        catalogues,
+        CatalogueTimingFilter.endingSoon,
+        now: now,
+      ).map((catalogue) => catalogue.id),
+      ['ending'],
+    );
+    expect(
+      filterCataloguesByTiming(
+        catalogues,
+        CatalogueTimingFilter.upcoming,
+        now: now,
+      ).map((catalogue) => catalogue.id),
+      ['upcoming'],
+    );
+  });
+
   test('orders catalogues by start date and then capture time', () {
     const catalogues = [
       Catalogue(
@@ -67,13 +119,11 @@ void main() {
     ];
 
     expect(
-      sortCatalogues(catalogues, CatalogueSort.oldest)
-          .map((item) => item.name),
+      sortCatalogues(catalogues, CatalogueSort.oldest).map((item) => item.name),
       ['Alpha oldest', 'Bravo middle', 'Zulu latest'],
     );
     expect(
-      sortCatalogues(catalogues, CatalogueSort.store)
-          .map((item) => item.name),
+      sortCatalogues(catalogues, CatalogueSort.store).map((item) => item.name),
       ['Alpha oldest', 'Bravo middle', 'Zulu latest'],
     );
   });

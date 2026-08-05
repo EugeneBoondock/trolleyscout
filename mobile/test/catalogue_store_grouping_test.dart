@@ -8,6 +8,7 @@ void main() {
       final catalogue = Catalogue.fromLeaflet({
         'name': 'Winter savings',
         'url': 'https://catalogues.example.test/winter',
+        'retailerLogoUrl': 'https://cdn.example.test/store-logo.webp',
         'pages': [
           {
             'pageNumber': 2,
@@ -43,6 +44,14 @@ void main() {
           ],
         },
       ]);
+      expect(
+        catalogue.retailerLogoUrl,
+        'https://cdn.example.test/store-logo.webp',
+      );
+      expect(
+        catalogue.toJson()['retailerLogoUrl'],
+        'https://cdn.example.test/store-logo.webp',
+      );
     });
 
     test('recognises a direct PDF even when its URL has a query', () {

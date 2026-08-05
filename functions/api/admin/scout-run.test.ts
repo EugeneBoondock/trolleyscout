@@ -255,7 +255,7 @@ describe('/api/admin/scout-run', () => {
       {
         targets: expect.arrayContaining([
           expect.objectContaining({ retailerId: 'boxer' }),
-          expect.objectContaining({ sourceId: 'catalogue-specials-za' }),
+          expect.objectContaining({ retailerId: 'roots-butchery' }),
         ]),
       },
     )

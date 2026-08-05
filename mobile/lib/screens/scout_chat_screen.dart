@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../assisted_store_cart.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
+import '../widgets/scout_voice_sheet.dart';
 
 typedef ScoutChatSender = Future<ScoutChatAnswer> Function(
   String message,
@@ -21,11 +23,15 @@ class ScoutChatScreen extends StatefulWidget {
   const ScoutChatScreen({
     super.key,
     required this.api,
+    this.account,
+    this.onUpgrade,
     this.sendMessage,
     this.transferItem,
   });
 
   final Api api;
+  final MemberAccount? account;
+  final VoidCallback? onUpgrade;
   final ScoutChatSender? sendMessage;
   final ScoutGroceryTransfer? transferItem;
 
@@ -233,6 +239,83 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
     );
   }
 
+  bool get _voiceAllowed {
+    final account = widget.account;
+    if (account == null) return false;
+    return account.isAdmin ||
+        (account.planStatus == 'active' && account.planId != 'free');
+  }
+
+  Future<void> _openVoiceChat() async {
+    if (_voiceAllowed) {
+      return showScoutVoiceSheet(
+        context,
+        api: widget.api,
+        surface: 'scout',
+      );
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: TS.lineOf(context),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Center(
+              child: AnimatedScoutMark(
+                motion: ScoutMarkMotion.scout,
+                size: 72,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Talk with Mr Scout',
+              textAlign: TextAlign.center,
+              style:
+                  Theme.of(context).textTheme.headlineSmall?.merge(TS.display),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Voice conversations are included with Scout, Household, Organisation, and Developers plans.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: TS.mutedOf(context),
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              key: const ValueKey('mr-scout-voice-upgrade'),
+              onPressed: widget.onUpgrade == null
+                  ? null
+                  : () {
+                      Navigator.of(context).pop();
+                      widget.onUpgrade!();
+                    },
+              icon: const Icon(Icons.workspace_premium_outlined),
+              label: const Text('See Scout plans'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final horizontalPadding =
@@ -317,7 +400,7 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
   Widget _buildHeader(BuildContext context) {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
     final showStatus =
-        MediaQuery.sizeOf(context).width >= 370 && textScale < 1.5;
+        MediaQuery.sizeOf(context).width >= 500 && textScale < 1.5;
     return DecoratedBox(
       key: const ValueKey('mr-scout-header'),
       decoration: BoxDecoration(
@@ -369,19 +452,40 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
                               .titleLarge
                               ?.merge(TS.display),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Your personal shopping scout',
-                          style: TextStyle(
-                            color: TS.mutedOf(context),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        if (textScale < 1.5) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Your personal shopping scout',
+                            style: TextStyle(
+                              color: TS.mutedOf(context),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
+                  Semantics(
+                    button: true,
+                    label: _voiceAllowed
+                        ? 'Open Mr Scout voice chat'
+                        : 'Mr Scout voice, available on Scout plans',
+                    child: IconButton.filledTonal(
+                      key: const ValueKey('mr-scout-voice-button'),
+                      tooltip:
+                          _voiceAllowed ? 'Voice chat' : 'Voice chat · Scout+',
+                      onPressed: _openVoiceChat,
+                      icon: Badge(
+                        isLabelVisible: !_voiceAllowed,
+                        smallSize: 7,
+                        backgroundColor: TS.redOf(context),
+                        child: const Icon(Icons.mic_rounded),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Semantics(
                     button: true,
                     label: 'Open grocery list, ${_groceryItems.length} items',
@@ -560,6 +664,35 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
     }
   }
 
+  Future<void> _shopStore(
+    String retailerName,
+    List<ScoutGroceryPlanItem> groceryItems,
+  ) async {
+    final assistedItems = groceryItems
+        .map((item) => AssistedStoreCartItem.tryCreate(
+              title: item.title,
+              productUrl: item.productUrl,
+              quantity: item.quantity,
+              priceText: item.priceText,
+            ))
+        .whereType<AssistedStoreCartItem>()
+        .toList(growable: false);
+    if (assistedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This store does not have usable product links yet.'),
+        ),
+      );
+      return;
+    }
+    await showInAppBrowser(
+      context,
+      assistedItems.first.productUri.toString(),
+      title: 'Shop $retailerName',
+      assistedItems: assistedItems,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currencyCode = widget.plan?.currencyCode ?? 'ZAR';
@@ -656,6 +789,8 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
                       for (final entry in grouped.entries) ...[
                         _GroceryStoreHeader(
                           name: entry.key,
+                          itemCount: entry.value.length,
+                          onShop: () => _shopStore(entry.key, entry.value),
                           subtotal: _formatGroceryMoney(
                             entry.value.fold(
                               0,
@@ -767,30 +902,66 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
 class _GroceryStoreHeader extends StatelessWidget {
   const _GroceryStoreHeader({
     required this.name,
+    required this.itemCount,
+    required this.onShop,
     required this.subtotal,
   });
 
+  final int itemCount;
   final String name;
+  final VoidCallback onShop;
   final String subtotal;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final keyName = name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    return Column(
       key: ValueKey('grocery-store-$name'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(Icons.storefront_outlined, size: 19),
-        const SizedBox(width: 7),
-        Expanded(
-          child: Text(
-            name,
-            style: const TextStyle(fontWeight: FontWeight.w900),
+        Row(
+          children: [
+            const Icon(Icons.storefront_outlined, size: 19),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            Text(
+              subtotal,
+              style: TextStyle(
+                color: TS.mutedOf(context),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        OutlinedButton.icon(
+          key: ValueKey('grocery-shop-$keyName'),
+          onPressed: onShop,
+          icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+          label: const Text(
+            'Shop this store',
+            style: TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
-        Text(
-          subtotal,
-          style: TextStyle(
-            color: TS.mutedOf(context),
-            fontWeight: FontWeight.w800,
+        Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Text(
+            '$itemCount ${itemCount == 1 ? 'product' : 'products'} guided in one retailer session',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: TS.mutedOf(context),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

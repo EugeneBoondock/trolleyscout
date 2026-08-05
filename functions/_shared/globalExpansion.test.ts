@@ -4,6 +4,7 @@ import {
   applyCountryRetailerWebsites,
   buildRegisteredCountryRetailers,
   buildCountryRetailers,
+  countryRetailerQueries,
   resolveCountryRetailerWebsite,
 } from './countryRetailerScout'
 import { emailLookup, protectEmail, revealEmail } from './emailProtection'
@@ -108,6 +109,29 @@ describe('global country support', () => {
       program: 'Zimbabwe store',
     })
     expect(retailers[0].sources[0]).toMatchObject({ kind: 'specials' })
+  })
+
+  it('keeps a broad official directory instead of hiding stores after the first search page', () => {
+    const retailers = buildCountryRetailers(
+      countryFromCode('ZA'),
+      Array.from({ length: 48 }, (_, index) => ({
+        title: `Verified Store ${index + 1}`,
+        trusted: true,
+        url: `https://store-${index + 1}.example.za/specials`,
+        verifiedBrand: true,
+      })),
+    )
+
+    expect(retailers).toHaveLength(48)
+  })
+
+  it('searches beyond grocery so catalogue coverage includes the main shopping categories', () => {
+    const queries = countryRetailerQueries(countryFromCode('ZA')).join(' ')
+
+    expect(queries).toContain('electronics')
+    expect(queries).toContain('fashion')
+    expect(queries).toContain('pharmacy')
+    expect(queries).toContain('wholesale')
   })
 
   it('merges Zimbabwe suffix variants into one retailer identity', () => {

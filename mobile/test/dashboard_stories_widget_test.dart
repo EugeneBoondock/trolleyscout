@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/dashboard_stories.dart';
 import 'package:trolley_scout/theme.dart';
+import 'package:trolley_scout/widgets/catalogue_reader.dart';
 import 'package:trolley_scout/widgets/dashboard_stories.dart';
 
 void main() {
@@ -24,6 +25,15 @@ void main() {
     expect(find.byKey(const Key('story-progress-1')), findsOneWidget);
     expect(find.byKey(const Key('story-progress-2')), findsOneWidget);
     expect(find.text('Page 1 of 2'), findsOneWidget);
+
+    await tester.tap(find.text('Read catalogue'));
+    await tester.pumpAndSettle();
+    final reader = tester.widget<CatalogueReader>(
+      find.byType(CatalogueReader),
+    );
+    expect(reader.deals.map((deal) => deal.title), contains('Coffee 200g'));
+    await tester.tap(find.byTooltip('Close catalogue'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Next story item'));
     await tester.pumpAndSettle();
@@ -71,6 +81,27 @@ void main() {
     expect(find.byKey(const Key('story-progress-0')), findsOneWidget);
     expect(find.byKey(const Key('story-progress-1')), findsOneWidget);
     expect(find.byKey(const Key('story-progress-2')), findsOneWidget);
+  });
+
+  testWidgets('uses the first real story image when a retailer logo is absent',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: const Scaffold(
+        body: DashboardStories(stories: [_lazyStory]),
+      ),
+    ));
+
+    final image = tester.widget<Image>(
+      find.byKey(const Key('story-reel-image-pick-n-pay')),
+    );
+    expect(image.image, isA<ResizeImage>());
+    final provider = (image.image as ResizeImage).imageProvider;
+    expect(provider, isA<NetworkImage>());
+    expect(
+      (provider as NetworkImage).url,
+      'https://images.test/cover.webp',
+    );
   });
 }
 

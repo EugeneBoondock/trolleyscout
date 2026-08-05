@@ -28,7 +28,7 @@ import {
   type LeafletTarget,
 } from '../../src/services/leafletDiscovery'
 import { extractRetailerLeafletsFromHtml } from '../../src/services/scoutSources'
-import { selectCurrentCatalogues } from '../../src/services/catalogueSelection'
+import { selectCatalogueInventory } from '../../src/services/catalogueSelection'
 import { buildJinaReaderUrl } from '../../src/services/webSearch'
 import {
   catalogueSpecialsDirectoryPageCount,
@@ -90,6 +90,10 @@ import {
 } from '../_shared/dealLearningStore'
 import { getMemberSession } from '../_shared/memberStore'
 import {
+  readMemberLimits,
+  type MemberLimitOverrides,
+} from '../_shared/memberUsageStore'
+import {
   organizationPublicationDiscoverySource,
   organizationPublicationsToDiscoveryDeals,
   organizationPublicationsToStoryFrames,
@@ -105,6 +109,11 @@ import {
   scoutNearbyStores,
 } from '../_shared/storeScout'
 import { buildRegistryOnlineStores } from '../_shared/registryOnlineScout'
+import {
+  SHOPRITE_GROUP_CHAINS,
+  selectNearestBranchId,
+  storesByLocationRequest,
+} from '../../src/services/shopriteGroupDeals'
 
 // Public, cookieless data — allow any origin so the mobile app can read it.
 const privateHeaders = {
@@ -183,6 +192,9 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
   const accessPlanId: MemberPlanId = session.account?.role === 'admin'
     ? 'organization'
     : session.account?.planId ?? 'free'
+  const memberLimits = session.account
+    ? await readMemberLimits(env, session.account.id)
+    : undefined
   const isSouthAfrica = countryCode === 'ZA'
   const summaryKey = summarySnapshotKey(countryCode)
   if (forceLive && session.account?.role !== 'admin') {
@@ -315,6 +327,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       summaryOnly,
       countryCode,
       accessPlanId,
+      memberLimits,
       businessStoryPublications,
     )
 
@@ -386,6 +399,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
       summaryOnly,
       countryCode,
       accessPlanId,
+      memberLimits,
       businessStoryPublications,
     )
     const allDeals = dedupeDiscoveryDeals(storeDiscovery.deals)
@@ -435,6 +449,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request, 
     summaryOnly,
     countryCode,
     accessPlanId,
+    memberLimits,
     businessStoryPublications,
   )
 
@@ -774,10 +789,10 @@ export async function refreshLeafletCache(
   const targetedRetailers = new Set<string>(
     targets.map((target) => target.sourceId ?? target.retailerId),
   )
-  const retainedLeaflets = (priorLeaflets ?? []).filter((leaflet) =>
-    failedRetailers.has(leafletDiscoverySourceId(leaflet)) ||
-    !targetedRetailers.has(leafletDiscoverySourceId(leaflet)),
-  )
+  const retainedLeaflets = (priorLeaflets ?? []).filter((leaflet) => {
+    const sourceId = leafletDiscoverySourceId(leaflet)
+    return failedRetailers.has(sourceId) || !targetedRetailers.has(sourceId)
+  })
   const leaflets = dedupeLeaflets([...freshLeaflets, ...retainedLeaflets])
   const anyTargetSucceeded = settled.some((result) => result.succeeded)
 
@@ -1052,6 +1067,56 @@ async function fetchLeaflets(
       return leaflets.length > 0 ? success(leaflets) : failure()
     }
 
+    if (target.kind === 'official-html-index' && target.pageUrl) {
+      const response = await fetchWithTimeout(fetcher, target.pageUrl, {
+        headers: {
+          accept: 'text/html,application/xhtml+xml',
+          'user-agent': BROWSER_USER_AGENT,
+        },
+      }, PAGER_MANIFEST_TIMEOUT_MS)
+      if (!response.ok) {
+        return failure()
+      }
+      const html = await readBoundedText(response, CATALOGUE_DIRECTORY_MAX_BYTES)
+      const leaflets = extractRetailerLeafletsFromHtml(
+        {
+          retailerId: target.retailerId,
+          retailerName: target.retailerName,
+          sourceUrl: target.pageUrl,
+        },
+        html,
+        checkedAt,
+      )
+      if (leaflets.length > 0) {
+        return success(leaflets)
+      }
+
+      const readerResponse = await fetchWithTimeout(
+        fetcher,
+        buildJinaReaderUrl(target.pageUrl),
+        {
+          headers: {
+            accept: 'text/plain,text/markdown',
+            'user-agent': BROWSER_USER_AGENT,
+          },
+        },
+        PAGER_MANIFEST_TIMEOUT_MS,
+      )
+      if (!readerResponse.ok) {
+        return failure()
+      }
+      const markdown = await readBoundedText(
+        readerResponse,
+        CATALOGUE_DIRECTORY_MAX_BYTES,
+      )
+      const readerLeaflets = extractOfficialPdfIndexLeaflets(
+        target,
+        markdown,
+        checkedAt,
+      )
+      return readerLeaflets.length > 0 ? success(readerLeaflets) : failure()
+    }
+
     if (target.kind === 'tmpnp-catalogue' && target.pageUrl) {
       if (target.apiBase) {
         const apiResponse = await fetchWithTimeout(fetcher, target.apiBase, {
@@ -1113,15 +1178,39 @@ async function fetchLeaflets(
         return failure()
       }
 
-      return success(await resolvePnpHflipDocuments(
+      const leaflets = await resolvePnpHflipDocuments(
         extractPnpCmsLeaflets(target, await response.json(), checkedAt),
         { fetcher },
-      ))
+      )
+      return leaflets.length > 0 ? success(leaflets) : failure()
     }
 
     if (target.kind === 'sixty60-api' && target.apiBase && target.storeId) {
+      let storeId = target.storeId
+      const chain = SHOPRITE_GROUP_CHAINS[target.retailerId]
+      if (target.locator && chain) {
+        const locatorRequest = storesByLocationRequest(
+          chain.host,
+          target.locator.latitude,
+          target.locator.longitude,
+        )
+        const locatorResponse = await fetchWithTimeout(fetcher, locatorRequest.url, {
+          body: locatorRequest.body,
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+            referer: `${target.apiBase}/`,
+            'user-agent': BROWSER_USER_AGENT,
+          },
+          method: 'POST',
+        }, PAGER_MANIFEST_TIMEOUT_MS)
+        if (locatorResponse.ok) {
+          storeId = selectNearestBranchId(await locatorResponse.json(), chain) ?? storeId
+        }
+      }
+      const resolvedTarget = { ...target, storeId }
       const response = await fetcher(buildLeafletApiUrl(target.apiBase), {
-        body: JSON.stringify({ posSiteCode: target.storeId }),
+        body: JSON.stringify({ posSiteCode: storeId }),
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
@@ -1135,7 +1224,12 @@ async function fetchLeaflets(
         return failure()
       }
 
-      return success(extractSixtyLeaflets(target, await response.json(), checkedAt))
+      const leaflets = extractSixtyLeaflets(
+        resolvedTarget,
+        await response.json(),
+        checkedAt,
+      )
+      return leaflets.length > 0 ? success(leaflets) : failure()
     }
 
     if (
@@ -1160,7 +1254,8 @@ async function fetchLeaflets(
       const html = response.ok ? await response.text() : ''
 
       if (target.kind === 'html-pdf') {
-        return success(extractPdfLeaflets(target, html, checkedAt))
+        const leaflets = extractPdfLeaflets(target, html, checkedAt)
+        return leaflets.length > 0 ? success(leaflets) : failure()
       }
 
       if (target.kind === 'official-pdf-index') {
@@ -1204,19 +1299,21 @@ async function fetchLeaflets(
         return combined.length > 0 ? success(combined) : failure()
       }
 
-      return success(await resolveEmbeddedViewers(
+      const leaflets = await resolveEmbeddedViewers(
         extractBoxerLeaflets(target, html, checkedAt),
         fetcher,
-      ))
+      )
+      return leaflets.length > 0 ? success(leaflets) : failure()
     }
 
     if (target.kind === 'sitebuilder-pdf' && target.pageUrls) {
-      return success(await fetchSitebuilderLeaflets(
+      const leaflets = await fetchSitebuilderLeaflets(
         target,
         target.pageUrls,
         checkedAt,
         fetcher,
-      ))
+      )
+      return leaflets.length > 0 ? success(leaflets) : failure()
     }
   } catch {
     // A single retailer's leaflet fetch failing must not sink the board.
@@ -1283,7 +1380,12 @@ async function fetchCatalogueDirectoryLeaflets(
     return extractMyCatalogueLeaflets(firstHtml, checkedAt, countryCode)
   }
 
-  const pageCount = catalogueSpecialsDirectoryPageCount(firstHtml)
+  // CatalogueSpecials permits its landing page but disallows the query-string
+  // pagination routes in robots.txt. A query-free target therefore stays on
+  // the public landing page.
+  const pageCount = new URL(target.pageUrl).search
+    ? catalogueSpecialsDirectoryPageCount(firstHtml)
+    : 1
   const remainingHtml = await Promise.all(
     Array.from(
       { length: Math.max(0, pageCount - 1) },
@@ -1634,6 +1736,7 @@ function respond(
   summaryOnly?: boolean,
   countryCode = 'ZA',
   planId: MemberPlanId = 'free',
+  memberLimits?: MemberLimitOverrides,
   businessStoryPublications: OrganizationPublication[] = [],
 ) {
   const headers = summaryOnly
@@ -1655,6 +1758,7 @@ function respond(
       summaryOnly,
       countryCode,
       planId,
+      memberLimits,
       ),
       businessStories: limitVisibleStories(
         organizationPublicationsToStoryFrames(businessStoryPublications),
@@ -1679,16 +1783,19 @@ function buildDiscoveryRun(
   summaryOnly?: boolean,
   countryCode = 'ZA',
   planId: MemberPlanId = 'organization',
+  memberLimits?: MemberLimitOverrides,
 ): DiscoveryRun {
   const allDeals = dedupeDiscoveryDeals([
     ...settled.flatMap((result) => result.deals),
     ...storeDiscovery.deals,
   ])
-  const limits = getMemberPlan(planId).limits
+  const planLimits = getMemberPlan(planId).limits
+  const dealLimit = memberLimits?.visibleDeals ?? planLimits.visibleDeals
+  const catalogueLimit = memberLimits?.visibleCatalogues ?? planLimits.visibleCatalogues
   const rankedDeals = rankDealsForMember(allDeals, interests)
   const deals = summaryOnly
     ? summaryPreviewDeals(allDeals)
-    : rankedDeals.slice(0, limits.visibleDeals)
+    : selectVisibleDeals(rankedDeals, dealLimit)
   const sources = [...settled.map((result) => result.source), ...storeDiscovery.sources]
   const mergedLeaflets = dedupeLeaflets(cataloguesForCountry(
     [...leaflets, ...storeDiscovery.leaflets],
@@ -1699,12 +1806,12 @@ function buildDiscoveryRun(
     access: {
       availableCatalogueCount: mergedLeaflets.length,
       availableDealCount: allDeals.length,
-      catalogueLimit: limits.visibleCatalogues,
-      dealLimit: limits.visibleDeals,
+      catalogueLimit,
+      dealLimit,
       planId,
     },
     deals,
-    leaflets: summaryOnly ? [] : mergedLeaflets.slice(0, limits.visibleCatalogues),
+    leaflets: summaryOnly ? [] : mergedLeaflets.slice(0, catalogueLimit),
     refreshedAt,
     served: fromCache ? 'snapshot' : 'live',
     sources,
@@ -1716,6 +1823,65 @@ function buildDiscoveryRun(
       unavailableSourceCount: sources.filter((source) => source.status === 'unavailable').length,
     },
   }
+}
+
+// A plan limit must not silently remove the data that makes catalogue pages
+// interactive. Keep most slots in the member ranking, then reserve a bounded
+// quarter for page crops spread across catalogue sources.
+export function selectVisibleDeals(
+  rankedDeals: DiscoveredDeal[],
+  limit: number,
+): DiscoveredDeal[] {
+  const boundedLimit = Math.max(0, Math.min(rankedDeals.length, Math.floor(limit)))
+  if (boundedLimit >= rankedDeals.length) return rankedDeals
+  if (boundedLimit === 0) return []
+
+  const interactive = rankedDeals.filter((deal) =>
+    Boolean(deal.imageCrop && deal.pageNumber && deal.imageUrl))
+  if (interactive.length === 0) return rankedDeals.slice(0, boundedLimit)
+
+  const reserve = Math.min(
+    interactive.length,
+    boundedLimit,
+    Math.max(24, Math.floor(boundedLimit * 0.25)),
+  )
+  const selectedInteractive = roundRobinInteractiveDeals(interactive, reserve)
+  const selectedIds = new Set(selectedInteractive.map((deal) => deal.id))
+  const standard = rankedDeals
+    .filter((deal) => !selectedIds.has(deal.id))
+    .slice(0, boundedLimit - selectedInteractive.length)
+  const visibleIds = new Set([
+    ...standard.map((deal) => deal.id),
+    ...selectedInteractive.map((deal) => deal.id),
+  ])
+  return rankedDeals.filter((deal) => visibleIds.has(deal.id)).slice(0, boundedLimit)
+}
+
+function roundRobinInteractiveDeals(deals: DiscoveredDeal[], limit: number) {
+  const groups = new Map<string, DiscoveredDeal[]>()
+  for (const deal of deals) {
+    const key = deal.catalogueFingerprint ?? `${deal.retailerId}::${deal.sourceUrl}`
+    const group = groups.get(key) ?? []
+    group.push(deal)
+    groups.set(key, group)
+  }
+
+  const selected: DiscoveredDeal[] = []
+  let index = 0
+  while (selected.length < limit) {
+    let added = false
+    for (const group of groups.values()) {
+      const deal = group[index]
+      if (!deal) continue
+      selected.push(deal)
+      added = true
+      if (selected.length >= limit) break
+    }
+
+    if (!added) break
+    index += 1
+  }
+  return selected
 }
 
 export function summaryPreviewDeals(
@@ -1863,22 +2029,11 @@ function catalogueCountryCode(leaflet: StoreLeaflet): string {
   return (leaflet.countryCode ?? 'ZA').trim().toUpperCase()
 }
 
-export function dedupeLeaflets(leaflets: StoreLeaflet[]): StoreLeaflet[] {
-  const selected = selectCurrentCatalogues(leaflets)
-  const hasOfficialPnpViewer = selected.some((leaflet) =>
-    leaflet.retailerId === 'pick-n-pay' && isTrustedPnpViewerUrl(leaflet.url))
-  const seen = new Set<string>()
-  return selected.filter((leaflet) => {
-    if (hasOfficialPnpViewer && isGenericPnpCatalogue(leaflet)) {
-      return false
-    }
-    const key = leaflet.documentUrl ?? leaflet.url
-    if (seen.has(key)) {
-      return false
-    }
-    seen.add(key)
-    return true
-  })
+export function dedupeLeaflets(
+  leaflets: StoreLeaflet[],
+  now = new Date(),
+): StoreLeaflet[] {
+  return selectCatalogueInventory(leaflets, now)
 }
 
 const CATALOGUE_FILE_PATTERN =
@@ -1953,32 +2108,6 @@ function safeUrlPath(value: string): string {
   } catch {
     return ''
   }
-}
-
-function isGenericPnpCatalogue(leaflet: StoreLeaflet): boolean {
-  const isPnp = leaflet.retailerId === 'pick-n-pay' ||
-    leaflet.retailerName.toLowerCase().includes('pick n pay')
-  if (!isPnp) {
-    return false
-  }
-
-  for (const value of [leaflet.url, leaflet.documentUrl]) {
-    if (!value) {
-      continue
-    }
-    try {
-      const url = new URL(value)
-      if (
-        (url.hostname === 'www.pnp.co.za' || url.hostname === 'pnp.co.za') &&
-        url.pathname.replace(/\/+$/, '') === '/catalogues'
-      ) {
-        return true
-      }
-    } catch {
-      // Ignore malformed source URLs.
-    }
-  }
-  return false
 }
 
 async function getRequestInterests(env: TrolleyScoutEnv, accountId: string | undefined) {

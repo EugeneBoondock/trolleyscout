@@ -20,18 +20,35 @@ const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 const MAX_BODY_BYTES = 1_500_000
+const PAID_PROVIDER_RESULT_LIMIT = 10
 
-export async function searchWeb(query: string, jinaApiKey?: string): Promise<SearchResult[]> {
-  return (await searchWebWithStatus(query, jinaApiKey)).results
+export interface SearchProviderKeys {
+  EXA_API_KEY?: string
+  FIRECRAWL_API_KEY?: string
+  TAVILY_API_KEY?: string
+}
+
+export async function searchWeb(
+  query: string,
+  jinaApiKey?: string,
+  providerKeys: SearchProviderKeys = {},
+): Promise<SearchResult[]> {
+  return (await searchWebWithStatus(query, jinaApiKey, providerKeys)).results
 }
 
 export async function searchWebWithStatus(
   query: string,
   jinaApiKey?: string,
+  providerKeys: SearchProviderKeys = {},
 ): Promise<{
   results: SearchResult[]
   status: 'success' | 'empty' | 'transient_failure'
 }> {
+  const paid = await searchConfiguredProviders(query, providerKeys)
+  if (paid.results.length > 0) {
+    return { results: paid.results, status: 'success' }
+  }
+
   const ddgUrl = buildDuckDuckGoUrl(query)
 
   const direct = await fetchBody(ddgUrl)
@@ -41,7 +58,7 @@ export async function searchWebWithStatus(
     return { results: directResults, status: 'success' }
   }
 
-  let sawSuccessfulProvider = direct.status === 'success'
+  let sawSuccessfulProvider = paid.sawSuccessfulProvider || direct.status === 'success'
 
   if (jinaApiKey) {
     const jina = await fetchBody('https://s.jina.ai/', {
@@ -106,6 +123,125 @@ export async function searchWebWithStatus(
     results: [],
     status: sawSuccessfulProvider ? 'empty' : 'transient_failure',
   }
+}
+
+async function searchConfiguredProviders(
+  query: string,
+  keys: SearchProviderKeys,
+): Promise<{ results: SearchResult[]; sawSuccessfulProvider: boolean }> {
+  const requests: Array<Promise<{
+    results: SearchResult[]
+    status: 'success' | 'transient_failure' | 'permanent_failure'
+  }>> = []
+
+  if (keys.EXA_API_KEY) {
+    requests.push(fetchSearchProvider(
+      'https://api.exa.ai/search',
+      {
+        headers: { 'x-api-key': keys.EXA_API_KEY },
+        payload: { numResults: PAID_PROVIDER_RESULT_LIMIT, query, type: 'auto' },
+      },
+      (payload) => readProviderResults(payload, ['results']),
+    ))
+  }
+  if (keys.TAVILY_API_KEY) {
+    requests.push(fetchSearchProvider(
+      'https://api.tavily.com/search',
+      {
+        headers: { authorization: `Bearer ${keys.TAVILY_API_KEY}` },
+        payload: {
+          include_answer: false,
+          include_raw_content: false,
+          max_results: PAID_PROVIDER_RESULT_LIMIT,
+          query,
+          search_depth: 'basic',
+          topic: 'general',
+        },
+      },
+      (payload) => readProviderResults(payload, ['results']),
+    ))
+  }
+  if (keys.FIRECRAWL_API_KEY) {
+    requests.push(fetchSearchProvider(
+      'https://api.firecrawl.dev/v2/search',
+      {
+        headers: { authorization: `Bearer ${keys.FIRECRAWL_API_KEY}` },
+        payload: {
+          limit: PAID_PROVIDER_RESULT_LIMIT,
+          query,
+          sources: ['web'],
+          timeout: 8_000,
+        },
+      },
+      (payload) => readProviderResults(payload, ['data', 'web']),
+    ))
+  }
+
+  if (requests.length === 0) {
+    return { results: [], sawSuccessfulProvider: false }
+  }
+
+  const settled = await Promise.all(requests)
+  return {
+    results: dedupeProviderResults(settled.flatMap((result) => result.results)),
+    sawSuccessfulProvider: settled.some((result) => result.status === 'success'),
+  }
+}
+
+async function fetchSearchProvider(
+  url: string,
+  options: { headers: Record<string, string>; payload: Record<string, unknown> },
+  parse: (payload: unknown) => SearchResult[],
+): Promise<{
+  results: SearchResult[]
+  status: 'success' | 'transient_failure' | 'permanent_failure'
+}> {
+  const response = await fetchBody(url, {
+    body: JSON.stringify(options.payload),
+    headers: {
+      'content-type': 'application/json',
+      ...options.headers,
+    },
+    method: 'POST',
+  })
+  if (!response.body) return { results: [], status: response.status }
+  try {
+    return { results: parse(JSON.parse(response.body)), status: response.status }
+  } catch {
+    return { results: [], status: 'permanent_failure' }
+  }
+}
+
+function readProviderResults(payload: unknown, path: readonly string[]): SearchResult[] {
+  let value: unknown = payload
+  for (const key of path) {
+    if (!value || typeof value !== 'object') return []
+    value = (value as Record<string, unknown>)[key]
+  }
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): SearchResult[] => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    const title = typeof row.title === 'string' ? row.title.trim() : ''
+    const url = typeof row.url === 'string' ? row.url.trim() : ''
+    return title && /^https?:\/\//i.test(url) ? [{ title, url }] : []
+  }).slice(0, PAID_PROVIDER_RESULT_LIMIT)
+}
+
+function dedupeProviderResults(results: readonly SearchResult[]): SearchResult[] {
+  const seen = new Set<string>()
+  return results.filter((result) => {
+    try {
+      const url = new URL(result.url)
+      url.hash = ''
+      const key = url.toString()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 async function fetchBody(

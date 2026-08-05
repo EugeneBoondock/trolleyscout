@@ -86,6 +86,12 @@ function dependencies(overrides: Partial<ScoutChatDependencies> = {}): ScoutChat
       searched: false,
       timings: [],
     })),
+    runDeepSeek: vi.fn(async () => JSON.stringify({
+      reply: 'The coffee deal saves R30.',
+      dealIds: ['coffee-deal'],
+      catalogueIds: ['weekly'],
+      followUps: ['Show more coffee'],
+    })),
     ...overrides,
   }
 }
@@ -136,6 +142,39 @@ describe('handleScoutChat', () => {
         visibilityLimit: 2_000,
       }),
     )
+  })
+
+  it('uses DeepSeek when OpenAI reports exhausted credits', async () => {
+    const deps = dependencies({
+      fetchOpenAI: vi.fn(async () => new Response(JSON.stringify({
+        error: { code: 'insufficient_quota', message: 'Credit balance is empty.' },
+      }), { status: 429 })),
+    })
+    const response = await handleScoutChat({
+      env: {
+        AI: {} as Ai,
+        DB: {} as D1Database,
+        OPENAI_API_KEY: 'test-key',
+      },
+      request: new Request('https://example.test/api/scout-chat', {
+        body: JSON.stringify({ message: 'Find coffee deals' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    }, deps)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        answer: {
+          reply: 'The coffee deal saves R30.',
+          deals: [{ id: 'coffee-deal' }],
+          catalogues: [{ id: 'weekly' }],
+        },
+        model: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+      },
+    })
+    expect(deps.runDeepSeek).toHaveBeenCalledOnce()
   })
 
   it.each([

@@ -5,6 +5,12 @@ vi.mock('./services/apiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/apiClient')>()
   return {
     ...actual,
+    loadDeveloperKeys: vi.fn().mockResolvedValue({
+      allowance: { callsPerMinute: 120, callsPerMonth: 25_000 },
+      keys: [],
+      scopes: ['shopping:read', 'trends:read'],
+      usage: 0,
+    }),
     submitBusinessApplication: vi.fn(),
   }
 })
@@ -39,6 +45,39 @@ describe('Organisation subscription application', () => {
     expect((screen.getByLabelText('Contact email') as HTMLInputElement).value).toBe(
       'owner@example.co.za',
     )
+    expect(onCheckout).not.toHaveBeenCalled()
+  })
+
+  it('opens developer tools directly for an administrator', () => {
+    const onCheckout = vi.fn().mockResolvedValue(undefined)
+    const adminAccount = { ...account, role: 'admin' as const }
+    const developerSubscription: ResourceState<SubscriptionResource> = {
+      ...subscription,
+      data: {
+        ...subscription.data,
+        account: adminAccount,
+        plans: [{
+          ...subscription.data.plans[0],
+          id: 'developers',
+          name: 'Developers',
+        }],
+      },
+    }
+
+    render(
+      <SubscriptionPanel
+        account={adminAccount}
+        country={country}
+        onCancelScheduledChange={vi.fn()}
+        onCheckout={onCheckout}
+        subscriptionState={developerSubscription}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open developer tools' }))
+
+    expect(screen.getByRole('heading', { name: 'MCP and API credentials' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Tell us about your business' })).toBeNull()
     expect(onCheckout).not.toHaveBeenCalled()
   })
 })
@@ -143,6 +182,7 @@ const subscription: ResourceState<SubscriptionResource> = {
       isPaid: true,
       limits: {
         basketItems: 1000,
+        dealWatches: 1000,
         savedDeals: 1000,
         savedSources: 1000,
         visibleCatalogues: 5_000,

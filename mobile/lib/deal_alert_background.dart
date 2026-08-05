@@ -112,7 +112,10 @@ class DealAlertPoller {
   }
 
   Future<void> _saveCachedDiscoveryBaseline() async {
-    final cached = await _discoveryCache.load(_api.effectiveCountryCode);
+    final cached = await _discoveryCache.load(
+      _api.effectiveCountryCode,
+      _api.discoveryCacheScope,
+    );
     await _preferences.saveSeenDealIds(
       cached?.result.deals.map(_dealIdentity) ?? const <String>[],
     );
@@ -126,7 +129,10 @@ class DealAlertPoller {
     required bool countCapped,
   }) async {
     final countryCode = _api.effectiveCountryCode;
-    final cached = await _discoveryCache.load(countryCode);
+    final cached = await _discoveryCache.load(
+      countryCode,
+      _api.discoveryCacheScope,
+    );
     final storedSeen = await _preferences.loadSeenDealIds();
     final seen = storedSeen ??
         cached?.result.deals.map(_dealIdentity).toSet() ??
@@ -137,7 +143,12 @@ class DealAlertPoller {
     try {
       discovery = await _api.discovery();
       fetched = true;
-      await _discoveryCache.save(discovery, DateTime.now(), countryCode);
+      await _discoveryCache.save(
+        discovery,
+        DateTime.now(),
+        countryCode,
+        _api.discoveryCacheScope,
+      );
     } catch (_) {
       if (cached == null) return null;
       discovery = cached.result;

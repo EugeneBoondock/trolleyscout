@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import '../api_models.dart';
 import '../catalogue_files.dart';
 import '../catalogue_page_cache.dart';
+import '../price_compare.dart';
+import '../similar_deals.dart';
 import '../theme.dart';
 import 'catalogue_pdf_view.dart';
 import 'catalogue_source_button.dart';
@@ -48,10 +50,8 @@ Future<List<CataloguePage>> fetchCatalogueReaderPages(String url) async {
   return pages;
 }
 
-Future<void> showCatalogueReader(
-  BuildContext context,
-  Catalogue catalogue,
-) =>
+Future<void> showCatalogueReader(BuildContext context, Catalogue catalogue,
+        {List<Deal> deals = const []}) =>
     showDialog<void>(
       context: context,
       useSafeArea: false,
@@ -59,6 +59,7 @@ Future<void> showCatalogueReader(
         backgroundColor: TS.bgOf(context),
         child: CatalogueReader(
           catalogue: catalogue,
+          deals: deals,
           openExternal: (uri) => showInAppBrowser(
             context,
             uri.toString(),
@@ -72,11 +73,13 @@ class CatalogueReader extends StatefulWidget {
   const CatalogueReader({
     super.key,
     required this.catalogue,
+    this.deals = const [],
     this.openExternal = launchCatalogueSource,
     this.loadPages = loadCatalogueReaderPages,
   });
 
   final Catalogue catalogue;
+  final List<Deal> deals;
   final CatalogueUriOpener openExternal;
   final CataloguePagesLoader loadPages;
 
@@ -494,6 +497,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
           onPageChanged: (index) => setState(() => _pageIndex = index),
           itemBuilder: (context, index) => Semantics(
             container: true,
+            explicitChildNodes: true,
             image: true,
             label:
                 'Catalogue page ${pages[index].pageNumber} of ${pages.length}',
@@ -505,14 +509,22 @@ class _CatalogueReaderState extends State<CatalogueReader> {
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: SizedBox.expand(
-                  child: _CatalogueNetworkImage(
-                    urls: withProxiedFallbacks(pages[index].imageUrls),
-                    fit: BoxFit.contain,
-                    fallbackIconSize: 52,
-                    allFailed: _CataloguePageFallback(
-                      sourceUrl: sourceUrl,
-                      sourceLabel: sourceLabel,
-                      openExternal: widget.openExternal,
+                  child: _CataloguePageLayer(
+                    deals: _dealsForPage(pages[index]),
+                    onDealTap: (deal) => _showCatalogueProduct(
+                      deal,
+                      pages[index],
+                    ),
+                    page: pages[index],
+                    pageImage: _CatalogueNetworkImage(
+                      urls: withProxiedFallbacks(pages[index].imageUrls),
+                      fit: BoxFit.fill,
+                      fallbackIconSize: 52,
+                      allFailed: _CataloguePageFallback(
+                        sourceUrl: sourceUrl,
+                        sourceLabel: sourceLabel,
+                        openExternal: widget.openExternal,
+                      ),
                     ),
                   ),
                 ),
@@ -521,7 +533,472 @@ class _CatalogueReaderState extends State<CatalogueReader> {
           ),
         ),
       );
+
+  List<Deal> _dealsForPage(CataloguePage page) => widget.deals.where((deal) {
+        final crop = deal.imageCrop;
+        if (crop == null ||
+            !crop.isValid ||
+            deal.pageNumber != page.pageNumber) {
+          return false;
+        }
+        final catalogueRetailer = _catalogue.retailerId?.trim();
+        if (catalogueRetailer != null &&
+            catalogueRetailer.isNotEmpty &&
+            deal.retailerId != catalogueRetailer) {
+          return false;
+        }
+        final pageMatch = deal.imageUrl != null &&
+            _imageIdentity(deal.imageUrl!) == _imageIdentity(page.imageUrl);
+        final catalogueUrl = _catalogue.sourceUrl ?? _catalogue.url;
+        final sourceMatch = [deal.sourceUrl, deal.productUrl]
+            .whereType<String>()
+            .any((url) => _urlIdentity(url) == _urlIdentity(catalogueUrl));
+        return pageMatch || sourceMatch;
+      }).toList(growable: false);
+
+  Future<void> _showCatalogueProduct(Deal deal, CataloguePage page) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: TS.surfaceOf(context),
+      builder: (sheetContext) => _CatalogueProductSheet(
+        deal: deal,
+        page: page,
+        similarDeals: findSimilarDeals(deal, widget.deals),
+        onOpenDeal: (selectedDeal) {
+          final uri = catalogueSourceUri(
+            selectedDeal.productUrl ?? selectedDeal.sourceUrl,
+          );
+          if (uri != null) widget.openExternal(uri);
+        },
+      ),
+    );
+  }
 }
+
+class _CataloguePageLayer extends StatelessWidget {
+  const _CataloguePageLayer({
+    required this.deals,
+    required this.onDealTap,
+    required this.page,
+    required this.pageImage,
+  });
+
+  final List<Deal> deals;
+  final ValueChanged<Deal> onDealTap;
+  final CataloguePage page;
+  final Widget pageImage;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = constraints.maxWidth;
+          final availableHeight = constraints.maxHeight;
+          final sourceWidth =
+              (page.width ?? 0) > 0 ? page.width!.toDouble() : availableWidth;
+          final sourceHeight = (page.height ?? 0) > 0
+              ? page.height!.toDouble()
+              : availableHeight;
+          final scale = (availableWidth / sourceWidth)
+              .clamp(0, availableHeight / sourceHeight)
+              .toDouble();
+          final renderedWidth = sourceWidth * scale;
+          final renderedHeight = sourceHeight * scale;
+          final left = (availableWidth - renderedWidth) / 2;
+          final top = (availableHeight - renderedHeight) / 2;
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: left,
+                top: top,
+                width: renderedWidth,
+                height: renderedHeight,
+                child: pageImage,
+              ),
+              for (final deal in deals)
+                Positioned(
+                  left: left + deal.imageCrop!.x * renderedWidth,
+                  top: top + deal.imageCrop!.y * renderedHeight,
+                  width: deal.imageCrop!.width * renderedWidth,
+                  height: deal.imageCrop!.height * renderedHeight,
+                  child: Semantics(
+                    button: true,
+                    label: 'View ${deal.title} from page ${page.pageNumber}',
+                    child: Tooltip(
+                      message: deal.priceText == null
+                          ? deal.title
+                          : '${deal.title}, ${deal.priceText}',
+                      child: Material(
+                        color: TS.redOf(context).withValues(alpha: 0.12),
+                        shape: RoundedRectangleBorder(
+                          side: BorderSide(
+                            color: TS.redOf(context),
+                            width: 2,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: InkWell(
+                          onTap: () => onDealTap(deal),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: Container(
+                              margin: const EdgeInsets.all(3),
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: TS.redOf(context),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 19,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      );
+}
+
+class _CatalogueProductSheet extends StatelessWidget {
+  const _CatalogueProductSheet({
+    required this.deal,
+    required this.page,
+    required this.similarDeals,
+    required this.onOpenDeal,
+  });
+
+  final Deal deal;
+  final CataloguePage page;
+  final List<Deal> similarDeals;
+  final ValueChanged<Deal> onOpenDeal;
+
+  @override
+  Widget build(BuildContext context) {
+    final crop = deal.imageCrop!;
+    final comparisons = <Deal>[deal, ...similarDeals]..sort((left, right) {
+        final leftPrice = extractPriceCents(left.priceText);
+        final rightPrice = extractPriceCents(right.priceText);
+        if (leftPrice == null && rightPrice == null) return 0;
+        if (leftPrice == null) return 1;
+        if (rightPrice == null) return -1;
+        return leftPrice.compareTo(rightPrice);
+      });
+    final best = comparisons.first;
+    final currentPrice = extractPriceCents(deal.priceText);
+    final bestPrice = extractPriceCents(best.priceText);
+    final priceGap = currentPrice != null && bestPrice != null
+        ? currentPrice - bestPrice
+        : 0;
+    final currencyPrefix = _catalogueCurrencyPrefix(deal.priceText);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: TS.lineOf(context),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('CATALOGUE FIND', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 5),
+          Text(
+            deal.title,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          const SizedBox(height: 14),
+          Semantics(
+            image: true,
+            label: 'Cropped catalogue image for ${deal.title}',
+            child: _CatalogueCroppedImage(
+              crop: crop,
+              imageUrl: deal.imageUrl ?? page.imageUrl,
+              page: page,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(deal.retailerName, style: TextStyle(color: TS.mutedOf(context))),
+          if (deal.priceText != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              deal.priceText!,
+              style: TS.display.copyWith(
+                color: TS.redOf(context),
+                fontSize: 34,
+              ),
+            ),
+          ],
+          if (deal.savingText != null) ...[
+            const SizedBox(height: 3),
+            Text(deal.savingText!),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            'Found on page ${page.pageNumber}',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+          ),
+          if (best.id != deal.id && priceGap > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              key: const Key('catalogue-best-price'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: TS.greenOf(context).withValues(alpha: 0.12),
+                border: Border.all(color: TS.greenOf(context), width: 1.5),
+                borderRadius: BorderRadius.circular(TS.cardRadius),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.savings_outlined, color: TS.greenOf(context)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Save $currencyPrefix${(priceGap / 100).toStringAsFixed(2)} at ${best.retailerName}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        if (best.priceText != null)
+                          Text(
+                            '${best.priceText} from a current offer',
+                            style: TextStyle(
+                              color: TS.mutedOf(context),
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Open best price',
+                    onPressed: () => onOpenDeal(best),
+                    icon: const Icon(Icons.arrow_forward),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (comparisons.length > 1) ...[
+            const SizedBox(height: 18),
+            Text('COMPARE LIVE PRICES', style: TS.eyebrowOf(context)),
+            const SizedBox(height: 5),
+            Text(
+              'Compare live prices',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            for (final option in comparisons)
+              _CatalogueComparisonRow(
+                deal: option,
+                isBest: identical(option, best),
+                isCurrent: identical(option, deal),
+                onOpen: () => onOpenDeal(option),
+              ),
+          ],
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => onOpenDeal(deal),
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('View official source'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => showShareCardSheet(
+                context,
+                ShareCardData.fromDeal(deal),
+              ),
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share deal'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CatalogueComparisonRow extends StatelessWidget {
+  const _CatalogueComparisonRow({
+    required this.deal,
+    required this.isBest,
+    required this.isCurrent,
+    required this.onOpen,
+  });
+
+  final Deal deal;
+  final bool isBest;
+  final bool isCurrent;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+        decoration: TS.card(context, width: isBest ? 2 : 1.5),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          deal.retailerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      if (isBest) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: TS.greenOf(context).withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            'BEST',
+                            style: TextStyle(
+                              color: TS.greenOf(context),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (isCurrent) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          'THIS PAGE',
+                          style: TextStyle(
+                            color: TS.mutedOf(context),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (deal.priceText != null)
+                    Text(
+                      deal.priceText!,
+                      style: TextStyle(
+                        color: isBest ? TS.greenOf(context) : TS.redOf(context),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Open ${deal.retailerName} offer',
+              onPressed: onOpen,
+              icon: const Icon(Icons.open_in_new),
+            ),
+          ],
+        ),
+      );
+}
+
+String _catalogueCurrencyPrefix(String? priceText) {
+  final match = RegExp(r'^\s*([^\d\s.,]+)\s*').firstMatch(priceText ?? '');
+  return match?.group(1) ?? '';
+}
+
+class _CatalogueCroppedImage extends StatelessWidget {
+  const _CatalogueCroppedImage({
+    required this.crop,
+    required this.imageUrl,
+    required this.page,
+  });
+
+  final ImageCrop crop;
+  final String imageUrl;
+  final CataloguePage page;
+
+  @override
+  Widget build(BuildContext context) {
+    final pageWidth = (page.width ?? 1000).toDouble();
+    final pageHeight = (page.height ?? 1400).toDouble();
+    final aspect = (pageWidth * crop.width) / (pageHeight * crop.height);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(TS.tileRadius),
+      child: ColoredBox(
+        color: TS.surfaceSoftOf(context),
+        child: AspectRatio(
+          aspectRatio: aspect,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final fullWidth = constraints.maxWidth / crop.width;
+              final fullHeight = fullWidth * pageHeight / pageWidth;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  Positioned(
+                    left: -crop.x * fullWidth,
+                    top: -crop.y * fullHeight,
+                    width: fullWidth,
+                    height: fullHeight,
+                    child: _CatalogueNetworkImage(
+                      urls: withProxiedFallbacks([imageUrl]),
+                      fit: BoxFit.fill,
+                      fallbackIconSize: 42,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _imageIdentity(String value) {
+  final uri = Uri.tryParse(value);
+  return uri?.replace(query: '', fragment: '').toString() ??
+      value.split('?').first;
+}
+
+String _urlIdentity(String value) =>
+    value.trim().replaceFirst(RegExp(r'/$'), '');
 
 class _ReaderOverlayButton extends StatelessWidget {
   const _ReaderOverlayButton({
@@ -865,30 +1342,25 @@ class _CatalogueRemotePagesError extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (coverImageUrl != null)
-            Opacity(
-              opacity: 0.12,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 178),
               child: _CatalogueNetworkImage(
                 urls: withProxiedFallbacks([coverImageUrl!]),
                 fit: BoxFit.contain,
-                fallbackIconSize: 48,
+                fallbackIconSize: 56,
               ),
             ),
-          Center(
+          Align(
+            alignment: Alignment.bottomCenter,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(12),
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 420),
-                padding: const EdgeInsets.all(22),
+                padding: const EdgeInsets.all(16),
                 decoration: TS.card(context, width: 1.5),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.cloud_off_outlined,
-                      color: TS.redOf(context),
-                      size: 48,
-                    ),
-                    const SizedBox(height: 14),
                     const Text(
                       'Couldn’t load the full catalogue',
                       textAlign: TextAlign.center,

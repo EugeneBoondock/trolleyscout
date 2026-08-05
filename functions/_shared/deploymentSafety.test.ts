@@ -16,7 +16,7 @@ describe('production deployment safety', () => {
       'wrangler d1 migrations apply trolley-scout --remote',
     )
     expect(packageFile.scripts?.['cf:deploy']).toBe(
-      'npm run cf:migrate && wrangler pages deploy dist --project-name trolley-scout',
+      'npm run cf:migrate && npm run build && npm run cf:functions && wrangler pages deploy dist --project-name trolley-scout --branch master',
     )
   })
 })

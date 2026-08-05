@@ -9,6 +9,10 @@ import {
   snapshotDealAlertKeys,
 } from '../functions/_shared/dealAlertStore'
 import { refreshDealSites } from '../functions/_shared/dealSiteScout'
+import {
+  runHolidayCampaignScout,
+  type HolidayCampaignScoutResult,
+} from '../functions/_shared/holidayCampaignScout'
 import { saveLeafletSnapshot } from '../functions/_shared/dealSnapshotStore'
 import {
   readSourceHealth,
@@ -44,6 +48,10 @@ import {
   type RetailerFeedScoutResult,
 } from '../functions/_shared/retailerFeedScout'
 import { scoutNearbyStores } from '../functions/_shared/storeScout'
+import {
+  seedStoreCoverage,
+  type StoreCoverageSeedResult,
+} from '../functions/_shared/storeCoverageSeed'
 import { buildRegistryOnlineStores } from '../functions/_shared/registryOnlineScout'
 import { runVoucherScout } from '../functions/_shared/voucherScout'
 import { pruneWindowSocial } from '../functions/_shared/windowSocialStore'
@@ -77,10 +85,12 @@ export interface ScheduledScoutDependencies {
   refreshDealSites: typeof refreshDealSites
   refreshDiscovery: typeof refreshDiscoveryCache
   runCatalogueScout: typeof runCatalogueScout
+  runHolidayCampaignScout?: typeof runHolidayCampaignScout
   runStructuredRetailerFeedScout: typeof runStructuredRetailerFeedScout
   runVoucherScout?: typeof runVoucherScout
   saveLeafletSnapshot?: typeof saveLeafletSnapshot
   scoutNearbyStores: typeof scoutNearbyStores
+  seedStoreCoverage?: typeof seedStoreCoverage
   snapshotDealAlertKeys?: typeof snapshotDealAlertKeys
 }
 
@@ -147,10 +157,12 @@ const defaultDependencies: ScheduledScoutDependencies = {
   refreshDealSites,
   refreshDiscovery: refreshDiscoveryCache,
   runCatalogueScout,
+  runHolidayCampaignScout,
   runStructuredRetailerFeedScout,
   runVoucherScout,
   saveLeafletSnapshot,
   scoutNearbyStores,
+  seedStoreCoverage,
   snapshotDealAlertKeys,
 }
 
@@ -200,8 +212,44 @@ export async function runScheduledScout(
       externalDealRefreshFailed = true
     }
   }
+  let holidayCampaigns: HolidayCampaignScoutResult = {
+    checkedEventCount: 0,
+    discoveredRetailerCount: 0,
+    offeredStoreCount: 0,
+    pdfCatalogueCount: 0,
+    skippedEventCount: 0,
+  }
+  let holidayCampaignScoutFailed = false
+  if (dependencies.runHolidayCampaignScout) {
+    try {
+      holidayCampaigns = await dependencies.runHolidayCampaignScout(
+        env,
+        _fetcher as typeof fetch,
+      )
+    } catch {
+      // Event scouting is additive. Retail feeds, catalogues, expiry, billing
+      // and alerts still finish when a search provider or campaign page is down.
+      holidayCampaignScoutFailed = true
+    }
+  }
   const nowMs = Date.now()
   const nowIso = new Date(nowMs).toISOString()
+
+  let storeCoverageSeed: StoreCoverageSeedResult = {
+    candidateStoreCount: 0,
+    failedPointCount: 0,
+    pointCount: 0,
+  }
+  let storeCoverageSeedFailed = false
+  if (refreshDealSources && dependencies.seedStoreCoverage) {
+    try {
+      storeCoverageSeed = await dependencies.seedStoreCoverage(env, _fetcher, nowMs)
+    } catch {
+      // Store coverage is additive. A failed seed point must not stop deal,
+      // catalogue, expiry, billing or alert work in the same scheduled run.
+      storeCoverageSeedFailed = true
+    }
+  }
 
   const publicCatalogueLeaflets = dedupeCatalogueLeaflets([
     ...structured.catalogues,
@@ -391,6 +439,12 @@ export async function runScheduledScout(
     expiredRemoved,
     externalDealCount,
     externalDealRefreshFailed,
+    holidayCampaignCheckedEventCount: holidayCampaigns.checkedEventCount,
+    holidayCampaignDiscoveredRetailerCount: holidayCampaigns.discoveredRetailerCount,
+    holidayCampaignOfferedStoreCount: holidayCampaigns.offeredStoreCount,
+    holidayCampaignPdfCatalogueCount: holidayCampaigns.pdfCatalogueCount,
+    holidayCampaignScoutFailed,
+    holidayCampaignSkippedEventCount: holidayCampaigns.skippedEventCount,
     legacyRefreshFailed,
     onlineRetailerScoutFailed,
     organizationPublicationStatusUpdates,
@@ -402,6 +456,10 @@ export async function runScheduledScout(
     sourceHealthAlerts,
     sourceHealthFailed,
     storeScoutFailed,
+    storeCoverageCandidateCount: storeCoverageSeed.candidateStoreCount,
+    storeCoveragePointCount: storeCoverageSeed.pointCount,
+    storeCoverageSeedFailed,
+    storeCoverageSeedFailedPointCount: storeCoverageSeed.failedPointCount,
     structuredAcceptedDealCount: structured.acceptedDealCount,
     structuredCatalogueCount: structured.catalogueCount,
     structuredCheckedSourceCount: structured.checkedSourceCount,

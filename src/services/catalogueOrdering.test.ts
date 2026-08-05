@@ -79,6 +79,20 @@ describe('groupLeafletsByRetailer', () => {
       'captured-old',
     ])
   })
+
+  it('keeps the first available retailer logo for catalogue shelves', () => {
+    const groups = groupLeafletsByRetailer([
+      leaflet({ id: 'no-logo', retailerLogoUrl: undefined }),
+      leaflet({
+        id: 'with-logo',
+        retailerLogoUrl: 'https://images.example.test/shoprite.webp',
+      }),
+    ])
+
+    expect(groups[0].retailerLogoUrl).toBe(
+      'https://images.example.test/shoprite.webp',
+    )
+  })
 })
 
 describe('sortLeaflets', () => {

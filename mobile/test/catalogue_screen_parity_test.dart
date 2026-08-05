@@ -7,12 +7,14 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/nearby_history_store.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
 import 'package:trolley_scout/screens/near_me_screen.dart';
 import 'package:trolley_scout/screens/stores_screen.dart';
 import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/widgets/catalogue_reader.dart';
+import 'package:trolley_scout/widgets/store_map_view.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +23,7 @@ void main() {
 
   testWidgets('Deals opens catalogue pages inside Trolley Scout',
       (tester) async {
-    await tester.pumpWidget(_wrap(DealsScreen(api: _CatalogueApi())));
+    await tester.pumpWidget(_wrap(_deals(_CatalogueApi())));
     await tester.pumpAndSettle();
 
     expect(find.text('Overview'), findsNothing);
@@ -49,7 +51,7 @@ void main() {
       (tester) async {
     _useTallPhoneViewport(tester);
     await tester.pumpWidget(_wrap(
-      DealsScreen(api: _CatalogueDirectoryApi()),
+      _deals(_CatalogueDirectoryApi()),
     ));
     await tester.pumpAndSettle();
 
@@ -57,12 +59,15 @@ void main() {
     await tester.pumpAndSettle();
 
     List<String?> storeOrder() => tester
-        .widgetList<Text>(find.byType(Text))
+        .widgetList<Text>(find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>)
+                  .value
+                  .startsWith('catalogue-section-name-'),
+        ))
         .map((widget) => widget.data)
-        .where((label) =>
-            label == 'Alpha Market' ||
-            label == 'Bravo Shop' ||
-            label == 'Zulu Store')
         .toList();
     expect(storeOrder(), ['Zulu Store', 'Bravo Shop', 'Alpha Market']);
 
@@ -80,7 +85,7 @@ void main() {
       (tester) async {
     _useTallPhoneViewport(tester);
     await tester.pumpWidget(_wrap(
-      DealsScreen(api: _CatalogueDirectoryApi()),
+      _deals(_CatalogueDirectoryApi()),
     ));
     await tester.pumpAndSettle();
 
@@ -95,11 +100,40 @@ void main() {
     expect(find.text('Zulu weekly'), findsOneWidget);
   });
 
+  testWidgets('catalogue date filters keep upcoming offers out of current',
+      (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      _deals(_CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Future preview'), findsNothing);
+    expect(find.text('Upcoming 1'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const Key('catalogue-timing-scroll')),
+      const Offset(-260, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('catalogue-timing-upcoming')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Upcoming catalogues'), findsOneWidget);
+    expect(find.text('Future preview'), findsOneWidget);
+    expect(find.text('Alpha weekly'), findsNothing);
+  });
+
   testWidgets('a single catalogue uses the full store shelf width',
       (tester) async {
     _useTallPhoneViewport(tester);
     await tester.pumpWidget(_wrap(
-      DealsScreen(api: _CatalogueDirectoryApi()),
+      _deals(_CatalogueDirectoryApi()),
     ));
     await tester.pumpAndSettle();
 
@@ -122,7 +156,7 @@ void main() {
       (tester) async {
     _useTallPhoneViewport(tester);
     await tester.pumpWidget(_wrap(
-      DealsScreen(api: _CatalogueDirectoryApi()),
+      _deals(_CatalogueDirectoryApi()),
     ));
     await tester.pumpAndSettle();
 
@@ -139,6 +173,41 @@ void main() {
     expect(find.text('Alpha weekly'), findsNothing);
     expect(find.text('Bravo Shop'), findsNothing);
     expect(find.text('Zulu Store'), findsNothing);
+  });
+
+  testWidgets('catalogue retailer shelf jumps straight to one store',
+      (tester) async {
+    _useTallPhoneViewport(tester);
+    await tester.pumpWidget(_wrap(
+      _deals(_CatalogueDirectoryApi()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Tab).at(1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shop by retailer'), findsOneWidget);
+    expect(find.byKey(const Key('catalogue-retailer-alpha')), findsOneWidget);
+    expect(find.byKey(const Key('catalogue-retailer-bravo')), findsOneWidget);
+    expect(find.byKey(const Key('catalogue-retailer-zulu')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('catalogue-retailer-alpha')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const Key('catalogue-search-field')),
+          )
+          .controller
+          ?.text,
+      'Alpha Market',
+    );
+    expect(find.text('2 shown'), findsOneWidget);
+    expect(find.text('Alpha weekly'), findsOneWidget);
+    expect(find.text('Alpha home event'), findsOneWidget);
+    expect(find.text('Bravo month-end'), findsNothing);
+    expect(find.text('Zulu weekly'), findsNothing);
   });
 
   testWidgets('Near Me history opens catalogues inside Trolley Scout',
@@ -166,6 +235,37 @@ void main() {
 
     expect(find.byType(CatalogueReader), findsOneWidget);
     expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(
+      tester
+          .widget<CatalogueReader>(find.byType(CatalogueReader))
+          .deals
+          .map((deal) => deal.title),
+      contains('Milk 2L'),
+    );
+  });
+
+  testWidgets('Near Me store details open the in-app map', (tester) async {
+    await NearbyHistoryStore().save(
+      const NearbyResult(stores: [_rosebank]),
+      DateTime.parse('2026-07-16T10:00:00.000Z'),
+    );
+
+    await tester.pumpWidget(_wrap(NearMeScreen(
+      api: _CatalogueApi(),
+      historyStore: NearbyHistoryStore(),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('VIEW'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('View on map'), findsOneWidget);
+    await tester.tap(find.text('View on map'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(StoreMapView), findsOneWidget);
+    expect(find.text('Preview route'), findsOneWidget);
+    expect(find.text('Navigate'), findsOneWidget);
   });
 
   testWidgets('Near Me explains disabled location and opens device settings',
@@ -357,6 +457,7 @@ void main() {
 
     expect(find.text('Pick n Pay'), findsOneWidget);
     expect(find.text('2 locations'), findsOneWidget);
+    expect(find.text('0 deals · 1 catalogue'), findsOneWidget);
     expect(find.text('Pick n Pay Rosebank'), findsNothing);
     expect(find.text('PnP Sandton'), findsNothing);
 
@@ -367,6 +468,8 @@ void main() {
     expect(find.text('PnP Sandton'), findsOneWidget);
     expect(find.text('10 Main Road, Rosebank'), findsOneWidget);
     expect(find.text('20 High Street, Sandton'), findsOneWidget);
+    expect(find.text('Browse current brand offers'), findsOneWidget);
+    expect(find.text('Open for branch-specific offers'), findsNWidgets(2));
     expect(find.text('Milk 2L'), findsNothing);
     expect(find.text('R20.00'), findsNothing);
 
@@ -398,7 +501,51 @@ void main() {
 
     expect(find.byType(CatalogueReader), findsOneWidget);
     expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(
+      tester
+          .widget<CatalogueReader>(find.byType(CatalogueReader))
+          .deals
+          .map((deal) => deal.title),
+      contains('Milk 2L'),
+    );
   });
+
+  testWidgets('store search finds a chain beyond the first directory page',
+      (tester) async {
+    await tester.pumpWidget(_wrap(
+      StoresScreen(api: _PagedStoreApi(), isAuthenticated: false),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Boxer');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Boxer'), findsOneWidget);
+    expect(find.text('1 deal · 0 catalogues'), findsOneWidget);
+  });
+}
+
+DealsScreen _deals(Api api) => DealsScreen(
+      api: api,
+      cacheStore: _MemoryDiscoveryCache(),
+    );
+
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load([
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async =>
+      null;
+
+  @override
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {}
 }
 
 Widget _wrap(Widget child) => MaterialApp(
@@ -480,8 +627,45 @@ class _CatalogueDirectoryApi extends _CatalogueApi {
         foundDealCount: 0,
         checkedSourceCount: 1,
         unavailableSourceCount: 0,
-        leafletCount: 4,
+        leafletCount: 5,
         catalogues: _directoryCatalogues,
+      );
+}
+
+class _PagedStoreApi extends _CatalogueApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [_boxerDeal],
+        foundDealCount: 1,
+        checkedSourceCount: 1,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
+
+  @override
+  Future<DiscoveredStoresResult> discoveredStores({
+    bool summary = false,
+    int? limit,
+    int offset = 0,
+    String query = '',
+    bool includeDetails = true,
+    String? placeId,
+    double? lat,
+    double? lon,
+  }) async =>
+      DiscoveredStoresResult(
+        stores: query.toLowerCase().contains('boxer')
+            ? const [_boxerSummary]
+            : const [_rosebankSummary],
+        storeCount: 120,
+        areaCount: 2,
+        knownChainCount: 2,
+        withPromotionsCount: 1,
+        hasMore: true,
+        limit: limit ?? 60,
+        offset: offset,
       );
 }
 
@@ -490,6 +674,14 @@ const _winterCatalogue = Catalogue(
   url: 'https://catalogues.example.test/winter',
   retailerName: 'Pick n Pay',
   pages: _cataloguePages,
+);
+
+const _boxerDeal = Deal(
+  id: 'boxer-rice',
+  retailerId: 'boxer',
+  retailerName: 'Boxer',
+  title: 'Rice 10 kg',
+  priceText: 'R129.99',
 );
 
 const _rosebankCatalogue = Catalogue(
@@ -513,6 +705,15 @@ const _cataloguePages = [
 ];
 
 const _directoryCatalogues = [
+  Catalogue(
+    id: 'future-preview',
+    retailerId: 'future',
+    name: 'Future preview',
+    url: 'https://catalogues.example.test/future',
+    retailerName: 'Future Store',
+    validFrom: '2099-08-05',
+    validTo: '2099-08-18',
+  ),
   Catalogue(
     id: 'zulu-weekly',
     retailerId: 'zulu',
@@ -553,6 +754,8 @@ const _rosebank = NearbyStore(
   address: '10 Main Road, Rosebank',
   website: 'https://www.pnp.co.za/store/rosebank',
   retailerId: 'pick-n-pay',
+  lat: -26.1466,
+  lon: 28.0419,
   logoUrl: 'https://cdn.example.test/pnp.png',
   promotionCount: 2,
   deals: [
@@ -600,5 +803,14 @@ const _sandtonSummary = NearbyStore(
   retailerId: 'pick-n-pay',
   logoUrl: 'https://cdn.example.test/pnp.png',
   promotionCount: 1,
+  detailsLoaded: false,
+);
+
+const _boxerSummary = NearbyStore(
+  placeId: 'boxer-jhb',
+  name: 'Boxer Johannesburg',
+  address: '1 Main Street, Johannesburg',
+  retailerId: 'boxer',
+  promotionCount: 0,
   detailsLoaded: false,
 );

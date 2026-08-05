@@ -30,6 +30,7 @@ const MAX_DOCUMENT_BYTES = 18 * 1024 * 1024
 const MAX_PAGE_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_DOCUMENTS_PER_RUN = 4
 const CATALOGUE_QUEUE_CURSOR_KEY = 'catalogue-scout::document-window'
+const CATALOGUE_PAGER_QUEUE_CURSOR_KEY = 'catalogue-scout::page-window'
 const MAX_PAGES_PER_CATALOGUE = 1
 const MAX_PAGER_BYTES = 512 * 1024
 const MAX_EXTERNAL_HTML_BYTES = 1024 * 1024
@@ -734,16 +735,30 @@ export async function runCatalogueScout(
       !leaflet.pages?.length && !flippingBookPagerUrl(leaflet)),
   ])
   let queueStart = 0
+  let pagerQueueStart = 0
   try {
-    const queueCursor = await dependencies.readSourceCursor(env, CATALOGUE_QUEUE_CURSOR_KEY)
+    const [queueCursor, pagerQueueCursor] = await Promise.all([
+      dependencies.readSourceCursor(env, CATALOGUE_QUEUE_CURSOR_KEY),
+      dependencies.readSourceCursor(env, CATALOGUE_PAGER_QUEUE_CURSOR_KEY),
+    ])
     if (queueCursor?.kind === 'page' && candidates.length > 0) {
       queueStart = queueCursor.page % candidates.length
+    }
+    if (pagerQueueCursor?.kind === 'page' && pagerLeaflets.length > 0) {
+      pagerQueueStart = pagerQueueCursor.page % pagerLeaflets.length
     }
   } catch {
     // A rollout without cursor storage still scans the first bounded window.
   }
-  const priority = roundRobinCataloguesByRetailer(pagerLeaflets)
-    .slice(0, MAX_DOCUMENTS_PER_RUN)
+  const pagerQueue = roundRobinCataloguesByRetailer(pagerLeaflets)
+  const pagerLimit = candidates.length > 0
+    ? MAX_DOCUMENTS_PER_RUN - 1
+    : MAX_DOCUMENTS_PER_RUN
+  const priority = selectCatalogueWindow(
+    pagerQueue,
+    pagerQueueStart,
+    pagerLimit,
+  )
   const selected = [
     ...priority,
     ...selectCatalogueWindow(candidates, queueStart, MAX_DOCUMENTS_PER_RUN - priority.length),
@@ -789,6 +804,20 @@ export async function runCatalogueScout(
           page: (queueStart + (selected.length - priority.length)) % candidates.length,
         },
         sourceKey: CATALOGUE_QUEUE_CURSOR_KEY,
+        updatedAt: dependencies.now(),
+      })
+    } catch {
+      // Per-document progress remains valid if the queue cursor write fails.
+    }
+  }
+  if (pagerQueue.length > 0) {
+    try {
+      await dependencies.writeSourceCursor(env, {
+        cursor: {
+          kind: 'page',
+          page: (pagerQueueStart + priority.length) % pagerQueue.length,
+        },
+        sourceKey: CATALOGUE_PAGER_QUEUE_CURSOR_KEY,
         updatedAt: dependencies.now(),
       })
     } catch {
@@ -863,7 +892,11 @@ async function scanResumableCatalogue(
   dependencies: CatalogueScoutDependencies,
 ): Promise<CatalogueScanOutcome> {
   const scanStartedAt = dependencies.now()
-  const suppliedPages = (leaflet.pages ?? [])
+  const remotePages = await loadPublicCataloguePages(
+    leaflet,
+    dependencies.fetcher,
+  ).catch(() => [])
+  const suppliedPages = (remotePages.length > 0 ? remotePages : leaflet.pages ?? [])
     .filter((page) =>
       Number.isSafeInteger(page.pageNumber) &&
       page.pageNumber > 0 &&
@@ -987,6 +1020,68 @@ async function scanResumableCatalogue(
     updatedAt: dependencies.now(),
   })
   return { dealCount: candidates.length, scanned: true }
+}
+
+async function loadPublicCataloguePages(
+  leaflet: StoreLeaflet,
+  fetcher: typeof fetch,
+): Promise<CataloguePage[]> {
+  const pagesUrl = leaflet.pagesUrl
+  if (!pagesUrl) return []
+
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(pagesUrl)
+  } catch {
+    return []
+  }
+  if (
+    parsedUrl.protocol !== 'https:' ||
+    parsedUrl.hostname !== 'trolleyscout.co.za' ||
+    parsedUrl.pathname !== '/api/catalogue-pages'
+  ) {
+    return []
+  }
+
+  const response = await fetchWithCatalogueTimeout(fetcher, pagesUrl, {
+    headers: { accept: 'application/json' },
+    redirect: 'manual',
+  })
+  if (!response.ok) {
+    throw new Error(`Catalogue page list returned HTTP ${response.status}`)
+  }
+  const payload: unknown = await response.json()
+  const data = isRecord(payload) ? payload.data : undefined
+  const rawPages = isRecord(data) ? data.pages : undefined
+  if (!Array.isArray(rawPages)) return []
+
+  return rawPages.flatMap((value): CataloguePage[] => {
+    if (!isRecord(value)) return []
+    const pageNumber = integerValue(value.pageNumber)
+    const width = numberValue(value.width)
+    const height = numberValue(value.height)
+    const imageUrl = typeof value.imageUrl === 'string' ? value.imageUrl : ''
+    if (
+      !pageNumber ||
+      !width ||
+      !height ||
+      width < 1350 ||
+      !isPublicDocumentUrl(imageUrl)
+    ) {
+      return []
+    }
+    const fallbacks = Array.isArray(value.fallbacks)
+      ? value.fallbacks.filter((fallback): fallback is string =>
+          typeof fallback === 'string' && isPublicDocumentUrl(fallback))
+      : undefined
+    return [{
+      fallbacks,
+      height,
+      imageUrl,
+      pageNumber,
+      width,
+    }]
+  }).sort((left, right) => left.pageNumber - right.pageNumber)
 }
 
 async function scanCatalogueEntry(

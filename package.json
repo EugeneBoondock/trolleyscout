@@ -13,7 +13,8 @@
     "verify": "npm run test && npm run lint && npm run build && npm run typecheck:functions",
     "cf:preview": "wrangler pages dev dist",
     "cf:migrate": "wrangler d1 migrations apply trolley-scout --remote",
-    "cf:deploy": "npm run cf:migrate && wrangler pages deploy dist --project-name trolley-scout",
+    "cf:functions": "node scripts/build-pages-functions.mjs",
+    "cf:deploy": "npm run cf:migrate && npm run build && npm run cf:functions && wrangler pages deploy dist --project-name trolley-scout --branch master",
     "cf:deploy:scout": "wrangler deploy --config wrangler.scout.toml",
     "cf:dev:scout": "wrangler dev --config wrangler.scout.toml --test-scheduled"
   },

@@ -16,7 +16,12 @@ import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import { countryFromCode, detectRequestCountry } from '../_shared/countryContext'
-import { countryRetailerSummary, getCountryRetailers } from '../_shared/countryRetailerScout'
+import {
+  countryRetailerSummary,
+  getCountryRetailers,
+  mergeRetailers,
+  readCachedCountryRetailers,
+} from '../_shared/countryRetailerScout'
 import { getMemberSession } from '../_shared/memberStore'
 
 const sourceKinds: Array<SourceKind | 'all'> = ['all', 'app', 'loyalty', 'specials', 'store-finder']
@@ -160,13 +165,14 @@ export function mergeRetailerScoutStatuses(
   }
 
   return retailers.map((retailer) => {
-    const retailerName = identityKey(retailer.name)
+    const retailerNames = [retailer.name, ...(retailer.aliases ?? [])]
+      .map(identityKey)
     const candidates = retailer.sources.flatMap((source) => {
       const host = sourceHost(source.url)
       return host ? rowsByHost.get(host) ?? [] : []
     })
     const row = candidates.find(
-      (candidate) => identityKey(candidate.store_name) === retailerName,
+      (candidate) => retailerNames.includes(identityKey(candidate.store_name)),
     ) ?? candidates[0]
 
     if (!row) {
@@ -212,9 +218,12 @@ function sourceHost(value: string): string | undefined {
 
 async function southAfricanPayload(env: TrolleyScoutEnv) {
   const base = getStaticRetailersPayload()
-  const snapshot = await readLeafletSnapshot(env)
+  const [snapshot, campaignRetailers] = await Promise.all([
+    readLeafletSnapshot(env),
+    readCachedCountryRetailers(env, 'ZA'),
+  ])
   const retailers = mergeCatalogueRetailers(
-    base.retailers,
+    mergeRetailers(base.retailers, campaignRetailers),
     snapshot?.leaflets ?? [],
     'ZA',
   )
@@ -236,7 +245,9 @@ export function mergeCatalogueRetailers(
 ): Retailer[] {
   const selectedCountry = countryCode.trim().toUpperCase()
   const knownIds = new Set(existing.map((retailer) => retailer.id))
-  const knownNames = new Set(existing.map((retailer) => identityKey(retailer.name)))
+  const knownNames = new Set(existing.flatMap((retailer) =>
+    [retailer.name, ...(retailer.aliases ?? [])].map(identityKey),
+  ))
   const additions = new Map<string, Retailer>()
 
   for (const leaflet of leaflets) {

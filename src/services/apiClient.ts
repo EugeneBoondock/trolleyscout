@@ -37,6 +37,8 @@ import type {
   BasketQuantityDraft,
   DealWatch,
   DealWatchMatch,
+  DealReport,
+  DealReportDraft,
   MemberAccount,
   MemberPlan,
   MemberSession,
@@ -60,6 +62,7 @@ import type {
   StoreLeaflet,
   CountryContext,
   CountryOption,
+  CoverageLedger,
   ProductComparisonResult,
   SubscriptionCheckoutRequest,
   SupportMessage,
@@ -67,6 +70,138 @@ import type {
   VoucherCode,
   VoucherCodeDraft,
 } from '../types'
+import type { RetailHoliday } from './retailSeasons'
+
+export async function loadRetailHolidays(
+  countryCode: string,
+  signal?: AbortSignal,
+): Promise<RetailHoliday[]> {
+  try {
+    const code = countryCode.trim().toUpperCase()
+    const response = await fetch(
+      `/api/retail-calendar?country=${encodeURIComponent(code)}`,
+      { headers: { accept: 'application/json' }, signal },
+    )
+    if (!response.ok) return []
+    const envelope = await response.json() as {
+      data?: { holidays?: RetailHoliday[] }
+    }
+    return Array.isArray(envelope.data?.holidays) ? envelope.data.holidays : []
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return []
+  }
+}
+
+export async function loadPublicDealSiteDeals(signal?: AbortSignal): Promise<DiscoveredDeal[]> {
+  try {
+    const response = await fetch('/api/deal-sites', {
+      headers: { accept: 'application/json' },
+      signal,
+    })
+    if (!response.ok) return []
+    const envelope = await response.json() as {
+      data?: {
+        deals?: Array<{
+          capturedAt?: string
+          expiresAt?: string
+          id: string
+          imageUrl?: string
+          images?: string[]
+          previousPriceText?: string
+          priceText?: string
+          productUrl: string
+          retailerName: string
+          savingText?: string
+          soldOut?: boolean
+          source: string
+          sourceLabel: string
+          title: string
+        }>
+        refreshedAt?: string
+      }
+    }
+    const refreshedAt = envelope.data?.refreshedAt ?? new Date().toISOString()
+    return (envelope.data?.deals ?? []).map((deal) => ({
+      capturedAt: deal.capturedAt ?? refreshedAt,
+      evidenceText: `Public offer listed by ${deal.sourceLabel}.`,
+      expiresAt: deal.expiresAt,
+      id: deal.id,
+      imageUrl: deal.imageUrl,
+      images: deal.images,
+      previousPriceText: deal.previousPriceText,
+      priceText: deal.priceText,
+      productUrl: deal.productUrl,
+      retailerId: deal.source,
+      retailerName: deal.retailerName,
+      savingText: deal.savingText,
+      soldOut: deal.soldOut,
+      sourceLabel: deal.sourceLabel,
+      sourceUrl: deal.productUrl,
+      title: deal.title,
+    }))
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return []
+  }
+}
+
+export async function loadCoverage(signal?: AbortSignal): Promise<CoverageLedger> {
+  const response = await fetch('/api/coverage', {
+    headers: { accept: 'application/json' },
+    signal,
+  })
+  const envelope = await response.json() as {
+    data?: { coverage?: CoverageLedger }
+    error?: { message?: string }
+  }
+  if (!response.ok || !envelope.data?.coverage) {
+    throw new Error(envelope.error?.message ?? `Coverage API returned ${response.status}`)
+  }
+  return envelope.data.coverage
+}
+
+export async function reportDeal(draft: DealReportDraft): Promise<DealReport> {
+  const response = await fetch('/api/deal-reports', {
+    body: JSON.stringify(draft),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+  const envelope = await response.json() as { data?: { issues?: string[]; report?: DealReport } }
+  if (!response.ok || !envelope.data?.report) {
+    throw new Error(envelope.data?.issues?.[0] ?? 'The report could not be saved.')
+  }
+  return envelope.data.report
+}
+
+export async function loadAdminDealReports(
+  status: 'all' | DealReport['status'] = 'pending',
+): Promise<DealReport[]> {
+  const response = await fetch(`/api/admin/deal-reports?status=${encodeURIComponent(status)}`)
+  const envelope = await response.json() as { data?: { issues?: string[]; reports?: DealReport[] } }
+  if (!response.ok || !Array.isArray(envelope.data?.reports)) {
+    throw new Error(envelope.data?.issues?.[0] ?? 'Deal reports could not be loaded.')
+  }
+  return envelope.data.reports
+}
+
+export async function reviewAdminDealReport(
+  id: string,
+  status: Exclude<DealReport['status'], 'pending'>,
+): Promise<DealReport[]> {
+  const response = await fetch('/api/admin/deal-reports', {
+    body: JSON.stringify({ id, status }),
+    headers: { 'content-type': 'application/json' },
+    method: 'PATCH',
+  })
+  const envelope = await response.json() as {
+    data?: { issues?: string[]; reports?: DealReport[] }
+  }
+  if (!response.ok || !Array.isArray(envelope.data?.reports)) {
+    throw new Error(envelope.data?.issues?.[0] ?? 'The report could not be reviewed.')
+  }
+  return envelope.data.reports
+}
 
 export async function loadDeveloperKeys(): Promise<DeveloperKeyResource> {
   const response = await fetch('/api/developer-keys', {
@@ -1344,21 +1479,19 @@ export async function loadVoucherCodes(
   retailerId?: string,
   signal?: AbortSignal,
 ): Promise<VoucherCode[]> {
-  try {
-    const suffix = retailerId && retailerId !== 'all'
-      ? `?retailerId=${encodeURIComponent(retailerId)}`
-      : ''
-    const response = await fetch(`/api/voucher-codes${suffix}`, {
-      headers: { accept: 'application/json' },
-      signal,
-    })
-    if (!response.ok) return []
-    const envelope = (await response.json()) as { data?: { codes?: VoucherCode[] } }
-    return envelope.data?.codes ?? []
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
-    return []
+  const suffix = retailerId && retailerId !== 'all'
+    ? `?retailerId=${encodeURIComponent(retailerId)}`
+    : ''
+  const response = await fetch(`/api/voucher-codes${suffix}`, {
+    headers: { accept: 'application/json' },
+    signal,
+  })
+  if (!response.ok) throw new Error(`Checkout code service returned ${response.status}.`)
+  const envelope = (await response.json()) as { data?: { codes?: VoucherCode[] } }
+  if (!Array.isArray(envelope.data?.codes)) {
+    throw new Error('Checkout code service returned malformed data.')
   }
+  return envelope.data.codes
 }
 
 export async function shareVoucherCode(

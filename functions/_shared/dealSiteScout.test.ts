@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { DealSiteItem } from '../../src/services/dealSites'
 import {
+  currentCampaignPriorityTerms,
   enrichMyRunwayProducts,
   filterCurrentDealSiteItems,
   isDealSiteCacheRowUsable,
+  prioritizeCampaignItems,
   readDealSiteFeed,
   readDealSiteFeedStrict,
 } from './dealSiteScout'
@@ -21,6 +23,21 @@ function deal(id: string, expiresAt?: string): DealSiteItem {
 }
 
 describe('filterCurrentDealSiteItems', () => {
+  it('prioritizes direct-feed items that name the current shopping event', () => {
+    const terms = currentCampaignPriorityTerms(new Date('2026-08-03T08:00:00.000Z'))
+    const generic = deal('generic')
+    const campaign = {
+      ...deal('women-day'),
+      title: 'National Women’s Day spa special',
+    }
+
+    expect(terms).toContain('women s day')
+    expect(prioritizeCampaignItems([generic, campaign], terms)).toEqual([
+      campaign,
+      generic,
+    ])
+  })
+
   it('drops cached daily deals after their South African expiry time', () => {
     const now = Date.parse('2026-07-19T22:00:00.000Z')
     const items = [

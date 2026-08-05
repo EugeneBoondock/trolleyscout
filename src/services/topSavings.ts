@@ -8,10 +8,33 @@ import { meaningfulWasPrice } from './priceDisplay'
 export function topSavingsDeals(deals: DiscoveredDeal[], limit = 3): DiscoveredDeal[] {
   return deals
     .map((deal) => ({ deal, savingCents: savedCents(deal) }))
-    .filter((entry) => entry.savingCents > 0)
+    .filter((entry) => entry.savingCents > 0 && !isUnreliableSaving(entry.deal))
     .sort((left, right) => right.savingCents - left.savingCents)
     .slice(0, Math.max(0, limit))
     .map((entry) => entry.deal)
+}
+
+function isUnreliableSaving(deal: DiscoveredDeal): boolean {
+  const marketplaceListingRetailers = new Set(['bob-shop', 'bobshop', 'bidorbuy', 'ebay', 'gumtree'])
+  const retailerName = deal.retailerName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  if (
+    marketplaceListingRetailers.has(deal.retailerId.toLowerCase()) ||
+    retailerName === 'bob shop' ||
+    retailerName === 'bidorbuy'
+  ) {
+    return true
+  }
+  const searchable = [
+    deal.title,
+    deal.sourceLabel,
+    deal.sourceUrl,
+    deal.productUrl,
+    deal.evidenceText,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return /\b(auction|bidding|current bid|bid now)\b/.test(searchable)
 }
 
 function savedCents(deal: DiscoveredDeal): number {

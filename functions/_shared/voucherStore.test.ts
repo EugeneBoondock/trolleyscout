@@ -17,6 +17,8 @@ import {
 
 const membershipMigrationUrl = new NodeUrl('../../migrations/0002_membership.sql', import.meta.url)
 const voucherMigrationUrl = new NodeUrl('../../migrations/0015_vouchers.sql', import.meta.url)
+const voucherCodeMigrationUrl = new NodeUrl('../../migrations/0047_voucher_codes.sql', import.meta.url)
+const voucherMarketMigrationUrl = new NodeUrl('../../migrations/0048_voucher_markets_and_moderation.sql', import.meta.url)
 
 describe('voucher store', () => {
   let miniflare: Miniflare
@@ -32,7 +34,12 @@ describe('voucher store', () => {
     db = await miniflare.getD1Database('DB') as unknown as D1Database
     env = { DB: db }
 
-    for (const migrationUrl of [membershipMigrationUrl, voucherMigrationUrl]) {
+    for (const migrationUrl of [
+      membershipMigrationUrl,
+      voucherMigrationUrl,
+      voucherCodeMigrationUrl,
+      voucherMarketMigrationUrl,
+    ]) {
       const migration = (await readFile(migrationUrl, 'utf8')).replace(/^--.*$/gm, '').trim()
       for (const statement of splitMigrationStatements(migration)) {
         await db.prepare(statement).run()

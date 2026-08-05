@@ -188,6 +188,8 @@ export const ONLINE_STORE_SOURCES: Readonly<Record<string, readonly OnlineStoreS
     store('Beauty', 'Dermastore', 'https://dermastore.co.za/'),
     store('Beauty', 'Sorbet', 'https://www.sorbet.co.za/'),
     // Food and drink
+    store('Groceries', 'A5 Cash & Carry', 'https://a5cashandcarry.co.za/'),
+    store('Groceries', 'M.A Powertrade', 'https://mapowertrade.co.za/offers-and-deals/'),
     store('Groceries', 'Biltong Boytjies', 'https://www.biltongboytjies.co.za/'),
     store('Groceries', 'Cape Coffee Beans', 'https://capecoffeebeans.co.za/'),
     store('Groceries', 'Bean There Coffee', 'https://beanthere.co.za/'),

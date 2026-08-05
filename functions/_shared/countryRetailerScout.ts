@@ -10,7 +10,7 @@ import type { TrolleyScoutEnv } from './env'
 import { searchWeb } from './searchWeb'
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const RESULT_LIMIT = 18
+const RESULT_LIMIT = 60
 const BLOCKED_HOSTS = [
   'cataloguespecials.',
   'facebook.com',
@@ -50,16 +50,9 @@ export async function getCountryRetailers(
   }
 
   const [resultGroups, stores] = await Promise.all([
-    Promise.all([
-      searchWeb(
-        `supermarkets grocery chains ${country.name} official specials catalogues`,
-        env.JINA_API_KEY,
-      ),
-      searchWeb(
-        `(supermarché OR supermercado OR hypermarché) ${country.name} (promotions OR offres OR ofertas OR catalogues)`,
-        env.JINA_API_KEY,
-      ),
-    ]),
+    Promise.all(countryRetailerQueries(country).map((query) =>
+      searchWeb(query, env.JINA_API_KEY, env),
+    )),
     readStoreWebsites(env, country.code),
   ])
 
@@ -78,6 +71,17 @@ export async function getCountryRetailers(
   }
 
   return cached ? parseRetailerCache(cached.retailers_json) : []
+}
+
+export function countryRetailerQueries(country: CountryOption): string[] {
+  const place = country.name
+  return [
+    `supermarkets grocery chains ${place} official specials catalogues`,
+    `(supermarché OR supermercado OR hypermarché) ${place} (promotions OR offres OR ofertas OR catalogues)`,
+    `electronics appliances furniture hardware retailers ${place} official deals catalogues`,
+    `fashion pharmacy baby sports retailers ${place} official sales catalogues`,
+    `wholesale cash and carry fresh market liquor retailers ${place} official specials`,
+  ]
 }
 
 export function buildCountryRetailers(
@@ -149,7 +153,7 @@ export function buildCountryRetailers(
   return [...byBrand.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
 
-function mergeRetailers(...groups: Retailer[][]): Retailer[] {
+export function mergeRetailers(...groups: Retailer[][]): Retailer[] {
   const merged = new Map<string, Retailer>()
 
   for (const retailer of groups.flat()) {
@@ -174,6 +178,31 @@ function mergeRetailers(...groups: Retailer[][]): Retailer[] {
   }
 
   return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export async function readCachedCountryRetailers(
+  env: TrolleyScoutEnv,
+  countryCode: string,
+): Promise<Retailer[]> {
+  const cached = await readCache(env, countryCode.trim().toUpperCase())
+  return cached ? parseRetailerCache(cached.retailers_json) : []
+}
+
+export async function mergeCountryRetailerDiscoveries(
+  env: TrolleyScoutEnv,
+  country: CountryOption,
+  additions: Retailer[],
+): Promise<Retailer[]> {
+  const cached = await readCachedCountryRetailers(env, country.code)
+  const merged = mergeRetailers(
+    buildRegisteredCountryRetailers(country),
+    cached,
+    additions,
+  )
+  if (merged.length > 0) {
+    await writeCache(env, country.code, merged)
+  }
+  return merged
 }
 
 function dedupeSearchResults(

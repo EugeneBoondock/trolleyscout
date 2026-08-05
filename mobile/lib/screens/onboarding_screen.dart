@@ -5,13 +5,16 @@ import '../theme.dart';
 import 'auth_screen.dart';
 
 /// The first thing a shopper sees on a fresh install: a short, warm intro to
-/// what Trolley Scout does, leading straight into sign-up or log-in. Nothing
-/// else in the app is reachable until they have an account — the whole shell is
-/// mounted only once [AppController.session] is authenticated.
+/// what Trolley Scout does, followed by account creation or guest browsing.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key, required this.controller});
+  const OnboardingScreen({
+    super.key,
+    required this.controller,
+    required this.onExplore,
+  });
 
   final AppController controller;
+  final VoidCallback onExplore;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -151,12 +154,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const SizedBox(height: 4),
                   TextButton(
-                    onPressed: () => _openAuth(isLast ? 'login' : 'signup'),
-                    child: Text(
-                      isLast
-                          ? 'I already have an account · Log in'
-                          : 'Skip and create an account',
-                    ),
+                    onPressed: widget.onExplore,
+                    child: const Text('Explore first'),
                   ),
                 ],
               ),

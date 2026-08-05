@@ -9,6 +9,7 @@ export interface LeafletTarget {
   retailerName: string
   kind:
     | 'catalogue-directory'
+    | 'official-html-index'
     | 'sixty60-api'
     | 'html-list'
     | 'html-pdf'
@@ -21,6 +22,9 @@ export interface LeafletTarget {
   // For sixty60-api: the leaflet API base + a representative national store id.
   apiBase?: string
   storeId?: string
+  // Resolve the retailer's current public branch code before reading leaflets.
+  // The fixed id remains a fallback if the anonymous locator is unavailable.
+  locator?: { latitude: number; longitude: number }
   // For html-list / html-pdf: the specials page to parse and its origin.
   pageUrl?: string
   origin?: string
@@ -138,10 +142,51 @@ export const leafletTargets: LeafletTarget[] = [
   {
     countryCode: 'ZA',
     kind: 'catalogue-directory',
-    pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues?page=1',
+    pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues',
     retailerId: 'catalogue-specials-za',
     retailerName: 'South African catalogue directory',
     sourceId: 'catalogue-specials-za',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'official-html-index',
+    pageUrl: 'https://kitkatgroup.com/promotions.php',
+    retailerId: 'kit-kat',
+    retailerName: 'KIT KAT Cash & Carry',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'official-html-index',
+    pageUrl: 'https://rootsbutchery.co.za/specials/',
+    retailerId: 'roots-butchery',
+    retailerName: 'Roots Butchery',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'official-html-index',
+    pageUrl: 'https://obc.co.za/',
+    retailerId: 'obc-better-butchery',
+    retailerName: 'OBC Better Butchery',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'official-html-index',
+    pageUrl: 'https://prestonsliquors.co.za/specials-brochure/',
+    retailerId: 'prestons-liquors',
+    retailerName: 'Prestons Liquors',
+  },
+  {
+    countryCode: 'ZA',
+    kind: 'sitebuilder-pdf',
+    origin: 'https://www.presidenthyper.co.za',
+    pageUrls: [
+      'https://www.presidenthyper.co.za/weekly-specials-fochville/',
+      'https://www.presidenthyper.co.za/weekly-specials-krugersdorp/',
+      'https://www.presidenthyper.co.za/weekly-specials-vaal/',
+      'https://www.presidenthyper.co.za/weekly-specials-rustenburg/',
+    ],
+    retailerId: 'president-hyper',
+    retailerName: 'President Hyper',
   },
   {
     kind: 'pnp-cms',
@@ -153,6 +198,7 @@ export const leafletTargets: LeafletTarget[] = [
   {
     apiBase: 'https://www.shoprite.co.za',
     kind: 'sixty60-api',
+    locator: { latitude: -26.2041, longitude: 28.0473 },
     retailerId: 'shoprite',
     retailerName: 'Shoprite',
     storeId: '1080',
@@ -160,6 +206,7 @@ export const leafletTargets: LeafletTarget[] = [
   {
     apiBase: 'https://www.checkers.co.za',
     kind: 'sixty60-api',
+    locator: { latitude: -26.2041, longitude: 28.0473 },
     retailerId: 'checkers',
     retailerName: 'Checkers',
     storeId: '168228',
@@ -808,7 +855,7 @@ export function extractOfficialPdfIndexLeaflets(
     const linkText = cleanText(link.label)
     const filename = decodeURIComponent(new URL(documentUrl).pathname.split('/').pop() ?? '')
     const descriptor = `${linkText} ${filename}`.trim()
-    if (!/\b(?:catalogue|catalog|lookbook|brochure)\b/i.test(descriptor)) {
+    if (!/\b(?:catalogue|catalog|lookbook|brochure|specials?|promotions?|deals?|offers?)\b/i.test(descriptor)) {
       continue
     }
 

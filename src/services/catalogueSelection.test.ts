@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { StoreLeaflet } from '../types'
-import { selectCurrentCatalogues } from './catalogueSelection'
+import { selectCatalogueInventory, selectCurrentCatalogues } from './catalogueSelection'
 
 const NOW = new Date('2026-07-27T12:00:00.000Z')
 
@@ -202,6 +202,17 @@ describe('selectCurrentCatalogues', () => {
     expect(result[0].name).toBe('Frontline Hyper catalogue')
   })
 
+  it('rejects a catalogue title paired with a PDF from another year', () => {
+    expect(selectCurrentCatalogues([
+      leaflet({
+        documentUrl: 'https://cdn.test/wp-content/uploads/2025/11/winter.pdf',
+        name: 'Winter Carnival 23 July to 2 August 2026',
+        validFrom: '2026-07-23',
+        validTo: '2026-08-02',
+      }),
+    ], NOW)).toEqual([])
+  })
+
   it('cleans HTML titles and removes homepage URLs used as cover images', () => {
     const result = selectCurrentCatalogues([
       leaflet({
@@ -365,5 +376,39 @@ describe('selectCurrentCatalogues', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('latest-weekly')
+  })
+
+  it('does not count the Pick n Pay directory beside its readable viewer', () => {
+    const result = selectCatalogueInventory([
+      leaflet({
+        documentUrl: undefined,
+        id: 'pnp-directory',
+        name: 'Pick n Pay catalogues',
+        pagesUrl: 'https://trolleyscout.co.za/api/catalogue-pages?source=pnp-directory',
+        retailerId: 'pick-n-pay',
+        retailerName: 'Pick n Pay',
+        url: 'https://www.pnp.co.za/catalogues',
+        validFrom: undefined,
+        validTo: undefined,
+      }),
+      leaflet({
+        documentUrl: undefined,
+        id: 'pnp-viewer',
+        name: 'Pick n Pay weekly catalogue',
+        pages: [{
+          height: 1600,
+          imageUrl: 'https://cdn.test/pnp-cover.webp',
+          pageNumber: 1,
+          width: 1100,
+        }],
+        retailerId: 'pick-n-pay',
+        retailerName: 'Pick n Pay',
+        url: 'https://pnpcatalogues.hflip.co/9744ed8319.html',
+        validFrom: undefined,
+        validTo: undefined,
+      }),
+    ], NOW)
+
+    expect(result.map((item) => item.id)).toEqual(['pnp-viewer'])
   })
 })

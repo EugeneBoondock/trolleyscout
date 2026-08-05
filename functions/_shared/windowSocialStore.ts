@@ -9,7 +9,16 @@ import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 import { readDealSiteFeed } from './dealSiteScout'
 
 // Sources whose deals rotate out; a save/comment is stale once the id is gone.
-const DEAL_SITE_SOURCES = new Set(['onedayonly', 'hyperli', 'daddysdeals', 'myrunway'])
+const DEAL_SITE_SOURCES = new Set([
+  'onedayonly',
+  'hyperli',
+  'daddysdeals',
+  'myrunway',
+  'travelstart',
+  'southernsun',
+  'flightcentre',
+  'citylodge',
+])
 
 // Prune sweeps scan at most this many rows per table per run. Bounded so the
 // scheduled maintenance job stays a cheap, predictable D1 read even as saves

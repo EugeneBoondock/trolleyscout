@@ -1,6 +1,7 @@
 import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { detectRequestCountry } from '../_shared/countryContext'
 import {
   claimVoucher,
   countActiveVouchers,
@@ -20,13 +21,14 @@ interface VoucherActionBody {
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   const session = await getMemberSession(env, request)
   const accountId = session.account?.id
+  const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
 
   if (request.method === 'GET') {
     const url = new URL(request.url)
     if (url.searchParams.get('summary') === '1') {
       return json(
         {
-          summary: { activeVoucherCount: await countActiveVouchers(env) },
+          summary: { activeVoucherCount: await countActiveVouchers(env, countryCode) },
           vouchers: [],
         },
         { headers: privateHeaders },
@@ -44,6 +46,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     const retailerId = retailerValue || undefined
     const vouchers = await listActiveVouchers(env, {
       accountId,
+      countryCode,
       limit,
       offset,
       retailerId,
@@ -91,7 +94,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    const result = await claimVoucher(env, accountId, body.voucherId)
+    const result = await claimVoucher(env, accountId, body.voucherId, countryCode)
     return json(
       result.claimed ? result : { ...result, issues: [result.issue] },
       { headers: privateHeaders, status: result.claimed ? 200 : 422 },

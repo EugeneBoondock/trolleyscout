@@ -6,7 +6,7 @@ import {
 } from './retailers'
 
 describe('addRetailerLogos', () => {
-  it('adds a favicon URL based on an official source website', () => {
+  it('adds a verified logo URL when the retailer favicon is unavailable', () => {
     const retailers = addRetailerLogos([
       {
         accentColor: '#000000',
@@ -21,11 +21,38 @@ describe('addRetailerLogos', () => {
       },
     ])
 
-    expect(retailers[0].logoUrl).toBe('https://icons.duckduckgo.com/ip3/shoprite.co.za.ico')
+    expect(retailers[0].logoUrl).toBe(
+      'https://img.offers-cdn.net/assets/uploads/stores/za/logos/200x72_webp/shoprite.webp',
+    )
   })
 })
 
 describe('mergeCatalogueRetailers', () => {
+  it('does not duplicate a catalogue retailer matched through a directory alias', () => {
+    const existing = [{
+      accentColor: '#000000',
+      aliases: ['Samsung Store'],
+      group: 'General retailer' as const,
+      id: 'samsung-za',
+      name: 'Samsung',
+      program: 'Offers',
+      shortName: 'Samsung',
+      sourceNote: 'Official',
+      sources: [{ kind: 'specials' as const, label: 'Offers', url: 'https://www.samsung.com/za/offer/' }],
+      verifiedOn: '2026-08-02',
+    }]
+    const leaflets = [{
+      capturedAt: '2026-08-02T10:00:00.000Z',
+      countryCode: 'ZA',
+      id: 'samsung-store-catalogue',
+      name: 'Samsung catalogue',
+      retailerId: 'samsung-store',
+      retailerName: 'Samsung Store',
+      url: 'https://www.samsung.com/za/offer/',
+    }]
+
+    expect(mergeCatalogueRetailers(existing, leaflets, 'ZA')).toHaveLength(1)
+  })
   const existing = addRetailerLogos([
     {
       accentColor: '#000000',

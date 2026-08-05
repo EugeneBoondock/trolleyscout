@@ -218,6 +218,24 @@ void main() {
     expect(Deal.fromJson(deal.toJson()).unitText, 'Current bid');
   });
 
+  test('deal preserves a catalogue image crop', () {
+    final deal = Deal.fromJson({
+      'id': 'catalogue-rice',
+      'retailerId': 'shoprite',
+      'retailerName': 'Shoprite',
+      'sourceUrl': 'https://official.test/catalogue',
+      'title': 'Tastic rice 10kg',
+      'pageNumber': 1,
+      'imageCrop': {'x': 0.12, 'y': 0.18, 'width': 0.24, 'height': 0.28},
+    });
+
+    expect(
+      deal.imageCrop,
+      const ImageCrop(x: 0.12, y: 0.18, width: 0.24, height: 0.28),
+    );
+    expect(Deal.fromJson(deal.toJson()).imageCrop, deal.imageCrop);
+  });
+
   test('scroll deal gallery falls back to its single cover image', () {
     const deal = ScrollDeal(
       id: 'window-2',

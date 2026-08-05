@@ -30,6 +30,7 @@ describe('Awin promotions feed', () => {
           advertiser: { name: 'Superbalist' },
           description: '20% off your first order',
           endDate: '2026-09-30T23:59:59Z',
+          regions: { list: [{ countryCode: 'ZA', name: 'South Africa' }] },
           terms: 'New customers only.',
           urlTracking: 'https://www.awin1.com/cread.php?id=1',
           voucher: { code: 'FIRST20' },
@@ -47,6 +48,7 @@ describe('Awin promotions feed', () => {
       {
         benefitText: '20% off your first order',
         code: 'FIRST20',
+        countryCode: 'ZA',
         retailerId: 'superbalist',
         source: 'affiliate:awin',
         sourceUrl: 'https://www.awin1.com/cread.php?id=1',
@@ -73,6 +75,7 @@ describe('Admitad coupons feed', () => {
           goto_link: 'https://ad.admitad.com/g/abc/',
           name: 'R100 off electronics',
           promocode: 'TECH100',
+          regions: [{ country_code: 'ZA' }],
         },
         { campaign: { name: 'Takealot' }, name: 'Sale', promocode: '' },
       ],
@@ -93,6 +96,7 @@ describe('Admitad coupons feed', () => {
           campaign: { name: 'Pick n Pay' },
           name: 'R50 off',
           promocode: 'PNP50',
+          regions: [{ country_code: 'ZA' }],
         },
       ],
     })

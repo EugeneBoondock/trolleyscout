@@ -47,6 +47,18 @@ const deals: DiscoveredDeal[] = [
 ]
 
 describe('filterDiscoveryDeals', () => {
+  it('filters to favourite retailer groups and legacy favourite names', () => {
+    expect(filterDiscoveryDeals(deals, {
+      favouriteRetailerIds: new Set(['retailer:shoprite']),
+      favouriteRetailerNames: new Set(),
+    }).map((deal) => deal.id)).toEqual(['milk'])
+
+    expect(filterDiscoveryDeals(deals, {
+      favouriteRetailerIds: new Set(),
+      favouriteRetailerNames: new Set(['local market']),
+    }).map((deal) => deal.id)).toEqual(['rice', 'metadata-food'])
+  })
+
   it('filters text, retailer, source, images, and savings', () => {
     expect(filterDiscoveryDeals(deals, { query: 'rice' }).map((deal) => deal.id)).toEqual(['rice'])
     expect(filterDiscoveryDeals(deals, { retailerId: 'shoprite' }).map((deal) => deal.id)).toEqual(['milk'])

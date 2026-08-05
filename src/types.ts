@@ -86,6 +86,7 @@ export interface Retailer {
   id: RetailerId
   name: string
   shortName: string
+  aliases?: string[]
   group: RetailerGroup
   program: string
   sourceNote: string
@@ -254,6 +255,35 @@ export interface DiscoveredDeal {
   personalizationReason?: string
 }
 
+export type DealReportReason =
+  | 'price_wrong'
+  | 'expired'
+  | 'unavailable'
+  | 'wrong_item'
+  | 'other'
+
+export type DealReportStatus = 'pending' | 'confirmed' | 'dismissed' | 'resolved'
+
+export interface DealReportDraft {
+  dealId: string
+  note?: string
+  productUrl?: string
+  reason: DealReportReason
+  retailerId: string
+  retailerName: string
+  sourceUrl: string
+  title: string
+}
+
+export interface DealReport extends DealReportDraft {
+  accountId: string
+  countryCode: string
+  createdAt: string
+  id: string
+  status: DealReportStatus
+  updatedAt: string
+}
+
 export interface ImageCrop {
   x: number
   y: number
@@ -412,6 +442,7 @@ export interface MemberPlanLimits {
   savedSources: number
   savedDeals: number
   basketItems: number
+  dealWatches: number
   visibleCatalogues: number
   visibleDeals: number
 }
@@ -737,11 +768,13 @@ export interface AdminAnalyticsReport {
 export interface VoucherCode {
   benefitText: string
   code: string
+  countryCode: string
   createdAt: string
   failedCount: number
   id: string
   lastWorkedAt?: string
   minimumSpendText?: string
+  moderationStatus: 'approved' | 'unconfirmed'
   retailerId: string
   /** 'member', or 'affiliate:<network>' for a licensed feed. */
   source: string
@@ -825,6 +858,40 @@ export interface CountryOption {
   currencyCode: string
   flag: string
   name: string
+}
+
+export type CoverageFreshness = 'live' | 'recent' | 'building'
+
+export interface CoverageMarket {
+  activeCatalogueCount: number
+  activeCatalogueRetailerCount: number
+  activeDealCount: number
+  activeDealRetailerCount: number
+  code: string
+  catalogueCheckedAt?: string
+  directoryCheckedAt?: string
+  discoveredStoreCount: number
+  flag: string
+  freshness: CoverageFreshness
+  lastDealCapturedAt?: string
+  name: string
+  officialSourceCount: number
+  retailerCount: number
+  storesWithPromotionsCount: number
+}
+
+export interface CoverageLedger {
+  generatedAt: string
+  markets: CoverageMarket[]
+  summary: {
+    activeCatalogueCount: number
+    activeDealCount: number
+    activeMarketCount: number
+    discoveredStoreCount: number
+    liveMarketCount: number
+    officialSourceCount: number
+    retailerCount: number
+  }
 }
 
 export interface CountryContext extends CountryOption {

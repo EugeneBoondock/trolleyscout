@@ -22,7 +22,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
-      home: OnboardingScreen(controller: controller),
+      home: OnboardingScreen(controller: controller, onExplore: () {}),
     ));
     await tester.pump();
 
@@ -80,6 +80,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byType(DashboardScreen), findsOneWidget);
+    final navigation = find.byType(NavigationBar);
+    expect(navigation, findsOneWidget);
+    expect(tester.getSize(navigation).height, lessThanOrEqualTo(58));
+    for (final label in [
+      'Home',
+      'Marketplace',
+      'Mr Scout',
+      'Stores',
+      'Window',
+    ]) {
+      final text = find.descendant(of: navigation, matching: find.text(label));
+      expect(text, findsOneWidget);
+      expect(tester.getSize(text).height, lessThan(20));
+      expect(tester.getSize(text).width, lessThanOrEqualTo(60));
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -137,6 +152,31 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('authenticated tablet uses an adaptive navigation rail',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(_ResponsiveApi())
+      ..session = _memberSession
+      ..restoring = false;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: RootShell(
+        controller: controller,
+        launchIntroDuration: Duration.zero,
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Marketplace'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final theme in <(String, ThemeData)>[
     ('light', TS.lightTheme()),
     ('dark', TS.darkTheme()),
@@ -146,7 +186,7 @@ void main() {
       final controller = AppController(_ResponsiveApi());
       await tester.pumpWidget(MaterialApp(
         theme: theme.$2,
-        home: OnboardingScreen(controller: controller),
+        home: OnboardingScreen(controller: controller, onExplore: () {}),
       ));
       await tester.pump();
 

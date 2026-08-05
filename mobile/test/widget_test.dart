@@ -25,7 +25,61 @@ void main() {
     expect(find.text('Stretch your budget'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Next'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Log in'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Explore first'), findsOneWidget);
     expect(find.byTooltip('Open navigation menu'), findsNothing);
+  });
+
+  testWidgets('signed-out shoppers can explore before creating an account',
+      (tester) async {
+    final api = _FakeApi(const MemberSession.signedOut());
+    await tester.pumpWidget(_testApp(api));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.widgetWithText(TextButton, 'Explore first'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(api.currentSession.isAuthenticated, isFalse);
+    expect(find.byTooltip('Open navigation menu'), findsOneWidget);
+    expect(find.text('Marketplace'), findsWidgets);
+    expect(find.text('Log in'), findsOneWidget);
+  });
+
+  testWidgets('guest access survives an app restart', (tester) async {
+    await tester.pumpWidget(
+      _testApp(_FakeApi(const MemberSession.signedOut())),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.widgetWithText(TextButton, 'Explore first'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getBool('guest_explore_enabled_v1'), isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpWidget(
+      _testApp(_FakeApi(const MemberSession.signedOut())),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byTooltip('Open navigation menu'), findsOneWidget);
+    expect(find.text('Stretch your budget'), findsNothing);
+  });
+
+  testWidgets('guest access keeps member-only destinations locked',
+      (tester) async {
+    await tester.pumpWidget(
+      _testApp(_FakeApi(const MemberSession.signedOut())),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.widgetWithText(TextButton, 'Explore first'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.tap(find.text('Mr Scout'));
+    await tester.pump();
+
+    expect(find.text('Log in or sign up to open Mr Scout.'), findsOneWidget);
+    expect(find.byType(ScoutChatScreen), findsNothing);
   });
 
   testWidgets('onboarding uses new Scout scenes and rounded actions',
@@ -64,7 +118,11 @@ void main() {
         .pumpWidget(_testApp(_FakeApi(const MemberSession.signedOut())));
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.textContaining('create an account'));
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create free account'));
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Create your account'), findsOneWidget);

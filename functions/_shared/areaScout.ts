@@ -53,7 +53,11 @@ export async function scoutAreaStores(
 
   const countryName = existingStores[0]?.countryName ?? 'South Africa'
   const countryCode = existingStores[0]?.countryCode ?? 'ZA'
-  const searchResults = await searchWeb(buildAreaStoresQuery(area, countryName), env.JINA_API_KEY)
+  const searchResults = await searchWeb(
+    buildAreaStoresQuery(area, countryName),
+    env.JINA_API_KEY,
+    env,
+  )
 
   if (searchResults.length === 0) {
     await recordStoreScout(env, areaMarker, 0, nowMs, RETRY_SOON_MS)

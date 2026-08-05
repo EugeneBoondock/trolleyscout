@@ -15,6 +15,10 @@ export interface DealFilterOptions {
   // A deal ends before this ISO date (YYYY-MM-DD) is excluded; a deal with no
   // known end date is always kept.
   endsAfter?: string
+  // Store groups use ids such as "retailer:shoprite". Names cover favourites
+  // saved before a retailer id was known.
+  favouriteRetailerIds?: ReadonlySet<string>
+  favouriteRetailerNames?: ReadonlySet<string>
 }
 
 export type DealSortOrder = 'newest' | 'oldest' | 'store'
@@ -94,6 +98,11 @@ export function filterIndexedDiscoveryDeals(
         (foodSubcategory === 'all' || dealFoodSubcategory === foodSubcategory)
       const matchesExpiry =
         !endsAfter || !deal.validTo || deal.validTo.slice(0, 10) >= endsAfter
+      const matchesFavourite =
+        !options.favouriteRetailerIds ||
+        options.favouriteRetailerIds.has(`retailer:${deal.retailerId.toLowerCase()}`) ||
+        options.favouriteRetailerIds.has(deal.retailerId.toLowerCase()) ||
+        options.favouriteRetailerNames?.has(normalizeRetailerName(deal.retailerName)) === true
       return (
         matchesQuery &&
         matchesRetailer &&
@@ -103,10 +112,15 @@ export function filterIndexedDiscoveryDeals(
         matchesAvailability &&
         matchesBidPreference &&
         matchesCategory &&
-        matchesExpiry
+        matchesExpiry &&
+        matchesFavourite
       )
     })
     .map(({ deal }) => deal)
+}
+
+function normalizeRetailerName(value: string) {
+  return value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
 /**

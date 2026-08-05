@@ -376,7 +376,13 @@ export async function scoutNearbyStores(
             resolvedStore,
             promotions.length,
             nowMs,
-            outcome.status,
+            store.sourceCategory === 'holiday-campaign' &&
+                Number.isFinite(store.scoutIntervalMs) &&
+                (store.scoutIntervalMs ?? 0) > 0 &&
+                outcome.status !== 'transient_failure' &&
+                outcome.status !== 'permanent_unverified'
+              ? store.scoutIntervalMs!
+              : outcome.status,
           )
         } catch {
           // A malformed store or unexpected source response is isolated to
@@ -739,7 +745,20 @@ async function scoutStore(
     }
   }
 
-  const search = await searchStoreCatalogue(store, nowMs, env.JINA_API_KEY)
+  // An event result is admitted for one exact public campaign page after a
+  // robots check. Do not turn an empty page into permission to probe other
+  // paths or issue another broad search on that retailer's behalf.
+  if (store.sourceCategory === 'holiday-campaign') {
+    if (attempts.some((attempt) => attempt.status === 'transient_failure')) {
+      return outcome('transient_failure', [], resolvedWebsiteFrom(attempts))
+    }
+    if (attempts.some((attempt) => attempt.status === 'empty')) {
+      return outcome('empty', [], resolvedWebsiteFrom(attempts))
+    }
+    return outcome('permanent_unverified', [], resolvedWebsiteFrom(attempts))
+  }
+
+  const search = await searchStoreCatalogue(store, nowMs, env)
   attempts.push(search)
   if (search.promotions.length > 0) {
     return search
@@ -760,7 +779,7 @@ async function scoutStore(
 async function searchStoreCatalogue(
   store: NearbyStore,
   nowMs: number,
-  jinaApiKey?: string,
+  env: TrolleyScoutEnv,
 ): Promise<ScoutOutcome> {
   const area = store.address ? cityFromAddress(store.address) : undefined
   const websiteHost = safeHost(store.website)
@@ -775,7 +794,8 @@ async function searchStoreCatalogue(
       verifiedHost,
       store.countryName ?? countryFromCode(store.countryCode).name,
     ),
-    jinaApiKey,
+    env.JINA_API_KEY,
+    env,
   )
 
   if (search.status === 'transient_failure') {
@@ -882,8 +902,9 @@ async function searchStoreCatalogue(
 async function searchOfficialWeb(
   query: string,
   jinaApiKey?: string,
+  providerKeys: TrolleyScoutEnv = {},
 ): Promise<{ results: SearchResult[]; status: 'success' | 'empty' | 'transient_failure' }> {
-  return searchWebWithStatus(query, jinaApiKey)
+  return searchWebWithStatus(query, jinaApiKey, providerKeys)
 }
 
 function cityFromAddress(address: string): string | undefined {
@@ -974,7 +995,11 @@ async function scoutStoreWebsite(
     return outcome('permanent_unverified')
   }
 
-  const pathPlan = storeSpecialsPathPlan(store.website, store.websiteSource === 'country-retailer')
+  const pathPlan = storeSpecialsPathPlan(
+    store.website,
+    store.websiteSource === 'country-retailer',
+    store.sourceCategory === 'holiday-campaign',
+  )
   const cursorKey = `store-paths::${hashString(store.placeId)}`
   const cursorState = await readStorePathCursor(env, cursorKey, pathPlan.length)
   const start = cursorState.start
@@ -3075,10 +3100,17 @@ async function readStorePathCursor(
   }
 }
 
-function storeSpecialsPathPlan(website: string, preferHomePage = false): string[] {
+function storeSpecialsPathPlan(
+  website: string,
+  preferHomePage = false,
+  exactPageOnly = false,
+): string[] {
   try {
     const url = new URL(website)
     const exactPath = `${url.pathname || '/'}${url.search}`
+    if (exactPageOnly) {
+      return [exactPath]
+    }
     if (exactPath !== '/' && !SPECIALS_PATHS.includes(exactPath)) {
       return [exactPath, ...SPECIALS_PATHS]
     }

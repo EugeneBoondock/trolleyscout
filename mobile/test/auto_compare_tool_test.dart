@@ -36,10 +36,79 @@ void main() {
     expect(api.query, 'milk 2L');
     expect(api.retailerIds, ['pick-n-pay', 'checkers']);
     expect(find.text('PnP Full Cream Fresh Milk 2L'), findsOneWidget);
-    expect(find.text('R32.99'), findsOneWidget);
+    expect(find.text('R32.99'), findsNWidgets(2));
     expect(find.text('R34.99'), findsOneWidget);
+    expect(find.text('BEST LIVE PRICE'), findsOneWidget);
+    expect(find.text('2 of 2 stores priced'), findsOneWidget);
+    expect(find.text('R2.00 more'), findsOneWidget);
     expect(find.textContaining('Pick n Pay is cheapest'), findsOneWidget);
     expect(find.textContaining('deal database'), findsNothing);
+  });
+
+  testWidgets('mobile compare explains when sign in is required',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _CompareApi(unauthorized: true);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: Scaffold(
+        body: SingleChildScrollView(child: AutoCompareTool(api: api)),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'milk');
+    await tester.pump();
+    await tester.tap(find.text('Compare'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign in to compare live store prices.'), findsOneWidget);
+    expect(find.textContaining('401'), findsNothing);
+  });
+
+  testWidgets('mobile compare plans a shopping trip in dark mode',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    final api = _CompareApi(
+      remoteState: ['pick-n-pay', 'checkers', 'big-save'],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      darkTheme: TS.darkTheme(),
+      themeMode: ThemeMode.dark,
+      home: Scaffold(
+        body: SingleChildScrollView(child: AutoCompareTool(api: api)),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Shopping trip'));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('trip-compare-input')),
+      'Milk 2L\nBread 700g',
+    );
+    await tester.pump();
+    await tester.ensureVisible(find.text('Plan trip'));
+    await tester.tap(find.text('Plan trip'));
+    await tester.pumpAndSettle();
+
+    expect(api.queries, ['Milk 2L', 'Bread 700g']);
+    expect(find.text('CHEAPEST SPLIT'), findsOneWidget);
+    expect(find.text('BEST ONE STORE'), findsOneWidget);
+    expect(find.textContaining('One stop at'), findsOneWidget);
+    expect(find.text('Cheapest product stops'), findsOneWidget);
+    expect(find.text('Store coverage'), findsOneWidget);
+    expect(find.text('No prices'), findsOneWidget);
+    expect(find.text('nothing verified'), findsOneWidget);
+    expect(find.text('R0.00'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('mobile compare restores and syncs the saved store choice',
@@ -59,6 +128,9 @@ void main() {
         body: SingleChildScrollView(child: AutoCompareTool(api: api)),
       ),
     ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Choose stores'));
     await tester.pumpAndSettle();
 
     final checkers = tester.widget<FilterChip>(
@@ -108,6 +180,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Choose stores'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.widgetWithText(FilterChip, 'Pick n Pay'));
     await tester.pump();
     await tester.tap(find.widgetWithText(FilterChip, 'Checkers'));
@@ -155,6 +230,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Choose stores'));
+    await tester.pumpAndSettle();
+
     final checkers = tester.widget<FilterChip>(
       find.widgetWithText(FilterChip, 'Checkers'),
     );
@@ -171,13 +249,18 @@ void main() {
 }
 
 class _CompareApi extends Api {
-  _CompareApi({this.delayFirstStateWrite = false, this.remoteState})
-      : super(baseUrl: 'https://example.test');
+  _CompareApi({
+    this.delayFirstStateWrite = false,
+    this.remoteState,
+    this.unauthorized = false,
+  }) : super(baseUrl: 'https://example.test');
 
   final bool delayFirstStateWrite;
   final Object? remoteState;
+  final bool unauthorized;
 
   String? query;
+  final List<String> queries = [];
   List<String>? retailerIds;
   String? stateKey;
   Object? stateValue;
@@ -215,6 +298,17 @@ class _CompareApi extends Api {
             accentColor: '#009fe3',
             sources: [],
           ),
+          Retailer(
+            id: 'big-save',
+            name: 'Big Save',
+            shortName: 'Big Save',
+            group: 'Supermarket',
+            program: '',
+            sourceNote: 'Official store',
+            verifiedOn: '2026-07-22',
+            accentColor: '#2f6c3d',
+            sources: [],
+          ),
         ],
         sourceKinds: [],
       );
@@ -224,11 +318,16 @@ class _CompareApi extends Api {
     required String query,
     required List<String> retailerIds,
   }) async {
+    if (unauthorized) {
+      throw const ApiException('The server returned 401.', statusCode: 401);
+    }
     this.query = query;
+    queries.add(query);
     this.retailerIds = retailerIds;
-    return const ProductComparisonResult(
+    final isBread = query.toLowerCase().contains('bread');
+    return ProductComparisonResult(
       checkedAt: '2026-07-22T00:00:00.000Z',
-      country: CountryOption(
+      country: const CountryOption(
         code: 'ZA',
         currencyCode: 'ZAR',
         flag: 'ZA',
@@ -241,26 +340,35 @@ class _CompareApi extends Api {
           retailerName: 'Pick n Pay',
           status: 'priced',
           isCheapest: true,
-          priceCents: 3299,
+          priceCents: isBread ? 2000 : 3299,
           productUrl: 'https://www.pnp.co.za/milk-2l',
           sourceKind: 'official-site',
-          title: 'PnP Full Cream Fresh Milk 2L',
+          title:
+              isBread ? 'PnP Brown Bread 700g' : 'PnP Full Cream Fresh Milk 2L',
         ),
         RetailerProductSearchMatch(
           retailerId: 'checkers',
           retailerName: 'Checkers',
           status: 'priced',
-          priceCents: 3499,
+          priceCents: isBread ? 1500 : 3499,
           productUrl: 'https://www.checkers.co.za/milk-2l',
           sourceKind: 'official-site',
-          title: 'Clover Fresh Full Cream Milk 2L',
+          title: isBread
+              ? 'Checkers Brown Bread 700g'
+              : 'Clover Fresh Full Cream Milk 2L',
         ),
+        if (retailerIds.contains('big-save'))
+          const RetailerProductSearchMatch(
+            retailerId: 'big-save',
+            retailerName: 'Big Save',
+            status: 'unavailable',
+          ),
       ],
       pricedCount: 2,
-      query: 'milk 2L',
-      savingsCents: 200,
-      unavailableCount: 0,
-      cheapestRetailerId: 'pick-n-pay',
+      query: query,
+      savingsCents: isBread ? 500 : 200,
+      unavailableCount: retailerIds.contains('big-save') ? 1 : 0,
+      cheapestRetailerId: isBread ? 'checkers' : 'pick-n-pay',
     );
   }
 

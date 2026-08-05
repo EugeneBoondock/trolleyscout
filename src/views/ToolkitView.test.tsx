@@ -164,6 +164,92 @@ describe('automatic store comparison', () => {
     ).toBeTruthy()
   })
 
+  it('leads with the best live price and orders priced stores from low to high', async () => {
+    vi.mocked(loadRetailers).mockResolvedValue(retailerState())
+    vi.mocked(searchProductPrices).mockResolvedValue({
+      ok: true,
+      result: {
+        checkedAt: '2026-07-21T12:00:00.000Z',
+        country: { code: 'ZA', currencyCode: 'ZAR', flag: 'ZA', name: 'South Africa' },
+        foundCount: 2,
+        matches: [
+          {
+            priceCents: 2099,
+            productUrl: 'https://www.checkers.co.za/white-bread',
+            retailerId: 'checkers',
+            retailerName: 'Checkers',
+            sourceKind: 'official-site',
+            status: 'priced',
+            title: 'White Bread 700g',
+          },
+          {
+            isCheapest: true,
+            priceCents: 1899,
+            productUrl: 'https://www.shoprite.co.za/white-bread',
+            retailerId: 'shoprite',
+            retailerName: 'Shoprite',
+            sourceKind: 'official-site',
+            status: 'priced',
+            title: 'White Bread 700g',
+          },
+        ],
+        pricedCount: 2,
+        query: 'white bread',
+        savingsCents: 200,
+        unavailableCount: 0,
+        cheapestRetailerId: 'shoprite',
+      },
+    })
+
+    render(<ToolkitView />)
+    await screen.findByText('Checkers')
+    fireEvent.change(screen.getByLabelText('Item to compare'), { target: { value: 'white bread' } })
+    fireEvent.click(screen.getByRole('button', { name: /Compare/ }))
+
+    expect(await screen.findByText('BEST LIVE PRICE')).toBeTruthy()
+    expect(screen.getByLabelText('Price coverage').textContent).toContain('2 of 2 stores priced')
+    expect(screen.getByText(/2[,.]00 more/)).toBeTruthy()
+    const rows = screen.getAllByTestId('price-comparison-row')
+    expect(within(rows[0]).getByText('Shoprite')).toBeTruthy()
+    expect(within(rows[1]).getByText('Checkers')).toBeTruthy()
+  })
+
+  it('plans a multi-product trip without treating missing prices as free', async () => {
+    vi.mocked(loadRetailers).mockResolvedValue(retailerState())
+    vi.mocked(searchProductPrices)
+      .mockResolvedValueOnce({
+        ok: true,
+        result: comparisonResult('Milk 2L', 3000, 2500),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        result: comparisonResult('Bread 700g', 1500, 2000),
+      })
+
+    render(<ToolkitView />)
+    await screen.findByText('Checkers')
+    fireEvent.click(screen.getByRole('button', { name: /Shopping trip/ }))
+    fireEvent.change(screen.getByLabelText('Shopping trip items'), {
+      target: { value: 'Milk 2L\nBread 700g' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Plan trip/ }))
+
+    expect(await screen.findByText('CHEAPEST SPLIT')).toBeTruthy()
+    expect(screen.getByText('BEST ONE STORE')).toBeTruthy()
+    expect(screen.getByText(/One stop at/).textContent).toContain('Checkers')
+    expect(screen.getByText(/One stop at/).textContent).toMatch(/5[,.]00 more/)
+    expect(screen.getByLabelText('Cheapest product stops').textContent).toContain('Shoprite')
+    expect(screen.getByLabelText('Cheapest product stops').textContent).toContain('Checkers')
+    expect(searchProductPrices).toHaveBeenNthCalledWith(1, {
+      query: 'Milk 2L',
+      retailerIds: ['checkers', 'shoprite'],
+    })
+    expect(searchProductPrices).toHaveBeenNthCalledWith(2, {
+      query: 'Bread 700g',
+      retailerIds: ['checkers', 'shoprite'],
+    })
+  })
+
   it('restores the account store choice and saves later changes for web and mobile', async () => {
     vi.mocked(readMemberState).mockResolvedValue({ ok: true, value: ['shoprite'] })
     vi.mocked(loadRetailers).mockResolvedValue({
@@ -330,5 +416,37 @@ function retailerState(): ResourceState<RetailerResource> {
     message: 'API live.',
     meta: { generatedAt: '2026-07-21T12:00:00.000Z', source: 'cloudflare-pages' },
     status: 'ready' as const,
+  }
+}
+
+function comparisonResult(query: string, checkersPrice: number, shopritePrice: number) {
+  return {
+    checkedAt: '2026-07-21T12:00:00.000Z',
+    country: { code: 'ZA', currencyCode: 'ZAR', flag: 'ZA', name: 'South Africa' },
+    foundCount: 2,
+    matches: [
+      {
+        priceCents: checkersPrice,
+        productUrl: `https://www.checkers.co.za/${encodeURIComponent(query)}`,
+        retailerId: 'checkers',
+        retailerName: 'Checkers',
+        sourceKind: 'official-site' as const,
+        status: 'priced' as const,
+        title: query,
+      },
+      {
+        priceCents: shopritePrice,
+        productUrl: `https://www.shoprite.co.za/${encodeURIComponent(query)}`,
+        retailerId: 'shoprite',
+        retailerName: 'Shoprite',
+        sourceKind: 'official-site' as const,
+        status: 'priced' as const,
+        title: query,
+      },
+    ],
+    pricedCount: 2,
+    query,
+    savingsCents: Math.abs(checkersPrice - shopritePrice),
+    unavailableCount: 0,
   }
 }

@@ -31,7 +31,10 @@ export interface NearbyStore {
   // National carrier offer pages contain plans rather than supermarket-style
   // product markdowns. This opt-in lets the shared parser accept a current plan
   // price as an offer without weakening proof rules for ordinary shops.
-  sourceCategory?: 'network-provider'
+  sourceCategory?: 'holiday-campaign' | 'network-provider'
+  // Event-discovered online shops may be checked more often near the event.
+  // Ordinary branches keep the store scout's normal daily interval.
+  scoutIntervalMs?: number
   distanceM?: number
   countryCode?: string
   countryName?: string

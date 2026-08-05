@@ -10,6 +10,8 @@ import {
   type DealWatchMatch,
   type WatchableDeal,
 } from '../../src/services/dealWatch'
+import { getMemberPlan } from '../../src/data/memberPlans'
+import type { MemberPlanId } from '../../src/types'
 import { listActiveDealItems } from './dealItemStore'
 import { readDealSnapshots } from './dealSnapshotStore'
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
@@ -34,7 +36,8 @@ interface DealWatchRow {
   seen_at: string | null
 }
 
-const MAX_WATCHES_PER_ACCOUNT = 20
+const MAX_STORED_WATCHES_PER_ACCOUNT = 1000
+const FALLBACK_WATCH_LIMIT = 20
 const MAX_PENDING_PER_SWEEP = 500
 
 export async function listDealWatches(
@@ -53,7 +56,7 @@ export async function listDealWatches(
         ORDER BY created_at DESC
         LIMIT ?`,
     )
-      .bind(accountId, MAX_WATCHES_PER_ACCOUNT * 2)
+      .bind(accountId, MAX_STORED_WATCHES_PER_ACCOUNT)
       .all<DealWatchRow>()
 
     return result.results.map(rowToWatch)
@@ -78,9 +81,10 @@ export async function createDealWatch(
   }
 
   const existing = await listDealWatches(env, accountId)
+  const watchLimit = await dealWatchLimitForAccount(env, accountId)
 
-  if (existing.length >= MAX_WATCHES_PER_ACCOUNT) {
-    return { issue: `You can watch up to ${MAX_WATCHES_PER_ACCOUNT} items. Remove one first.` }
+  if (existing.length >= watchLimit) {
+    return { issue: `Your plan includes ${watchLimit} watched items. Remove one or change plan.` }
   }
 
   const nowIso = new Date().toISOString()
@@ -115,6 +119,35 @@ export async function createDealWatch(
   } catch {
     return { issue: 'Could not save the watch. Try again.' }
   }
+}
+
+async function dealWatchLimitForAccount(
+  env: TrolleyScoutEnv & { DB: D1Database },
+  accountId: string,
+): Promise<number> {
+  try {
+    const account = await env.DB.prepare(
+      'SELECT plan_id, plan_status, role FROM member_accounts WHERE id = ?',
+    ).bind(accountId).first<{ plan_id: string; plan_status: string; role: string }>()
+    if (!account) return FALLBACK_WATCH_LIMIT
+    if (account.role === 'admin') {
+      return getMemberPlan('developers').limits.dealWatches
+    }
+    const planId = normalizeWatchPlanId(account.plan_id)
+    const effectivePlan = account.plan_status === 'active' ? planId : 'free'
+    return getMemberPlan(effectivePlan).limits.dealWatches
+  } catch {
+    return FALLBACK_WATCH_LIMIT
+  }
+}
+
+function normalizeWatchPlanId(value: string): MemberPlanId {
+  return value === 'scout' ||
+    value === 'household' ||
+    value === 'organization' ||
+    value === 'developers'
+    ? value
+    : 'free'
 }
 
 export async function deleteDealWatch(

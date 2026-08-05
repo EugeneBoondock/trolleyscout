@@ -1,5 +1,7 @@
 // Public feed of deals from the external deal sites (OneDayOnly, Hyperli,
-// Daddy's Deals, MyRunway). Powers the "Scroll" window-shopping reel and can be
+// Daddy's Deals, MyRunway, Travelstart, Southern Sun, Flight Centre and City
+// Lodge Hotels). Powers the "Scroll"
+// window-shopping reel and can be
 // mixed into the deals board. Normal requests only read D1. Scheduled scouting
 // and explicit administrator requests are the only upstream refresh owners.
 

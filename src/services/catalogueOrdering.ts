@@ -3,6 +3,7 @@ import type { StoreLeaflet } from '../types'
 export interface CatalogueGroup {
   retailerId: string
   retailerName: string
+  retailerLogoUrl?: string
   leaflets: StoreLeaflet[]
 }
 
@@ -62,10 +63,12 @@ export function groupLeafletsByRetailer(
 
     if (group) {
       group.leaflets.push(leaflet)
+      group.retailerLogoUrl ??= leaflet.retailerLogoUrl
     } else {
       byRetailer.set(key, {
         leaflets: [leaflet],
         retailerId: key,
+        retailerLogoUrl: leaflet.retailerLogoUrl,
         retailerName: leaflet.retailerName,
       })
     }

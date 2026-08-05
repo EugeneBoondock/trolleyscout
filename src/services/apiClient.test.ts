@@ -13,10 +13,12 @@ import {
   loadDiscoveredStores,
   loadAdminOverview,
   loadBasket,
+  loadCoverage,
   loadSavedDeals,
   loadMemberSession,
   loadNearbyStores,
   loadOffers,
+  loadPublicDealSiteDeals,
   loadRetailers,
   loadSavedSources,
   loadSubscription,
@@ -31,6 +33,33 @@ import {
 describe('apiClient', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('loads the public coverage ledger from the response envelope', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          coverage: {
+            generatedAt: '2026-08-01T08:00:00.000Z',
+            markets: [],
+            summary: {
+              activeDealCount: 0,
+              activeMarketCount: 1,
+              discoveredStoreCount: 0,
+              liveMarketCount: 0,
+              officialSourceCount: 32,
+              retailerCount: 17,
+            },
+          },
+        },
+      }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const coverage = await loadCoverage()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/coverage', expect.any(Object))
+    expect(coverage.summary.retailerCount).toBe(17)
   })
 
   it('loads the admin overview for the active test country when no stats country is chosen', async () => {
@@ -212,6 +241,40 @@ describe('apiClient', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/discovery', expect.objectContaining({ headers: expect.any(Object) }))
     expect(state.data.discovery.summary.foundDealCount).toBe(1)
+  })
+
+  it('maps public travel feeds into Marketplace deals', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          deals: [{
+            expiresAt: '2026-08-21 23:59:59',
+            id: 'travelstart-jnb-cpt',
+            priceText: 'R599',
+            productUrl: 'https://www.travelstart.co.za/search?from=JNB&to=CPT',
+            retailerName: 'LIFT',
+            source: 'travelstart',
+            sourceLabel: 'Travelstart flight deals',
+            title: 'LIFT flight: JNB to CPT',
+          }],
+          refreshedAt: '2026-08-02T08:00:00.000Z',
+        },
+      }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const deals = await loadPublicDealSiteDeals()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/deal-sites', expect.any(Object))
+    expect(deals).toEqual([
+      expect.objectContaining({
+        capturedAt: '2026-08-02T08:00:00.000Z',
+        expiresAt: '2026-08-21 23:59:59',
+        retailerId: 'travelstart',
+        sourceLabel: 'Travelstart flight deals',
+        title: 'LIFT flight: JNB to CPT',
+      }),
+    ])
   })
 
   it('posts offer drafts to the validator API', async () => {

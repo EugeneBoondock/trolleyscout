@@ -274,7 +274,11 @@ void main() {
     );
     expect(find.text('Fresh Market'), findsOneWidget);
     expect(find.text('Value Grocer'), findsOneWidget);
-    expect(find.text('List assumptions'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('grocery-shop-fresh-market')),
+      findsOneWidget,
+    );
+    expect(find.text('Shop this store'), findsWidgets);
     expect(find.text('Save 15%'), findsOneWidget);
     expect(
       tester
@@ -308,6 +312,18 @@ void main() {
     expect(transferred, hasLength(1));
     expect(transferred.single.id, 'rice');
     expect(transferred.single.quantity, 2);
+
+    await tester.scrollUntilVisible(
+      find.text('List assumptions'),
+      250,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('mr-scout-grocery-items')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(find.text('List assumptions'), findsOneWidget);
 
     await tester.ensureVisible(
       find.byKey(const ValueKey('mr-scout-grocery-save')),

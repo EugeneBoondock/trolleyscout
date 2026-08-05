@@ -5,6 +5,7 @@ import '../currency.dart';
 import '../payfast_checkout.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'developer_access_screen.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({
@@ -164,6 +165,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     await _choose(plan, data.account?.planId);
   }
 
+  Future<void> _openDeveloperAccess() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (context) => DeveloperAccessScreen(api: widget.api),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<SubscriptionData>(
@@ -179,6 +186,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         final data = snapshot.data!;
         final account = data.account;
         final pendingDate = account?.pendingEffectiveAt?.split('T').first;
+        final hasDeveloperAccess = account?.isAdmin == true ||
+            (account?.planId == 'developers' &&
+                account?.planStatus == 'active');
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -186,7 +196,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               eyebrow: 'Membership',
               title: 'Choose your plan',
               description:
-                  'Core price tools, deals, and catalogues stay free. Paid plans add larger saved lists.',
+                  'Core price tools, deals, and catalogues stay free. Paid plans add more alerts, larger lists, Properties Scout, and business or developer tools.',
             ),
             if (account?.hasScheduledPlanChange == true) ...[
               PaperCard(
@@ -338,26 +348,36 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed:
-                            data.account?.planId == plan.id || _busyPlan != null
-                                ? null
-                                : () => plan.id == 'organization'
-                                    ? _startBusinessPlan(plan, data)
-                                    : _choose(plan, data.account?.planId),
+                        onPressed: (data.account?.planId == plan.id &&
+                                    !(plan.id == 'developers' &&
+                                        hasDeveloperAccess)) ||
+                                _busyPlan != null
+                            ? null
+                            : () =>
+                                plan.id == 'developers' && hasDeveloperAccess
+                                    ? _openDeveloperAccess()
+                                    : plan.id == 'organization' ||
+                                            plan.id == 'developers'
+                                        ? _startBusinessPlan(plan, data)
+                                        : _choose(plan, data.account?.planId),
                         child: Text(
-                          data.account?.planId == plan.id
-                              ? 'Current plan'
-                              : _busyPlan == plan.id
-                                  ? 'Opening checkout'
-                                  : plan.id == 'organization' &&
-                                          (data.businessApplications.isEmpty ||
-                                              data.businessApplications.first
-                                                      .status ==
-                                                  'rejected')
-                                      ? 'Apply for Organisation access'
-                                      : plan.isPaid
-                                          ? 'Start ${plan.name}'
-                                          : 'Use Free',
+                          plan.id == 'developers' && hasDeveloperAccess
+                              ? 'Open developer tools'
+                              : data.account?.planId == plan.id
+                                  ? 'Current plan'
+                                  : _busyPlan == plan.id
+                                      ? 'Opening checkout'
+                                      : (plan.id == 'organization' ||
+                                                  plan.id == 'developers') &&
+                                              (data.businessApplications
+                                                      .isEmpty ||
+                                                  data.businessApplications
+                                                          .first.status ==
+                                                      'rejected')
+                                          ? 'Apply for Organisation access'
+                                          : plan.isPaid
+                                              ? 'Start ${plan.name}'
+                                              : 'Use Free',
                         ),
                       ),
                     ),
@@ -382,7 +402,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       ),
                     ],
                     // Safety-net reassurance: choosing a paid plan isn't a trap.
-                    if (plan.isPaid && data.account?.planId != plan.id) ...[
+                    if (plan.isPaid &&
+                        data.account?.planId != plan.id &&
+                        !(plan.id == 'developers' && hasDeveloperAccess)) ...[
                       const SizedBox(height: 6),
                       Center(
                         child: Text(

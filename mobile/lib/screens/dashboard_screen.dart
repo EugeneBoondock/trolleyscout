@@ -31,11 +31,13 @@ class DashboardScreen extends StatefulWidget {
     required this.api,
     required this.session,
     required this.onNavigate,
+    this.cacheStore,
   });
 
   final Api api;
   final MemberSession session;
   final ValueChanged<AppDestination> onNavigate;
+  final DiscoveryCache? cacheStore;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -45,6 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Future<_DashboardData> _future;
   Future<DiscoveryResult>? _storiesFuture;
   int _loadGeneration = 0;
+  late final DiscoveryCache _cacheStore = widget.cacheStore ?? DiscoveryCache();
 
   @override
   void initState() {
@@ -125,23 +128,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // markdowns from it costs nothing and gives the dashboard a reason to be
   // opened every day.
   Future<List<Deal>> _cachedTopDeals() async {
-    final cached = await DiscoveryCache().load(widget.api.effectiveCountryCode);
+    final cached = await _cacheStore.load(
+      widget.api.effectiveCountryCode,
+      widget.api.discoveryCacheScope,
+    );
     return topSavingsDeals(cached?.result.deals ?? const []);
   }
 
   Future<DiscoveryResult> _loadStoriesDiscovery({
     bool forceRefresh = false,
   }) async {
-    final cache = DiscoveryCache();
     final countryCode = widget.api.effectiveCountryCode;
-    final cached = await cache.load(countryCode);
+    final cached = await _cacheStore.load(countryCode);
     if (!forceRefresh && cached?.isFresh(DateTime.now()) == true) {
       return cached!.result;
     }
 
     try {
       final discovery = await widget.api.discovery();
-      await cache.save(discovery, DateTime.now(), countryCode);
+      await _cacheStore.save(discovery, DateTime.now(), countryCode);
       return discovery;
     } catch (_) {
       if (cached != null) return cached.result;
@@ -205,7 +210,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 10),
                 _OfflineBanner(onRetry: _refresh),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
+              const _SectionLabel(label: 'Jump straight in'),
+              const SizedBox(height: 10),
+              _QuickActions(onNavigate: widget.onNavigate),
+              const SizedBox(height: 16),
               _SavingsHero(
                 summary: data.basket.summary,
                 // The money kept is the shopper's own money, in their own
@@ -224,10 +233,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 deals: data.topDeals,
                 onBrowse: () => widget.onNavigate(AppDestination.deals),
               ),
-              const SizedBox(height: 20),
-              const _SectionLabel(label: 'Jump straight in'),
-              const SizedBox(height: 10),
-              _QuickActions(onNavigate: widget.onNavigate),
               const SizedBox(height: 22),
               _SavedDealsStrip(
                 deals: data.savedDeals,
@@ -356,12 +361,12 @@ class _GreetingHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     return PaperCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ScoutAvatarView(initials: initials, size: 52),
-          const SizedBox(width: 14),
+          ScoutAvatarView(initials: initials, size: 44),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,12 +380,12 @@ class _GreetingHero extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 30,
+                    fontSize: 24,
                     height: 1.05,
                     letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 // Wrap, not Row: a long plan name next to a long weekday
                 // ("Wednesday 24 September") is wider than a small phone, and
                 // this drops to a second line instead of overflowing.
@@ -503,19 +508,19 @@ class _SavingsHero extends StatelessWidget {
       child: InkWell(
         onTap: onOpenBasket,
         child: PaperCard(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(15),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('MONEY YOU KEPT', style: TS.eyebrowOf(context)),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   _SavingsRing(
                     fraction: kept,
                     animate: !reduceMotion,
                   ),
-                  const SizedBox(width: 18),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -540,7 +545,7 @@ class _SavingsHero extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Divider(height: 1, color: TS.lineSoftOf(context)),
               const SizedBox(height: 12),
               Row(
@@ -568,55 +573,54 @@ class _SavingsHero extends StatelessWidget {
 
   /// Nothing in the basket yet: show what the card will become rather than a
   /// discouraging R0.00, and point at the one action that fills it.
-  Widget _empty(BuildContext context) => PaperCard(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('MONEY YOU KEEP', style: TS.eyebrowOf(context)),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _empty(BuildContext context) => PressableScale(
+        child: InkWell(
+          onTap: () {
+            uxTap();
+            onFindDeals();
+          },
+          child: PaperCard(
+            padding: const EdgeInsets.all(14),
+            child: Row(
               children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 46,
+                  height: 46,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: TS.yellow,
                     border: Border.all(color: TS.lineOf(context), width: 2),
                     borderRadius: BorderRadius.circular(TS.controlRadius),
                   ),
-                  child: const PhosphorIcon(PhosphorIconsFill.piggyBank,
-                      size: 28, color: TS.ink),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    'Add a deal to your basket and this shows exactly how much '
-                    'you saved on the shop.',
-                    style: TextStyle(
-                      color: TS.mutedOf(context),
-                      fontSize: 14,
-                      height: 1.35,
-                    ),
+                  child: const PhosphorIcon(
+                    PhosphorIconsFill.piggyBank,
+                    size: 25,
+                    color: TS.ink,
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('MONEY YOU KEEP', style: TS.eyebrowOf(context)),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Add a deal to start tracking your real basket saving.',
+                        style: TextStyle(
+                          color: TS.mutedOf(context),
+                          fontSize: 13,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward, size: 18, color: TS.redOf(context)),
               ],
             ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () {
-                  uxTap();
-                  onFindDeals();
-                },
-                icon: const Icon(Icons.search, size: 18),
-                label: const Text('Find your first deal'),
-              ),
-            ),
-          ],
+          ),
         ),
       );
 }
@@ -637,8 +641,8 @@ class _SavingsRing extends StatelessWidget {
       duration: animate ? const Duration(milliseconds: 900) : Duration.zero,
       curve: Curves.easeOutCubic,
       builder: (context, value, _) => SizedBox(
-        width: 84,
-        height: 84,
+        width: 72,
+        height: 72,
         child: CustomPaint(
           painter: _RingPainter(
             fraction: value,
@@ -653,7 +657,7 @@ class _SavingsRing extends StatelessWidget {
                   '${(value * 100).round()}%',
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 21,
+                    fontSize: 18,
                     height: 1,
                     color: TS.greenOf(context),
                   ),
@@ -822,12 +826,12 @@ class _QuickActionTile extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
             decoration: TS.card(context),
             child: Column(
               children: [
-                PhosphorIcon(icon, size: 26, color: TS.redOf(context)),
-                const SizedBox(height: 8),
+                PhosphorIcon(icon, size: 23, color: TS.redOf(context)),
+                const SizedBox(height: 6),
                 Text(
                   label,
                   textAlign: TextAlign.center,

@@ -320,6 +320,156 @@ describe('catalogue scan leases', () => {
 })
 
 describe('resumable catalogue scanning', () => {
+  it('rotates high-resolution catalogue candidates so later retailers are scanned', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const pageRequests: string[] = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      pageRequests.push(String(input))
+      return new Response(pngHeader(1350, 1909), {
+        headers: { 'content-type': 'image/png' },
+      })
+    }) as typeof fetch
+    const retailers = [
+      ['shoprite', 'Shoprite'],
+      ['boxer', 'Boxer'],
+      ['checkers', 'Checkers'],
+      ['spar', 'SPAR'],
+      ['pick-n-pay', 'Pick n Pay'],
+      ['food-lovers', "Food Lover's Market"],
+    ] as const
+    const leaflets = retailers.map(([retailerId, retailerName], index) => leaflet({
+      id: `catalogue-${index + 1}`,
+      pages: [{
+        height: 1909,
+        imageUrl: `https://catalogues.test/${retailerId}/page-1.png`,
+        pageNumber: 1,
+        width: 1350,
+      }],
+      retailerId,
+      retailerName,
+      url: `https://catalogues.test/${retailerId}/weekly`,
+    }))
+    const dependencies = catalogueDependencies({ cursors, fetcher })
+
+    await runCatalogueScout({ DB: {} as D1Database }, leaflets, dependencies)
+    await runCatalogueScout({ DB: {} as D1Database }, leaflets, dependencies)
+
+    expect(new Set(pageRequests)).toEqual(new Set([
+      'https://catalogues.test/shoprite/page-1.png',
+      'https://catalogues.test/boxer/page-1.png',
+      'https://catalogues.test/checkers/page-1.png',
+      'https://catalogues.test/spar/page-1.png',
+      'https://catalogues.test/pick-n-pay/page-1.png',
+      'https://catalogues.test/food-lovers/page-1.png',
+    ]))
+  })
+
+  it('reserves a scan slot for a catalogue without a page manifest', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const pdfUrl = 'https://catalogues.test/kit-kat/weekly.pdf'
+    const requests: string[] = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      requests.push(url)
+      if (url === pdfUrl) {
+        return new Response(new Uint8Array([37, 80, 68, 70]), {
+          headers: { 'content-type': 'application/pdf' },
+        })
+      }
+      return new Response(pngHeader(1350, 1909), {
+        headers: { 'content-type': 'image/png' },
+      })
+    }) as typeof fetch
+    const paged = ['shoprite', 'boxer', 'checkers', 'spar'].map((retailerId, index) =>
+      leaflet({
+        id: `paged-${index + 1}`,
+        pages: [{
+          height: 1909,
+          imageUrl: `https://catalogues.test/${retailerId}/page-1.png`,
+          pageNumber: 1,
+          width: 1350,
+        }],
+        retailerId: retailerId as StoreLeaflet['retailerId'],
+        retailerName: retailerId,
+        url: `https://catalogues.test/${retailerId}/weekly`,
+      }),
+    )
+    const dependencies = catalogueDependencies({
+      cursors,
+      fetcher,
+      toMarkdown: async () => 'Tastic Rice 2kg R29.99',
+    })
+    dependencies.discoverExternalLeaflets = async () => [leaflet({
+      documentUrl: pdfUrl,
+      id: 'external-weekly',
+      retailerId: 'kit-kat',
+      retailerName: 'Kit Kat Cash & Carry',
+      url: 'https://catalogues.test/kit-kat/',
+    })]
+
+    await runCatalogueScout({ DB: {} as D1Database }, paged, dependencies)
+
+    expect(requests).toContain(pdfUrl)
+  })
+
+  it('loads the full public page manifest before resuming beyond a stored cover', async () => {
+    const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
+    const pagesUrl =
+      'https://trolleyscout.co.za/api/catalogue-pages?source=latest-specials&flyer=123814'
+    const requests: string[] = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      requests.push(url)
+      if (url === pagesUrl) {
+        return Response.json({
+          data: {
+            pages: [
+              {
+                height: 1909,
+                imageUrl: 'https://catalogues.test/food-lovers/page-1.png',
+                pageNumber: 1,
+                width: 1350,
+              },
+              {
+                height: 1909,
+                imageUrl: 'https://catalogues.test/food-lovers/page-2.png',
+                pageNumber: 2,
+                width: 1350,
+              },
+            ],
+          },
+        })
+      }
+      return new Response(pngHeader(1350, 1909), {
+        headers: { 'content-type': 'image/png' },
+      })
+    }) as typeof fetch
+    const current = leaflet({
+      id: 'latest-specials-123814',
+      pages: [{
+        height: 1909,
+        imageUrl: 'https://catalogues.test/food-lovers/cover.png',
+        pageNumber: 1,
+        width: 1350,
+      }],
+      pagesUrl,
+      retailerId: 'food-lovers',
+      retailerName: "Food Lover's Market",
+      url: 'https://www.latestspecials.co.za/food-lovers-market/game-day-123814/',
+    })
+    const dependencies = catalogueDependencies({ cursors, fetcher })
+
+    await runCatalogueScout({ DB: {} as D1Database }, [current], dependencies)
+    await runCatalogueScout({ DB: {} as D1Database }, [current], dependencies)
+
+    expect(requests).toEqual([
+      pagesUrl,
+      'https://catalogues.test/food-lovers/page-1.png',
+      pagesUrl,
+      'https://catalogues.test/food-lovers/page-2.png',
+    ])
+  })
+
   it('returns online catalogue discoveries for the shared catalogue snapshot', async () => {
     const cursors = new Map<string, import('../../src/services/retailerFeeds/types').FeedCursor>()
     const discovered = leaflet({

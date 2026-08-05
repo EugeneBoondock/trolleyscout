@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { X } from '@phosphor-icons/react'
-import { storeNavigationUrl } from '../services/storeNavigation'
+import { NavigationArrow, X } from '@phosphor-icons/react'
+import {
+  distanceLabel,
+  routeInstruction,
+  type StoreRouteStep,
+} from '../services/storeNavigation'
 
-// Keyless map: CARTO Voyager basemap tiles + OSRM routing (proxied through our
-// own /api/map-route). Markers are inline HTML divIcons so we never depend on
-// Leaflet's bundled marker PNGs.
 const CARTO_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
 const CARTO_ATTRIBUTION = '&copy; OpenStreetMap contributors &copy; CARTO'
 
@@ -33,7 +34,6 @@ function pinIcon(color: string, label: string): L.DivIcon {
   })
 }
 
-// Keeps the map framed on whatever we have — both points if routed, else store.
 function FitBounds({ store, user }: { store: LatLon; user?: LatLon }) {
   const map = useMap()
 
@@ -44,7 +44,7 @@ function FitBounds({ store, user }: { store: LatLon; user?: LatLon }) {
           [store.lat, store.lon],
           [user.lat, user.lon],
         ],
-        { padding: [48, 48], maxZoom: 15 },
+        { padding: [48, 48], maxZoom: 16 },
       )
     } else {
       map.setView([store.lat, store.lon], 15)
@@ -55,15 +55,26 @@ function FitBounds({ store, user }: { store: LatLon; user?: LatLon }) {
 }
 
 export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMapProps) {
+  const watchId = useRef<number | undefined>(undefined)
   const [user, setUser] = useState<LatLon | undefined>()
   const [path, setPath] = useState<Array<[number, number]>>([])
+  const [steps, setSteps] = useState<StoreRouteStep[]>([])
+  const [activeStepIndex, setActiveStepIndex] = useState(0)
   const [status, setStatus] = useState<'idle' | 'locating' | 'routing' | 'ready' | 'error'>('idle')
   const [distanceText, setDistanceText] = useState('')
+  const [nextDistanceText, setNextDistanceText] = useState('')
+  const [navigating, setNavigating] = useState(false)
+  const [arrived, setArrived] = useState(false)
 
   const store = { lat, lon }
 
-  async function routeToStore() {
+  useEffect(() => () => {
+    if (watchId.current !== undefined) navigator.geolocation.clearWatch(watchId.current)
+  }, [])
+
+  async function routeToStore(startAfterRoute = false) {
     setStatus('locating')
+    setArrived(false)
 
     if (!navigator.geolocation) {
       setStatus('error')
@@ -80,30 +91,42 @@ export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMa
           const response = await fetch(
             `/api/map-route?fromLat=${here.lat}&fromLon=${here.lon}&toLat=${lat}&toLon=${lon}&profile=driving`,
           )
-          if (!response.ok) {
-            throw new Error('route failed')
-          }
+          if (!response.ok) throw new Error('route failed')
           const data = (await response.json()) as {
-            data?: { path: Array<[number, number]>; distanceMeters: number; durationSeconds: number }
+            data?: {
+              path: Array<[number, number]>
+              distanceMeters: number
+              durationSeconds: number
+              steps?: StoreRouteStep[]
+            }
           }
           const route = data.data
+          const routeSteps = route?.steps ?? []
 
           if (route?.path?.length) {
             setPath(route.path)
+            setSteps(routeSteps)
+            setActiveStepIndex(0)
             const km = (route.distanceMeters / 1000).toFixed(1)
             const mins = Math.round(route.durationSeconds / 60)
             setDistanceText(`${km} km · about ${mins} min by car`)
-            setStatus('ready')
           } else {
-            setStatus('ready')
+            setPath([
+              [here.lat, here.lon],
+              [lat, lon],
+            ])
+            setSteps([])
           }
+          setStatus('ready')
+          if (startAfterRoute) beginNavigation(routeSteps, here)
         } catch {
-          // Show the straight-line fallback if routing is unavailable.
           setPath([
             [here.lat, here.lon],
             [lat, lon],
           ])
+          setSteps([])
           setStatus('ready')
+          if (startAfterRoute) beginNavigation([], here)
         }
       },
       () => setStatus('error'),
@@ -111,7 +134,63 @@ export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMa
     )
   }
 
-  const externalMapsUrl = storeNavigationUrl(lat, lon)
+  function updateNavigationPosition(here: LatLon, routeSteps: StoreRouteStep[]) {
+    setUser(here)
+    const destinationDistance = distanceBetween(here, store)
+    if (destinationDistance <= 35) {
+      setArrived(true)
+      setNavigating(false)
+      setNextDistanceText('You have arrived')
+      if (watchId.current !== undefined) navigator.geolocation.clearWatch(watchId.current)
+      return
+    }
+
+    setActiveStepIndex((current) => {
+      let next = Math.min(current, Math.max(0, routeSteps.length - 1))
+      while (next < routeSteps.length - 1) {
+        const location = routeSteps[next]?.location
+        if (!location || distanceBetween(here, { lat: location[0], lon: location[1] }) > 35) break
+        next += 1
+      }
+      const location = routeSteps[next]?.location
+      const remaining = location
+        ? distanceBetween(here, { lat: location[0], lon: location[1] })
+        : destinationDistance
+      setNextDistanceText(distanceLabel(remaining))
+      return next
+    })
+  }
+
+  function beginNavigation(routeSteps = steps, here = user) {
+    if (!navigator.geolocation) {
+      setStatus('error')
+      return
+    }
+    if (watchId.current !== undefined) navigator.geolocation.clearWatch(watchId.current)
+    setNavigating(true)
+    setArrived(false)
+    if (here) updateNavigationPosition(here, routeSteps)
+    watchId.current = navigator.geolocation.watchPosition(
+      (position) => updateNavigationPosition(
+        { lat: position.coords.latitude, lon: position.coords.longitude },
+        routeSteps,
+      ),
+      () => setStatus('error'),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 },
+    )
+  }
+
+  function stopNavigation() {
+    if (watchId.current !== undefined) navigator.geolocation.clearWatch(watchId.current)
+    watchId.current = undefined
+    setNavigating(false)
+  }
+
+  const activeInstruction = arrived
+    ? `You have arrived at ${storeName}`
+    : steps[activeStepIndex]
+      ? routeInstruction(steps[activeStepIndex])
+      : `Continue to ${storeName}`
 
   return (
     <div className="store-map-backdrop" onClick={onClose} role="presentation">
@@ -142,28 +221,65 @@ export function StoreMap({ storeName, storeAddress, lat, lon, onClose }: StoreMa
         </div>
 
         <div className="store-map-foot">
-          {status === 'ready' && distanceText ? (
+          {navigating || arrived ? (
+            <div className="store-map-guidance" aria-live="polite">
+              <span>Trolley Scout navigation</span>
+              <strong>{activeInstruction}</strong>
+              {nextDistanceText && <small>{nextDistanceText}</small>}
+            </div>
+          ) : status === 'ready' && distanceText ? (
             <span className="store-map-distance">{distanceText}</span>
           ) : status === 'error' ? (
-            <span className="store-map-distance">Allow location to draw the route.</span>
+            <span className="store-map-distance">Allow location to draw and follow your route.</span>
           ) : (
             <span />
           )}
           <div className="store-map-actions">
-            <button
-              className="ghost-button"
-              disabled={status === 'locating' || status === 'routing'}
-              onClick={routeToStore}
-              type="button"
-            >
-              {status === 'locating' ? 'Finding you' : status === 'routing' ? 'Routing' : 'Preview route'}
-            </button>
-            <a className="primary-button" href={externalMapsUrl} rel="noreferrer" target="_blank">
-              Start navigation
-            </a>
+            {navigating ? (
+              <button className="ghost-button" onClick={stopNavigation} type="button">
+                End navigation
+              </button>
+            ) : (
+              <>
+                <button
+                  className="ghost-button"
+                  disabled={status === 'locating' || status === 'routing'}
+                  onClick={() => routeToStore(false)}
+                  type="button"
+                >
+                  {status === 'locating'
+                    ? 'Finding you'
+                    : status === 'routing'
+                      ? 'Routing'
+                      : status === 'ready'
+                        ? 'Refresh route'
+                        : 'Preview route'}
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={status === 'locating' || status === 'routing'}
+                  onClick={() => status === 'ready' ? beginNavigation() : routeToStore(true)}
+                  type="button"
+                >
+                  <NavigationArrow size={18} />
+                  Start trip
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+function distanceBetween(left: LatLon, right: LatLon): number {
+  const earthRadius = 6371000
+  const lat1 = left.lat * Math.PI / 180
+  const lat2 = right.lat * Math.PI / 180
+  const deltaLat = (right.lat - left.lat) * Math.PI / 180
+  const deltaLon = (right.lon - left.lon) * Math.PI / 180
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }

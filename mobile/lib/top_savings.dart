@@ -7,10 +7,40 @@ import 'price_display.dart';
 List<Deal> topSavingsDeals(List<Deal> deals, {int limit = 3}) {
   final ranked = deals
       .map((deal) => (deal: deal, savingCents: _savedCents(deal)))
-      .where((entry) => entry.savingCents > 0)
+      .where(
+          (entry) => entry.savingCents > 0 && !_isUnreliableSaving(entry.deal))
       .toList()
     ..sort((left, right) => right.savingCents.compareTo(left.savingCents));
   return ranked.take(limit < 0 ? 0 : limit).map((entry) => entry.deal).toList();
+}
+
+bool _isUnreliableSaving(Deal deal) {
+  const marketplaceListingRetailers = {
+    'bob-shop',
+    'bobshop',
+    'bidorbuy',
+    'ebay',
+    'gumtree',
+  };
+  final retailerId = deal.retailerId.toLowerCase();
+  final retailerName = deal.retailerName
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+  if (marketplaceListingRetailers.contains(retailerId) ||
+      retailerName == 'bob shop' ||
+      retailerName == 'bidorbuy') {
+    return true;
+  }
+  final searchable = [
+    deal.title,
+    deal.sourceLabel,
+    deal.sourceUrl,
+    deal.productUrl,
+    deal.evidenceText,
+  ].whereType<String>().join(' ').toLowerCase();
+  return RegExp(r'\b(auction|bidding|current bid|bid now)\b')
+      .hasMatch(searchable);
 }
 
 int _savedCents(Deal deal) {

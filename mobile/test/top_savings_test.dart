@@ -15,6 +15,20 @@ Deal _deal(String id, {String? price, String? was}) => Deal(
       previousPriceText: was,
     );
 
+Deal _auction(String id) => Deal(
+      id: id,
+      retailerId: 'online-marketplace',
+      retailerName: 'Bob Shop',
+      sourceLabel: 'Online marketplace',
+      sourceUrl: 'https://market.test/item/$id',
+      productUrl: 'https://market.test/item/$id',
+      title: '4.86ct Colombian Emerald & Diamond Ring',
+      capturedAt: '2026-07-22T08:00:00.000Z',
+      evidenceText: 'Retail value R15000',
+      priceText: 'R10',
+      previousPriceText: 'R15000',
+    );
+
 void main() {
   test('ranks by real rand saving and drops noise was-prices', () {
     final picks = topSavingsDeals([
@@ -30,5 +44,14 @@ void main() {
 
   test('is empty when nothing has a real saving', () {
     expect(topSavingsDeals([_deal('flat', price: 'R50')]), isEmpty);
+  });
+
+  test('does not present auction bids as shopper savings', () {
+    final picks = topSavingsDeals([
+      _auction('bid'),
+      _deal('groceries', price: 'R80', was: 'R130'),
+    ]);
+
+    expect(picks.map((deal) => deal.id), ['groceries']);
   });
 }

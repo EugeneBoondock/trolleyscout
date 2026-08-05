@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
+import '../data_saver_store.dart';
 import '../discovery_cache.dart';
 import '../price_display.dart';
 import '../taste_profile.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/scout_mascot.dart';
+import '../widgets/scout_voice_sheet.dart';
 import '../widgets/share_card.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/embedded_youtube_player.dart';
@@ -66,11 +68,13 @@ class WindowShoppingScreen extends StatefulWidget {
     required this.api,
     this.seenStore,
     this.now,
+    this.cacheStore,
   });
 
   final Api api;
   final WindowSeenStore? seenStore;
   final DateTime Function()? now;
+  final DiscoveryCache? cacheStore;
 
   @override
   State<WindowShoppingScreen> createState() => _WindowShoppingScreenState();
@@ -89,7 +93,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   late final WindowSeenStore _seenStore;
   late final DateTime Function() _now;
   final _tasteStore = TasteStore();
-  final _discoveryCache = DiscoveryCache();
+  late final DiscoveryCache _discoveryCache =
+      widget.cacheStore ?? DiscoveryCache();
   final _searchController = TextEditingController();
   final AudioPlayer _music = AudioPlayer(playerId: 'window_ambient');
   // A fresh running order each visit so the same track never greets you twice.
@@ -303,6 +308,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   /// speed is what makes the reel worth staying in, and a blank frame is the
   /// one thing that reliably ends a browse.
   void _precacheAround(int index) {
+    if (DataSaverStore.instance.enabled) return;
     final deals = _visible;
     if (deals.isEmpty || index < 0 || index >= deals.length) return;
     for (var next = index + 1;
@@ -448,18 +454,30 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
   // refresh could return a reel up to the reuse window old, and the only way to
   // see new deals was to kill the app and reopen it.
   Future<DiscoveryResult> _loadStoredDiscovery({bool forceLive = false}) async {
+    await DataSaverStore.instance.load();
     final countryCode = widget.api.effectiveCountryCode;
     if (!forceLive) {
-      final cached = await _discoveryCache.load(countryCode);
+      final cached = await _discoveryCache.load(
+        countryCode,
+        widget.api.discoveryCacheScope,
+      );
       if (cached != null) {
         final age = DateTime.now().toUtc().difference(cached.fetchedAt.toUtc());
-        if (!age.isNegative && age < _discoveryCacheReuse) {
+        final reuseDuration = DataSaverStore.instance.enabled
+            ? const Duration(hours: 12)
+            : _discoveryCacheReuse;
+        if (!age.isNegative && age < reuseDuration) {
           return cached.result;
         }
       }
     }
     final result = await widget.api.discovery(forceLive: forceLive);
-    unawaited(_discoveryCache.save(result, DateTime.now(), countryCode));
+    unawaited(_discoveryCache.save(
+      result,
+      DateTime.now(),
+      countryCode,
+      widget.api.discoveryCacheScope,
+    ));
     return result;
   }
 
@@ -544,8 +562,9 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
       final taste = await _tasteStore.load();
       if (!taste.isEmpty) {
         unseen.sort((a, b) => taste
-            .score(b.title, category: b.category)
-            .compareTo(taste.score(a.title, category: a.category)));
+            .score(b.title, category: '${b.category ?? ''} ${b.retailerName}')
+            .compareTo(taste.score(a.title,
+                category: '${a.category ?? ''} ${a.retailerName}')));
       } else {
         unseen.shuffle();
       }
@@ -928,6 +947,7 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
                 return _WindowCard(
                   key: ValueKey('window-card-state-${deal.id}'),
                   active: index == _currentPage,
+                  api: widget.api,
                   deal: deal,
                   now: _now,
                   saved: _saved.contains(deal.id),
@@ -1059,6 +1079,8 @@ class _WindowShoppingScreenState extends State<WindowShoppingScreen>
         style: const TextStyle(color: Colors.white, fontSize: 14),
         cursorColor: TS.yellow,
         decoration: const InputDecoration(
+          filled: true,
+          fillColor: Colors.transparent,
           isDense: true,
           border: InputBorder.none,
           hintText: 'Search the window…',
@@ -1334,6 +1356,7 @@ class _WindowCard extends StatefulWidget {
   const _WindowCard({
     super.key,
     this.active = true,
+    required this.api,
     required this.deal,
     required this.now,
     required this.saved,
@@ -1347,6 +1370,7 @@ class _WindowCard extends StatefulWidget {
   });
 
   final bool active;
+  final Api api;
   final ScrollDeal deal;
   final DateTime Function() now;
   final bool saved;
@@ -1434,7 +1458,11 @@ class _WindowCardState extends State<_WindowCard> {
               child: _RoundIcon(
                 icon: Icons.fullscreen_rounded,
                 tooltip: 'View product full screen',
-                onTap: () => openWindowProductShowcase(context, deal),
+                onTap: () => openWindowProductShowcase(
+                  context,
+                  deal,
+                  api: widget.api,
+                ),
               ),
             ),
           Positioned(
@@ -1634,8 +1662,9 @@ class _WindowCardState extends State<_WindowCard> {
 @visibleForTesting
 Future<void> openWindowProductShowcase(
   BuildContext context,
-  ScrollDeal deal,
-) async {
+  ScrollDeal deal, {
+  Api? api,
+}) async {
   final images = deal.gallery
       .where((url) => url.trim().isNotEmpty)
       .toSet()
@@ -1648,7 +1677,8 @@ Future<void> openWindowProductShowcase(
       transitionDuration: const Duration(milliseconds: 180),
       reverseTransitionDuration: const Duration(milliseconds: 140),
       pageBuilder: (_, __, ___) => _WindowProductShowcase(
-        dealId: deal.id,
+        api: api,
+        deal: deal,
         images: images,
       ),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
@@ -1664,11 +1694,13 @@ Future<void> openWindowProductShowcase(
 
 class _WindowProductShowcase extends StatefulWidget {
   const _WindowProductShowcase({
-    required this.dealId,
+    required this.api,
+    required this.deal,
     required this.images,
   });
 
-  final String dealId;
+  final Api? api;
+  final ScrollDeal deal;
   final List<String> images;
 
   @override
@@ -1730,7 +1762,7 @@ class _WindowProductShowcaseState extends State<_WindowProductShowcase> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      key: ValueKey('window-product-showcase-${widget.dealId}'),
+      key: ValueKey('window-product-showcase-${widget.deal.id}'),
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
@@ -1804,6 +1836,7 @@ class _WindowProductShowcaseState extends State<_WindowProductShowcase> {
             bottom: 0,
             child: SafeArea(
               top: false,
+              minimum: const EdgeInsets.only(bottom: 28),
               child: Center(
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 14),
@@ -1819,6 +1852,25 @@ class _WindowProductShowcaseState extends State<_WindowProductShowcase> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.api != null) ...[
+                        _ShowcaseControl(
+                          icon: Icons.mic_rounded,
+                          tooltip: 'Ask Mr Scout about this product',
+                          onTap: () => showScoutVoiceSheet(
+                            context,
+                            api: widget.api!,
+                            surface: 'showcase',
+                            product: widget.deal,
+                          ),
+                          compact: true,
+                        ),
+                        Container(
+                          width: 1,
+                          height: 24,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          color: Colors.white24,
+                        ),
+                      ],
                       _ShowcaseControl(
                         icon: Icons.remove_rounded,
                         tooltip: 'Zoom out',
@@ -2580,6 +2632,7 @@ class _StoreProfileScreenState extends State<_StoreProfileScreen> {
           return _WindowCard(
             key: ValueKey('store-card-state-${deal.id}'),
             active: index == _currentPage,
+            api: widget.api,
             deal: deal,
             now: widget.now,
             saved: _saved.contains(deal.id),

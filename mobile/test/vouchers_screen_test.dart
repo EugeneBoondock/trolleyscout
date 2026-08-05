@@ -4,7 +4,8 @@ import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/screens/vouchers_screen.dart';
 
 void main() {
-  testWidgets('renders vouchers and asks anonymous users to log in before saving',
+  testWidgets(
+      'renders vouchers and asks anonymous users to log in before saving',
       (tester) async {
     var authRequested = false;
     await tester.pumpWidget(MaterialApp(
@@ -148,7 +149,8 @@ class _VoucherApi extends Api {
       ];
 
   @override
-  Future<VoucherCode?> rateVoucherCode(String voucherCodeId, bool worked) async {
+  Future<VoucherCode?> rateVoucherCode(
+      String voucherCodeId, bool worked) async {
     ratedWorked = worked;
     if (worked) workedCount += 1;
     return VoucherCode(

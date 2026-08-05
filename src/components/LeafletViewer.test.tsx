@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ComponentType } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { StoreLeaflet } from '../types'
+import type { DiscoveredDeal, StoreLeaflet } from '../types'
 import { catalogueShareUrl } from '../services/catalogueShare'
 import { LeafletViewer } from './LeafletViewer'
 
@@ -23,6 +24,46 @@ function leaflet(overrides: Partial<StoreLeaflet> = {}): StoreLeaflet {
 }
 
 describe('LeafletViewer', () => {
+  it('opens a cropped product card from a catalogue page hotspot', () => {
+    const InteractiveLeafletViewer = LeafletViewer as ComponentType<{
+      deals: DiscoveredDeal[]
+      leaflet: StoreLeaflet
+      onClose: () => void
+    }>
+    const pageUrl = 'https://cdn.test/page-1.jpg'
+    const deal: DiscoveredDeal = {
+      capturedAt: '2026-08-02T08:00:00.000Z',
+      evidenceText: 'Tastic rice R89.99',
+      id: 'catalogue-rice',
+      imageCrop: { height: 0.28, width: 0.24, x: 0.12, y: 0.18 },
+      imageUrl: pageUrl,
+      pageNumber: 1,
+      priceText: 'R89.99',
+      productUrl: 'https://official.test/catalogue?page=1',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      sourceLabel: 'Weekly catalogue',
+      sourceUrl: 'https://official.test/catalogue',
+      title: 'Tastic rice 10kg',
+    }
+
+    render(
+      <InteractiveLeafletViewer
+        deals={[deal]}
+        leaflet={leaflet({
+          pages: [{ height: 1600, imageUrl: pageUrl, pageNumber: 1, width: 1100 }],
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Tastic rice 10kg from page 1' }))
+
+    expect(screen.getByRole('dialog', { name: 'Tastic rice 10kg' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Cropped catalogue image for Tastic rice 10kg' })).toBeTruthy()
+    expect(screen.getByText('R89.99')).toBeTruthy()
+  })
+
   it('reads every page with controls, thumbnails, zoom, fallbacks, and keyboard navigation', () => {
     const onClose = vi.fn()
     const { container } = render(

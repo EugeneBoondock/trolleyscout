@@ -8,6 +8,78 @@ import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/widgets/catalogue_reader.dart';
 
 void main() {
+  testWidgets('opens a catalogue product from its page hotspot',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: const CatalogueReader(
+        catalogue: Catalogue(
+          id: 'weekly-catalogue',
+          retailerId: 'shoprite',
+          retailerName: 'Shoprite',
+          name: 'Weekly catalogue',
+          url: 'https://official.test/catalogue',
+          pages: [
+            CataloguePage(
+              pageNumber: 1,
+              imageUrl: 'https://cdn.test/page-1.jpg',
+              width: 1100,
+              height: 1600,
+            ),
+          ],
+        ),
+        deals: [
+          Deal(
+            id: 'catalogue-rice',
+            retailerId: 'shoprite',
+            retailerName: 'Shoprite',
+            sourceUrl: 'https://official.test/catalogue',
+            productUrl: 'https://official.test/catalogue?page=1',
+            title: 'Tastic rice 10kg',
+            priceText: 'R89.99',
+            imageUrl: 'https://cdn.test/page-1.jpg',
+            pageNumber: 1,
+            imageCrop: ImageCrop(
+              x: 0.12,
+              y: 0.18,
+              width: 0.24,
+              height: 0.28,
+            ),
+          ),
+          Deal(
+            id: 'checkers-rice',
+            retailerId: 'checkers',
+            retailerName: 'Checkers',
+            sourceUrl: 'https://official.test/checkers-rice',
+            productUrl: 'https://official.test/checkers-rice',
+            title: 'Tastic rice 10kg',
+            priceText: 'R84.99',
+          ),
+        ],
+      ),
+    ));
+
+    await tester.tap(
+      find.bySemanticsLabel('View Tastic rice 10kg from page 1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tastic rice 10kg'), findsOneWidget);
+    expect(find.text('R89.99'), findsWidgets);
+    expect(
+      find.bySemanticsLabel(
+        'Cropped catalogue image for Tastic rice 10kg',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Compare live prices'), findsOneWidget);
+    expect(find.text('Save R5.00 at Checkers'), findsOneWidget);
+    expect(find.text('Checkers'), findsOneWidget);
+    expect(find.text('R84.99'), findsOneWidget);
+    expect(find.text('Share deal'), findsOneWidget);
+    expect(find.text('View official source'), findsOneWidget);
+  });
+
   testWidgets('reads every image page with accessible page controls',
       (tester) async {
     final semantics = tester.ensureSemantics();

@@ -82,7 +82,7 @@ const DEPARTMENTS: Department[] = [
   {
     action: 'See vouchers',
     icon: <Ticket size={26} weight="duotone" />,
-    text: 'Retailer vouchers we have checked, with the terms and the expiry date shown before you claim.',
+    text: 'Shopper-shared checkout codes with real outcomes, plus current retailer loyalty offers and clip coupons.',
     title: 'Vouchers',
     to: 'vouchers',
   },

@@ -438,7 +438,10 @@ class _RecordingDiscoveryCache extends DiscoveryCache {
   final List<String> savedCountryCodes = [];
 
   @override
-  Future<CachedDiscovery?> load([String countryCode = 'ZA']) async {
+  Future<CachedDiscovery?> load(
+    [String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {
     loadedCountryCodes.add(countryCode);
     return null;
   }
@@ -448,6 +451,7 @@ class _RecordingDiscoveryCache extends DiscoveryCache {
     DiscoveryResult result,
     DateTime fetchedAt, [
     String countryCode = 'ZA',
+    String accessScope = 'free',
   ]) async {
     savedCountryCodes.add(countryCode);
   }

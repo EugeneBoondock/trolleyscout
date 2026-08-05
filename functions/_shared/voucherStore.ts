@@ -21,6 +21,7 @@ interface VoucherRow {
   benefit_text: string
   captured_at: string
   claimed: number
+  country_code: string
   created_at: string
   evidence_text: string
   expires_at: string
@@ -73,6 +74,7 @@ interface NormalizedVoucher {
 
 export async function upsertVouchers(env: TrolleyScoutEnv, input: {
   candidates: readonly VoucherCandidate[]
+  countryCode?: string
   errorText?: string
   retailerId: string
   sourceKey: string
@@ -81,6 +83,7 @@ export async function upsertVouchers(env: TrolleyScoutEnv, input: {
   const db = requireDatabase(env)
   const sourceKey = requiredText(input.sourceKey, 'sourceKey', 300)
   const retailerId = requiredSlug(input.retailerId, 'retailerId')
+  const countryCode = requiredCountryCode(input.countryCode ?? 'ZA')
   const status = input.status ?? 'success'
 
   if (input.candidates.length > MAX_BATCH_SIZE) {
@@ -118,18 +121,19 @@ export async function upsertVouchers(env: TrolleyScoutEnv, input: {
 
   const statement = db.prepare(
     `INSERT INTO vouchers (
-      id, identity_key, last_run_id, retailer_id, source_key, external_voucher_id,
+      id, identity_key, last_run_id, country_code, retailer_id, source_key, external_voucher_id,
       product_id, product_title, title, benefit_text, terms_text, evidence_text,
       voucher_kind, redemption_mode, redemption_url, source_url, image_url,
       public_reusable, public_code, code_hash, account_required, captured_at,
       valid_from, valid_to, expires_at, content_fingerprint, status,
       created_at, updated_at, last_seen_at
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
       'active', ?, ?, ?
     )
     ON CONFLICT (identity_key) DO UPDATE SET
       last_run_id = excluded.last_run_id,
+      country_code = excluded.country_code,
       source_key = excluded.source_key,
       product_title = excluded.product_title,
       title = excluded.title,
@@ -166,6 +170,7 @@ export async function upsertVouchers(env: TrolleyScoutEnv, input: {
     `voucher_${voucher.identityKey}`,
     voucher.identityKey,
     runId,
+    countryCode,
     voucher.retailerId,
     sourceKey,
     voucher.externalId,
@@ -206,6 +211,7 @@ export async function upsertVouchers(env: TrolleyScoutEnv, input: {
 
 export async function listActiveVouchers(env: TrolleyScoutEnv, options: {
   accountId?: string
+  countryCode?: string
   limit?: number
   now?: string
   offset?: number
@@ -217,12 +223,14 @@ export async function listActiveVouchers(env: TrolleyScoutEnv, options: {
   const offset = boundedInteger(options.offset ?? 0, 'offset', 0, 10_000)
   const retailerId = options.retailerId ? requiredSlug(options.retailerId, 'retailerId') : undefined
   const accountId = options.accountId?.trim() || ''
+  const countryCode = requiredCountryCode(options.countryCode ?? 'ZA')
   const where = [
     "vouchers.status = 'active'",
+    'vouchers.country_code = ?',
     'vouchers.expires_at > ?',
     '(vouchers.valid_from IS NULL OR vouchers.valid_from <= ?)',
   ]
-  const bindings: Array<number | string> = [accountId, now, now]
+  const bindings: Array<number | string> = [accountId, countryCode, now, now]
 
   if (retailerId) {
     where.push('vouchers.retailer_id = ?')
@@ -235,7 +243,7 @@ export async function listActiveVouchers(env: TrolleyScoutEnv, options: {
   // into the API response, even if a future column is added to the table.
   const rows = await db.prepare(
     `SELECT
-      vouchers.id, vouchers.retailer_id, vouchers.external_voucher_id, vouchers.product_id,
+      vouchers.id, vouchers.country_code, vouchers.retailer_id, vouchers.external_voucher_id, vouchers.product_id,
       vouchers.product_title, vouchers.title, vouchers.benefit_text, vouchers.terms_text,
       vouchers.evidence_text, vouchers.voucher_kind, vouchers.redemption_mode,
       vouchers.redemption_url, vouchers.source_url, vouchers.image_url, vouchers.public_reusable,
@@ -259,20 +267,23 @@ export async function claimVoucher(
   env: TrolleyScoutEnv,
   accountId: string | undefined,
   voucherId: string,
+  countryCodeInput = 'ZA',
 ) {
   const db = requireDatabase(env)
   if (!accountId?.trim()) {
     return { claimed: false, issue: 'Sign in before saving a voucher.' }
   }
   const normalizedId = requiredText(voucherId, 'voucherId', 200)
+  const countryCode = requiredCountryCode(countryCodeInput)
   const now = new Date().toISOString()
   const voucher = await db.prepare(
     `SELECT id FROM vouchers
       WHERE id = ?
+        AND country_code = ?
         AND status = 'active'
         AND expires_at > ?
         AND (valid_from IS NULL OR valid_from <= ?)`,
-  ).bind(normalizedId, now, now).first<{ id: string }>()
+  ).bind(normalizedId, countryCode, now, now).first<{ id: string }>()
   if (!voucher) {
     return { claimed: false, issue: 'Voucher is no longer active.' }
   }
@@ -288,16 +299,19 @@ export async function claimVoucher(
 
 export async function countActiveVouchers(
   env: TrolleyScoutEnv,
+  countryCodeInput = 'ZA',
   nowInput = new Date().toISOString(),
 ) {
   const db = requireDatabase(env)
   const now = strictInstant(nowInput, 'now')
+  const countryCode = requiredCountryCode(countryCodeInput)
   const row = await db.prepare(
     `SELECT COUNT(*) AS total FROM vouchers
       WHERE status = 'active'
+        AND country_code = ?
         AND expires_at > ?
         AND (valid_from IS NULL OR valid_from <= ?)`,
-  ).bind(now, now).first<{ total: number }>()
+  ).bind(countryCode, now, now).first<{ total: number }>()
   return Number(row?.total ?? 0)
 }
 
@@ -524,6 +538,14 @@ function mapVoucherRow(row: VoucherRow): Voucher {
     validTo: row.valid_to ?? undefined,
     voucherKind: row.voucher_kind,
   }
+}
+
+function requiredCountryCode(value: unknown) {
+  const code = requiredText(value, 'countryCode', 2).toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) {
+    throw new TypeError('countryCode must be a two-letter country code')
+  }
+  return code
 }
 
 function requiredText(value: unknown, field: string, maxLength: number) {

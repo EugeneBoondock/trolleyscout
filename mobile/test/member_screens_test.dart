@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/app_controller.dart';
+import 'package:trolley_scout/data_saver_store.dart';
 import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/about_screen.dart';
 import 'package:trolley_scout/screens/admin_screen.dart';
@@ -18,12 +19,16 @@ import 'package:trolley_scout/screens/saved_sources_screen.dart';
 import 'package:trolley_scout/screens/scanner_screen.dart';
 import 'package:trolley_scout/screens/stores_screen.dart';
 import 'package:trolley_scout/screens/subscription_screen.dart';
+import 'package:trolley_scout/shopper_calculator.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
   // The dashboard reads the on-device discovery cache for its top-savings
   // strip; without mocked preferences that read never completes in tests.
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    DataSaverStore.instance.resetForTest();
+  });
 
   testWidgets('dashboard renders live member counts and basket total',
       (tester) async {
@@ -46,7 +51,28 @@ void main() {
     );
     expect(find.textContaining('you pay R123.45'), findsOneWidget);
     // Saved deals appear as real product cards, not as a count.
-    expect(find.text('Example maize meal'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Example maize meal'),
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Example maize meal'), findsWidgets);
+  });
+
+  testWidgets('dashboard keeps primary shopping actions above discovery feeds',
+      (tester) async {
+    await tester.pumpWidget(_wrap(DashboardScreen(
+      api: _FeatureApi(),
+      session: _memberSession,
+      onNavigate: (_) {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Jump straight in')).dy,
+      lessThan(tester.getTopLeft(find.text('Store stories')).dy),
+    );
   });
 
   testWidgets(
@@ -60,6 +86,12 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Today’s savings'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Today’s savings'), findsOneWidget);
     final savingCard = find.byKey(const Key('top-saving-card-deal-1'));
     final savedCard = find.byKey(const Key('saved-deal-card-saved-1'));
@@ -251,11 +283,18 @@ void main() {
     await tester.pumpWidget(_wrap(BasketScreen(api: api)));
     await tester.pumpAndSettle();
 
+    await tester.drag(find.byType(ListView), const Offset(0, -350));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Increase quantity'));
     await tester.pumpAndSettle();
 
     expect(api.updatedBasketQuantity, 2);
-    expect(find.text('2'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('basket-quantity-basket-1')))
+          .data,
+      '2',
+    );
   });
 
   testWidgets('profile prevents incomplete and mismatched password changes',
@@ -305,12 +344,69 @@ void main() {
     expect(find.text('Password updated.'), findsOneWidget);
   });
 
+  testWidgets('profile data saver remains clear and usable', (tester) async {
+    final api = _FeatureApi();
+    final controller = AppController(api)
+      ..restoring = false
+      ..session = _memberSession;
+    await tester.pumpWidget(_wrap(ProfileScreen(controller: controller)));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -760));
+    await tester.pumpAndSettle();
+    final setting = find.byKey(const Key('data-saver-toggle'));
+    await tester.ensureVisible(setting);
+    await tester.pumpAndSettle();
+    expect(find.text('Data saver'), findsOneWidget);
+    expect(find.textContaining('Window Shopping image preloading'),
+        findsOneWidget);
+    await tester.tap(setting);
+    await tester.pumpAndSettle();
+
+    expect(DataSaverStore.instance.enabled, isTrue);
+    expect(
+      (await SharedPreferences.getInstance())
+          .getBool(DataSaverStore.storageKey),
+      isTrue,
+    );
+  });
+
+  testWidgets('profile exposes the persistent shopper calculator setting',
+      (tester) async {
+    final api = _FeatureApi();
+    final controller = AppController(api)
+      ..restoring = false
+      ..session = _memberSession;
+    ShopperCalculatorStore.instance.resetForTest();
+    await tester.pumpWidget(_wrap(ProfileScreen(controller: controller)));
+    await tester.pumpAndSettle();
+
+    final setting = find.byKey(const Key('shopper-calculator-toggle'));
+    await tester.scrollUntilVisible(
+      setting,
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(find.text('Floating shopper calculator'), findsOneWidget);
+    await tester.tap(setting);
+    await tester.pumpAndSettle();
+
+    expect(ShopperCalculatorStore.instance.enabled, isTrue);
+  });
+
   testWidgets('a removed basket item can be restored from the snackbar',
       (tester) async {
     final api = _FeatureApi();
     await tester.pumpWidget(_wrap(BasketScreen(api: api)));
     await tester.pumpAndSettle();
 
+    await tester.drag(find.byType(ListView), const Offset(0, -350));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Remove basket item'));
     await tester.pumpAndSettle();
 

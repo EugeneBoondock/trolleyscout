@@ -29,6 +29,12 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Trolley Scout uses your location to find nearby stores and current deals.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Trolley Scout uses your camera when you choose to capture a loyalty card, coupon, or receipt.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Trolley Scout uses your microphone when you choose to ask Mr Scout a voice question.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Trolley Scout converts your spoken shopping question into text so Mr Scout can answer it.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

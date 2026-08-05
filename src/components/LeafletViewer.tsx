@@ -16,16 +16,18 @@ import {
   withProxiedFallbacks,
 } from '../services/catalogueFiles'
 import { catalogueShareUrl } from '../services/catalogueShare'
-import type { CataloguePage, StoreLeaflet } from '../types'
+import type { CataloguePage, DiscoveredDeal, ImageCrop, StoreLeaflet } from '../types'
 
 const MIN_ZOOM = 0.75
 const MAX_ZOOM = 5
 const ZOOM_STEP = 0.25
 
 export function LeafletViewer({
+  deals = [],
   leaflet,
   onClose,
 }: {
+  deals?: DiscoveredDeal[]
   leaflet: StoreLeaflet
   onClose: () => void
 }) {
@@ -62,15 +64,23 @@ export function LeafletViewer({
   const [imageCandidateIndex, setImageCandidateIndex] = useState(0)
   const [imageFailed, setImageFailed] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
+  const [selectedDeal, setSelectedDeal] = useState<DiscoveredDeal>()
   const currentPage = pages[pageIndex]
   const imageCandidates = useMemo(
     () => currentPage ? uniqueImageUrls(currentPage) : [],
     [currentPage],
   )
+  const currentPageDeals = useMemo(
+    () => currentPage
+      ? deals.filter((deal) => dealMatchesCataloguePage(deal, leaflet, currentPage))
+      : [],
+    [currentPage, deals, leaflet],
+  )
 
   useEffect(() => {
     setPageIndex(0)
     setZoom(1)
+    setSelectedDeal(undefined)
   }, [leaflet.id])
 
   useEffect(() => {
@@ -122,6 +132,10 @@ export function LeafletViewer({
     function handleKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
+        if (selectedDeal) {
+          setSelectedDeal(undefined)
+          return
+        }
         onClose()
         return
       }
@@ -150,7 +164,7 @@ export function LeafletViewer({
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKey)
     }
-  }, [onClose, pages.length])
+  }, [onClose, pages.length, selectedDeal])
 
   function selectPage(index: number) {
     setPageIndex(Math.max(0, Math.min(pages.length - 1, index)))
@@ -292,15 +306,32 @@ export function LeafletViewer({
                     <p>This page could not be loaded. You can still use the catalogue source link.</p>
                   </div>
                 ) : (
-                  <img
-                    alt={`${cleanUiText(leaflet.retailerName)} catalogue page ${currentPage.pageNumber}`}
-                    className="leaflet-page-image"
-                    decoding="async"
-                    onError={handlePageImageError}
-                    referrerPolicy="no-referrer"
-                    src={imageCandidates[imageCandidateIndex]}
+                  <div
+                    className="leaflet-page-canvas"
                     style={{ width: `${zoom * 100}%` }}
-                  />
+                  >
+                    <img
+                      alt={`${cleanUiText(leaflet.retailerName)} catalogue page ${currentPage.pageNumber}`}
+                      className="leaflet-page-image"
+                      decoding="async"
+                      onError={handlePageImageError}
+                      referrerPolicy="no-referrer"
+                      src={imageCandidates[imageCandidateIndex]}
+                    />
+                    {currentPageDeals.map((deal) => (
+                      <button
+                        aria-label={`View ${cleanUiText(deal.title)} from page ${currentPage.pageNumber}`}
+                        className="leaflet-product-hotspot"
+                        key={deal.id}
+                        onClick={() => setSelectedDeal(deal)}
+                        style={cropPositionStyle(deal.imageCrop!)}
+                        title={`${cleanUiText(deal.title)}${deal.priceText ? `, ${cleanUiText(deal.priceText)}` : ''}`}
+                        type="button"
+                      >
+                        <span aria-hidden="true">+</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -386,8 +417,147 @@ export function LeafletViewer({
           </a>
         </footer>
       </div>
+
+      {selectedDeal && (
+        <CatalogueProductDialog
+          deal={selectedDeal}
+          onClose={() => setSelectedDeal(undefined)}
+          page={pages.find((page) => page.pageNumber === selectedDeal.pageNumber)}
+        />
+      )}
     </div>
   )
+}
+
+function CatalogueProductDialog({
+  deal,
+  onClose,
+  page,
+}: {
+  deal: DiscoveredDeal
+  onClose: () => void
+  page?: CataloguePage
+}) {
+  const crop = deal.imageCrop!
+  const imageUrl = deal.imageUrl ?? page?.imageUrl
+  const cropAspect = page?.width && page.height
+    ? (page.width * crop.width) / (page.height * crop.height)
+    : crop.width / crop.height
+
+  return (
+    <div
+      className="leaflet-product-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      role="presentation"
+    >
+      <article
+        aria-label={cleanUiText(deal.title)}
+        aria-modal="true"
+        className="leaflet-product-dialog"
+        role="dialog"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">Catalogue find</p>
+            <h3>{cleanUiText(deal.title)}</h3>
+          </div>
+          <button aria-label="Close product details" className="icon-button" onClick={onClose} type="button">
+            <X size={20} />
+          </button>
+        </header>
+
+        {imageUrl && (
+          <div className="leaflet-product-crop" style={{ aspectRatio: cropAspect }}>
+            <img
+              alt={`Cropped catalogue image for ${cleanUiText(deal.title)}`}
+              referrerPolicy="no-referrer"
+              src={imageUrl}
+              style={{
+                transform: `translate(${-crop.x * 100}%, ${-crop.y * 100}%)`,
+                width: `${100 / crop.width}%`,
+              }}
+            />
+          </div>
+        )}
+
+        <div className="leaflet-product-copy">
+          <span>{cleanUiText(deal.retailerName)}</span>
+          {deal.priceText && <strong>{cleanUiText(deal.priceText)}</strong>}
+          {deal.savingText && <p>{cleanUiText(deal.savingText)}</p>}
+          {deal.pageNumber && <small>Found on page {deal.pageNumber}</small>}
+        </div>
+
+        <footer>
+          <button className="ghost-button" onClick={onClose} type="button">Back to catalogue</button>
+          <a className="primary-button" href={deal.productUrl || deal.sourceUrl} rel="noreferrer" target="_blank">
+            View official item
+            <LinkSimple size={16} />
+          </a>
+        </footer>
+      </article>
+    </div>
+  )
+}
+
+function dealMatchesCataloguePage(
+  deal: DiscoveredDeal,
+  leaflet: StoreLeaflet,
+  page: CataloguePage,
+): boolean {
+  if (
+    deal.retailerId !== leaflet.retailerId ||
+    deal.pageNumber !== page.pageNumber ||
+    !isValidImageCrop(deal.imageCrop)
+  ) {
+    return false
+  }
+
+  const pageUrls = new Set([page.imageUrl, ...(page.fallbacks ?? [])].map(normalizeImageIdentity))
+  const matchesPageImage = deal.imageUrl
+    ? pageUrls.has(normalizeImageIdentity(deal.imageUrl))
+    : false
+  const matchesSource = [deal.sourceUrl, deal.catalogueDeepLink, deal.productUrl]
+    .filter(Boolean)
+    .some((url) => normalizeUrl(url!) === normalizeUrl(leaflet.url))
+
+  return matchesPageImage || matchesSource
+}
+
+function isValidImageCrop(crop?: ImageCrop): crop is ImageCrop {
+  return Boolean(
+    crop &&
+    crop.x >= 0 &&
+    crop.y >= 0 &&
+    crop.width > 0 &&
+    crop.height > 0 &&
+    crop.x + crop.width <= 1.001 &&
+    crop.y + crop.height <= 1.001,
+  )
+}
+
+function cropPositionStyle(crop: ImageCrop) {
+  return {
+    height: `${crop.height * 100}%`,
+    left: `${crop.x * 100}%`,
+    top: `${crop.y * 100}%`,
+    width: `${crop.width * 100}%`,
+  }
+}
+
+function normalizeImageIdentity(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.search = ''
+    return parsed.toString()
+  } catch {
+    return url.split('?')[0]
+  }
+}
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/$/, '')
 }
 
 function isCatalogueDirectoryLeaflet(leaflet: StoreLeaflet): boolean {

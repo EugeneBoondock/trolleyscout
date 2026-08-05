@@ -54,6 +54,29 @@ export function selectCurrentCatalogues(
   return selected
 }
 
+// The shopper-facing inventory applies one final source rule after general
+// quality selection. Pick n Pay's official viewer is the readable catalogue;
+// its plain /catalogues page is only a directory link and must not appear as a
+// second book. Keeping this rule beside catalogue selection lets the coverage
+// ledger and discovery response report the same usable inventory.
+export function selectCatalogueInventory(
+  leaflets: StoreLeaflet[],
+  now = new Date(),
+): StoreLeaflet[] {
+  const selected = selectCurrentCatalogues(leaflets, now)
+  const hasOfficialPnpViewer = selected.some((leaflet) =>
+    leaflet.retailerId === 'pick-n-pay' && isTrustedPnpViewerUrl(leaflet.url))
+  const seen = new Set<string>()
+
+  return selected.filter((leaflet) => {
+    if (hasOfficialPnpViewer && isGenericPnpDirectory(leaflet)) return false
+    const key = leaflet.documentUrl ?? leaflet.url
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function cleanCatalogue(
   leaflet: StoreLeaflet,
   now: Date,
@@ -81,6 +104,13 @@ function cleanCatalogue(
   const isPdf = isPdfUrl(primaryUrl)
   const isViewer = isTrustedViewerUrl(primaryUrl)
   const cleanedName = cleanCatalogueName(leaflet.name, leaflet.retailerName)
+  const titleYear = textYear(cleanedName)
+  const documentYear = pathYear(primaryUrl)
+  if (titleYear !== undefined &&
+      documentYear !== undefined &&
+      titleYear !== documentYear) {
+    return undefined
+  }
   const validTo = leaflet.validTo ?? inferNamedEndDate(cleanedName)
   if (isExpired(validTo, now)) {
     return undefined
@@ -351,6 +381,17 @@ function catalogueNamedYear(name: string, value: string): number | undefined {
   return match ? Number(match[1]) : undefined
 }
 
+function textYear(value: string): number | undefined {
+  const match = /\b(20\d{2})\b/.exec(value)
+  return match ? Number(match[1]) : undefined
+}
+
+function pathYear(value: string): number | undefined {
+  const path = decodeURIComponent(safeUrlPath(value))
+  const match = /(?:^|[/_-])(20\d{2})(?=[/_-]|\d{4,}|$)/.exec(path)
+  return match ? Number(match[1]) : undefined
+}
+
 function catalogueCampaignKey(leaflet: StoreLeaflet): string | undefined {
   const name = leaflet.name
     .toLowerCase()
@@ -411,6 +452,43 @@ function isTrustedViewerUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+function isTrustedPnpViewerUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'pnpcatalogues.hflip.co' &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      /^\/[a-z0-9]{6,64}\.html$/i.test(url.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+function isGenericPnpDirectory(leaflet: StoreLeaflet): boolean {
+  const isPnp = leaflet.retailerId === 'pick-n-pay' ||
+    leaflet.retailerName.toLowerCase().includes('pick n pay')
+  if (!isPnp) return false
+
+  return [leaflet.url, leaflet.documentUrl].some((value) => {
+    if (!value) return false
+    try {
+      const url = new URL(value)
+      return (
+        (url.hostname === 'www.pnp.co.za' || url.hostname === 'pnp.co.za') &&
+        url.pathname.replace(/\/+$/, '') === '/catalogues'
+      )
+    } catch {
+      return false
+    }
+  })
 }
 
 function flippingBookPagesUrl(value: string): string | undefined {

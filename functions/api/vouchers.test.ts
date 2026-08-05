@@ -38,6 +38,7 @@ describe('/api/vouchers', () => {
     })
     expect(mocks.listActiveVouchers).toHaveBeenCalledWith(expect.anything(), {
       accountId: undefined,
+      countryCode: 'ZA',
       limit: 100,
       offset: 0,
       retailerId: undefined,
@@ -81,7 +82,12 @@ describe('/api/vouchers', () => {
     }))
 
     expect(response.status).toBe(200)
-    expect(mocks.claimVoucher).toHaveBeenCalledWith(expect.anything(), 'member-1', 'voucher-1')
+    expect(mocks.claimVoucher).toHaveBeenCalledWith(
+      expect.anything(),
+      'member-1',
+      'voucher-1',
+      'ZA',
+    )
   })
 
   it('rejects a cross-origin voucher mutation', async () => {

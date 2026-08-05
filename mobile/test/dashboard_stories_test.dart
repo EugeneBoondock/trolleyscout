@@ -68,4 +68,39 @@ void main() {
       ],
     );
   });
+
+  test('matches catalogue artwork by retailer id when display names differ',
+      () {
+    final stories = buildDashboardStories(
+      catalogues: const [
+        Catalogue(
+          name: 'Weekend offers',
+          url: 'https://retailer.test/weekend',
+          retailerId: 'food-lovers-market',
+          retailerName: 'Food Lover\'s Market Western Cape',
+          imageUrl: 'https://images.test/weekend.webp',
+        ),
+      ],
+      deals: const [],
+      retailers: const [
+        Retailer(
+          id: 'food-lovers-market',
+          name: 'Food Lover\'s Market',
+          shortName: 'Food Lover\'s',
+          group: 'Supermarket',
+          program: 'FreshStop Rewards',
+          sourceNote: 'Official sources',
+          verifiedOn: '2026-08-02',
+          accentColor: '#4c8c2b',
+          logoUrl: 'https://images.test/food-lovers-logo.png',
+          sources: [],
+        ),
+      ],
+    );
+
+    expect(stories, hasLength(1));
+    expect(stories.first.id, 'food-lovers-market');
+    expect(stories.first.retailerName, 'Food Lover\'s Market');
+    expect(stories.first.logoUrl, 'https://images.test/food-lovers-logo.png');
+  });
 }

@@ -125,9 +125,11 @@ class VoucherCode {
     required this.id,
     required this.retailerId,
     required this.code,
+    this.countryCode = 'ZA',
     required this.benefitText,
     required this.workedCount,
     required this.failedCount,
+    this.moderationStatus = 'unconfirmed',
     required this.source,
     required this.createdAt,
     this.minimumSpendText,
@@ -140,9 +142,11 @@ class VoucherCode {
   final String id;
   final String retailerId;
   final String code;
+  final String countryCode;
   final String benefitText;
   final int workedCount;
   final int failedCount;
+  final String moderationStatus;
 
   /// 'member', or 'affiliate:<network>' for a licensed feed.
   final String source;
@@ -171,14 +175,17 @@ class VoucherCode {
         '${workedCount == 1 ? 'shopper' : 'shoppers'}$suffix';
   }
 
-  VoucherCode copyWith({int? workedCount, int? failedCount, String? yourVote}) =>
+  VoucherCode copyWith(
+          {int? workedCount, int? failedCount, String? yourVote}) =>
       VoucherCode(
         id: id,
         retailerId: retailerId,
         code: code,
+        countryCode: countryCode,
         benefitText: benefitText,
         workedCount: workedCount ?? this.workedCount,
         failedCount: failedCount ?? this.failedCount,
+        moderationStatus: moderationStatus,
         source: source,
         createdAt: createdAt,
         minimumSpendText: minimumSpendText,
@@ -192,9 +199,12 @@ class VoucherCode {
         id: _text(json['id']),
         retailerId: _text(json['retailerId']),
         code: _text(json['code']),
+        countryCode: _text(json['countryCode']),
         benefitText: _text(json['benefitText']),
         workedCount: _count(json['workedCount']),
         failedCount: _count(json['failedCount']),
+        moderationStatus:
+            json['moderationStatus'] == 'approved' ? 'approved' : 'unconfirmed',
         source: _text(json['source']),
         createdAt: _text(json['createdAt']),
         minimumSpendText: _optionalText(json['minimumSpendText']),

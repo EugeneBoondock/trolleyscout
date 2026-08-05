@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   decodeEntities,
   extractNextData,
+  parseAnewHotels,
+  parseBushBreaks,
+  parseCityLodge,
   parseDaddysDeals,
+  parseFlightCentre,
   parseHyperli,
   parseMyRunway,
   parseOneDayOnly,
+  parseSouthernSun,
+  parseTravelstart,
+  parseSunInternational,
 } from './dealSites'
 
 describe('parseOneDayOnly', () => {
@@ -203,6 +210,336 @@ describe('parseDaddysDeals', () => {
     expect(item.category).toBe('Durban')
     expect(item.capturedAt).toBe('2026-07-20T08:15:00.000Z')
     expect(item.productUrl).toContain('/vouchers/massage/')
+  })
+})
+
+describe('parseTravelstart', () => {
+  it('maps public fare cards and gives each flight a departure-day expiry', () => {
+    const html = `
+      <a href="https://www.travelstart.co.za/search?depart_date=2026-08-21&from=JNB&to=HRE&airline=FA&search=true" class='fare-card d-flex'>
+        <img class="airline-image" alt="FlySafair" data-lazy-src="https://travel.test/fa.png" />
+        <h3 class="departure">JNB</h3>
+        <h3 class="destination">HRE</h3>
+        <div class="fare-card-price"><h3>R1 159</h3></div>
+      </a>`
+
+    expect(parseTravelstart(html)).toEqual([
+      expect.objectContaining({
+        category: 'Flights',
+        expiresAt: '2026-08-21 23:59:59',
+        imageUrl: 'https://travel.test/fa.png',
+        priceText: 'R1 159',
+        retailerName: 'FlySafair',
+        source: 'travelstart',
+        sourceLabel: 'Travelstart flight deals',
+        title: 'FlySafair flight: JNB to HRE',
+      }),
+    ])
+  })
+
+  it('ignores unrelated links on the landing page', () => {
+    expect(parseTravelstart('<a class="fare-card" href="https://example.com">Fake</a>'))
+      .toEqual([])
+  })
+})
+
+describe('parseSouthernSun', () => {
+  it('maps public hotel offers and resolves official relative links and images', () => {
+    const html = `
+      <article class="special-entry fade-on-scroll">
+        <img data-src="//cdn.test/travelsmart.jpg" />
+        <h3 class="special-title">TravelSmart, Stay For Less</h3>
+        <p class="special-descr">Two children stay free when sharing a family room.</p>
+        <a class="learn-more-link" href="/offers/travelsmart">Find out more</a>
+      </article>`
+
+    expect(parseSouthernSun(html)).toEqual([
+      expect.objectContaining({
+        category: 'Hotel stays',
+        imageUrl: 'https://cdn.test/travelsmart.jpg',
+        productUrl: 'https://www.southernsun.com/offers/travelsmart',
+        retailerName: 'Southern Sun',
+        source: 'southernsun',
+        sourceLabel: 'Southern Sun hotel specials',
+        title: 'TravelSmart, Stay For Less',
+      }),
+    ])
+  })
+
+  it('leaves dining-only promotions out of the travel feed', () => {
+    const html = `
+      <article class="special-entry">
+        <h3 class="special-title">Breakfast for two</h3>
+        <p class="special-descr">Enjoy eggs, coffee and toast.</p>
+        <a class="learn-more-link" href="/offers/breakfast">Learn more</a>
+      </article>`
+
+    expect(parseSouthernSun(html)).toEqual([])
+  })
+
+  it('keeps a stated hotel-rate saving even when the copy does not say stay', () => {
+    const html = `
+      <article class="special-entry">
+        <h3 class="special-title">Seniors Offer</h3>
+        <p class="special-descr">Up to 50% off our rate of the day for seniors.</p>
+        <a class="learn-more-link" href="/offers/seniors">Learn more</a>
+      </article>`
+
+    expect(parseSouthernSun(html)).toEqual([
+      expect.objectContaining({
+        savingText: 'Up to 50% off',
+        source: 'southernsun',
+        title: 'Seniors Offer',
+      }),
+    ])
+  })
+})
+
+describe('parseFlightCentre', () => {
+  it('maps official public travel tiles and excludes unrelated promotions', () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          deals: [
+            {
+              alt: 'Rydges Auckland',
+              id: 23028,
+              image: 'https://flightcentre.test/rydges.jpg',
+              link: 'https://www.flightcentre.co.za/holidays/nz-auk-auckland/rydges-ZA52510',
+              productType: {
+                holidayType: ['Attractions', 'Family & Kids'],
+                travellerType: ['Couples'],
+              },
+              title: 'New Zealand - Rydges Auckland Deals Tile',
+            },
+            {
+              alt: 'Turn Your Crypto Into a Holiday',
+              id: 22922,
+              image: 'https://flightcentre.test/crypto.jpg',
+              link: 'https://www.flightcentre.co.za/p/crypto-currency-payment',
+              title: 'Moneybadger - Crypto Currency',
+            },
+          ],
+        },
+      },
+    })}</script>`
+
+    expect(parseFlightCentre(html)).toEqual([
+      expect.objectContaining({
+        category: 'Attractions',
+        id: 'flightcentre-23028',
+        imageUrl: 'https://flightcentre.test/rydges.jpg',
+        productUrl: 'https://www.flightcentre.co.za/holidays/nz-auk-auckland/rydges-ZA52510',
+        retailerName: 'Flight Centre',
+        source: 'flightcentre',
+        sourceLabel: 'Flight Centre travel deals',
+        title: 'Rydges Auckland',
+      }),
+    ])
+  })
+
+  it('keeps official flight promotions and rejects another host', () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          deals: [
+            {
+              alt: 'Local and International Flight Deals',
+              id: 11666,
+              link: 'https://www.flightcentre.co.za/promotions/flight-deals',
+              title: 'Local & International Flights',
+            },
+            {
+              alt: 'Fake',
+              id: 1,
+              link: 'https://example.com/deals/fake',
+              title: 'Fake',
+            },
+          ],
+        },
+      },
+    })}</script>`
+
+    expect(parseFlightCentre(html)).toEqual([
+      expect.objectContaining({
+        category: 'Flights',
+        id: 'flightcentre-11666',
+        source: 'flightcentre',
+      }),
+    ])
+  })
+
+  it('uses Travel for non-flight tiles and replaces image-description alt text', () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          deals: [
+            {
+              alt: 'A couple on a river cruise package.',
+              id: 22534,
+              link: 'https://www.flightcentre.co.za/deals/tour-and-river-cruise-holidays',
+              title: 'Tours & River Cruise Deals | TTL 30 Sep',
+            },
+          ],
+        },
+      },
+    })}</script>`
+
+    expect(parseFlightCentre(html)).toEqual([
+      expect.objectContaining({
+        category: 'Travel',
+        title: 'Tours & River Cruise Deals',
+      }),
+    ])
+  })
+
+  it('keeps one tile when the public page repeats the same named offer', () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          deals: [
+            { alt: 'Celebrity Cruises', id: 1, link: 'https://www.flightcentre.co.za/deals/celebrity' },
+            { alt: 'Celebrity Cruises', id: 2, link: 'https://www.flightcentre.co.za/product/123' },
+          ],
+        },
+      },
+    })}</script>`
+
+    expect(parseFlightCentre(html)).toHaveLength(1)
+  })
+})
+
+describe('parseCityLodge', () => {
+  it('maps public, visible hotel specials with the stated saving and expiry', () => {
+    const payload = {
+      special_offers: [
+        {
+          description: 'Save 30%, kids stay and eat breakfast free.',
+          end_at: '2027-02-01T07:24:00.000+02:00',
+          id: 60,
+          image: { url: 'https://citylodge.test/family.jpg' },
+          is_active: true,
+          name: 'Family Bundle',
+          slug: 'familybundle',
+          special_type: 'accommodation_plus_food',
+        },
+      ],
+    }
+
+    expect(parseCityLodge(payload)).toEqual([
+      expect.objectContaining({
+        category: 'Hotel stays',
+        expiresAt: '2027-02-01T07:24:00.000+02:00',
+        id: 'citylodge-60',
+        imageUrl: 'https://citylodge.test/family.jpg',
+        productUrl: 'https://citylodgehotels.com/special-offers/familybundle',
+        retailerName: 'City Lodge Hotels',
+        savingText: '30% off',
+        source: 'citylodge',
+        sourceLabel: 'City Lodge hotel specials',
+        title: 'Family Bundle',
+      }),
+    ])
+  })
+
+  it('excludes inactive and publisher-hidden offers', () => {
+    expect(parseCityLodge({
+      special_offers: [
+        { id: 1, is_active: false, name: 'Old offer', slug: 'old' },
+        {
+          id: 2,
+          is_active: true,
+          name: 'Internal rate',
+          slug: 'internal',
+          special_type: 'not_visible',
+        },
+      ],
+    })).toEqual([])
+  })
+})
+
+describe('parseAnewHotels', () => {
+  it('maps public accommodation offer cards with a price, saving and end date', () => {
+    const html = `<div data-elementor-type="loop-item" class="elementor post-168316 deals type-deals status-publish">
+      <img data-lazy-src="https://anewhotels.com/wp-content/hazyview.jpg" src="data:image/gif;base64,x" />
+      <div class="elementor-widget-theme-post-title"><h3><a href="https://bookings.anewhotels.com/">Winter Your Way at ANEW Resort Hazyview</a></h3></div>
+      <p>From <strong>R1,940*</strong> per night. Save up to <strong>R600*</strong>.</p>
+      <div>Valid from 1 June – 31 August 2026</div>
+    </div>`
+
+    expect(parseAnewHotels(html)).toEqual([
+      expect.objectContaining({
+        category: 'Hotel stays',
+        expiresAt: '2026-08-31 23:59:59',
+        id: 'anewhotels-168316',
+        imageUrl: 'https://anewhotels.com/wp-content/hazyview.jpg',
+        priceText: 'R1,940',
+        productUrl: 'https://anewhotels.com/all-specials/#deal-168316',
+        savingText: 'Save up to R600',
+        source: 'anewhotels',
+        title: 'Winter Your Way at ANEW Resort Hazyview',
+      }),
+    ])
+  })
+})
+
+describe('parseBushBreaks', () => {
+  it('maps official lodge specials and their public gallery', () => {
+    const html = `<div class="col-12 card-column card_column_bush_break">
+      <span class="savings-percent">61%</span>
+      <div data-flickity-bg-lazyload="https://bush.test/cover.jpg"></div>
+      <div data-flickity-bg-lazyload="https://bush.test/room.jpg"></div>
+      <h5 class="card-title text-center">Buffalo Rock Safari Camp<br /><small>Kruger</small></h5>
+      <strong class="from-price">R2,000</strong>
+      <small class="special-name">Winter Promo 2 Nights Stay</small>
+      <small class="valid-until">From 01 Jun to 31 Aug 2026</small>
+      <a href="/listing/buffalo-rock-safari-camp" class="btn">View</a>
+    </div>`
+
+    expect(parseBushBreaks(html)).toEqual([
+      expect.objectContaining({
+        category: 'Safari and lodge stays',
+        expiresAt: '2026-08-31 23:59:59',
+        imageUrl: 'https://bush.test/cover.jpg',
+        images: ['https://bush.test/cover.jpg', 'https://bush.test/room.jpg'],
+        priceText: 'R2,000',
+        productUrl: 'https://www.bushbreaks.co.za/listing/buffalo-rock-safari-camp',
+        retailerName: 'Buffalo Rock Safari Camp',
+        savingText: '61% off',
+        source: 'bushbreaks',
+        title: 'Buffalo Rock Safari Camp: Winter Promo 2 Nights Stay',
+      }),
+    ])
+  })
+})
+
+describe('parseSunInternational', () => {
+  it('keeps public stay offers and leaves dining promotions out', () => {
+    const html = `<main>
+      <a class="OfferCard_offer-card__link" href="/sunvacationclub/specials/lefika-villas-mvg">
+        <img src="https://sun.test/lefika.jpg" />
+        <span class="OfferCard_offer-card__property">Sun Vacation Club</span>
+        <p class="OfferCard_offer-card__title">LEFIKA VILLAS MEMBERSHIP</p>
+        <p class="OfferCard_offer-card__date">Valid until 15 August 2026</p>
+      </a>
+      <a class="OfferCard_offer-card__link" href="/sibaya/specials/sunday-buffet">
+        <span class="OfferCard_offer-card__property">Sibaya</span>
+        <p class="OfferCard_offer-card__title">Sunday Buffet</p>
+        <p class="OfferCard_offer-card__date">Every Sunday</p>
+      </a>
+    </main>`
+
+    expect(parseSunInternational(html)).toEqual([
+      expect.objectContaining({
+        category: 'Resort and hotel stays',
+        expiresAt: '2026-08-15 23:59:59',
+        imageUrl: 'https://sun.test/lefika.jpg',
+        productUrl: 'https://www.suninternational.com/sunvacationclub/specials/lefika-villas-mvg',
+        retailerName: 'Sun Vacation Club',
+        source: 'suninternational',
+        title: 'LEFIKA VILLAS MEMBERSHIP',
+      }),
+    ])
   })
 })
 

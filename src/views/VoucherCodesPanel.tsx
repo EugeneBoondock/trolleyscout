@@ -18,6 +18,7 @@ import type { VoucherCode } from '../types'
  */
 
 export interface VoucherCodesPanelProps {
+  countryName: string
   isAuthenticated: boolean
   onRequireAuth: () => void
   retailerId?: string
@@ -25,6 +26,7 @@ export interface VoucherCodesPanelProps {
 }
 
 export function VoucherCodesPanel({
+  countryName,
   isAuthenticated,
   onRequireAuth,
   retailerId,
@@ -32,6 +34,7 @@ export function VoucherCodesPanel({
 }: VoucherCodesPanelProps) {
   const [codes, setCodes] = useState<VoucherCode[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [copiedId, setCopiedId] = useState('')
   const [isSharing, setIsSharing] = useState(false)
   const [notice, setNotice] = useState('')
@@ -39,13 +42,18 @@ export function VoucherCodesPanel({
   useEffect(() => {
     const controller = new AbortController()
     setIsLoading(true)
+    setLoadError('')
     loadVoucherCodes(retailerId, controller.signal)
       .then((loaded) => {
         if (controller.signal.aborted) return
         setCodes(loaded)
         setIsLoading(false)
       })
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setLoadError(error instanceof Error ? error.message : 'Could not load checkout codes.')
+        setIsLoading(false)
+      })
     return () => controller.abort()
   }, [retailerId])
 
@@ -82,18 +90,25 @@ export function VoucherCodesPanel({
           <p className="eyebrow">Checkout codes</p>
           <h2>Codes to paste at checkout</h2>
           <p className="section-lede">
-            Shared by shoppers and ranked by what actually worked. We cannot test these
-            at the shop's till, so try the top one first and tell us how it went.
+            Shared by shoppers in {countryName} and ranked by recent results. New codes
+            stay marked unconfirmed until another shopper says one worked. Undated codes
+            disappear after 30 days without a successful report.
           </p>
         </div>
       </div>
 
       {isLoading ? (
         <p className="section-lede">Loading codes…</p>
+      ) : loadError ? (
+        <div className="voucher-code-empty" role="alert">
+          <strong>Checkout codes could not be loaded.</strong>
+          <span>{loadError}</span>
+        </div>
       ) : codes.length === 0 ? (
-        <p className="section-lede">
-          No codes for this shop yet. If you have one that works, share it below.
-        </p>
+        <div className="voucher-code-empty" role="status">
+          <strong>No public checkout codes have been shared here yet.</strong>
+          <span>If you used a reusable code in {countryName}, add it below for the next shopper.</span>
+        </div>
       ) : (
         <ul className="voucher-code-list">
           {codes.map((voucherCode) => (
@@ -114,6 +129,10 @@ export function VoucherCodesPanel({
                 <p className="voucher-code-terms">{voucherCode.minimumSpendText}</p>
               )}
               <p className="voucher-code-confidence">
+                {voucherCode.moderationStatus === 'approved'
+                  ? 'Confirmed by shoppers'
+                  : 'Unconfirmed'}
+                {' \u00b7 '}
                 {describeConfidence(voucherCode)}
                 {voucherCode.source.startsWith('affiliate:') && (
                   <> · from {voucherCode.source.replace('affiliate:', '')}</>
@@ -157,7 +176,7 @@ export function VoucherCodesPanel({
             setNotice(result.issues[0])
             return false
           }
-          setNotice('Thanks, your code is live for other shoppers.')
+          setNotice('Thanks. Your code is live as unconfirmed until another shopper reports success.')
           setCodes(await loadVoucherCodes(retailerId))
           return true
         }}
@@ -207,6 +226,7 @@ function ShareCodeForm({
   const [code, setCode] = useState('')
   const [benefitText, setBenefitText] = useState('')
   const [minimumSpendText, setMinimumSpendText] = useState('')
+  const [isPublicReusable, setIsPublicReusable] = useState(false)
   const [shop, setShop] = useState(retailerId && retailerId !== 'all' ? retailerId : '')
 
   return (
@@ -218,11 +238,13 @@ function ShareCodeForm({
           onRequireAuth()
           return
         }
+        if (!isPublicReusable) return
         const shared = await onShare({ benefitText, code, minimumSpendText, retailerId: shop })
         if (shared) {
           setCode('')
           setBenefitText('')
           setMinimumSpendText('')
+          setIsPublicReusable(false)
         }
       }}
     >
@@ -261,6 +283,15 @@ function ShareCodeForm({
           placeholder="Spend R500 or more"
           value={minimumSpendText}
         />
+      </label>
+      <label className="voucher-code-confirmation">
+        <input
+          checked={isPublicReusable}
+          onChange={(event) => setIsPublicReusable(event.target.checked)}
+          required
+          type="checkbox"
+        />
+        This code is public, reusable, and not a personal or referral code.
       </label>
       <button className="primary-button" disabled={isSharing} type="submit">
         {isSharing ? 'Sharing…' : 'Share code'}

@@ -138,4 +138,27 @@ describe('external retailer scouting', () => {
       }),
     ])
   })
+
+  it('keeps the published end date for a current official specials poster', () => {
+    const target = {
+      retailerId: 'president-hyper',
+      retailerName: 'President Hyper',
+      sourceUrl: 'https://www.presidenthyper.co.za/weekly-specials-rustenburg/',
+    }
+    const html = `
+      <h1>Rustenburg Weekly Specials</h1>
+      <h2>BRAAIMAXX & Air Fryers Deals</h2>
+      <p>Prices Valid: 30 Aug 2026</p>
+      <img src="/wp-content/uploads/2022/05/current-weekly-specials.png" alt="Weekly specials">
+    `
+
+    expect(
+      extractRetailerLeafletsFromHtml(target, html, '2026-08-02T00:00:00.000Z'),
+    ).toEqual([
+      expect.objectContaining({
+        retailerId: 'president-hyper',
+        validTo: '2026-08-30',
+      }),
+    ])
+  })
 })

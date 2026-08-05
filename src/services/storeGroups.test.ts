@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { DiscoveryRun } from '../types'
 import type { NearbyStoreResult } from './apiClient'
 import { groupDiscoveredStores } from './storeGroups'
 
@@ -121,5 +122,64 @@ describe('groupDiscoveredStores', () => {
     ])
 
     expect(groups).toHaveLength(2)
+  })
+
+  it('uses Marketplace content when branch summaries have no loaded promotions', () => {
+    const marketplace: DiscoveryRun = {
+      deals: [{
+        capturedAt: '2026-08-02T08:00:00.000Z',
+        evidenceText: 'Official Boxer listing',
+        id: 'boxer-rice',
+        productUrl: 'https://www.boxer.co.za/rice',
+        retailerId: 'boxer',
+        retailerName: 'Boxer',
+        sourceLabel: 'Boxer',
+        sourceUrl: 'https://www.boxer.co.za/specials',
+        title: 'Rice 10 kg',
+      }],
+      leaflets: [
+        {
+          capturedAt: '2026-08-02T08:00:00.000Z',
+          id: 'boxer-weekly',
+          name: 'Weekly deals',
+          retailerId: 'boxer',
+          retailerName: 'Boxer',
+          url: 'https://www.boxer.co.za/catalogues/weekly',
+        },
+        {
+          capturedAt: '2026-08-02T08:00:00.000Z',
+          id: 'boxer-month-end',
+          name: 'Month-end deals',
+          retailerId: 'boxer',
+          retailerName: 'Boxer',
+          url: 'https://www.boxer.co.za/catalogues/month-end',
+        },
+      ],
+      sources: [],
+      summary: {
+        checkedSourceCount: 1,
+        dataPolicy: 'Public official sources',
+        foundDealCount: 1,
+        leafletCount: 2,
+        unavailableSourceCount: 0,
+      },
+    }
+
+    const [group] = groupDiscoveredStores([
+      store({
+        detailsLoaded: false,
+        name: 'Boxer Johannesburg',
+        placeId: 'boxer-jhb',
+        promotionCount: 0,
+        retailerId: 'boxer',
+      }),
+    ], marketplace)
+
+    expect(group).toMatchObject({
+      catalogueCount: 2,
+      dealCount: 1,
+      displayName: 'Boxer',
+      promotionCount: 3,
+    })
   })
 })

@@ -146,6 +146,115 @@ describe('runScheduledScout', () => {
     })
   })
 
+  it('runs event campaign scouting independently and reports discovered retailers', async () => {
+    const runHolidayCampaignScout = vi.fn(async () => ({
+      checkedEventCount: 2,
+      discoveredRetailerCount: 5,
+      offeredStoreCount: 4,
+      pdfCatalogueCount: 1,
+      skippedEventCount: 3,
+    }))
+
+    const result = await runScheduledScout(
+      { DB: {} as D1Database },
+      async () => Response.json({}),
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun(),
+        runCatalogueScout: async () => ({
+          dealCount: 0,
+          discoveredLeafletCount: 0,
+          scannedDocumentCount: 0,
+        }),
+        runHolidayCampaignScout,
+        runStructuredRetailerFeedScout: async () => ({
+          acceptedDealCount: 0,
+          catalogueCount: 0,
+          catalogues: [],
+          checkedSourceCount: 0,
+          databaseAvailable: true,
+          failedSourceCount: 0,
+          physicalRequestCount: 0,
+          sources: [],
+        }),
+        runVoucherScout: async () => ({
+          codes: { collected: 0, networks: [] },
+          expired: 0,
+          sources: [],
+        }),
+        scoutNearbyStores: async () => undefined,
+      },
+      { refreshDealSources: false },
+    )
+
+    expect(runHolidayCampaignScout).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      holidayCampaignCheckedEventCount: 2,
+      holidayCampaignDiscoveredRetailerCount: 5,
+      holidayCampaignOfferedStoreCount: 4,
+      holidayCampaignPdfCatalogueCount: 1,
+      holidayCampaignScoutFailed: false,
+      holidayCampaignSkippedEventCount: 3,
+    })
+  })
+
+  it('seeds a rotating physical-store batch on deal refresh runs', async () => {
+    const seedStoreCoverage = vi.fn(async () => ({
+      candidateStoreCount: 97,
+      failedPointCount: 1,
+      pointCount: 4,
+    }))
+    const fetcher = vi.fn(async () => Response.json({ stores: [] }))
+    const result = await runScheduledScout(
+      { DB: {} as D1Database, SCOUT_ORIGIN: 'https://trolleyscout.co.za' },
+      fetcher,
+      {
+        expireDealItems: async () => 0,
+        purgeExpired: async () => 0,
+        readDueDiscoveredStores: async () => [],
+        refreshDealSites: async () => 0,
+        refreshDiscovery: async () => discoveryRun(),
+        runCatalogueScout: async () => ({
+          dealCount: 0,
+          discoveredLeafletCount: 0,
+          scannedDocumentCount: 0,
+        }),
+        runStructuredRetailerFeedScout: async () => ({
+          acceptedDealCount: 0,
+          catalogueCount: 0,
+          catalogues: [],
+          checkedSourceCount: 0,
+          databaseAvailable: true,
+          failedSourceCount: 0,
+          physicalRequestCount: 0,
+          sources: [],
+        }),
+        runVoucherScout: async () => ({
+          codes: { collected: 0, networks: [] },
+          expired: 0,
+          sources: [],
+        }),
+        scoutNearbyStores: async () => undefined,
+        seedStoreCoverage,
+      },
+    )
+
+    expect(seedStoreCoverage).toHaveBeenCalledWith(
+      expect.anything(),
+      fetcher,
+      expect.any(Number),
+    )
+    expect(result).toMatchObject({
+      storeCoverageCandidateCount: 97,
+      storeCoveragePointCount: 4,
+      storeCoverageSeedFailed: false,
+      storeCoverageSeedFailedPointCount: 1,
+    })
+  })
+
   it('snapshots before every refresh lane and records one batch after expiry', async () => {
     const order: string[] = []
     const snapshotDealAlertKeys = vi.fn(async () => {

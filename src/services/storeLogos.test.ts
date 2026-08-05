@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { logoUrlForWebsite, nearbyStoreLogoUrl, retailerLogoMap } from './storeLogos'
+import { logoUrlForWebsite, nearbyStoreLogoUrl, retailerLogoMap, retailerLogoUrl } from './storeLogos'
 
 describe('logoUrlForWebsite', () => {
   it('builds a favicon URL from the site hostname', () => {
@@ -24,8 +24,8 @@ describe('nearbyStoreLogoUrl', () => {
   it('falls back to the matched chain logo', () => {
     const logo = nearbyStoreLogoUrl({ retailerId: 'pick-n-pay', website: undefined })
 
-    expect(logo).toContain('icons.duckduckgo.com')
-    expect(logo).toContain('pnp')
+    expect(logo).toContain('img.offers-cdn.net')
+    expect(logo).toContain('pick-n-pay')
   })
 
   it('returns undefined for independents without a website', () => {
@@ -38,6 +38,18 @@ describe('retailerLogoMap', () => {
     const map = retailerLogoMap()
 
     expect(Object.keys(map).length).toBeGreaterThan(10)
-    expect(map['clicks']).toContain('clicks.co.za')
+    expect(map['clicks']).toContain('img.offers-cdn.net')
+    expect(map['clicks']).toContain('clicks.webp')
+  })
+})
+
+describe('retailerLogoUrl', () => {
+  it('uses verified catalogue logos for retailers whose favicon is unavailable', () => {
+    expect(retailerLogoUrl({ id: 'checkers', sources: [] })).toBe(
+      'https://img.offers-cdn.net/assets/uploads/stores/za/logos/200x72_webp/checkers.webp',
+    )
+    expect(retailerLogoUrl({ id: 'ok-foods', sources: [] })).toBe(
+      'https://img.offers-cdn.net/assets/uploads/stores/za/logos/200x72_webp/ok-foods.webp',
+    )
   })
 })
