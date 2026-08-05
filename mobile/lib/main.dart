@@ -241,7 +241,6 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
     final destination = switch (request.destination) {
       'deals' => AppDestination.deals,
       'clothing' => AppDestination.clothing,
-      'food' => AppDestination.food,
       'chat' => AppDestination.chat,
       'near' => AppDestination.near,
       'stores' => AppDestination.stores,
@@ -1064,16 +1063,6 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
       AppDestination.clothing => ClothingScreen(
           api: api,
           onUpgrade: () => _selectDestination(AppDestination.subscription),
-        ),
-      // The drawer's Food sub-entry is the marketplace already narrowed to
-      // groceries, where the healthy-picks filter lives.
-      AppDestination.food => DealsScreen(
-          key: const ValueKey('food-marketplace'),
-          api: api,
-          isAuthenticated: widget.controller.session.isAuthenticated,
-          onWatchesChanged: widget.controller.refreshWatches,
-          onWantsAuth: () => _showAuth('login'),
-          initialCategory: DealCategory.food,
         ),
       AppDestination.chat => ScoutChatScreen(
           api: api,

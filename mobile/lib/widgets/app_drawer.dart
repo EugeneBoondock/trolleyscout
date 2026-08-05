@@ -9,7 +9,6 @@ enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
   deals('Marketplace', Icons.local_offer_outlined, false),
   clothing('Clothing', Icons.checkroom_outlined, false),
-  food('Food & Groceries', Icons.restaurant_outlined, false),
   chat('Mr Scout', Icons.chat_bubble_outline, true),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
@@ -164,26 +163,26 @@ class AppMenuDrawer extends StatelessWidget {
                           child: Text(group.$1.toUpperCase(),
                               style: TS.eyebrowOf(context)),
                         ),
-                        for (final item in group.$2) ...[
-                          _drawerTile(context, item),
-                          // Clothing and Food live inside the Marketplace:
-                          // threaded sub-entries directly under it, so the
-                          // drawer reads as a section with children rather
-                          // than three peers.
-                          if (item == AppDestination.deals) ...[
-                            _drawerTile(
-                              context,
-                              AppDestination.clothing,
-                              nested: true,
-                            ),
-                            _drawerTile(
-                              context,
-                              AppDestination.food,
-                              nested: true,
-                              isLastNested: true,
-                            ),
-                          ],
-                        ],
+                        for (final item in group.$2)
+                          // Marketplace is a section with children (Clothing
+                          // for now): its row navigates as usual, its chevron
+                          // folds the children away.
+                          if (item == AppDestination.deals)
+                            _ExpandableDrawerGroup(
+                              parent: _drawerTile(
+                                context,
+                                item,
+                                withChevronGutter: true,
+                              ),
+                              isChildSelected:
+                                  destination == AppDestination.clothing,
+                              children: [
+                                _drawerSubTile(
+                                    context, AppDestination.clothing),
+                              ],
+                            )
+                          else
+                            _drawerTile(context, item),
                       ],
                     ],
                   ),
@@ -200,39 +199,8 @@ class AppMenuDrawer extends StatelessWidget {
   Widget _drawerTile(
     BuildContext context,
     AppDestination item, {
-    bool nested = false,
-    bool isLastNested = false,
+    bool withChevronGutter = false,
   }) {
-    // Sub-entries hang off their parent on a drawn thread: a vertical guide
-    // continuing the parent's icon line, elbowing into the child — the same
-    // └ shape a file tree draws, so the nesting is visible at a glance.
-    final leading = nested
-        ? SizedBox(
-            width: 40,
-            height: 40,
-            child: Stack(
-              alignment: Alignment.centerRight,
-              children: [
-                Positioned(
-                  left: 11,
-                  top: 0,
-                  bottom: isLastNested ? 20 : 0,
-                  child: Container(width: 2, color: TS.lineOf(context)),
-                ),
-                Positioned(
-                  left: 11,
-                  top: 18,
-                  child: Icon(
-                    Icons.subdirectory_arrow_right_rounded,
-                    size: 17,
-                    color: TS.mutedOf(context),
-                  ),
-                ),
-                Icon(item.icon, size: 19),
-              ],
-            ),
-          )
-        : Icon(item.icon);
     return ListTile(
       key: ValueKey('drawer-${item.name}'),
       selected: destination == item,
@@ -240,26 +208,126 @@ class AppMenuDrawer extends StatelessWidget {
       selectedColor: TS.ink,
       iconColor: TS.mutedOf(context),
       textColor: TS.inkOf(context),
-      dense: nested,
-      contentPadding: nested
-          ? const EdgeInsets.only(left: 24, right: 16)
-          : null,
+      // A group parent leaves room for the fold chevron drawn beside it.
+      contentPadding:
+          withChevronGutter ? const EdgeInsets.only(left: 16, right: 52) : null,
       shape: destination == item
           ? Border(
               left: BorderSide(color: TS.redOf(context), width: 5),
             )
           : null,
-      leading: leading,
-      title: Text(
-        item.label,
-        style: nested
-            ? const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)
-            : null,
-      ),
+      leading: Icon(item.icon),
+      title: Text(item.label),
       trailing: item.requiresAuth && !session.isAuthenticated
           ? const Icon(Icons.lock_outline, size: 16)
           : null,
       onTap: () => onSelect(item),
+    );
+  }
+
+  /// A quiet child row: no icon of its own, just the thread elbow tying it to
+  /// its parent and a smaller label — a file-tree line, not a second peer.
+  Widget _drawerSubTile(BuildContext context, AppDestination item) {
+    final selected = destination == item;
+    return InkWell(
+      key: ValueKey('drawer-${item.name}'),
+      onTap: () => onSelect(item),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.only(left: 27, right: 16),
+        decoration: selected
+            ? BoxDecoration(
+                color: TS.yellow,
+                border: Border(
+                  left: BorderSide(color: TS.redOf(context), width: 5),
+                ),
+              )
+            : null,
+        child: Row(
+          children: [
+            Icon(
+              Icons.subdirectory_arrow_right_rounded,
+              size: 16,
+              color: selected ? TS.ink : TS.faintOf(context),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                item.label,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+                  color: selected ? TS.ink : TS.inkOf(context),
+                ),
+              ),
+            ),
+            if (item.requiresAuth && !session.isAuthenticated)
+              const Icon(Icons.lock_outline, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A drawer section that folds: the parent row keeps its normal navigation
+/// tap, a chevron beside it opens and closes the children with a smooth
+/// animated reveal. Opens itself whenever a child is the current page so the
+/// selection is never hidden inside a closed fold.
+class _ExpandableDrawerGroup extends StatefulWidget {
+  const _ExpandableDrawerGroup({
+    required this.parent,
+    required this.children,
+    required this.isChildSelected,
+  });
+
+  final Widget parent;
+  final List<Widget> children;
+  final bool isChildSelected;
+
+  @override
+  State<_ExpandableDrawerGroup> createState() => _ExpandableDrawerGroupState();
+}
+
+class _ExpandableDrawerGroupState extends State<_ExpandableDrawerGroup> {
+  late bool _expanded = widget.isChildSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Stack(
+          alignment: Alignment.centerRight,
+          children: [
+            widget.parent,
+            Positioned(
+              right: 6,
+              child: IconButton(
+                key: const ValueKey('drawer-group-toggle'),
+                tooltip: _expanded ? 'Hide categories' : 'Show categories',
+                onPressed: () => setState(() => _expanded = !_expanded),
+                icon: AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    size: 22,
+                    color: TS.mutedOf(context),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? Column(children: widget.children)
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }

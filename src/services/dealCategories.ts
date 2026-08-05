@@ -167,6 +167,10 @@ const CATEGORY_RULES: ScoredRule[] = [
     strong: [
       'jean', 'jeans', 'denim', 't-shirt', 'tshirt', 'shirt', 'trouser', 'jacket', 'hoodie',
       'sneaker', 'shoe', 'shoes', 'boot', 'sock', 'socks', 'dress', 'skirt', 'jersey', 'takkies',
+      'chino', 'blazer', 'cardigan', 'coat', 'beanie', 'scarf', 'sweater', 'pullover',
+      'tracksuit', 'leggings', 'shorts', 'bikini', 'swimwear', 'underwear', 'bra ', 'pyjama',
+      'slipper', 'loafer', 'sandal', 'heels', 'golfer', 'bodysuit', 'camisole', 'jumpsuit',
+      'sleepwear', 'activewear',
     ],
   },
   {

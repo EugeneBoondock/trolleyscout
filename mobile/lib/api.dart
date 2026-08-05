@@ -326,6 +326,16 @@ class Api {
     });
   }
 
+  /// Health facts about a food product — cached server-side so the first
+  /// shopper's question becomes everyone's answer.
+  Future<FoodFactsInfo> foodFacts(String title) async {
+    final data = await _request(
+      'GET',
+      '/api/food-facts?title=${Uri.encodeQueryComponent(title)}',
+    );
+    return FoodFactsInfo.fromJson(data);
+  }
+
   /// The retailer's own star rating and comments for a product page, when the
   /// storefront shares them.
   Future<ProductReviewInfo> productReviews(String productUrl) async {

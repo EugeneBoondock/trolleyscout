@@ -30,7 +30,15 @@ const List<String> _unhealthyKeywords = [
   'chocolate', 'sweets', 'candy', 'chips', 'crisps', 'soda', 'cola',
   'energy drink', 'doughnut', 'donut', 'cake', 'biscuit', 'cookie', 'pie ',
   'fried', 'polony', 'viennas', 'russians', 'syrup', 'cordial', 'cream soda',
-  'ice cream', 'milkshake', 'sausage roll', 'instant noodle',
+  'ice cream', 'milkshake', 'sausage roll', 'instant noodle', 'shortbread',
+  'cheddars', 'sparkling', 'flavoured milk', 'flavored milk', 'gravy',
+  'appletiser', 'grapetiser', 'ice tea', 'ice-tea', 'iced tea', 'concentrate',
+  // Not unhealthy — just not food. A food word inside a toiletry or gadget
+  // name ("oatmeal cleansing bar", "banana hair mask", "milk storage cups")
+  // must never put it on a plate.
+  'cleansing', 'soap', 'shampoo', 'hair', 'lotion', 'mist', 'fragrance',
+  'scrub', 'mask', 'wipes', 'storage', 'bottle', 'cups', 'diffuser',
+  'candle', 'body wash', 'body butter', 'bath',
 ];
 
 bool isHealthyFoodDeal(

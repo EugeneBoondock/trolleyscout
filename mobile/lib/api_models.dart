@@ -755,6 +755,31 @@ class Deal {
       };
 }
 
+/// Health facts for a marketplace food — AI-written once, then shared with
+/// every shopper from the server cache.
+class FoodFactsInfo {
+  const FoodFactsInfo({
+    required this.available,
+    this.food = '',
+    this.facts = const [],
+    this.budgetTip = '',
+  });
+
+  factory FoodFactsInfo.fromJson(Map<String, dynamic> json) => FoodFactsInfo(
+        available: json['available'] == true,
+        food: json['food']?.toString() ?? '',
+        facts: json['facts'] is List
+            ? (json['facts'] as List).map((fact) => fact.toString()).toList()
+            : const [],
+        budgetTip: json['budgetTip']?.toString() ?? '',
+      );
+
+  final bool available;
+  final String food;
+  final List<String> facts;
+  final String budgetTip;
+}
+
 /// Star rating and shopper comments pulled from the retailer's own site.
 class ProductReviewInfo {
   const ProductReviewInfo({

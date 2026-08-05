@@ -7,6 +7,7 @@ import '../api.dart';
 import '../catalogue_sort.dart';
 import '../deal_categories.dart';
 import '../healthy_food.dart';
+import '../widgets/food_facts_sheet.dart';
 import '../data_saver_store.dart';
 import '../deal_alert_background.dart';
 import '../deal_alert_scheduler.dart';
@@ -2149,6 +2150,29 @@ class _DealRow extends StatelessWidget {
                             style: TS.eyebrowOf(context),
                           ),
                         ),
+                        if (isHealthyFoodDeal(deal)) ...[
+                          const SizedBox(width: 4),
+                          Semantics(
+                            button: true,
+                            label: 'Health facts for ${deal.title}',
+                            child: InkWell(
+                              key: Key('food-facts-${deal.id}'),
+                              borderRadius: BorderRadius.circular(99),
+                              onTap: () {
+                                uxTap();
+                                showFoodFactsSheet(context, api, deal.title);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 17,
+                                  color: TS.greenOf(context),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         if (isNew) ...[
                           const SizedBox(width: 6),
                           Container(
