@@ -142,7 +142,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    // The sold-out card sits below the shopping-calendar section, past the
+    // lazy list's build window, so walk the feed down and back up.
+    await _dragFeed(tester, const Offset(0, -600));
     expect(find.byKey(const Key('deal-card-sold-out')), findsOneWidget);
+    await _dragFeed(tester, const Offset(0, 600));
     await tester.tap(find.byKey(const Key('visibility-filter-menu')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('hide-sold-out-filter')));
@@ -265,8 +269,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('deal-card-access-discovery')), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -320));
-    await tester.pumpAndSettle();
+    await _dragFeed(tester, const Offset(0, -600));
     expect(find.byKey(const Key('deal-card-access-site')), findsOneWidget);
   });
 
@@ -329,6 +332,20 @@ void main() {
       expect(find.byKey(const Key('view-product-milk-two')), findsOneWidget);
     });
   }
+}
+
+/// Walks the vertical feed in fixed steps; drag targets can sit over nested
+/// horizontal scrollables, so plain drags beat scrollUntilVisible here.
+Future<void> _dragFeed(WidgetTester tester, Offset step) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.drag(
+      find.byType(Scrollable).first,
+      step,
+      warnIfMissed: false,
+    );
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
 }
 
 Future<void> _usePhoneViewport(WidgetTester tester) async {

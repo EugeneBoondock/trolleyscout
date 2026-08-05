@@ -347,11 +347,12 @@ void main() {
       ),
       isTrue,
     );
-    final logicalHeight =
-        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    // The surface was pinned to 800x1000 above, so measure against that
+    // height, not the default test view.
+    const surfaceHeight = 1000.0;
     expect(
       tester.getBottomRight(voiceButton).dy,
-      lessThanOrEqualTo(logicalHeight - 20),
+      lessThanOrEqualTo(surfaceHeight - 20),
       reason: 'Showcase controls must stay above Android gesture navigation.',
     );
 

@@ -2,9 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/api_models.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
 import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/widgets/retailer_picker.dart';
+
+/// In-memory stand-in for the file-backed [DiscoveryCache]: real file I/O
+/// can never complete inside a widget test's fake-async pump loop.
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load(
+          [String countryCode = 'ZA', String accessScope = 'free']) async =>
+      null;
+
+  @override
+  Future<void> save(DiscoveryResult result, DateTime fetchedAt,
+      [String countryCode = 'ZA', String accessScope = 'free']) async {}
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -242,7 +257,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home:
-          Scaffold(body: DealsScreen(api: _PickerApi(), isAuthenticated: true)),
+          Scaffold(
+              body: DealsScreen(
+                  api: _PickerApi(),
+                  isAuthenticated: true,
+                  cacheStore: _MemoryDiscoveryCache())),
     ));
     await tester.pumpAndSettle();
 
@@ -271,7 +290,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home: Scaffold(
-        body: DealsScreen(api: _CatalogueOnlyApi(), isAuthenticated: true),
+        body: DealsScreen(
+            api: _CatalogueOnlyApi(),
+            isAuthenticated: true,
+            cacheStore: _MemoryDiscoveryCache()),
       ),
     ));
     await tester.pumpAndSettle();

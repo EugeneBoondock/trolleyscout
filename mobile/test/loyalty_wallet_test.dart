@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/loyalty_wallet.dart';
 import 'package:trolley_scout/personal_coupon_vault.dart';
 import 'package:trolley_scout/receipt_insights.dart';
@@ -11,6 +12,10 @@ import 'package:trolley_scout/session_cookie_store.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
+  // The receipt vault records taste signals through SharedPreferences; the
+  // real channel never answers inside a widget test's fake-async zone.
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   test('wallet saves card numbers in the secret backend', () async {
     final secrets = MemorySessionSecretBackend();
     final files = _MemoryLoyaltyFiles();

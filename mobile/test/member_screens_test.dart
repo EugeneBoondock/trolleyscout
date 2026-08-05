@@ -37,6 +37,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pumpAndSettle();
 
@@ -66,6 +67,7 @@ void main() {
       api: _FeatureApi(),
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pumpAndSettle();
 
@@ -83,6 +85,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pumpAndSettle();
 
@@ -124,6 +127,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pumpAndSettle();
 
@@ -144,6 +148,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pump();
     await tester.pump();
@@ -187,7 +192,8 @@ void main() {
 
   testWidgets('dashboard stories reuse a fresh discovery cache',
       (tester) async {
-    await DiscoveryCache().save(
+    final cache = _MemoryDiscoveryCache();
+    await cache.save(
       const DiscoveryResult(
         deals: [_deal],
         foundDealCount: 1,
@@ -204,6 +210,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: cache,
     )));
     await tester.pumpAndSettle();
 
@@ -247,6 +254,7 @@ void main() {
       api: api,
       session: _memberSession,
       onNavigate: (_) {},
+      cacheStore: _MemoryDiscoveryCache(),
     )));
     await tester.pumpAndSettle();
 
@@ -352,10 +360,17 @@ void main() {
     await tester.pumpWidget(_wrap(ProfileScreen(controller: controller)));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView), const Offset(0, -760));
-    await tester.pumpAndSettle();
     final setting = find.byKey(const Key('data-saver-toggle'));
-    await tester.ensureVisible(setting);
+    await tester.scrollUntilVisible(
+      setting,
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.text('Data saver'), findsOneWidget);
     expect(find.textContaining('Window Shopping image preloading'),
@@ -478,6 +493,24 @@ void main() {
 
 Widget _wrap(Widget child) =>
     MaterialApp(theme: TS.theme(), home: Scaffold(body: child));
+
+/// In-memory stand-in for the file-backed [DiscoveryCache]: real file I/O
+/// can never complete inside a widget test's fake-async pump loop.
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  final values = <String, CachedDiscovery>{};
+
+  @override
+  Future<CachedDiscovery?> load(
+          [String countryCode = 'ZA', String accessScope = 'free']) async =>
+      values['$countryCode:$accessScope'];
+
+  @override
+  Future<void> save(DiscoveryResult result, DateTime fetchedAt,
+      [String countryCode = 'ZA', String accessScope = 'free']) async {
+    values['$countryCode:$accessScope'] =
+        CachedDiscovery(result: result, fetchedAt: fetchedAt);
+  }
+}
 
 class _FeatureApi extends Api {
   _FeatureApi() : super(baseUrl: 'https://example.test');
