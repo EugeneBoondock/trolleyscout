@@ -55,7 +55,7 @@ describe('selectCurrentCatalogues', () => {
       id: 'apex-copy',
     })
 
-    expect(selectCurrentCatalogues([first, second])).toHaveLength(1)
+    expect(selectCurrentCatalogues([first, second], NOW)).toHaveLength(1)
   })
 
   it('removes expired catalogues', () => {

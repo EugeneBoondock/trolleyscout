@@ -1880,7 +1880,7 @@ describe('leaflet refresh retention', () => {
       sourceId: 'latest-specials-za',
       sourceLabel: 'Latest Specials',
       url: 'https://www.latestspecials.co.za/food-lovers/winter-123/',
-      validTo: '2026-08-02',
+      validTo: '2099-08-02',
     }]
     const fetcher = vi.fn(async () => new Response('', { status: 202 }))
     const saveSnapshot = vi.fn(async () => undefined)
