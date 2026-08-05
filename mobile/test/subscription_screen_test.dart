@@ -358,7 +358,6 @@ const _paidAccount = MemberAccount(
   updatedAt: '2026-07-22T00:00:00.000Z',
 );
 
-<<<<<<< HEAD
 const _householdAccount = MemberAccount(
   id: 'member-1',
   email: 'sam@example.test',
