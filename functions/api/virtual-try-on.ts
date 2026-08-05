@@ -76,7 +76,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  if (!env.FASHN_API_KEY && !env.AI) {
+  if (!env.PRUNA_API_KEY && !env.FASHN_API_KEY && !env.AI) {
     return json({ issues: ['Fitting room is warming up'] }, { headers: privateHeaders, status: 503 })
   }
 
@@ -111,41 +111,46 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  // FASHN first when its key is present: it is the engine that is actually
-  // paid for. The Workers AI partner model stays as the alternative for when
-  // the Cloudflare account gains AI Gateway credits.
+  // Direct Pruna AI API first when PRUNA_API_KEY is configured.
+  if (env.PRUNA_API_KEY) {
+    try {
+      const image = await prunaDirectTryOn(env.PRUNA_API_KEY, personBase64, garmentBase64)
+      if (image) {
+        return json({ image }, { headers: privateHeaders })
+      }
+    } catch (error) {
+      console.error('virtual-try-on Pruna direct call failed:', error)
+      // Fall through to secondary fallbacks (FASHN / Workers AI)
+    }
+  }
+
+  // FASHN second when its key is present.
   if (env.FASHN_API_KEY) {
     try {
       const image = await fashnTryOn(env.FASHN_API_KEY, personBase64, garmentBase64)
       if (image) {
         return json({ image }, { headers: privateHeaders })
       }
-      return json(
-        { issues: ['The fitting room could not finish that look. Try again.'] },
-        { headers: privateHeaders, status: 502 },
-      )
     } catch (error) {
       console.error('virtual-try-on FASHN call failed:', error)
-      return json(
-        {
-          issues: ['The fitting room could not finish that look. Try again.'],
-          ...(isAdmin ? { detail: error instanceof Error ? error.message : String(error) } : {}),
-        },
-        { headers: privateHeaders, status: 502 },
-      )
+      // Fall through to Workers AI fallback
     }
   }
 
   try {
-    // The model's published schema: person_image plus a garment_imageS array.
-    // Both go in as data URIs — the person photo must never become a fetchable
-    // URL, and the garment travels the same way so a retailer CDN that blocks
-    // datacenter fetches cannot break the try-on.
+    // Workers AI / AI Gateway fallback.
+    const gatewayId = env.CF_AI_GATEWAY_ID || 'trolley-scout'
     const result = await env.AI.run(
       VTON_MODEL as never,
       {
+        garment_image: `data:image/jpeg;base64,${garmentBase64}`,
         garment_images: [`data:image/jpeg;base64,${garmentBase64}`],
         person_image: `data:image/jpeg;base64,${personBase64}`,
+      } as never,
+      {
+        gateway: {
+          id: gatewayId,
+        },
       } as never,
     )
     const image = await resultToBase64(result)
@@ -162,9 +167,16 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   } catch (error) {
     console.error('virtual-try-on model call failed:', error)
     const message = error instanceof Error ? error.message : String(error)
-    // "Invalid User Credentials" is the partner model saying the account has
-    // no billing behind it — a configuration state, not a retryable glitch.
-    const notConnected = message.includes('Invalid User Credentials')
+    const lower = message.toLowerCase()
+    const notConnected =
+      lower.includes('invalid user credentials') ||
+      lower.includes('insufficient ai gateway credits') ||
+      lower.includes('insufficient credits') ||
+      lower.includes('unauthorized') ||
+      lower.includes('authentication error') ||
+      lower.includes('ai gateway') ||
+      lower.includes('billing') ||
+      lower.includes('payment required')
     return json(
       {
         issues: [
@@ -179,10 +191,123 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 }
 
+/// Direct Pruna AI prediction flow: submit with Try-Sync: true to get
+/// immediate completion or async status polling.
+async function prunaDirectTryOn(
+  apiKey: string,
+  personBase64: string,
+  garmentBase64: string,
+): Promise<string | null> {
+  const personUrl = await uploadPrunaFile(apiKey, personBase64)
+  const garmentUrl = await uploadPrunaFile(apiKey, garmentBase64)
+  if (!personUrl || !garmentUrl) {
+    throw new Error('Failed to upload reference images to Pruna file storage.')
+  }
+
+  const headers = {
+    apikey: apiKey,
+    Model: 'p-image-try-on',
+    'Try-Sync': 'true',
+    'content-type': 'application/json',
+  }
+  const submitted = await fetch('https://api.pruna.ai/v1/predictions', {
+    body: JSON.stringify({
+      input: {
+        garment_images: [garmentUrl],
+        person_image: personUrl,
+      },
+    }),
+    headers,
+    method: 'POST',
+  })
+
+  if (!submitted.ok) {
+    throw new Error(`Pruna AI run failed: ${submitted.status} ${await submitted.text()}`)
+  }
+
+  const res = (await submitted.json()) as Record<string, unknown>
+  const directUrl =
+    typeof res.generation_url === 'string'
+      ? res.generation_url
+      : typeof res.output === 'string'
+        ? res.output
+        : Array.isArray(res.output) && typeof res.output[0] === 'string'
+          ? res.output[0]
+          : undefined
+
+  if (directUrl) {
+    return fetchPrunaImage(directUrl, apiKey)
+  }
+
+  const getUrl = typeof res.get_url === 'string' ? res.get_url : undefined
+  const id = typeof res.id === 'string' ? res.id : undefined
+  const statusUrl = getUrl || (id ? `https://api.pruna.ai/v1/predictions/status/${id}` : undefined)
+
+  if (!statusUrl) throw new Error('Pruna AI answered without a status URL or prediction ID.')
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    const polled = await fetch(statusUrl, { headers: { apikey: apiKey } })
+    if (!polled.ok) continue
+    const status = (await polled.json()) as {
+      error?: unknown
+      generation_url?: unknown
+      output?: unknown
+      status?: unknown
+    }
+
+    if (status.status === 'succeeded' || status.status === 'completed') {
+      const genUrl =
+        typeof status.generation_url === 'string'
+          ? status.generation_url
+          : typeof status.output === 'string'
+            ? status.output
+            : Array.isArray(status.output) && typeof status.output[0] === 'string'
+              ? status.output[0]
+              : undefined
+      if (!genUrl) return null
+      return fetchPrunaImage(genUrl, apiKey)
+    }
+
+    if (status.status === 'failed' || status.error) {
+      throw new Error(`Pruna AI render failed: ${JSON.stringify(status.error ?? status)}`)
+    }
+  }
+
+  return null
+}
+
+async function uploadPrunaFile(apiKey: string, base64: string): Promise<string | null> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  const formData = new FormData()
+  const blob = new Blob([bytes], { type: 'image/jpeg' })
+  formData.append('content', blob, 'photo.jpg')
+
+  const res = await fetch('https://api.pruna.ai/v1/files', {
+    body: formData,
+    headers: { apikey: apiKey },
+    method: 'POST',
+  })
+  if (!res.ok) return null
+  const payload = (await res.json()) as { urls?: { get?: string } }
+  return typeof payload.urls?.get === 'string' ? payload.urls.get : null
+}
+
+async function fetchPrunaImage(url: string, apiKey: string): Promise<string | null> {
+  const fullUrl = url.startsWith('/') ? `https://api.pruna.ai${url}` : url
+  if (fullUrl.startsWith('data:')) return fullUrl
+  const imgRes = await fetch(fullUrl, { headers: { apikey: apiKey } })
+  if (!imgRes.ok) return null
+  const bytes = new Uint8Array(await imgRes.arrayBuffer())
+  return `data:image/png;base64,${bytesToBase64(bytes)}`
+}
+
 /// FASHN's async flow: submit the pair, poll until the render completes,
-/// return the output as a data URI. The person photo goes to FASHN only for
-/// the render itself — nothing is written to our own storage, same promise as
-/// the Workers AI path.
+/// return the output as a data URI.
 async function fashnTryOn(
   apiKey: string,
   personBase64: string,
@@ -293,13 +418,20 @@ async function resultToBase64(result: unknown): Promise<string | undefined> {
   if (result && typeof result === 'object') {
     const record = result as Record<string, unknown>
     const images = record.images
+    const output = record.output
     const candidate = typeof record.image === 'string'
       ? record.image
       : Array.isArray(images) && typeof images[0] === 'string'
         ? images[0]
         : typeof record.result === 'string'
           ? record.result
-          : undefined
+          : typeof output === 'string'
+            ? output
+            : Array.isArray(output) && typeof output[0] === 'string'
+              ? output[0]
+              : typeof record.response === 'string'
+                ? record.response
+                : undefined
     if (typeof candidate === 'string' && candidate.length > 0) {
       // A URL answer gets fetched once and returned as bytes; data URIs and
       // bare base64 are already what the app needs.

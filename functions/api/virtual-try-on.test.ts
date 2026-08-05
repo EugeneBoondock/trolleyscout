@@ -121,6 +121,9 @@ describe('/api/virtual-try-on', () => {
         garment_images: [expect.stringMatching(/^data:image\/jpeg;base64,/)],
         person_image: `data:image/jpeg;base64,${personImage}`,
       }),
+      expect.objectContaining({
+        gateway: { id: 'trolley-scout' },
+      }),
     )
   })
 
@@ -161,6 +164,48 @@ describe('/api/virtual-try-on', () => {
     expect(payload.data.image).toBe('data:image/png;base64,cmVuZGVyZWQ=')
     expect(ai.run).not.toHaveBeenCalled()
     expect(requests.some((url) => url.endsWith('/v1/run'))).toBe(true)
+  })
+
+  it('renders through Pruna direct API when PRUNA_API_KEY is configured', async () => {
+    vi.useFakeTimers()
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      requests.push(url)
+      if (url.endsWith('/v1/files')) {
+        return new Response(
+          JSON.stringify({ urls: { get: 'https://api.pruna.ai/v1/files/file-1.jpg' } }),
+          { status: 201 },
+        )
+      }
+      if (url.endsWith('/v1/predictions')) {
+        const body = JSON.parse(String(init?.body)) as {
+          input: { garment_images: string[]; person_image: string }
+        }
+        expect(body.input.person_image).toBe('https://api.pruna.ai/v1/files/file-1.jpg')
+        expect((init?.headers as Record<string, string>).apikey).toBe('pru_test_key')
+        expect((init?.headers as Record<string, string>).Model).toBe('p-image-try-on')
+        return new Response(JSON.stringify({ id: 'pruna-pred-1' }), { status: 201 })
+      }
+      if (url.includes('/v1/predictions/status/pruna-pred-1')) {
+        return new Response(JSON.stringify({
+          generation_url: 'data:image/png;base64,cmVuZGVyZWQ=',
+          status: 'succeeded',
+        }))
+      }
+      return new Response(new Uint8Array([1, 2, 3]))
+    }))
+    const ai = { run: vi.fn() }
+    const pending = invoke({ AI: ai, DB: makeDb(), PRUNA_API_KEY: 'pru_test_key' })
+    await vi.runAllTimersAsync()
+    const response = await pending
+    vi.useRealTimers()
+
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as { data: { image: string } }
+    expect(payload.data.image).toBe('data:image/png;base64,cmVuZGVyZWQ=')
+    expect(ai.run).not.toHaveBeenCalled()
+    expect(requests.some((url) => url.endsWith('/v1/predictions'))).toBe(true)
   })
 
   it('reports an unfetchable garment image instead of calling the model', async () => {

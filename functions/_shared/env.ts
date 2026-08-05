@@ -48,6 +48,10 @@ export interface TrolleyScoutEnv {
   /// Unlocks the fitting room through FASHN's dedicated try-on API when the
   /// Workers AI partner model has no billing behind it.
   FASHN_API_KEY?: string
+  /// Direct Pruna AI API key for p-image-try-on predictions.
+  PRUNA_API_KEY?: string
+  /// Optional AI Gateway instance ID to route Workers AI partner model calls through.
+  CF_AI_GATEWAY_ID?: string
 }
 
 export type TrolleyScoutD1Env = TrolleyScoutEnv & { DB: D1Database }
