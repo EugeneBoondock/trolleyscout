@@ -294,6 +294,16 @@ class Api {
     });
   }
 
+  /// The retailer's own star rating and comments for a product page, when the
+  /// storefront shares them.
+  Future<ProductReviewInfo> productReviews(String productUrl) async {
+    final data = await _request(
+      'GET',
+      '/api/product-reviews?url=${Uri.encodeQueryComponent(productUrl)}',
+    );
+    return ProductReviewInfo.fromJson(data);
+  }
+
   /// The three most-watched YouTube reviews for a product, best first.
   Future<List<ProductVideo>> productVideos(String query) async {
     final data = await _request(

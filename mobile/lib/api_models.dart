@@ -755,6 +755,62 @@ class Deal {
       };
 }
 
+/// Star rating and shopper comments pulled from the retailer's own site.
+class ProductReviewInfo {
+  const ProductReviewInfo({
+    required this.available,
+    this.rating,
+    this.reviewCount = 0,
+    this.reviews = const [],
+  });
+
+  factory ProductReviewInfo.fromJson(Map<String, dynamic> json) =>
+      ProductReviewInfo(
+        available: json['available'] == true,
+        rating: json['rating'] is num
+            ? (json['rating'] as num).toDouble()
+            : null,
+        reviewCount:
+            json['reviewCount'] is num ? (json['reviewCount'] as num).toInt() : 0,
+        reviews: json['reviews'] is List
+            ? (json['reviews'] as List)
+                .whereType<Map<String, dynamic>>()
+                .map(ProductReviewEntry.fromJson)
+                .toList()
+            : const [],
+      );
+
+  final bool available;
+  final double? rating;
+  final int reviewCount;
+  final List<ProductReviewEntry> reviews;
+}
+
+class ProductReviewEntry {
+  const ProductReviewEntry({
+    required this.rating,
+    this.author = '',
+    this.body = '',
+    this.title = '',
+    this.date = '',
+  });
+
+  factory ProductReviewEntry.fromJson(Map<String, dynamic> json) =>
+      ProductReviewEntry(
+        rating: json['rating'] is num ? (json['rating'] as num).toDouble() : 0,
+        author: json['author']?.toString() ?? '',
+        body: json['body']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        date: json['date']?.toString() ?? '',
+      );
+
+  final double rating;
+  final String author;
+  final String body;
+  final String title;
+  final String date;
+}
+
 /// One YouTube review surfaced for a Window Shopping product.
 class ProductVideo {
   const ProductVideo({

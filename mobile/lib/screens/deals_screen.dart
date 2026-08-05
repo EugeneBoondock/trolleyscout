@@ -2112,6 +2112,7 @@ class _DealRow extends StatelessWidget {
         context,
         deal,
         similarDeals: similarDealsFor?.call() ?? const [],
+        api: api,
       );
     }
 
@@ -2415,6 +2416,7 @@ Future<void> showMarketplaceProductViewer(
   BuildContext context,
   Deal deal, {
   List<Deal> similarDeals = const [],
+  Api? api,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -2424,6 +2426,7 @@ Future<void> showMarketplaceProductViewer(
     builder: (_) => _MarketplaceProductViewer(
       deal: deal,
       similarDeals: similarDeals,
+      api: api,
     ),
   );
 }
@@ -2432,10 +2435,12 @@ class _MarketplaceProductViewer extends StatefulWidget {
   const _MarketplaceProductViewer({
     required this.deal,
     required this.similarDeals,
+    this.api,
   });
 
   final Deal deal;
   final List<Deal> similarDeals;
+  final Api? api;
 
   @override
   State<_MarketplaceProductViewer> createState() =>
@@ -2648,6 +2653,12 @@ class _MarketplaceProductViewerState extends State<_MarketplaceProductViewer> {
                     ],
                   ),
                 ),
+                if (widget.api != null && _deal.productUrl != null)
+                  _ProductReviewsSection(
+                    key: ValueKey('product-reviews-${_deal.id}'),
+                    api: widget.api!,
+                    productUrl: _deal.productUrl!,
+                  ),
                 if (_similarDeals.isNotEmpty) ...[
                   Divider(height: 24, color: TS.lineOf(context)),
                   Padding(
@@ -2696,6 +2707,141 @@ class _MarketplaceProductViewerState extends State<_MarketplaceProductViewer> {
       _index = 0;
     });
     if (_controller.hasClients) _controller.jumpToPage(0);
+  }
+}
+
+/// The retailer's own stars and comments, fetched once per product and shown
+/// only when the storefront actually has them — no section, no noise.
+class _ProductReviewsSection extends StatefulWidget {
+  const _ProductReviewsSection({
+    super.key,
+    required this.api,
+    required this.productUrl,
+  });
+
+  final Api api;
+  final String productUrl;
+
+  @override
+  State<_ProductReviewsSection> createState() => _ProductReviewsSectionState();
+}
+
+class _ProductReviewsSectionState extends State<_ProductReviewsSection> {
+  late Future<ProductReviewInfo> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.api.productReviews(widget.productUrl);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<ProductReviewInfo>(
+      future: _future,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        if (info == null || !info.available) return const SizedBox.shrink();
+        final rating = info.rating;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+          child: Container(
+            key: const Key('product-reviews-card'),
+            padding: const EdgeInsets.all(14),
+            decoration: TS.card(context, width: 1.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('What buyers say', style: TS.eyebrowOf(context)),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    if (rating != null) ...[
+                      for (var star = 1; star <= 5; star++)
+                        Icon(
+                          rating >= star - 0.25
+                              ? Icons.star_rounded
+                              : rating >= star - 0.75
+                                  ? Icons.star_half_rounded
+                                  : Icons.star_outline_rounded,
+                          size: 20,
+                          color: TS.yellow,
+                        ),
+                      const SizedBox(width: 8),
+                      Text(
+                        rating.toStringAsFixed(1),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+                    Text(
+                      info.reviewCount == 1
+                          ? '1 review'
+                          : '${info.reviewCount} reviews',
+                      style: TextStyle(color: TS.mutedOf(context)),
+                    ),
+                  ],
+                ),
+                for (final review in info.reviews.take(3)) ...[
+                  const SizedBox(height: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          for (var star = 1; star <= 5; star++)
+                            Icon(
+                              review.rating >= star
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded,
+                              size: 13,
+                              color: TS.yellow,
+                            ),
+                          if (review.author.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                review.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: TS.mutedOf(context),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (review.title.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            review.title,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 13),
+                          ),
+                        ),
+                      if (review.body.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            review.body,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
