@@ -78,13 +78,13 @@ async function run() {
         track: 'alpha',
         releases: [
           {
-            name: '1.24.1+76',
+            name: '1.24.2+77',
             versionCodes: [versionCode.toString()],
             status: 'completed',
             releaseNotes: [
               {
                 language: 'en-US',
-                text: 'Restored full feature set, fitting room, marketplace subcategories, YouTube reviews, price-drop alerts and trip planner.',
+                text: 'Product review videos now play reliably and match the exact product. Marketplace navigation polish.',
               },
             ],
           },
