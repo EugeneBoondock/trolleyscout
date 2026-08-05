@@ -150,6 +150,7 @@ const paidSubscription: ResourceState<SubscriptionResource> = {
         isPaid: true,
         limits: {
           basketItems: 100,
+          dealWatches: 20,
           savedDeals: 100,
           savedSources: 20,
           visibleCatalogues: 20,
