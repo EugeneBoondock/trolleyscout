@@ -41,6 +41,7 @@ class DealsScreen extends StatefulWidget {
     this.initialRetailerId,
     this.initialQuery,
     this.initialCatalogueId,
+    this.initialCategory,
     this.alertScheduler,
     this.requestNotificationPermission,
     this.openNotificationSettings,
@@ -54,6 +55,10 @@ class DealsScreen extends StatefulWidget {
   final String? initialRetailerId;
   final String? initialQuery;
   final String? initialCatalogueId;
+
+  /// Opens the marketplace already narrowed to one category — how the drawer's
+  /// Food entry lands directly on food deals.
+  final DealCategory? initialCategory;
   final DealAlertScheduler? alertScheduler;
   final Future<bool> Function()? requestNotificationPermission;
   final Future<bool> Function()? openNotificationSettings;
@@ -87,7 +92,7 @@ class _DealsScreenState extends State<DealsScreen> {
   bool _hideSoldOut = false;
   bool _hideBids = false;
   DealSort _sort = DealSort.store;
-  DealCategory? _category;
+  late DealCategory? _category = widget.initialCategory;
   FoodSubcategory? _foodSubcategory;
   bool _healthyOnly = false;
   Timer? _searchDebounce;

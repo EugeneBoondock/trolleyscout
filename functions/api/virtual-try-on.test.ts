@@ -113,9 +113,14 @@ describe('/api/virtual-try-on', () => {
     expect(response.status).toBe(200)
     const payload = (await response.json()) as { data: { image: string } }
     expect(payload.data.image).toBe(`data:image/png;base64,${btoa('rendered-look')}`)
+    // The published model schema: a person_image data URI and a
+    // garment_imageS array — the singular form fails validation upstream.
     expect(ai.run).toHaveBeenCalledWith(
       'pruna/p-image-try-on',
-      expect.objectContaining({ person_image: personImage }),
+      expect.objectContaining({
+        garment_images: [expect.stringMatching(/^data:image\/jpeg;base64,/)],
+        person_image: `data:image/jpeg;base64,${personImage}`,
+      }),
     )
   })
 

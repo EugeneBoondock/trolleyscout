@@ -112,26 +112,50 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   try {
+    // The model's published schema: person_image plus a garment_imageS array.
+    // Both go in as data URIs — the person photo must never become a fetchable
+    // URL, and the garment travels the same way so a retailer CDN that blocks
+    // datacenter fetches cannot break the try-on.
     const result = await env.AI.run(
       VTON_MODEL as never,
       {
-        garment_image: garmentBase64,
-        person_image: personBase64,
+        garment_images: [`data:image/jpeg;base64,${garmentBase64}`],
+        person_image: `data:image/jpeg;base64,${personBase64}`,
       } as never,
     )
     const image = await resultToBase64(result)
     if (!image) {
       return json(
-        { issues: ['The fitting room could not finish that look. Try again.'] },
+        {
+          issues: ['The fitting room could not finish that look. Try again.'],
+          ...(isAdmin ? { detail: describeModelResult(result) } : {}),
+        },
         { headers: privateHeaders, status: 502 },
       )
     }
     return json({ image: `data:image/png;base64,${image}` }, { headers: privateHeaders })
-  } catch {
+  } catch (error) {
+    // Admins see what the model actually said; shoppers see a soft retry.
+    console.error('virtual-try-on model call failed:', error)
     return json(
-      { issues: ['The fitting room could not finish that look. Try again.'] },
+      {
+        issues: ['The fitting room could not finish that look. Try again.'],
+        ...(isAdmin ? { detail: error instanceof Error ? error.message : String(error) } : {}),
+      },
       { headers: privateHeaders, status: 502 },
     )
+  }
+}
+
+function describeModelResult(result: unknown): string {
+  try {
+    if (result === null || result === undefined) return 'model returned nothing'
+    if (typeof result === 'object') {
+      return `unrecognised result shape: keys ${Object.keys(result as object).join(', ') || '(none)'}`
+    }
+    return `unrecognised result type: ${typeof result}`
+  } catch {
+    return 'unrecognised result'
   }
 }
 
@@ -180,9 +204,33 @@ async function resultToBase64(result: unknown): Promise<string | undefined> {
     return result.byteLength > 0 ? bytesToBase64(result) : undefined
   }
   if (result && typeof result === 'object') {
-    const image = (result as Record<string, unknown>).image
-    if (typeof image === 'string' && image.length > 0) {
-      return image.startsWith('data:') ? image.slice(image.indexOf(',') + 1) : image
+    const record = result as Record<string, unknown>
+    const images = record.images
+    const candidate = typeof record.image === 'string'
+      ? record.image
+      : Array.isArray(images) && typeof images[0] === 'string'
+        ? images[0]
+        : typeof record.result === 'string'
+          ? record.result
+          : undefined
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      // A URL answer gets fetched once and returned as bytes; data URIs and
+      // bare base64 are already what the app needs.
+      if (candidate.startsWith('http')) {
+        try {
+          const response = await fetch(candidate)
+          if (!response.ok) return undefined
+          const buffer = await response.arrayBuffer()
+          return buffer.byteLength > 0
+            ? bytesToBase64(new Uint8Array(buffer))
+            : undefined
+        } catch {
+          return undefined
+        }
+      }
+      return candidate.startsWith('data:')
+        ? candidate.slice(candidate.indexOf(',') + 1)
+        : candidate
     }
   }
   return undefined

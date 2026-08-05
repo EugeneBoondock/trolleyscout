@@ -9,6 +9,7 @@ enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
   deals('Marketplace', Icons.local_offer_outlined, false),
   clothing('Clothing', Icons.checkroom_outlined, false),
+  food('Food & Groceries', Icons.restaurant_outlined, false),
   chat('Mr Scout', Icons.chat_bubble_outline, true),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),
@@ -165,15 +166,23 @@ class AppMenuDrawer extends StatelessWidget {
                         ),
                         for (final item in group.$2) ...[
                           _drawerTile(context, item),
-                          // Clothing lives inside the Marketplace: an indented
-                          // sub-entry directly under it, so the drawer reads
-                          // as a section with a child rather than two peers.
-                          if (item == AppDestination.deals)
+                          // Clothing and Food live inside the Marketplace:
+                          // threaded sub-entries directly under it, so the
+                          // drawer reads as a section with children rather
+                          // than three peers.
+                          if (item == AppDestination.deals) ...[
                             _drawerTile(
                               context,
                               AppDestination.clothing,
                               nested: true,
                             ),
+                            _drawerTile(
+                              context,
+                              AppDestination.food,
+                              nested: true,
+                              isLastNested: true,
+                            ),
+                          ],
                         ],
                       ],
                     ],
@@ -192,23 +201,61 @@ class AppMenuDrawer extends StatelessWidget {
     BuildContext context,
     AppDestination item, {
     bool nested = false,
+    bool isLastNested = false,
   }) {
+    // Sub-entries hang off their parent on a drawn thread: a vertical guide
+    // continuing the parent's icon line, elbowing into the child — the same
+    // └ shape a file tree draws, so the nesting is visible at a glance.
+    final leading = nested
+        ? SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              alignment: Alignment.centerRight,
+              children: [
+                Positioned(
+                  left: 11,
+                  top: 0,
+                  bottom: isLastNested ? 20 : 0,
+                  child: Container(width: 2, color: TS.lineOf(context)),
+                ),
+                Positioned(
+                  left: 11,
+                  top: 18,
+                  child: Icon(
+                    Icons.subdirectory_arrow_right_rounded,
+                    size: 17,
+                    color: TS.mutedOf(context),
+                  ),
+                ),
+                Icon(item.icon, size: 19),
+              ],
+            ),
+          )
+        : Icon(item.icon);
     return ListTile(
+      key: ValueKey('drawer-${item.name}'),
       selected: destination == item,
       selectedTileColor: TS.yellow,
       selectedColor: TS.ink,
       iconColor: TS.mutedOf(context),
       textColor: TS.inkOf(context),
+      dense: nested,
       contentPadding: nested
-          ? const EdgeInsets.only(left: 36, right: 16)
+          ? const EdgeInsets.only(left: 24, right: 16)
           : null,
       shape: destination == item
           ? Border(
               left: BorderSide(color: TS.redOf(context), width: 5),
             )
           : null,
-      leading: Icon(item.icon, size: nested ? 20 : null),
-      title: Text(item.label),
+      leading: leading,
+      title: Text(
+        item.label,
+        style: nested
+            ? const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)
+            : null,
+      ),
       trailing: item.requiresAuth && !session.isAuthenticated
           ? const Icon(Icons.lock_outline, size: 16)
           : null,
