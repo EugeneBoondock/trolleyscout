@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 import '../catalogue_sort.dart';
 import '../deal_categories.dart';
+import '../healthy_food.dart';
 import '../data_saver_store.dart';
 import '../deal_alert_background.dart';
 import '../deal_alert_scheduler.dart';
@@ -88,6 +89,7 @@ class _DealsScreenState extends State<DealsScreen> {
   DealSort _sort = DealSort.store;
   DealCategory? _category;
   FoodSubcategory? _foodSubcategory;
+  bool _healthyOnly = false;
   Timer? _searchDebounce;
   final _searchController = TextEditingController();
   final _catalogueSearchController = TextEditingController();
@@ -677,6 +679,10 @@ class _DealsScreenState extends State<DealsScreen> {
       filteredDeals = filteredDeals
           .where((deal) => isDealFromFavouriteStores(deal, _favouriteStores))
           .toList();
+    }
+    if (_category == DealCategory.food && _healthyOnly) {
+      filteredDeals =
+          filteredDeals.where((deal) => isHealthyFoodDeal(deal)).toList();
     }
     final seasons = buildRetailSeasons(
       widget.api.effectiveCountryCode,
@@ -1303,6 +1309,10 @@ class _DealsScreenState extends State<DealsScreen> {
           if (_category == DealCategory.food) ...[
             const SizedBox(height: 6),
             _foodSubcategoryChips(),
+            if (_healthyOnly) ...[
+              const SizedBox(height: 8),
+              _healthyFactCard(),
+            ],
           ],
           const SizedBox(height: 10),
           _notifyToggle(),
@@ -1714,6 +1724,7 @@ class _DealsScreenState extends State<DealsScreen> {
               () => setState(() {
                     _category = null;
                     _foodSubcategory = null;
+                    _healthyOnly = false;
                     _page = 0;
                   })),
           for (final option in categoryOptions)
@@ -1738,8 +1749,18 @@ class _DealsScreenState extends State<DealsScreen> {
         children: [
           _chip(
               'All food',
-              _foodSubcategory == null,
+              _foodSubcategory == null && !_healthyOnly,
               () => setState(() {
+                    _foodSubcategory = null;
+                    _healthyOnly = false;
+                    _page = 0;
+                  }),
+              small: true),
+          _chip(
+              '🥦 Healthy picks',
+              _healthyOnly,
+              () => setState(() {
+                    _healthyOnly = !_healthyOnly;
                     _foodSubcategory = null;
                     _page = 0;
                   }),
@@ -1750,9 +1771,30 @@ class _DealsScreenState extends State<DealsScreen> {
                 _foodSubcategory == option.id,
                 () => setState(() {
                       _foodSubcategory = option.id;
+                      _healthyOnly = false;
                       _page = 0;
                     }),
                 small: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _healthyFactCard() {
+    final fact = healthyFactForDay(DateTime.now());
+    return Container(
+      key: const Key('healthy-food-fact'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: TS.card(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('EATING WELL ON A BUDGET', style: TS.eyebrowOf(context)),
+          const SizedBox(height: 6),
+          Text(fact.fact, style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 4),
+          Text(fact.tip, style: TextStyle(color: TS.mutedOf(context))),
         ],
       ),
     );

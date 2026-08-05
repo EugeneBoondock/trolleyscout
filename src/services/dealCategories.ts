@@ -221,7 +221,11 @@ const CATEGORY_RULES: ScoredRule[] = [
       'coffee', 'tea', 'rooibos', 'water', 'soft drink', 'cooldrink', 'cola', 'appletiser', 'cheese',
       'yoghurt', 'butter', 'margarine', 'cooking oil', 'sunflower oil', 'canola oil', 'olive oil',
       'sauce', 'soup', 'jam', 'honey', 'peanut butter',
-      'coffee creamer', 'maize', 'mielie', 'samp', 'tastic', 'koo', 'wine', 'beer', 'cider',
+      'coffee creamer', 'maize', 'mielie', 'samp', 'tastic', 'koo',
+      'pilchards', 'sardines', 'tuna', 'hake', 'snoek', 'oats', 'oatmeal',
+      'sorghum', 'mabele', 'maltabella', 'lentils', 'chickpeas', 'split peas',
+      'butternut', 'sweet potato', 'cabbage', 'spinach', 'morogo', 'carrot',
+      'beetroot', 'avocado', 'amasi', 'maas', 'wine', 'beer', 'cider',
       'whisky', 'vodka', 'gin', 'brandy', 'frozen', 'ice cream', 'crisps', 'nuts', 'fruit',
       'vegetable', 'banana', 'apple', 'potato', 'onion', 'tomato',
     ],
@@ -261,7 +265,7 @@ const FOOD_SUBCATEGORY_RULES: Array<{ subcategory: FoodSubcategory; patterns: st
   },
   {
     subcategory: 'meat-poultry',
-    patterns: ['chicken', 'beef', 'lamb', 'pork', 'fillet', 'chops', 'mince', 'sausage', 'boerewors', 'wors', 'bacon', 'polony', 'viennas', 'samoosa', 'ribs', 'steak'],
+    patterns: ['pilchards', 'sardines', 'tuna', 'hake', 'snoek', 'chicken', 'beef', 'lamb', 'pork', 'fillet', 'chops', 'mince', 'sausage', 'boerewors', 'wors', 'bacon', 'polony', 'viennas', 'samoosa', 'ribs', 'steak'],
   },
   {
     subcategory: 'bakery',
@@ -269,7 +273,7 @@ const FOOD_SUBCATEGORY_RULES: Array<{ subcategory: FoodSubcategory; patterns: st
   },
   {
     subcategory: 'fresh-produce',
-    patterns: ['banana', 'apple', 'potato', 'onion', 'tomato', 'lettuce', 'spinach', 'carrot', 'fruit', 'vegetable', 'avocado', 'salad', 'cucumber', 'pepper'],
+    patterns: ['butternut', 'sweet potato', 'cabbage', 'morogo', 'beetroot', 'banana', 'apple', 'potato', 'onion', 'tomato', 'lettuce', 'spinach', 'carrot', 'fruit', 'vegetable', 'avocado', 'salad', 'cucumber', 'pepper'],
   },
   {
     subcategory: 'frozen',
@@ -277,7 +281,7 @@ const FOOD_SUBCATEGORY_RULES: Array<{ subcategory: FoodSubcategory; patterns: st
   },
   {
     subcategory: 'pantry',
-    patterns: ['rice', 'beans', 'sugar', 'flour', 'macaroni', 'pasta', 'noodle', 'cereal', 'oil', 'sauce', 'soup', 'jam', 'honey', 'peanut butter', 'maize', 'mielie', 'samp', 'tastic', 'koo', 'spice', 'salt', 'stock', 'tinned', 'canned', 'mayonnaise'],
+    patterns: ['oats', 'oatmeal', 'sorghum', 'mabele', 'maltabella', 'lentils', 'chickpeas', 'split peas', 'rice', 'beans', 'sugar', 'flour', 'macaroni', 'pasta', 'noodle', 'cereal', 'oil', 'sauce', 'soup', 'jam', 'honey', 'peanut butter', 'maize', 'mielie', 'samp', 'tastic', 'koo', 'spice', 'salt', 'stock', 'tinned', 'canned', 'mayonnaise'],
   },
 ]
 
