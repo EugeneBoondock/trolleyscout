@@ -78,13 +78,13 @@ async function run() {
         track: 'alpha',
         releases: [
           {
-            name: '1.24.5+80',
+            name: '1.25.0+81',
             versionCodes: [versionCode.toString()],
             status: 'completed',
             releaseNotes: [
               {
                 language: 'en-US',
-                text: 'Tap products directly on catalogue pages for details and prices. In-store detection now requires precise location and is far more accurate.',
+                text: 'The new Fitting room: filter clothing by store, gender and type, build a whole outfit, save your favourite fits, and top up fittings any time.',
               },
             ],
           },
