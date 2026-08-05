@@ -1,7 +1,14 @@
-// Priced against what a render actually costs (roughly R1.40 at current
-// provider rates) with the margin thinning as the pack grows, so buying more
-// always feels like the better deal without ever pricing a single fitting out
-// of reach.
+// A render costs about R0.10-R0.20 through Pruna, so these packs are priced
+// for convenience, not to recover a big cost.
+//
+// They must never look better than the plans that pay the bills. Scout is R29
+// a month for 50 fittings AND the whole toolkit; Household is R59 for
+// unlimited — only R30 more. So every pack stays well under that R30 gap:
+// anyone who needs volume is better off upgrading, and the packs exist purely
+// so a paying member can finish this month's shopping without changing plan.
+// Free shoppers are never sold a pack — Scout is genuinely the better deal
+// for them, and offering ten fittings for near the price of a month of Scout
+// would be an insult dressed as an option.
 export interface TryOnCreditPack {
   amountCents: number
   credits: number
@@ -13,25 +20,18 @@ export interface TryOnCreditPack {
 
 export const TRY_ON_CREDIT_PACKS: TryOnCreditPack[] = [
   {
-    amountCents: 2900,
-    credits: 10,
-    id: 'fittings-10',
-    label: '10 fittings',
-    perFittingCents: 290,
+    amountCents: 900,
+    credits: 20,
+    id: 'fittings-20',
+    label: '20 fittings',
+    perFittingCents: 45,
   },
   {
-    amountCents: 6900,
-    credits: 30,
-    id: 'fittings-30',
-    label: '30 fittings',
-    perFittingCents: 230,
-  },
-  {
-    amountCents: 14900,
-    credits: 80,
-    id: 'fittings-80',
-    label: '80 fittings',
-    perFittingCents: 186,
+    amountCents: 1900,
+    credits: 60,
+    id: 'fittings-60',
+    label: '60 fittings',
+    perFittingCents: 32,
   },
 ]
 

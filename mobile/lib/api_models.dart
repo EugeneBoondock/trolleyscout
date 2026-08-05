@@ -824,10 +824,19 @@ class TryOnCreditPack {
 }
 
 class TryOnCreditOptions {
-  const TryOnCreditOptions({required this.packs, required this.quota});
+  const TryOnCreditOptions({
+    required this.packs,
+    required this.quota,
+    this.canBuyPacks = false,
+    this.upgradeHint = '',
+  });
 
   final List<TryOnCreditPack> packs;
   final TryOnQuota quota;
+
+  /// False for free shoppers: subscribing beats any pack we could sell them.
+  final bool canBuyPacks;
+  final String upgradeHint;
 }
 
 /// Admin view of fitting-room usage for one month.

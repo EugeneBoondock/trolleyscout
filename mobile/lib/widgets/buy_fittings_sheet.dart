@@ -130,22 +130,68 @@ class _BuyFittingsSheetState extends State<_BuyFittingsSheet> {
                 style: TextStyle(color: TS.mutedOf(context), height: 1.35),
               ),
               const SizedBox(height: 16),
-              for (final pack in options.packs) ...[
-                _PackCard(
-                  pack: pack,
-                  busy: _busyPackId == pack.id,
-                  disabled: _busyPackId != null && _busyPackId != pack.id,
-                  onBuy: () => _buy(pack),
+              if (!options.canBuyPacks) ...[
+                // A free shopper is not sold packs: a month of Scout costs
+                // less than topping up repeatedly and includes everything
+                // else. Saying so plainly is the honest sell.
+                Container(
+                  key: const Key('fittings-upgrade-instead'),
+                  padding: const EdgeInsets.all(16),
+                  decoration: TS.card(context, width: 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('BETTER VALUE', style: TS.eyebrowOf(context)),
+                      const SizedBox(height: 6),
+                      Text(
+                        options.upgradeHint.isEmpty
+                            ? 'Scout gives you 50 fittings a month plus the '
+                                'whole toolkit.'
+                            : options.upgradeHint,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700,
+                            height: 1.35),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('See the plans'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
+              ] else ...[
+                for (final pack in options.packs) ...[
+                  _PackCard(
+                    pack: pack,
+                    busy: _busyPackId == pack.id,
+                    disabled: _busyPackId != null && _busyPackId != pack.id,
+                    onBuy: () => _buy(pack),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (options.upgradeHint.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    options.upgradeHint,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  'Paid securely through PayFast. Your fittings load the '
+                  'moment the payment is confirmed.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: TS.faintOf(context), fontSize: 11.5),
+                ),
               ],
-              const SizedBox(height: 6),
-              Text(
-                'Paid securely through PayFast. Your fittings load the moment '
-                'the payment is confirmed.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: TS.faintOf(context), fontSize: 11.5),
-              ),
             ],
           );
         },
@@ -170,8 +216,8 @@ class _PackCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currency = Currency.of(kBillingCurrencyCode);
-    // The biggest pack is the one worth pointing at.
-    final best = pack.credits >= 80;
+    // The larger pack is the one worth pointing at.
+    final best = pack.credits >= 60;
     return Container(
       key: Key('fitting-pack-${pack.id}'),
       padding: const EdgeInsets.all(14),

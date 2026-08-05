@@ -101,12 +101,44 @@ const _tryOnableTypes = {
   GarmentType.outerwear,
 };
 
+/// Homeware, bedding and hardware that either live beside clothes or borrow a
+/// clothing word. "Per coat per litre" is paint; a duvet is not a garment.
+const _notApparelWords = [
+  'mirror', 'duvet', 'duvets', 'blanket', 'blankets', 'sheet', 'sheets',
+  'pillow', 'pillows', 'pillowcase', 'cushion', 'cushions', 'towel', 'towels',
+  'curtain', 'curtains', 'rug', 'rugs', 'mat', 'mats', 'doormat', 'throw',
+  'throws', 'bedding', 'comforter', 'quilt', 'linen', 'linens', 'valance',
+  'mattress', 'protector', 'hanger', 'hangers', 'rail', 'rails', 'basket',
+  'laundry', 'iron', 'steamer', 'mannequin', 'wardrobe',
+  // Paint and coatings, which speak of coats and undercoats.
+  'paint', 'paints', 'ceiling', 'ceilings', 'wall', 'walls', 'primer',
+  'varnish', 'enamel', 'undercoat', 'litre', 'litres', 'sealer', 'plaster',
+];
+
 String _normalize(String value) =>
     ' ${value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim()} ';
 
-bool _mentions(String text, List<String> words) =>
-    words.any((word) => text.contains(' ${word.trim()} ') ||
-        text.contains(' ${word.trim()}'));
+Set<String> _tokens(String normalized) =>
+    normalized.trim().split(' ').where((token) => token.isNotEmpty).toSet();
+
+/// Whole-word matching. Substring matching put "mat" inside "matte" and
+/// "coat" inside paint tins; a garment word has to be its own word, though a
+/// multi-word phrase may still be looked for as a phrase.
+bool _mentions(String text, List<String> words) {
+  final tokens = _tokens(text);
+  for (final word in words) {
+    final clean = word.trim();
+    if (clean.isEmpty) continue;
+    if (clean.contains(' ')) {
+      if (text.contains(' $clean ')) return true;
+      continue;
+    }
+    if (tokens.contains(clean)) return true;
+    // Plain plurals count: "jeans", "sneakers", "boots".
+    if (tokens.contains('${clean}s')) return true;
+  }
+  return false;
+}
 
 ClothingAudience audienceForDeal(Deal deal) {
   final text = _normalize('${deal.title} ${deal.sourceLabel}');
@@ -141,6 +173,10 @@ bool canTryOnDeal(Deal deal) =>
 /// mirrors, hangers and irons that merely live near clothes; a garment must
 /// also name a garment.
 bool isWearableClothing(Deal deal, {DealClassification? classification}) {
+  // Anything naming homeware, bedding or paint is out before any clothing
+  // word gets a chance to argue otherwise.
+  if (_mentions(_normalize(deal.title), _notApparelWords)) return false;
+
   final resolved = classification ??
       classifyDeal(
         deal.title,

@@ -19,6 +19,15 @@ import { readTryOnQuota } from '../_shared/tryOnQuota'
 
 const privateHeaders = { 'cache-control': 'private, no-store' }
 
+/// Plans whose members may top up. Household and above are already unlimited,
+/// so in practice this is the Scout overflow valve.
+const PACK_ELIGIBLE_PLANS = new Set([
+  'scout',
+  'household',
+  'organization',
+  'developers',
+])
+
 /// The payment reference carries the pack so the ITN can grant the right
 /// number of fittings without trusting anything the browser sends back.
 export function creditPaymentReference(accountId: string, packId: string): string {
@@ -45,6 +54,12 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
+  // Top-ups are for members whose plan already includes fittings and who ran
+  // out this month. A free shopper is better served by Scout: R29 buys 50
+  // fittings and the rest of the toolkit, which beats any pack we could sell.
+  const canBuyPacks = account.role === 'admin' ||
+    PACK_ELIGIBLE_PLANS.has(account.planId.trim().toLowerCase())
+
   if (request.method === 'GET') {
     const quota = await readTryOnQuota(
       env,
@@ -52,7 +67,17 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       account.planId,
       account.role === 'admin',
     )
-    return json({ packs: TRY_ON_CREDIT_PACKS, quota }, { headers: privateHeaders })
+    return json(
+      {
+        canBuyPacks,
+        packs: canBuyPacks ? TRY_ON_CREDIT_PACKS : [],
+        quota,
+        upgradeHint: canBuyPacks
+          ? 'Need fittings every month? Household is unlimited.'
+          : 'Scout gives you 50 fittings a month plus the whole toolkit.',
+      },
+      { headers: privateHeaders },
+    )
   }
 
   if (request.method !== 'POST') {
@@ -66,6 +91,18 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json(
       { issues: ['Request body must be valid JSON.'] },
       { headers: privateHeaders, status: 400 },
+    )
+  }
+
+  if (!canBuyPacks) {
+    return json(
+      {
+        issues: [
+          'Fitting packs are for members on a paid plan. Scout gives you 50 ' +
+              'fittings a month plus the whole toolkit.',
+        ],
+      },
+      { headers: privateHeaders, status: 403 },
     )
   }
 

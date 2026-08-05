@@ -852,6 +852,8 @@ class Api {
       quota: data['quota'] is Map
           ? TryOnQuota.fromJson(Map<String, dynamic>.from(data['quota'] as Map))
           : const TryOnQuota(),
+      canBuyPacks: data['canBuyPacks'] == true,
+      upgradeHint: data['upgradeHint']?.toString() ?? '',
     );
   }
 
