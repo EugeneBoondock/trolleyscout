@@ -814,18 +814,21 @@ class Api {
   /// Renders the shopper wearing the garment at [garmentImageUrl] and returns
   /// the result as a data URI. The photo bytes travel as base64 in this one
   /// request only — the server never stores them, and neither does this class.
-  Future<String> virtualTryOn({
+  /// Dresses the shopper in one garment, or in a whole outfit when several
+  /// garment images are given — the server layers them onto one body.
+  Future<TryOnResult> virtualTryOn({
     required List<int> personImageBytes,
-    required String garmentImageUrl,
+    required List<String> garmentImageUrls,
   }) async {
     final data = await _request(
       'POST',
       '/api/virtual-try-on',
       body: {
-        'garmentImageUrl': garmentImageUrl,
+        'garmentImageUrls': garmentImageUrls,
         'personImage': base64Encode(personImageBytes),
       },
-      // Image generation legitimately takes longer than a data read.
+      // Image generation legitimately takes longer than a data read, and an
+      // outfit is one render per piece.
       timeout: slowRequestTimeout,
     );
     final image = data['image'];
@@ -833,7 +836,53 @@ class Api {
       throw const ApiException(
           'The fitting room returned no image. Try again.');
     }
-    return image;
+    return TryOnResult(
+      image: image,
+      quota: data['quota'] is Map
+          ? TryOnQuota.fromJson(Map<String, dynamic>.from(data['quota'] as Map))
+          : const TryOnQuota(),
+    );
+  }
+
+  /// The fitting packs on sale and what the shopper has left.
+  Future<TryOnCreditOptions> tryOnCreditOptions() async {
+    final data = await _request('GET', '/api/try-on-credits');
+    return TryOnCreditOptions(
+      packs: _maps(data['packs']).map(TryOnCreditPack.fromJson).toList(),
+      quota: data['quota'] is Map
+          ? TryOnQuota.fromJson(Map<String, dynamic>.from(data['quota'] as Map))
+          : const TryOnQuota(),
+    );
+  }
+
+  /// Starts a once-off PayFast checkout for a pack of fittings. The credits
+  /// land when PayFast's notification confirms the payment, never before.
+  Future<SubscriptionCheckout> buyTryOnCredits(String packId) async {
+    final data = await _request(
+      'POST',
+      '/api/try-on-credits',
+      body: {'packId': packId},
+    );
+    return SubscriptionCheckout.fromJson(_map(data['checkout']));
+  }
+
+  /// Admin: who has been using the fitting room this month.
+  Future<TryOnUsageReport> adminTryOnStats({String? month}) async {
+    final suffix = month == null || month.isEmpty
+        ? ''
+        : '?month=${Uri.encodeQueryComponent(month)}';
+    final data = await _request('GET', '/api/admin/try-on-stats$suffix');
+    return TryOnUsageReport.fromJson(data);
+  }
+
+  /// Admin: hand a shopper more fittings (or take some back).
+  Future<int> adminGrantTryOnCredits(String accountId, int credits) async {
+    final data = await _request(
+      'PATCH',
+      '/api/admin/try-on-stats',
+      body: {'accountId': accountId, 'credits': credits},
+    );
+    return data['balance'] is num ? (data['balance'] as num).toInt() : 0;
   }
 
   Future<VtonFlags> adminVtonFlags() async =>

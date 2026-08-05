@@ -2,12 +2,15 @@ import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberSession } from '../_shared/memberStore'
 import { hasTrustedMutationOrigin, readJsonObjectBody } from '../_shared/requestGuards'
 import { json, methodNotAllowed } from '../_shared/respond'
+import { readTryOnQuota, recordTryOnUse } from '../_shared/tryOnQuota'
 
 const privateHeaders = { 'cache-control': 'private, no-store' }
 
 // A full-body phone photo comfortably fits, with headroom for base64 overhead.
 const MAX_BODY_BYTES = 12 * 1024 * 1024
 const MAX_GARMENT_BYTES = 8 * 1024 * 1024
+// A full outfit in one go: top, bottom, jacket, shoes.
+const MAX_OUTFIT_PIECES = 4
 
 const VTON_FLAG = 'vton'
 const VTON_MODEL = 'pruna/p-image-try-on'
@@ -58,14 +61,18 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     return json({ issues: ['Sign in to use the fitting room.'] }, { headers: privateHeaders, status: 401 })
   }
   const isAdmin = account.role === 'admin'
-  if (!isAdmin && !PAID_PLAN_IDS.has(account.planId)) {
+  // Every plan may try clothes on; what differs is how many times a month.
+  const quota = await readTryOnQuota(env, account.id, account.planId, isAdmin)
+  if (quota.remaining !== null && quota.remaining <= 0) {
     return json(
       {
         issues: [
-          'The fitting room is part of the Scout plan. Upgrade to try clothes on before you buy.',
+          `You have used all ${quota.limit} fittings this month. ` +
+              'Upgrade for more, or come back next month.',
         ],
+        quota,
       },
-      { headers: privateHeaders, status: 403 },
+      { headers: privateHeaders, status: 429 },
     )
   }
 
@@ -95,29 +102,79 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   // It is never written to R2, KV, D1, logs, or any other store — decoded,
   // sent to the model, and gone when the request ends.
   const personBase64 = normaliseBase64(body.personImage)
-  const garmentImageUrl = typeof body.garmentImageUrl === 'string' ? body.garmentImageUrl.trim() : ''
+  // An outfit is garments layered one render at a time: each result becomes
+  // the person image for the next piece, so a top and jeans end up on the
+  // same body. A single garment is just an outfit of one.
+  const garmentImageUrls = Array.isArray(body.garmentImageUrls)
+    ? body.garmentImageUrls
+        .filter((url): url is string => typeof url === 'string')
+        .map((url) => url.trim())
+        .filter(isFetchableUrl)
+        .slice(0, MAX_OUTFIT_PIECES)
+    : typeof body.garmentImageUrl === 'string' && isFetchableUrl(body.garmentImageUrl.trim())
+      ? [body.garmentImageUrl.trim()]
+      : []
   if (!personBase64) {
     return json({ issues: ['A full-body photo is needed to try clothes on.'] }, { headers: privateHeaders, status: 400 })
   }
-  if (!isFetchableUrl(garmentImageUrl)) {
+  if (garmentImageUrls.length === 0) {
     return json({ issues: ['A garment image URL is needed.'] }, { headers: privateHeaders, status: 400 })
   }
 
-  const garmentBase64 = await downloadGarmentImage(garmentImageUrl)
-  if (!garmentBase64) {
+  const garmentImages: string[] = []
+  for (const url of garmentImageUrls) {
+    const downloaded = await downloadGarmentImage(url)
+    if (downloaded) garmentImages.push(downloaded)
+  }
+  if (garmentImages.length === 0) {
     return json(
       { issues: ['That garment image could not be fetched. Try another item.'] },
       { headers: privateHeaders, status: 422 },
     )
   }
+  const garmentBase64 = garmentImages[0]
+
+  // A fitting is only counted once it produced a look — a failed render
+  // costs the shopper nothing from their monthly allowance.
+  const spend = async (image: string) => {
+    await recordTryOnUse(env, account.id, new Date(), quota)
+    return json(
+      {
+        image,
+        quota: {
+          credits: quota.credits,
+          limit: quota.limit,
+          remaining: quota.remaining === null ? null : quota.remaining - 1,
+          used: quota.used + 1,
+        },
+      },
+      { headers: privateHeaders },
+    )
+  }
+
+  /// Dresses the person in every garment in turn, each render becoming the
+  /// body for the next piece. Returns the finished look, or null so the
+  /// caller can fall through to the next engine.
+  const layer = async (
+    render: (person: string, garment: string) => Promise<string | null>,
+  ): Promise<string | null> => {
+    let current = personBase64
+    for (const garment of garmentImages) {
+      const result = await render(current, garment)
+      if (!result) return null
+      current = result.startsWith('data:')
+        ? result.slice(result.indexOf(',') + 1)
+        : result
+    }
+    return `data:image/png;base64,${current}`
+  }
 
   // Direct Pruna AI API first when PRUNA_API_KEY is configured.
   if (env.PRUNA_API_KEY) {
     try {
-      const image = await prunaDirectTryOn(env.PRUNA_API_KEY, personBase64, garmentBase64)
-      if (image) {
-        return json({ image }, { headers: privateHeaders })
-      }
+      const image = await layer((person, garment) =>
+        prunaDirectTryOn(env.PRUNA_API_KEY!, person, garment))
+      if (image) return await spend(image)
     } catch (error) {
       console.error('virtual-try-on Pruna direct call failed:', error)
       // Fall through to secondary fallbacks (FASHN / Workers AI)
@@ -127,33 +184,35 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   // FASHN second when its key is present.
   if (env.FASHN_API_KEY) {
     try {
-      const image = await fashnTryOn(env.FASHN_API_KEY, personBase64, garmentBase64)
-      if (image) {
-        return json({ image }, { headers: privateHeaders })
-      }
+      const image = await layer((person, garment) =>
+        fashnTryOn(env.FASHN_API_KEY!, person, garment))
+      if (image) return await spend(image)
     } catch (error) {
       console.error('virtual-try-on FASHN call failed:', error)
       // Fall through to Workers AI fallback
     }
   }
 
+  let result: unknown
   try {
     // Workers AI / AI Gateway fallback.
     const gatewayId = env.CF_AI_GATEWAY_ID || 'trolley-scout'
-    const result = await env.AI.run(
-      VTON_MODEL as never,
-      {
-        garment_image: `data:image/jpeg;base64,${garmentBase64}`,
-        garment_images: [`data:image/jpeg;base64,${garmentBase64}`],
-        person_image: `data:image/jpeg;base64,${personBase64}`,
-      } as never,
-      {
-        gateway: {
-          id: gatewayId,
-        },
-      } as never,
-    )
-    const image = await resultToBase64(result)
+    const image = await layer(async (person, garment) => {
+      result = await env.AI.run(
+        VTON_MODEL as never,
+        {
+          garment_image: `data:image/jpeg;base64,${garment}`,
+          garment_images: [`data:image/jpeg;base64,${garment}`],
+          person_image: `data:image/jpeg;base64,${person}`,
+        } as never,
+        {
+          gateway: {
+            id: gatewayId,
+          },
+        } as never,
+      )
+      return await resultToBase64(result)
+    })
     if (!image) {
       return json(
         {
@@ -163,7 +222,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
         { headers: privateHeaders, status: 502 },
       )
     }
-    return json({ image: `data:image/png;base64,${image}` }, { headers: privateHeaders })
+    return await spend(image)
   } catch (error) {
     console.error('virtual-try-on model call failed:', error)
     const message = error instanceof Error ? error.message : String(error)

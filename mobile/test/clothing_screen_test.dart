@@ -20,7 +20,7 @@ void main() {
     await tester.pumpWidget(_wrap(ClothingScreen(api: _ClothingApi())));
     await tester.pumpAndSettle();
 
-    expect(find.text('Dress for less'), findsOneWidget);
+    expect(find.text('See it on you first'), findsOneWidget);
     expect(find.text('Slim fit denim jeans'), findsOneWidget);
     expect(find.text('Canvas sneaker'), findsOneWidget);
     // The grocery deal is classified out of the clothing rail.
@@ -28,9 +28,38 @@ void main() {
     expect(find.text('R299'), findsOneWidget);
     expect(find.text('Mr Price'), findsOneWidget);
 
-    // Both garments have images, so both cards offer the fitting room.
-    expect(find.text('Try it on'), findsNWidgets(2));
-    expect(find.byIcon(Icons.checkroom), findsNWidgets(2));
+    // The model dresses a body, not feet: the jeans offer a fitting, the
+    // sneaker is browse-only.
+    expect(find.text('Try it on'), findsOneWidget);
+    expect(find.byIcon(Icons.checkroom), findsOneWidget);
+    expect(find.text('View in store'), findsOneWidget);
+  });
+
+  testWidgets('filters the rail by who the clothing is for', (tester) async {
+    await tester.pumpWidget(_wrap(ClothingScreen(api: _ClothingApi())));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Men'));
+    await tester.pumpAndSettle();
+
+    // Neither fixture names a gender, so a specific audience empties the rail
+    // rather than guessing wrong.
+    expect(find.textContaining('Nothing matches those filters'), findsOneWidget);
+  });
+
+  testWidgets('builds an outfit from several garments', (tester) async {
+    await tester.pumpWidget(_wrap(ClothingScreen(api: _ClothingApi())));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('outfit-mode-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add to outfit'), findsOneWidget);
+
+    await tester.tap(find.text('Add to outfit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('outfit-tray')), findsOneWidget);
+    expect(find.text('Wear 1'), findsOneWidget);
   });
 
   testWidgets('shows the empty rail when no clothing deals are found',

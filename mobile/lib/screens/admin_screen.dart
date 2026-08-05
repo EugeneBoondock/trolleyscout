@@ -2170,9 +2170,176 @@ class _FittingRoomAdminSectionState extends State<FittingRoomAdminSection> {
               );
             },
             ),
+            const SizedBox(height: 14),
+            _TryOnUsageSection(api: widget.api),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Who has been trying clothes on this month, and the lever to hand someone
+/// more fittings. Loads only when the fitting-room section is open.
+class _TryOnUsageSection extends StatefulWidget {
+  const _TryOnUsageSection({required this.api});
+
+  final Api api;
+
+  @override
+  State<_TryOnUsageSection> createState() => _TryOnUsageSectionState();
+}
+
+class _TryOnUsageSectionState extends State<_TryOnUsageSection> {
+  late Future<TryOnUsageReport> _future = widget.api.adminTryOnStats();
+  final _accountController = TextEditingController();
+  final _creditsController = TextEditingController(text: '10');
+  bool _granting = false;
+
+  @override
+  void dispose() {
+    _accountController.dispose();
+    _creditsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _grant() async {
+    final accountId = _accountController.text.trim();
+    final credits = int.tryParse(_creditsController.text.trim());
+    if (accountId.isEmpty || credits == null || credits == 0) {
+      showNotice(context, 'Enter an account id and a number of fittings.');
+      return;
+    }
+    setState(() => _granting = true);
+    try {
+      final balance =
+          await widget.api.adminGrantTryOnCredits(accountId, credits);
+      if (!mounted) return;
+      showNotice(context, 'Balance is now $balance fittings.');
+      setState(() {
+        _accountController.clear();
+        _future = widget.api.adminTryOnStats();
+      });
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } finally {
+      if (mounted) setState(() => _granting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(color: TS.lineSoftOf(context)),
+        const SizedBox(height: 6),
+        Text('FITTINGS THIS MONTH', style: TS.eyebrowOf(context)),
+        const SizedBox(height: 8),
+        FutureBuilder<TryOnUsageReport>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: LinearProgressIndicator(minHeight: 3),
+              );
+            }
+            final report = snapshot.data;
+            if (report == null) {
+              return Row(
+                children: [
+                  const Expanded(child: Text('Usage is unavailable.')),
+                  TextButton(
+                    onPressed: () => setState(
+                        () => _future = widget.api.adminTryOnStats()),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              );
+            }
+            if (report.shoppers.isEmpty) {
+              return Text(
+                'No fittings yet in ${report.month}.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${report.totalFittings} fittings by '
+                  '${report.shoppers.length} '
+                  '${report.shoppers.length == 1 ? 'shopper' : 'shoppers'} '
+                  'in ${report.month}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                for (final shopper in report.shoppers.take(20))
+                  ListTile(
+                    key: Key('try-on-usage-${shopper.accountId}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      shopper.displayName.isEmpty
+                          ? shopper.email
+                          : shopper.displayName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${shopper.planId} · ${shopper.used} used'
+                      '${shopper.credits > 0 ? ' · ${shopper.credits} credits' : ''}',
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => setState(() =>
+                          _accountController.text = shopper.accountId),
+                      child: const Text('Top up'),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          key: const Key('try-on-grant-account'),
+          controller: _accountController,
+          decoration: const InputDecoration(
+            labelText: 'Member account id',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            SizedBox(
+              width: 110,
+              child: TextField(
+                key: const Key('try-on-grant-credits'),
+                controller: _creditsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Fittings'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                key: const Key('try-on-grant-submit'),
+                onPressed: _granting ? null : _grant,
+                child: Text(_granting ? 'Granting…' : 'Give fittings'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'A negative number takes fittings back. Grants never expire.',
+          style: TextStyle(color: TS.faintOf(context), fontSize: 11.5),
+        ),
+      ],
     );
   }
 }

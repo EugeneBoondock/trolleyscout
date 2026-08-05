@@ -762,6 +762,139 @@ class Deal {
       };
 }
 
+/// What a shopper has left of this month's fittings. A null [limit] means
+/// unlimited — Household and above simply never count.
+class TryOnQuota {
+  const TryOnQuota({
+    this.limit,
+    this.remaining,
+    this.used = 0,
+    this.credits = 0,
+  });
+
+  factory TryOnQuota.fromJson(Map<String, dynamic> json) => TryOnQuota(
+        limit: json['limit'] is num ? (json['limit'] as num).toInt() : null,
+        remaining:
+            json['remaining'] is num ? (json['remaining'] as num).toInt() : null,
+        used: json['used'] is num ? (json['used'] as num).toInt() : 0,
+        credits: json['credits'] is num ? (json['credits'] as num).toInt() : 0,
+      );
+
+  final int? limit;
+  final int? remaining;
+  final int used;
+
+  /// Bought or granted fittings, spent once the month's allowance is gone.
+  final int credits;
+
+  bool get isUnlimited => limit == null;
+  String get label {
+    if (isUnlimited) return 'Unlimited fittings';
+    final monthly = '$remaining of $limit fittings left this month';
+    return credits > 0 ? '$monthly · $credits bought' : monthly;
+  }
+}
+
+/// A pack of extra fittings a shopper can buy when the month runs dry.
+class TryOnCreditPack {
+  const TryOnCreditPack({
+    required this.id,
+    required this.label,
+    required this.credits,
+    required this.amountCents,
+    required this.perFittingCents,
+  });
+
+  factory TryOnCreditPack.fromJson(Map<String, dynamic> json) => TryOnCreditPack(
+        id: json['id']?.toString() ?? '',
+        label: json['label']?.toString() ?? '',
+        credits: json['credits'] is num ? (json['credits'] as num).toInt() : 0,
+        amountCents:
+            json['amountCents'] is num ? (json['amountCents'] as num).toInt() : 0,
+        perFittingCents: json['perFittingCents'] is num
+            ? (json['perFittingCents'] as num).toInt()
+            : 0,
+      );
+
+  final String id;
+  final String label;
+  final int credits;
+  final int amountCents;
+  final int perFittingCents;
+}
+
+class TryOnCreditOptions {
+  const TryOnCreditOptions({required this.packs, required this.quota});
+
+  final List<TryOnCreditPack> packs;
+  final TryOnQuota quota;
+}
+
+/// Admin view of fitting-room usage for one month.
+class TryOnUsageReport {
+  const TryOnUsageReport({
+    this.month = '',
+    this.shoppers = const [],
+    this.totalFittings = 0,
+  });
+
+  factory TryOnUsageReport.fromJson(Map<String, dynamic> json) {
+    final totals = json['totals'];
+    return TryOnUsageReport(
+      month: json['month']?.toString() ?? '',
+      shoppers: json['shoppers'] is List
+          ? (json['shoppers'] as List)
+              .whereType<Map>()
+              .map((row) =>
+                  TryOnShopperUsage.fromJson(Map<String, dynamic>.from(row)))
+              .toList()
+          : const [],
+      totalFittings: totals is Map && totals['fittings'] is num
+          ? (totals['fittings'] as num).toInt()
+          : 0,
+    );
+  }
+
+  final String month;
+  final List<TryOnShopperUsage> shoppers;
+  final int totalFittings;
+}
+
+class TryOnShopperUsage {
+  const TryOnShopperUsage({
+    required this.accountId,
+    required this.email,
+    required this.displayName,
+    required this.planId,
+    required this.used,
+    required this.credits,
+  });
+
+  factory TryOnShopperUsage.fromJson(Map<String, dynamic> json) =>
+      TryOnShopperUsage(
+        accountId: json['accountId']?.toString() ?? '',
+        email: json['email']?.toString() ?? '',
+        displayName: json['displayName']?.toString() ?? '',
+        planId: json['planId']?.toString() ?? 'free',
+        used: json['used'] is num ? (json['used'] as num).toInt() : 0,
+        credits: json['credits'] is num ? (json['credits'] as num).toInt() : 0,
+      );
+
+  final String accountId;
+  final String email;
+  final String displayName;
+  final String planId;
+  final int used;
+  final int credits;
+}
+
+class TryOnResult {
+  const TryOnResult({required this.image, this.quota = const TryOnQuota()});
+
+  final String image;
+  final TryOnQuota quota;
+}
+
 /// Health facts for a marketplace food — AI-written once, then shared with
 /// every shopper from the server cache.
 class FoodFactsInfo {

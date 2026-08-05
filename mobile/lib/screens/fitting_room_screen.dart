@@ -8,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
 import '../theme.dart';
+import '../saved_fits_store.dart';
+import '../ux.dart';
+import '../widgets/buy_fittings_sheet.dart';
 import '../vton_photo_store.dart';
 import '../widgets/common.dart';
 
@@ -17,15 +20,20 @@ class FittingRoomScreen extends StatefulWidget {
   const FittingRoomScreen({
     super.key,
     required this.api,
-    required this.garmentImageUrl,
+    required this.garmentImageUrls,
     required this.garmentTitle,
     this.onUpgrade,
     this.photoStore,
+    this.fitsStore,
   });
 
   final Api api;
-  final String garmentImageUrl;
+
+  /// One garment, or a whole outfit the server layers onto one body.
+  final List<String> garmentImageUrls;
   final String garmentTitle;
+
+  String get garmentImageUrl => garmentImageUrls.first;
 
   /// Where the Scout-plan upsell sends the shopper.
   final VoidCallback? onUpgrade;
@@ -33,6 +41,7 @@ class FittingRoomScreen extends StatefulWidget {
   /// Test seam — widget tests inject an in-memory store because real file I/O
   /// never completes inside their fake-async zone.
   final VtonPhotoStore? photoStore;
+  final SavedFitsStore? fitsStore;
 
   @override
   State<FittingRoomScreen> createState() => _FittingRoomScreenState();
@@ -46,9 +55,14 @@ const _firstSuccessKey = 'vton_first_success_v1';
 class _FittingRoomScreenState extends State<FittingRoomScreen> {
   late final VtonPhotoStore _photoStore =
       widget.photoStore ?? VtonPhotoStore();
+  late final SavedFitsStore _fitsStore = widget.fitsStore ?? SavedFitsStore();
+  bool _fitSaved = false;
+  bool _savingFit = false;
   _FittingStage _stage = _FittingStage.photo;
   Uint8List? _photoBytes;
   Uint8List? _resultBytes;
+  TryOnQuota? _quota;
+  String? _gateMessage;
   String? _tryOnError;
   bool _celebrate = false;
   bool _pickingPhoto = false;
@@ -154,11 +168,11 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
       }
     });
     try {
-      final dataUri = await widget.api.virtualTryOn(
+      final result = await widget.api.virtualTryOn(
         personImageBytes: photo,
-        garmentImageUrl: widget.garmentImageUrl,
+        garmentImageUrls: widget.garmentImageUrls,
       );
-      final bytes = _decodeDataUri(dataUri);
+      final bytes = _decodeDataUri(result.image);
       if (!mounted) return;
       if (bytes == null) {
         setState(() {
@@ -173,16 +187,21 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
       if (!mounted) return;
       setState(() {
         _resultBytes = bytes;
+        _quota = result.quota;
         _stage = _FittingStage.result;
         _celebrate = firstSuccess;
       });
     } on ApiException catch (error) {
       if (!mounted) return;
+      // 403 is a plan gate; 429 means this month's fittings are spent — both
+      // want the upsell, not a retry button.
+      final gated = error.statusCode == 403 || error.statusCode == 429;
       setState(() {
-        _stage = error.statusCode == 403
-            ? _FittingStage.gated
-            : _FittingStage.photo;
-        _tryOnError = error.statusCode == 403 ? null : error.message;
+        _stage = gated ? _FittingStage.gated : _FittingStage.photo;
+        // 403 has no plan access at all, so it keeps the plan pitch; 429 ran
+        // a real allowance down and says so in the server's own words.
+        _gateMessage = error.statusCode == 429 ? error.message : null;
+        _tryOnError = gated ? null : error.message;
       });
     } catch (_) {
       if (!mounted) return;
@@ -224,10 +243,24 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
           _FittingStage.generating => const _GeneratingPane(key: Key('vton-generating')),
           _FittingStage.result => _resultStep(context),
           _FittingStage.gated => _ScoutPlanGateCard(
+              message: _gateMessage,
               onUpgrade: () {
                 Navigator.of(context).maybePop();
                 widget.onUpgrade?.call();
               },
+              // Running out mid-shop should not mean leaving the fitting
+              // room: buying more brings the shopper straight back.
+              onBuyFittings: _gateMessage == null
+                  ? null
+                  : () async {
+                      final bought =
+                          await showBuyFittingsSheet(context, widget.api);
+                      if (!mounted || !bought) return;
+                      setState(() {
+                        _gateMessage = null;
+                        _stage = _FittingStage.photo;
+                      });
+                    },
             ),
         },
       ),
@@ -351,6 +384,32 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
     );
   }
 
+  Future<void> _saveFit() async {
+    final bytes = _resultBytes;
+    if (bytes == null || _savingFit) return;
+    uxTap();
+    setState(() => _savingFit = true);
+    try {
+      await _fitsStore.save(imageBytes: bytes, title: widget.garmentTitle);
+      if (!mounted) return;
+      setState(() {
+        _fitSaved = true;
+        _savingFit = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fit saved on this phone only.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _savingFit = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That fit could not be saved.')),
+      );
+    }
+  }
+
   Widget _resultStep(BuildContext context) {
     final before = _photoBytes;
     final after = _resultBytes;
@@ -390,13 +449,40 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
             ],
           ),
         ],
+        if (_quota != null) ...[
+          const SizedBox(height: 12),
+          _QuotaBar(quota: _quota!, onUpgrade: widget.onUpgrade),
+        ],
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('Try another item'),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  key: const Key('save-fit'),
+                  onPressed: _fitSaved || _savingFit ? null : _saveFit,
+                  icon: Icon(
+                    _fitSaved
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    size: 18,
+                  ),
+                  label: Text(_fitSaved ? 'Saved' : 'Save this fit'),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: SizedBox(
+                height: 48,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text('Try another'),
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         // No share button by design: the result stays as private as the photo.
@@ -960,10 +1046,106 @@ class _SliderTag extends StatelessWidget {
 
 /// The upsell shown when the server says the fitting room needs the Scout
 /// plan.
+/// What the shopper has left this month, stated plainly — a filling bar for
+/// counted plans, a quiet line of pride for unlimited ones.
+class _QuotaBar extends StatelessWidget {
+  const _QuotaBar({required this.quota, this.onUpgrade});
+
+  final TryOnQuota quota;
+  final VoidCallback? onUpgrade;
+
+  @override
+  Widget build(BuildContext context) {
+    if (quota.isUnlimited) {
+      return Row(
+        key: const Key('vton-quota'),
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.all_inclusive_rounded,
+              size: 15, color: TS.mutedOf(context)),
+          const SizedBox(width: 6),
+          Text('Unlimited fittings on your plan',
+              style: TextStyle(
+                  color: TS.mutedOf(context),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700)),
+        ],
+      );
+    }
+    final limit = quota.limit ?? 0;
+    final remaining = quota.remaining ?? 0;
+    final progress = limit == 0 ? 0.0 : (remaining / limit).clamp(0.0, 1.0);
+    final low = remaining <= (limit * 0.2).ceil();
+    return Column(
+      key: const Key('vton-quota'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                quota.label,
+                style: TextStyle(
+                  color: low ? TS.redOf(context) : TS.mutedOf(context),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (low && onUpgrade != null)
+              GestureDetector(
+                onTap: () {
+                  uxTap();
+                  onUpgrade!.call();
+                },
+                child: Text(
+                  'Get more',
+                  style: TextStyle(
+                    color: TS.redOf(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOutCubic,
+            tween: Tween(begin: 0, end: progress),
+            builder: (context, value, _) => LinearProgressIndicator(
+              value: value,
+              minHeight: 6,
+              backgroundColor: TS.surfaceSoftOf(context),
+              valueColor: AlwaysStoppedAnimation(
+                  low ? TS.redOf(context) : TS.greenOf(context)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ScoutPlanGateCard extends StatelessWidget {
-  const _ScoutPlanGateCard({required this.onUpgrade});
+  const _ScoutPlanGateCard({
+    required this.onUpgrade,
+    this.message,
+    this.onBuyFittings,
+  });
 
   final VoidCallback onUpgrade;
+
+  /// Offered when an allowance ran out rather than a plan being missing.
+  final VoidCallback? onBuyFittings;
+
+  /// The server's own words when a monthly allowance ran out, so the card
+  /// says "all 10 fittings" rather than a generic plan pitch.
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -982,11 +1164,17 @@ class _ScoutPlanGateCard extends StatelessWidget {
                 child: const Icon(Icons.checkroom, color: TS.ink, size: 30),
               ),
               const SizedBox(height: 14),
-              Text('THE FITTING ROOM IS A SCOUT PLAN PERK',
-                  textAlign: TextAlign.center, style: TS.eyebrowOf(context)),
+              Text(
+                  message == null
+                      ? 'THE FITTING ROOM IS A SCOUT PLAN PERK'
+                      : 'THIS MONTH\'S FITTINGS ARE USED UP',
+                  textAlign: TextAlign.center,
+                  style: TS.eyebrowOf(context)),
               const SizedBox(height: 8),
               Text(
-                'Try clothes on before you buy',
+                message == null
+                    ? 'Try clothes on before you buy'
+                    : 'More fittings, any time',
                 textAlign: TextAlign.center,
                 style: Theme.of(context)
                     .textTheme
@@ -995,19 +1183,49 @@ class _ScoutPlanGateCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Scout members can try any clothing deal on their own photo '
-                'before spending a cent. Upgrade to unlock the fitting room '
-                'along with the rest of the Scout toolkit.',
+                message ??
+                    'Scout members can try any clothing deal on their own '
+                        'photo before spending a cent. Upgrade to unlock the '
+                        'fitting room along with the rest of the Scout '
+                        'toolkit.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context), height: 1.4),
               ),
+              if (message != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Scout: 50 fittings a month · Household: unlimited',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: TS.faintOf(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700),
+                ),
+              ],
               const SizedBox(height: 16),
+              if (onBuyFittings != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const Key('buy-more-fittings'),
+                    onPressed: onBuyFittings,
+                    icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
+                    label: const Text('Buy more fittings'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               SizedBox(
                 width: double.infinity,
-                child: FilledButton(
-                  onPressed: onUpgrade,
-                  child: const Text('See the Scout plan'),
-                ),
+                child: onBuyFittings == null
+                    ? FilledButton(
+                        onPressed: onUpgrade,
+                        child: const Text('See the Scout plan'),
+                      )
+                    : OutlinedButton(
+                        onPressed: onUpgrade,
+                        child: const Text('Or upgrade your plan'),
+                      ),
               ),
             ],
           ),

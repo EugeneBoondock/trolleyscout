@@ -141,7 +141,7 @@ Widget _screen(
 }) {
   return FittingRoomScreen(
     api: api ?? _FittingApi(),
-    garmentImageUrl: 'https://cdn.example.test/jeans.jpg',
+    garmentImageUrls: const ['https://cdn.example.test/jeans.jpg'],
     garmentTitle: 'Slim fit denim jeans',
     onUpgrade: onUpgrade,
     photoStore: store,
@@ -175,12 +175,15 @@ class _FittingApi extends Api {
   final ApiException? error;
 
   @override
-  Future<String> virtualTryOn({
+  Future<TryOnResult> virtualTryOn({
     required List<int> personImageBytes,
-    required String garmentImageUrl,
+    required List<String> garmentImageUrls,
   }) async {
     final failure = error;
     if (failure != null) throw failure;
-    return 'data:image/png;base64,${String.fromCharCodes(personImageBytes)}';
+    return TryOnResult(
+      image: 'data:image/png;base64,${String.fromCharCodes(personImageBytes)}',
+      quota: const TryOnQuota(limit: 50, remaining: 49, used: 1),
+    );
   }
 }

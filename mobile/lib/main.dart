@@ -10,7 +10,6 @@ import 'app_controller.dart';
 import 'app_update_prompt.dart';
 import 'biometric_gate.dart';
 import 'deal_alert_background.dart';
-import 'deal_categories.dart';
 import 'deal_alert_scheduler.dart';
 import 'notification_prefs_store.dart';
 import 'shopper_calculator.dart';

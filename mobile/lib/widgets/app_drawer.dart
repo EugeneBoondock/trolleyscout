@@ -8,7 +8,7 @@ import 'in_app_browser.dart';
 enum AppDestination {
   near('Near me', Icons.near_me_outlined, false),
   deals('Marketplace', Icons.local_offer_outlined, false),
-  clothing('Clothing', Icons.checkroom_outlined, false),
+  clothing('Fitting room', Icons.checkroom_outlined, false),
   chat('Mr Scout', Icons.chat_bubble_outline, true),
   scroll('Window shopping', Icons.window_outlined, false),
   properties('Properties', Icons.apartment_outlined, false),

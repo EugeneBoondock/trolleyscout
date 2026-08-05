@@ -13,12 +13,24 @@ const freeAccount = { id: 'member-2', planId: 'free', role: 'member' }
 // A tiny valid base64 payload standing in for a person photo.
 const personImage = btoa('person-photo-bytes')
 
-function makeDb(rows: { override?: { enabled: number }; global?: { enabled: number } } = {}) {
+function makeDb(
+  rows: {
+    override?: { enabled: number }
+    global?: { enabled: number }
+    usage?: number
+  } = {},
+) {
   return {
     prepare: (sql: string) => ({
       bind: () => ({
-        first: async () =>
-          sql.includes('member_feature_overrides') ? (rows.override ?? null) : (rows.global ?? null),
+        first: async () => {
+          if (sql.includes('try_on_usage')) {
+            return rows.usage === undefined ? null : { used_count: rows.usage }
+          }
+          return sql.includes('member_feature_overrides')
+            ? (rows.override ?? null)
+            : (rows.global ?? null)
+        },
         run: async () => ({}),
         all: async () => ({ results: [] }),
       }),
@@ -57,12 +69,58 @@ describe('/api/virtual-try-on', () => {
     expect(response.status).toBe(401)
   })
 
-  it('keeps the fitting room behind the Scout plan with an upgrade message', async () => {
+  it('lets a free shopper fit within their monthly allowance', async () => {
     mocks.getMemberSession.mockResolvedValue({ account: freeAccount, isAuthenticated: true })
-    const response = await invoke({ AI: { run: vi.fn() }, DB: makeDb() })
-    expect(response.status).toBe(403)
+    const ai = { run: vi.fn(async () => ({ image: btoa('result') })) }
+    const response = await invoke({ AI: ai, DB: makeDb({ usage: 3 }) })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as {
+      data: { quota: { limit: number; remaining: number } }
+    }
+    // Three used before, this render makes four.
+    expect(payload.data.quota).toMatchObject({ limit: 10, remaining: 6, used: 4 })
+  })
+
+  it('stops a free shopper who has used all ten fittings this month', async () => {
+    mocks.getMemberSession.mockResolvedValue({ account: freeAccount, isAuthenticated: true })
+    const ai = { run: vi.fn() }
+    const response = await invoke({ AI: ai, DB: makeDb({ usage: 10 }) })
+    expect(response.status).toBe(429)
     const payload = (await response.json()) as { data: { issues: string[] } }
-    expect(payload.data.issues[0]).toContain('Scout plan')
+    expect(payload.data.issues[0]).toContain('all 10 fittings')
+    expect(ai.run).not.toHaveBeenCalled()
+  })
+
+  it('never counts against a Household shopper', async () => {
+    mocks.getMemberSession.mockResolvedValue({
+      account: { id: 'member-3', planId: 'household', role: 'member' },
+      isAuthenticated: true,
+    })
+    const ai = { run: vi.fn(async () => ({ image: btoa('result') })) }
+    const response = await invoke({ AI: ai, DB: makeDb({ usage: 999 }) })
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as {
+      data: { quota: { limit: number | null; remaining: number | null } }
+    }
+    expect(payload.data.quota).toMatchObject({ limit: null, remaining: null })
+  })
+
+  it('layers a whole outfit onto one body', async () => {
+    const ai = {
+      run: vi.fn(async () => ({ image: btoa('layered') })),
+    }
+    const response = await invoke({ AI: ai, DB: makeDb() }, {
+      garmentImageUrls: [
+        'https://cdn.example.test/shirt.jpg',
+        'https://cdn.example.test/jeans.jpg',
+      ],
+      personImage,
+    })
+    expect(response.status).toBe(200)
+    // One render per garment, each dressing the previous result.
+    expect(ai.run).toHaveBeenCalledTimes(2)
+    const secondCall = ai.run.mock.calls[1][1] as { person_image: string }
+    expect(secondCall.person_image).toBe(`data:image/jpeg;base64,${btoa('layered')}`)
   })
 
   it('lets an admin on the free plan through', async () => {

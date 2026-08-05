@@ -101,6 +101,39 @@ class _CategoryOverride {
 }
 
 const List<_CategoryOverride> _titleOverrides = [
+  // Clothing-adjacent homeware: things clothes hang on, stand in front of, or
+  // get pressed with are not clothes — a "dressing mirror" in the fitting
+  // room would be an awkward try-on.
+  _CategoryOverride(DealCategory.homeCookware, [
+    'mirror',
+    'wardrobe',
+    'hanger',
+    'hangers',
+    'clothes rail',
+    'clothing rail',
+    'garment rail',
+    'shoe rack',
+    'shoe cabinet',
+    'laundry basket',
+    'washing basket',
+    'mannequin',
+    'coat stand',
+    'coat rack',
+    'shoe polish',
+    'shoe care',
+    'sewing machine',
+    'sewing kit',
+    'drying rack',
+    'clothes horse',
+    'pegs',
+  ]),
+  _CategoryOverride(DealCategory.tech, [
+    'steam iron',
+    'iron ',
+    'ironing board',
+    'garment steamer',
+    'clothes steamer',
+  ]),
   _CategoryOverride(DealCategory.food, [
     'baby spinach',
     'baby potato',
