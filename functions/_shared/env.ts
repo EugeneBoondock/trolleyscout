@@ -45,6 +45,9 @@ export interface TrolleyScoutEnv {
   SCOUT_DEBUG?: string
   OPENAI_API_KEY?: string
   FISH_AUDIO_API_KEY?: string
+  /// Unlocks the fitting room through FASHN's dedicated try-on API when the
+  /// Workers AI partner model has no billing behind it.
+  FASHN_API_KEY?: string
 }
 
 export type TrolleyScoutD1Env = TrolleyScoutEnv & { DB: D1Database }

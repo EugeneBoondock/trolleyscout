@@ -124,6 +124,45 @@ describe('/api/virtual-try-on', () => {
     )
   })
 
+  it('renders through FASHN when its key is configured', async () => {
+    vi.useFakeTimers()
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      requests.push(url)
+      if (url.endsWith('/v1/run')) {
+        const body = JSON.parse(String(init?.body)) as {
+          inputs: { garment_image: string; model_image: string }
+          model_name: string
+        }
+        expect(body.model_name).toBe('tryon-v1.6')
+        expect(body.inputs.model_image).toContain('data:image/jpeg;base64,')
+        expect((init?.headers as Record<string, string>).Authorization)
+          .toBe('Bearer fashn-test-key')
+        return new Response(JSON.stringify({ id: 'pred-1' }))
+      }
+      if (url.includes('/v1/status/pred-1')) {
+        return new Response(JSON.stringify({
+          output: ['data:image/png;base64,cmVuZGVyZWQ='],
+          status: 'completed',
+        }))
+      }
+      // The garment download at the start of the request.
+      return new Response(new Uint8Array([1, 2, 3]))
+    }))
+    const ai = { run: vi.fn() }
+    const pending = invoke({ AI: ai, DB: makeDb(), FASHN_API_KEY: 'fashn-test-key' })
+    await vi.runAllTimersAsync()
+    const response = await pending
+    vi.useRealTimers()
+
+    expect(response.status).toBe(200)
+    const payload = (await response.json()) as { data: { image: string } }
+    expect(payload.data.image).toBe('data:image/png;base64,cmVuZGVyZWQ=')
+    expect(ai.run).not.toHaveBeenCalled()
+    expect(requests.some((url) => url.endsWith('/v1/run'))).toBe(true)
+  })
+
   it('reports an unfetchable garment image instead of calling the model', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 404 })))
     const ai = { run: vi.fn() }

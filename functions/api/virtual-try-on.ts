@@ -76,7 +76,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
-  if (!env.AI) {
+  if (!env.FASHN_API_KEY && !env.AI) {
     return json({ issues: ['Fitting room is warming up'] }, { headers: privateHeaders, status: 503 })
   }
 
@@ -111,6 +111,31 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     )
   }
 
+  // FASHN first when its key is present: it is the engine that is actually
+  // paid for. The Workers AI partner model stays as the alternative for when
+  // the Cloudflare account gains AI Gateway credits.
+  if (env.FASHN_API_KEY) {
+    try {
+      const image = await fashnTryOn(env.FASHN_API_KEY, personBase64, garmentBase64)
+      if (image) {
+        return json({ image }, { headers: privateHeaders })
+      }
+      return json(
+        { issues: ['The fitting room could not finish that look. Try again.'] },
+        { headers: privateHeaders, status: 502 },
+      )
+    } catch (error) {
+      console.error('virtual-try-on FASHN call failed:', error)
+      return json(
+        {
+          issues: ['The fitting room could not finish that look. Try again.'],
+          ...(isAdmin ? { detail: error instanceof Error ? error.message : String(error) } : {}),
+        },
+        { headers: privateHeaders, status: 502 },
+      )
+    }
+  }
+
   try {
     // The model's published schema: person_image plus a garment_imageS array.
     // Both go in as data URIs — the person photo must never become a fetchable
@@ -135,16 +160,78 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     }
     return json({ image: `data:image/png;base64,${image}` }, { headers: privateHeaders })
   } catch (error) {
-    // Admins see what the model actually said; shoppers see a soft retry.
     console.error('virtual-try-on model call failed:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    // "Invalid User Credentials" is the partner model saying the account has
+    // no billing behind it — a configuration state, not a retryable glitch.
+    const notConnected = message.includes('Invalid User Credentials')
     return json(
       {
-        issues: ['The fitting room could not finish that look. Try again.'],
-        ...(isAdmin ? { detail: error instanceof Error ? error.message : String(error) } : {}),
+        issues: [
+          notConnected
+              ? 'The fitting room is not connected yet. Please check back soon.'
+              : 'The fitting room could not finish that look. Try again.',
+        ],
+        ...(isAdmin ? { detail: message } : {}),
       },
-      { headers: privateHeaders, status: 502 },
+      { headers: privateHeaders, status: notConnected ? 503 : 502 },
     )
   }
+}
+
+/// FASHN's async flow: submit the pair, poll until the render completes,
+/// return the output as a data URI. The person photo goes to FASHN only for
+/// the render itself — nothing is written to our own storage, same promise as
+/// the Workers AI path.
+async function fashnTryOn(
+  apiKey: string,
+  personBase64: string,
+  garmentBase64: string,
+): Promise<string | null> {
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'content-type': 'application/json',
+  }
+  const submitted = await fetch('https://api.fashn.ai/v1/run', {
+    body: JSON.stringify({
+      inputs: {
+        garment_image: `data:image/jpeg;base64,${garmentBase64}`,
+        model_image: `data:image/jpeg;base64,${personBase64}`,
+      },
+      model_name: 'tryon-v1.6',
+    }),
+    headers,
+    method: 'POST',
+  })
+  if (!submitted.ok) {
+    throw new Error(`FASHN run failed: ${submitted.status} ${await submitted.text()}`)
+  }
+  const { id } = await submitted.json() as { id?: string }
+  if (!id) throw new Error('FASHN run answered without a prediction id.')
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    const polled = await fetch(`https://api.fashn.ai/v1/status/${id}`, { headers })
+    if (!polled.ok) continue
+    const status = await polled.json() as {
+      error?: unknown
+      output?: unknown
+      status?: unknown
+    }
+    if (status.status === 'completed') {
+      const output = Array.isArray(status.output) ? status.output[0] : undefined
+      if (typeof output !== 'string' || output.length === 0) return null
+      if (output.startsWith('data:')) return output
+      const image = await fetch(output)
+      if (!image.ok) return null
+      const bytes = new Uint8Array(await image.arrayBuffer())
+      return `data:image/png;base64,${bytesToBase64(bytes)}`
+    }
+    if (status.status === 'failed' || status.error) {
+      throw new Error(`FASHN render failed: ${JSON.stringify(status.error ?? status)}`)
+    }
+  }
+  return null
 }
 
 function describeModelResult(result: unknown): string {
