@@ -60,7 +60,7 @@ export function extractRetailerLeafletsFromHtml(
     const isHostedCatalogue = documentUrl ? isTrustedCatalogueUrl(documentUrl) : false
     if (!isPdf && !isImageDocument && !isHostedCatalogue) continue
 
-    const context = html.slice(Math.max(0, match.index - 1200), Math.min(html.length, match.index + 400))
+    const context = html.slice(Math.max(0, match.index - 2400), Math.min(html.length, match.index + 400))
     const searchable = `${rawPath} ${stripHtml(context)}`.toLowerCase()
     const looksPromotional = isImageDocument
       ? looksLikePromotionSignal(rawPath)
@@ -88,9 +88,15 @@ export function extractRetailerLeafletsFromHtml(
       id: `${target.retailerId}-${hashString(documentUrl)}`,
       imageUrl,
       name,
+      pages: isImageDocument
+        ? [{ height: 1_350, imageUrl: documentUrl, pageNumber: 1, width: 1_080 }]
+        : undefined,
       retailerId: target.retailerId,
       retailerName: target.retailerName,
       url: target.sourceUrl,
+      validTo: promotionEndDate(
+        html.slice(Math.max(0, match.index - 2400), match.index),
+      ),
     })
   }
 
@@ -109,7 +115,7 @@ export function extractRetailerLeafletsFromHtml(
     ) continue
 
     const context = html.slice(
-      Math.max(0, match.index - 1200),
+      Math.max(0, match.index - 2400),
       Math.min(html.length, match.index + 400),
     )
     const alt = attributeValue(attributes, 'alt') ?? ''
@@ -125,13 +131,65 @@ export function extractRetailerLeafletsFromHtml(
         nearestHeading(context) ||
         cleanText(alt) ||
         documentName(imageUrl),
+      pages: [{ height: 1_350, imageUrl, pageNumber: 1, width: 1_080 }],
       retailerId: target.retailerId,
       retailerName: target.retailerName,
       url: target.sourceUrl,
+      validTo: promotionEndDate(
+        html.slice(Math.max(0, match.index - 2400), match.index),
+      ),
     })
   }
 
   return leaflets
+}
+
+function promotionEndDate(value: string): string | undefined {
+  const monthNumbers: Record<string, number> = {
+    jan: 1,
+    january: 1,
+    feb: 2,
+    february: 2,
+    mar: 3,
+    march: 3,
+    apr: 4,
+    april: 4,
+    may: 5,
+    jun: 6,
+    june: 6,
+    jul: 7,
+    july: 7,
+    aug: 8,
+    august: 8,
+    sep: 9,
+    sept: 9,
+    september: 9,
+    oct: 10,
+    october: 10,
+    nov: 11,
+    november: 11,
+    dec: 12,
+    december: 12,
+  }
+  const dates = Array.from(
+    stripHtml(value).matchAll(
+      /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(20\d{2})\b/gi,
+    ),
+    (match) => {
+      const day = Number(match[1])
+      const month = monthNumbers[match[2].toLowerCase()]
+      const year = Number(match[3])
+      const parsed = new Date(Date.UTC(year, month - 1, day))
+      return (
+        parsed.getUTCFullYear() === year &&
+        parsed.getUTCMonth() === month - 1 &&
+        parsed.getUTCDate() === day
+      )
+        ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        : undefined
+    },
+  ).filter((date): date is string => Boolean(date))
+  return dates.at(-1)
 }
 
 const CATALOGUE_HOSTS = [
@@ -181,7 +239,8 @@ function leafletName(
   return uuidLike ? `${retailerName} promotions leaflet` : candidate
 }
 
-const GENERIC_LINK_CHROME = /^(view|download|open|read more|click here|here|pdf|leaflet)$/i
+const GENERIC_LINK_CHROME =
+  /^(view|download|open|read more|click here|here|pdf(?:\s*(?:-|–)\s*download)?|leaflet)$/i
 
 function anchorText(html: string, matchIndex: number) {
   const closing = html.indexOf('</a>', matchIndex)
@@ -203,7 +262,8 @@ function nearestHeading(context: string) {
 
 function nearestImage(context: string, baseUrl: string) {
   const matches = Array.from(context.matchAll(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/gi))
-  return absoluteHttpUrl(decodeHtml(matches.at(-1)?.[1] ?? ''), baseUrl)
+  const rawPath = decodeHtml(matches.at(-1)?.[1] ?? '').trim()
+  return rawPath ? absoluteHttpUrl(rawPath, baseUrl) : undefined
 }
 
 function documentName(url: string) {
@@ -225,7 +285,9 @@ function absoluteHttpUrl(value: string, baseUrl: string) {
 }
 
 function stripHtml(value: string) {
-  return cleanText(value.replace(/<[^>]+>/g, ' '))
+  return decodeHtml(value.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function cleanText(value: string) {
@@ -236,6 +298,8 @@ function decodeHtml(value: string) {
   return value
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
+    .replace(/&nbsp;|&#160;/g, ' ')
+    .replace(/&ndash;|&#8211;|&mdash;|&#8212;/g, '–')
     .replace(/&#39;|&apos;/g, '’')
 }
 

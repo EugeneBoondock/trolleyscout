@@ -90,11 +90,13 @@ export function parseAwinPromotions(payload: unknown): VoucherCodeDraft[] {
     const advertiser = isRecord(row.advertiser) ? row.advertiser : undefined
     const retailerId = slug(text(advertiser?.name))
     const benefitText = text(row.description) || text(row.title)
-    if (!code || !retailerId || !benefitText) continue
+    const countryCode = awinCountryCode(row)
+    if (!code || !retailerId || !benefitText || !countryCode) continue
 
     drafts.push({
       benefitText,
       code,
+      countryCode,
       retailerId,
       source: 'affiliate:awin',
       sourceUrl: text(row.urlTracking) || undefined,
@@ -158,11 +160,13 @@ export function parseAdmitadCoupons(payload: unknown): VoucherCodeDraft[] {
     const campaign = isRecord(row.campaign) ? row.campaign : undefined
     const retailerId = slug(text(campaign?.name))
     const benefitText = text(row.name) || text(row.description)
-    if (!retailerId || !benefitText) continue
+    const countryCode = admitadCountryCode(row)
+    if (!retailerId || !benefitText || !countryCode) continue
 
     drafts.push({
       benefitText,
       code,
+      countryCode,
       retailerId,
       source: 'affiliate:admitad',
       sourceUrl: text(row.goto_link) || undefined,
@@ -180,6 +184,31 @@ function slug(value: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
+}
+
+function awinCountryCode(row: Record<string, unknown>): string | undefined {
+  const regions = isRecord(row.regions) ? row.regions : undefined
+  const list = regions && Array.isArray(regions.list) ? regions.list : []
+  for (const region of list) {
+    if (!isRecord(region)) continue
+    const code = countryCode(text(region.countryCode))
+    if (code) return code
+  }
+  return undefined
+}
+
+function admitadCountryCode(row: Record<string, unknown>): string | undefined {
+  const regions = Array.isArray(row.regions) ? row.regions : []
+  for (const region of regions) {
+    const code = countryCode(isRecord(region) ? text(region.country_code ?? region.code) : text(region))
+    if (code) return code
+  }
+  return countryCode(text(row.country_code))
+}
+
+function countryCode(value: string): string | undefined {
+  const code = value.trim().toUpperCase()
+  return /^[A-Z]{2}$/.test(code) ? code : undefined
 }
 
 function text(value: unknown): string {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -13,10 +15,14 @@ import '../widgets/in_app_browser.dart';
 
 class StoresScreen extends StatefulWidget {
   const StoresScreen(
-      {super.key, required this.api, required this.isAuthenticated});
+      {super.key,
+      required this.api,
+      required this.isAuthenticated,
+      this.isAdmin = false});
 
   final Api api;
   final bool isAuthenticated;
+  final bool isAdmin;
 
   @override
   State<StoresScreen> createState() => _StoresScreenState();
@@ -33,6 +39,8 @@ class _StoresScreenState extends State<StoresScreen> {
   String _query = '';
   String _storeTab = 'all';
   bool _loadingMore = false;
+  Timer? _searchTimer;
+  int _loadGeneration = 0;
 
   // Where the shopper is, taken from the address they most recently saved on
   // Near me. Null means they have not told us yet, and the directory stays
@@ -42,10 +50,17 @@ class _StoresScreenState extends State<StoresScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _future = _startLoad();
   }
 
-  Future<_StoresData> _load() async {
+  Future<_StoresData> _startLoad() {
+    final generation = ++_loadGeneration;
+    final base = _loadBase();
+    unawaited(_enrichMarketplace(generation));
+    return base;
+  }
+
+  Future<_StoresData> _loadBase() async {
     final addresses = await _addressesStore.load();
     final favourites = await _favouriteStore.load();
     _origin = addresses.isEmpty ? null : addresses.first;
@@ -66,17 +81,85 @@ class _StoresScreenState extends State<StoresScreen> {
     );
   }
 
+  Future<void> _enrichMarketplace(int generation) async {
+    final marketplace = await _loadMarketplace();
+    if (!mounted || generation != _loadGeneration) return;
+    setState(() {
+      _future = _future.then((current) => current.copyWithMarketplace(
+            marketplace,
+            marketplaceLoaded: true,
+          ));
+    });
+  }
+
+  Future<DiscoveryResult?> _loadMarketplace() async {
+    try {
+      return await widget.api.discovery();
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _reload() => setState(() {
-        _future = _load();
+        _future = _startLoad();
       });
 
-  // Typing filters the already-loaded stores and retailers instantly on the
-  // client — no per-keystroke server round trip, so results never flicker
-  // between a locally filtered list and a server-filtered one. The server is
-  // only asked for more results via "Load more" (pagination) or the initial
-  // load, so search only reaches what's already been fetched.
+  // Local filtering responds instantly. A debounced server search also finds
+  // matching stores that have not reached this paginated directory page yet.
   void _search(String value) {
-    setState(() => _query = value.trim().toLowerCase());
+    final normalized = value.trim().toLowerCase();
+    setState(() => _query = normalized);
+    _searchTimer?.cancel();
+    if (normalized.isEmpty) return;
+    _searchTimer = Timer(
+      const Duration(milliseconds: 300),
+      () => _loadSearchMatches(normalized),
+    );
+  }
+
+  Future<void> _loadSearchMatches(String query) async {
+    try {
+      final result = await widget.api.discoveredStores(
+        limit: _pageSize,
+        query: query,
+        includeDetails: false,
+        lat: _origin?.lat,
+        lon: _origin?.lon,
+      );
+      if (!mounted || _query != query || result.stores.isEmpty) return;
+      setState(() {
+        _future = _future.then((current) {
+          final stores = <String, NearbyStore>{
+            for (final store in current.discovered.stores) store.placeId: store,
+            for (final store in result.stores) store.placeId: store,
+          };
+          return _StoresData(
+            catalog: current.catalog,
+            discovered: DiscoveredStoresResult(
+              stores: stores.values.toList(),
+              storeCount: current.discovered.storeCount,
+              areaCount: current.discovered.areaCount,
+              knownChainCount: current.discovered.knownChainCount,
+              withPromotionsCount: current.discovered.withPromotionsCount,
+              hasMore: current.discovered.hasMore,
+              limit: current.discovered.limit,
+              offset: current.discovered.offset,
+              country: current.discovered.country,
+            ),
+            marketplace: current.marketplace,
+            marketplaceLoaded: current.marketplaceLoaded,
+          );
+        });
+      });
+    } catch (_) {
+      // The already-loaded directory still filters locally if search is down.
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadMore(_StoresData current) async {
@@ -108,7 +191,12 @@ class _StoresScreenState extends State<StoresScreen> {
       if (mounted) {
         setState(() {
           _future = Future.value(
-            _StoresData(catalog: current.catalog, discovered: merged),
+            _StoresData(
+              catalog: current.catalog,
+              discovered: merged,
+              marketplace: current.marketplace,
+              marketplaceLoaded: current.marketplaceLoaded,
+            ),
           );
         });
       }
@@ -166,7 +254,11 @@ class _StoresScreenState extends State<StoresScreen> {
               retailer.program.toLowerCase().contains(_query);
           return matchesQuery;
         }).toList();
-        final allDiscoveredGroups = groupNearbyStores(data.discovered.stores);
+        final allDiscoveredGroups = groupNearbyStores(
+          data.discovered.stores,
+          marketplaceDeals: data.marketplace?.deals ?? const [],
+          marketplaceCatalogues: data.marketplace?.catalogues ?? const [],
+        );
         final discovered = allDiscoveredGroups.where((group) {
           if (_storeTab == 'favourites' && !_isFavourite(group.id)) {
             return false;
@@ -259,6 +351,8 @@ class _StoresScreenState extends State<StoresScreen> {
                     isFavourite: _isFavourite(discovered[index].id),
                     onToggleFavourite: () =>
                         _toggleFavourite(discovered[index]),
+                    marketplaceLoaded: data.marketplaceLoaded,
+                    isAdmin: widget.isAdmin,
                   ),
                 ),
               ),
@@ -325,12 +419,16 @@ class _DiscoveredGroupCard extends StatelessWidget {
     required this.api,
     required this.isFavourite,
     required this.onToggleFavourite,
+    required this.marketplaceLoaded,
+    required this.isAdmin,
   });
 
   final StoreGroup group;
   final Api api;
   final bool isFavourite;
   final VoidCallback onToggleFavourite;
+  final bool marketplaceLoaded;
+  final bool isAdmin;
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +455,12 @@ class _DiscoveredGroupCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${group.offerCount} current offer${group.offerCount == 1 ? '' : 's'}',
+                      marketplaceLoaded
+                          ? '${group.dealCount} ${group.dealCount == 1 ? 'deal' : 'deals'} · '
+                              '${group.catalogueCount} ${group.catalogueCount == 1 ? 'catalogue' : 'catalogues'}'
+                          : group.offerCount > 0
+                              ? '${group.offerCount} current offers · checking details'
+                              : 'Checking current offers',
                       style: TS.eyebrowOf(context),
                     ),
                     if (group.nearestDistanceM != null)
@@ -405,7 +508,11 @@ class _DiscoveredGroupCard extends StatelessWidget {
         ),
         builder: (_) => FractionallySizedBox(
           heightFactor: 0.92,
-          child: _StoreGroupSheet(group: group, api: api),
+          child: _StoreGroupSheet(
+            group: group,
+            api: api,
+            isAdmin: isAdmin,
+          ),
         ),
       );
 }
@@ -471,10 +578,28 @@ class _RetailerCard extends StatelessWidget {
 }
 
 class _StoresData {
-  const _StoresData({required this.catalog, required this.discovered});
+  const _StoresData({
+    required this.catalog,
+    required this.discovered,
+    this.marketplace,
+    this.marketplaceLoaded = false,
+  });
 
   final RetailerCatalog catalog;
   final DiscoveredStoresResult discovered;
+  final DiscoveryResult? marketplace;
+  final bool marketplaceLoaded;
+
+  _StoresData copyWithMarketplace(
+    DiscoveryResult? value, {
+    required bool marketplaceLoaded,
+  }) =>
+      _StoresData(
+        catalog: catalog,
+        discovered: discovered,
+        marketplace: value,
+        marketplaceLoaded: marketplaceLoaded,
+      );
 }
 
 class _StoreLogo extends StatelessWidget {
@@ -511,10 +636,15 @@ class _StoreLogo extends StatelessWidget {
 }
 
 class _StoreGroupSheet extends StatelessWidget {
-  const _StoreGroupSheet({required this.group, required this.api});
+  const _StoreGroupSheet({
+    required this.group,
+    required this.api,
+    required this.isAdmin,
+  });
 
   final StoreGroup group;
   final Api api;
+  final bool isAdmin;
 
   @override
   Widget build(BuildContext context) {
@@ -551,12 +681,48 @@ class _StoreGroupSheet extends StatelessWidget {
           ),
         ),
         Divider(height: 1, color: TS.lineSoftOf(context)),
+        if (group.offerCount > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: PaperCard(
+              margin: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '${group.dealCount} ${group.dealCount == 1 ? 'Marketplace deal' : 'Marketplace deals'} · '
+                    '${group.catalogueCount} ${group.catalogueCount == 1 ? 'catalogue' : 'catalogues'}',
+                    style: TS.eyebrowOf(context),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Browse current brand publications. Availability can vary by branch.',
+                    style: TextStyle(color: TS.mutedOf(context)),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _BrandOffersScreen(group: group),
+                      ),
+                    ),
+                    icon: const Icon(Icons.local_offer_outlined),
+                    label: const Text('Browse current brand offers'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: group.branches.length,
-            itemBuilder: (context, index) =>
-                _BranchCard(branch: group.branches[index], api: api),
+            itemBuilder: (context, index) => _BranchCard(
+              branch: group.branches[index],
+              group: group,
+              api: api,
+              isAdmin: isAdmin,
+            ),
           ),
         ),
       ],
@@ -565,16 +731,28 @@ class _StoreGroupSheet extends StatelessWidget {
 }
 
 class _BranchCard extends StatelessWidget {
-  const _BranchCard({required this.branch, required this.api});
+  const _BranchCard({
+    required this.branch,
+    required this.group,
+    required this.api,
+    required this.isAdmin,
+  });
 
   final NearbyStore branch;
+  final StoreGroup group;
   final Api api;
+  final bool isAdmin;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => _BranchDetailScreen(branch: branch, api: api),
+        builder: (_) => _BranchDetailScreen(
+          branch: branch,
+          group: group,
+          api: api,
+          isAdmin: isAdmin,
+        ),
       )),
       child: PaperCard(
         margin: const EdgeInsets.only(bottom: 14),
@@ -599,10 +777,12 @@ class _BranchCard extends StatelessWidget {
                             color: TS.mutedOf(context), fontSize: 12)),
                   const SizedBox(height: 8),
                   Text(
-                    '${branch.promotionCount} current offer${branch.promotionCount == 1 ? '' : 's'}',
+                    branch.detailsLoaded
+                        ? '${branch.promotionCount} current offer${branch.promotionCount == 1 ? '' : 's'}'
+                        : 'Open for branch-specific offers',
                     style: TS.eyebrowOf(context),
                   ),
-                  if (branch.promotionCount == 0)
+                  if (branch.detailsLoaded && branch.promotionCount == 0)
                     Text('No current deals found yet.',
                         style: TextStyle(color: TS.mutedOf(context))),
                 ],
@@ -623,11 +803,68 @@ class _BranchCard extends StatelessWidget {
   }
 }
 
+class _BrandOffersScreen extends StatelessWidget {
+  const _BrandOffersScreen({required this.group});
+
+  final StoreGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: TS.bgOf(context),
+      appBar: AppBar(title: Text('${group.displayName} offers')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Current Marketplace publications for ${group.displayName}. Branch availability can vary.',
+            style: TextStyle(color: TS.mutedOf(context)),
+          ),
+          const SizedBox(height: 18),
+          Text('Deals', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (group.marketplaceDeals.isEmpty)
+            const EmptyCard(
+              message: 'No current Marketplace deals found for this brand.',
+              icon: Icons.local_offer_outlined,
+            )
+          else
+            for (final deal in group.marketplaceDeals)
+              _BranchDealRow(deal: deal),
+          const SizedBox(height: 18),
+          Text('Catalogues', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (group.marketplaceCatalogues.isEmpty)
+            const EmptyCard(
+              message:
+                  'No current Marketplace catalogues found for this brand.',
+              icon: Icons.menu_book_outlined,
+            )
+          else
+            for (final catalogue
+                in sortCataloguesMostRecent(group.marketplaceCatalogues))
+              _CatalogueCard(
+                catalogue: catalogue,
+                deals: group.marketplaceDeals,
+              ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BranchDetailScreen extends StatefulWidget {
-  const _BranchDetailScreen({required this.branch, required this.api});
+  const _BranchDetailScreen({
+    required this.branch,
+    required this.group,
+    required this.api,
+    required this.isAdmin,
+  });
 
   final NearbyStore branch;
+  final StoreGroup group;
   final Api api;
+  final bool isAdmin;
 
   @override
   State<_BranchDetailScreen> createState() => _BranchDetailScreenState();
@@ -673,7 +910,12 @@ class _BranchDetailScreenState extends State<_BranchDetailScreen> {
               onRetry: _retry,
             );
           }
-          return _BranchDetailBody(branch: snapshot.data!, api: widget.api);
+          return _BranchDetailBody(
+            branch: snapshot.data!,
+            group: widget.group,
+            api: widget.api,
+            isAdmin: widget.isAdmin,
+          );
         },
       ),
     );
@@ -681,12 +923,27 @@ class _BranchDetailScreenState extends State<_BranchDetailScreen> {
 }
 
 class _BranchDetailBody extends StatelessWidget {
-  const _BranchDetailBody({required this.branch, required this.api});
+  const _BranchDetailBody({
+    required this.branch,
+    required this.group,
+    required this.api,
+    required this.isAdmin,
+  });
 
   final NearbyStore branch;
+  final StoreGroup group;
   final Api api;
+  final bool isAdmin;
 
   bool get _hasLocation => branch.lat != 0 && branch.lon != 0;
+  List<Deal> get _deals => _mergeStoreDeals(
+        branch.deals,
+        group.marketplaceDeals,
+      );
+  List<Catalogue> get _catalogues => _mergeStoreCatalogues(
+        branch.catalogues,
+        group.marketplaceCatalogues,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -710,6 +967,7 @@ class _BranchDetailBody extends StatelessWidget {
                 lat: branch.lat.toDouble(),
                 lon: branch.lon.toDouble(),
                 storeAddress: branch.address,
+                isAdmin: isAdmin,
               ),
               icon: const Icon(Icons.map_outlined, size: 18),
               label: const Text('View on map'),
@@ -733,35 +991,72 @@ class _BranchDetailBody extends StatelessWidget {
         ],
         const SizedBox(height: 18),
         Text('Current deals', style: Theme.of(context).textTheme.titleLarge),
+        if (group.marketplaceDeals.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Includes current brand offers. Availability can vary by branch.',
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+          ),
+        ],
         const SizedBox(height: 8),
-        if (branch.deals.isEmpty)
+        if (_deals.isEmpty)
           const EmptyCard(
             message: 'No current deals have been found for this store yet.',
             icon: Icons.local_offer_outlined,
           )
         else
-          for (final deal in branch.deals) _BranchDealRow(deal: deal),
+          for (final deal in _deals) _BranchDealRow(deal: deal),
         const SizedBox(height: 18),
         Text('Catalogues', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        if (branch.catalogues.isEmpty)
+        if (_catalogues.isEmpty)
           const EmptyCard(
             message:
                 'No current catalogues have been found for this store yet.',
             icon: Icons.menu_book_outlined,
           )
         else
-          for (final catalogue in sortCataloguesMostRecent(branch.catalogues))
-            _CatalogueCard(catalogue: catalogue),
+          for (final catalogue in sortCataloguesMostRecent(_catalogues))
+            _CatalogueCard(
+              catalogue: catalogue,
+              deals: _deals,
+            ),
       ],
     );
   }
 }
 
+List<Deal> _mergeStoreDeals(List<Deal> branch, List<Deal> brand) {
+  final seen = <String>{};
+  return [...branch, ...brand].where((deal) {
+    final key = deal.id.isNotEmpty
+        ? deal.id
+        : '${deal.productUrl ?? deal.sourceUrl}:${deal.title}';
+    return seen.add(key);
+  }).toList(growable: false);
+}
+
+List<Catalogue> _mergeStoreCatalogues(
+  List<Catalogue> branch,
+  List<Catalogue> brand,
+) {
+  final seen = <String>{};
+  return [...branch, ...brand].where((catalogue) {
+    final key = catalogue.id?.isNotEmpty == true
+        ? catalogue.id!
+        : '${catalogue.url}:${catalogue.name}';
+    return seen.add(key);
+  }).toList(growable: false);
+}
+
 class _CatalogueCard extends StatelessWidget {
-  const _CatalogueCard({required this.catalogue});
+  const _CatalogueCard({
+    required this.catalogue,
+    required this.deals,
+  });
 
   final Catalogue catalogue;
+  final List<Deal> deals;
 
   @override
   Widget build(BuildContext context) {
@@ -787,7 +1082,11 @@ class _CatalogueCard extends StatelessWidget {
     );
 
     return InkWell(
-      onTap: () => showCatalogueReader(context, catalogue),
+      onTap: () => showCatalogueReader(
+        context,
+        catalogue,
+        deals: deals,
+      ),
       child: PaperCard(
         margin: const EdgeInsets.only(bottom: 12),
         child: Row(

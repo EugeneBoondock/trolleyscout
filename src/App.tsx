@@ -2,16 +2,28 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { AdminMembersPanel, type MemberFilters } from './components/AdminMembersPanel'
 import { recordUsage } from './services/memberUsage'
 import { withReferralSource } from './services/outboundLink'
+import {
+  catalogueTiming,
+  catalogueTimingOptions,
+  catalogueTimingTitle,
+  filterCataloguesByTiming,
+  type CatalogueTimingFilter,
+} from './services/catalogueTiming'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowClockwise,
+  AirplaneTilt,
   ArrowLeft,
   ArrowRight,
   Bell,
   BellRinging,
   BookmarkSimple,
   Buildings,
+  Books,
   Calculator,
+  CalendarBlank,
+  CaretDown,
+  CaretUp,
   ChatsCircle,
   CheckCircle,
   ClipboardText,
@@ -19,6 +31,9 @@ import {
   Eye,
   EyeSlash,
   GooglePlayLogo,
+  GlobeHemisphereWest,
+  Gift,
+  GraduationCap,
   HandCoins,
   Heart,
   HouseLine,
@@ -28,11 +43,13 @@ import {
   List,
   Lock,
   MagnifyingGlass,
+  MapPin,
   Minus,
   MoonStars,
   NavigationArrow,
   Plus,
   ReceiptX,
+  ShareNetwork,
   ShieldCheck,
   ShoppingCart,
   SignOut,
@@ -52,6 +69,12 @@ import { ScoutMark } from './components/ScoutMark'
 import { LeafletViewer } from './components/LeafletViewer'
 import { DeferredDashboardStories } from './components/DashboardStories'
 import { RetailerPicker } from './components/RetailerPicker'
+import { DealReportButton } from './components/DealReportButton'
+import { AdminDealReportsPanel } from './components/AdminDealReportsPanel'
+import {
+  FloatingShopperCalculator,
+  ShopperCalculatorSetting,
+} from './components/ShopperCalculator'
 import { AdminPublicationReview } from './business/AdminPublicationReview'
 import { AdminOrganizationApplications } from './business/AdminOrganizationApplications'
 import {
@@ -59,6 +82,8 @@ import {
   getInitialOfferState,
   getInitialRetailerState,
   loadOffers,
+  loadPublicDealSiteDeals,
+  loadRetailHolidays,
   loadRetailers,
   loadDiscoveredStores,
   type ResourceState,
@@ -128,6 +153,7 @@ import type {
   DealActivity,
   DealLearningState,
   DealWatch,
+  DiscoveryRun,
   DeveloperKeyResource,
   DeveloperScope,
   MemberAccount,
@@ -160,6 +186,12 @@ import type {
 import { getMemberPlan } from './data/memberPlans'
 import { pickStapleDeals } from './services/stapleDeals'
 import {
+  buildRetailSeasons,
+  matchesRetailSeason,
+  type RetailSeasonIcon,
+  type RetailHoliday,
+} from './services/retailSeasons'
+import {
   createDealSearchIndex,
   filterIndexedDiscoveryDeals,
   sortIndexedDiscoveryDeals,
@@ -188,6 +220,8 @@ import {
 import type { Voucher } from './services/vouchers/types'
 import { meaningfulWasPrice } from './services/priceDisplay'
 import { topSavingsDeals } from './services/topSavings'
+import { buildBasketStoreStops, formatBasketShareText } from './services/basketRun'
+import { findSimilarDeals } from './services/similarDeals'
 
 const PropertiesView = lazy(() =>
   import('./views/PropertiesView').then((module) => ({ default: module.PropertiesView })),
@@ -213,6 +247,9 @@ const ToolkitView = lazy(() =>
 const VouchersView = lazy(() =>
   import('./views/VouchersView').then((module) => ({ default: module.VouchersView })),
 )
+const CoverageView = lazy(() =>
+  import('./views/CoverageView').then((module) => ({ default: module.CoverageView })),
+)
 const ScoutChatView = lazy(() =>
   import('./views/ScoutChatView').then((module) => ({ default: module.ScoutChatView })),
 )
@@ -226,6 +263,7 @@ type ActiveView =
   | 'sources'
   | 'discovery'
   | 'vouchers'
+  | 'coverage'
   | 'about'
   | 'offers'
   | 'scanner'
@@ -242,6 +280,7 @@ type MemberView =
   | 'sources'
   | 'discovery'
   | 'vouchers'
+  | 'coverage'
   | 'properties'
   | 'savedDeals'
   | 'basket'
@@ -266,6 +305,7 @@ function LazyView({ children, label }: { children: ReactNode; label: string }) {
 const viewOptions: Array<{ label: string; value: ActiveView }> = [
   { label: 'Deals', value: 'discovery' },
   { label: 'Vouchers', value: 'vouchers' },
+  { label: 'Coverage', value: 'coverage' },
   { label: 'Help', value: 'about' },
 ]
 
@@ -288,6 +328,7 @@ const VIEW_PATHS: Record<ActiveView, string> = {
   tools: '/tools',
   sources: '/stores',
   vouchers: '/vouchers',
+  coverage: '/coverage',
   about: '/about',
   offers: '/offers',
   scanner: '/scanner',
@@ -307,6 +348,7 @@ const VIEW_TITLES: Record<ActiveView, string> = {
   tools: 'Tools: product and store comparison | Trolley Scout',
   sources: 'Stores: official retailer sources | Trolley Scout',
   vouchers: 'Vouchers: verified retailer vouchers | Trolley Scout',
+  coverage: 'Live retailer and deal coverage | Trolley Scout',
   about: 'About & help | Trolley Scout',
   offers: 'Verified offers | Trolley Scout',
   scanner: 'Offer scanner | Trolley Scout',
@@ -333,6 +375,7 @@ const memberViewOptions: Array<{ icon: ReactNode; label: string; value: MemberVi
   { icon: <Calculator size={20} />, label: 'Tools', value: 'tools' },
   { icon: <Storefront size={20} />, label: 'Stores', value: 'sources' },
   { icon: <Ticket size={20} />, label: 'Vouchers', value: 'vouchers' },
+  { icon: <GlobeHemisphereWest size={20} />, label: 'Coverage', value: 'coverage' },
   { icon: <NavigationArrow size={20} />, label: 'Near me', value: 'near' },
   { icon: <Buildings size={20} />, label: 'Properties', value: 'properties' },
   { icon: <Wallet size={20} />, label: 'Saved deals', value: 'savedDeals' },
@@ -600,7 +643,7 @@ function App() {
       active = false
       controller.abort()
     }
-  }, [memberState.data.session.isAuthenticated])
+  }, [memberState.data.session.account?.countryCode, memberState.data.session.isAuthenticated])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -680,6 +723,7 @@ function App() {
   const basketSavedDealIds = new Set(basketState.data.basket.items.map((item) => item.savedDealId))
   const basketItemCount = basketState.data.basket.summary.itemCount
   const activeCountryCode = memberSession.account?.countryCode ?? countryState.data.country.code
+  const activeCountryName = memberSession.account?.countryName ?? countryState.data.country.name
 
   useEffect(() => {
     const controller = new AbortController()
@@ -698,9 +742,11 @@ function App() {
 
     const forceLive = forceLiveDiscoveryRef.current
     forceLiveDiscoveryRef.current = false
-    const isDashboardOnly = memberView === 'dashboard' && activeView !== 'home' && activeView !== 'discovery'
+    const isSummaryOnly = memberSession.isAuthenticated
+      ? memberView === 'dashboard'
+      : activeView === 'home'
 
-    if (!forceLive && (hasLoadedFullDiscoveryRef.current || (hasLoadedDiscoveryRef.current && isDashboardOnly))) {
+    if (!forceLive && (hasLoadedFullDiscoveryRef.current || (hasLoadedDiscoveryRef.current && isSummaryOnly))) {
       return () => controller.abort()
     }
 
@@ -711,17 +757,17 @@ function App() {
       status: 'loading',
     }))
 
-    loadDiscovery(controller.signal, { forceLive, summary: isDashboardOnly })
+    loadDiscovery(controller.signal, { forceLive, summary: isSummaryOnly })
       .then((state) => {
         if (controller.signal.aborted || discoveryRequestRef.current !== requestId) {
           return
         }
         hasLoadedDiscoveryRef.current = true
-        if (!isDashboardOnly) {
+        if (!isSummaryOnly) {
           hasLoadedFullDiscoveryRef.current = true
         }
         setDiscoveryState((current) => {
-          if (isDashboardOnly && current.status !== 'loading') {
+          if (isSummaryOnly && current.status !== 'loading') {
             state.data.discovery.deals = current.data.discovery.deals
             state.data.discovery.leaflets = current.data.discovery.leaflets
           }
@@ -740,7 +786,14 @@ function App() {
       })
 
     return () => controller.abort()
-  }, [activeCountryCode, discoveryKey, discoveryVisible, activeView, memberView])
+  }, [
+    activeCountryCode,
+    discoveryKey,
+    discoveryVisible,
+    activeView,
+    memberSession.isAuthenticated,
+    memberView,
+  ])
 
   function refreshSources() {
     setIsRefreshing(true)
@@ -1488,14 +1541,25 @@ function App() {
 
         {activeView === 'vouchers' && (
           <LazyView label="Opening vouchers">
-            <VouchersView
-              isAuthenticated={memberSession.isAuthenticated}
-              isLoading={vouchersLoading}
-              onClaim={saveVoucher}
-              onRemove={removeSavedVoucher}
-              onRequireAuth={requireVoucherAuthentication}
-              vouchers={vouchers}
-            />
+                <VouchersView
+                  countryName={activeCountryName}
+                  isAuthenticated={memberSession.isAuthenticated}
+                  isLoading={vouchersLoading}
+                  onClaim={saveVoucher}
+                  onRemove={removeSavedVoucher}
+                  onRequireAuth={requireVoucherAuthentication}
+                  retailerOptions={filteredRetailers.map((retailer) => ({
+                    id: retailer.id,
+                    name: retailer.name,
+                  }))}
+                  vouchers={vouchers}
+                />
+          </LazyView>
+        )}
+
+        {activeView === 'coverage' && (
+          <LazyView label="Opening coverage">
+            <CoverageView />
           </LazyView>
         )}
 
@@ -1570,6 +1634,8 @@ function App() {
 
             <SourcePanel
               country={retailerState.data.country}
+              marketplace={discoveryState.data.discovery}
+              onViewStoreDeals={viewStoreDeals}
               retailers={filteredRetailers}
               isLoading={retailerState.status === 'loading'}
             />
@@ -1578,6 +1644,8 @@ function App() {
 
         {activeView === 'discovery' && (
           <DiscoveryPanel
+            countryCode={activeCountryCode}
+            countryName={activeCountryName}
             initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
             onRunDiscovery={runDiscovery}
@@ -1649,6 +1717,7 @@ function App() {
               { label: 'Stores near me', view: 'near' },
               { label: 'Store directory', view: 'sources' },
               { label: 'Vouchers', view: 'vouchers' },
+              { label: 'Coverage ledger', view: 'coverage' },
               { label: 'Price tools', view: 'tools' },
             ] as Array<{ label: string; view: ActiveView }>).map((link) => (
               <a
@@ -2117,6 +2186,12 @@ function MemberShell({
           </LazyView>
         )}
 
+        {activeView === 'coverage' && (
+          <LazyView label="Opening coverage">
+            <CoverageView />
+          </LazyView>
+        )}
+
         {activeView === 'about' && (
           <LazyView label="Opening help">
             <AboutView onOpen={(destination: AboutDestination) => onSetView(destination)} />
@@ -2148,8 +2223,10 @@ function MemberShell({
             <SourcePanel
               country={retailerState.data.country}
               isLoading={retailerState.status === 'loading'}
+              marketplace={discoveryState.data.discovery}
               memberMode
               onSaveSource={onSaveSource}
+              onViewStoreDeals={onViewStoreDeals}
               retailers={retailerState.data.retailers}
               savedSourceUrls={savedSourceUrls}
               savingSourceUrl={savingSourceUrl}
@@ -2159,8 +2236,11 @@ function MemberShell({
 
         {activeView === 'discovery' && (
           <DiscoveryPanel
+            canReportDeals
             canRunDiscovery={account.role === 'admin'}
             canWatchItems
+            countryCode={country.code}
+            countryName={country.name}
             initialFilter={discoveryFilter}
             isDiscovering={isDiscovering}
             onRunDiscovery={onRunDiscovery}
@@ -2310,6 +2390,7 @@ function MemberShell({
           Near me
         </button>
       </nav>
+      <FloatingShopperCalculator />
       <ScoutGuide view={activeView} />
     </div>
   )
@@ -2502,6 +2583,16 @@ function MemberDashboard({
         </button>
       </header>
 
+      <section className="dash-shortcuts" aria-label="Shopping shortcuts">
+        <h2 className="dash-section-label">Jump straight in</h2>
+        <div className="dash-actions">
+          <DashAction icon={<Tag size={24} />} label="Find deals" onClick={() => onSetView('discovery')} />
+          <DashAction icon={<MapPin size={24} />} label="Near me" onClick={() => onSetView('near')} />
+          <DashAction icon={<ShoppingCart size={24} />} label="Basket" onClick={() => onSetView('basket')} />
+          <DashAction icon={<Storefront size={24} />} label="Stores" onClick={() => onSetView('sources')} />
+        </div>
+      </section>
+
       <SavingsHero
         basketItemCount={basketItemCount}
         fullPriceCents={fullPriceCents}
@@ -2579,14 +2670,6 @@ function MemberDashboard({
           </button>
         )}
       </section>
-
-      <h2 className="dash-section-label">Jump straight in</h2>
-      <div className="dash-actions">
-        <DashAction icon={<Tag size={24} />} label="Find deals" onClick={() => onSetView('discovery')} />
-        <DashAction icon={<Wallet size={24} />} label="Saved deals" onClick={() => onSetView('savedDeals')} />
-        <DashAction icon={<ShoppingCart size={24} />} label="Basket" onClick={() => onSetView('basket')} />
-        <DashAction icon={<CreditCard size={24} />} label="Your plan" onClick={() => onSetView('subscription')} />
-      </div>
 
       <h2 className="dash-section-label">What Trolley Scout is watching for you</h2>
       <div className="dash-chips">
@@ -2676,19 +2759,20 @@ function SavingsHero({
 }) {
   if (fullPriceCents <= 0) {
     return (
-      <article className="dash-savings dash-savings-empty">
-        <p className="eyebrow">Money you keep</p>
-        <div className="dash-savings-empty-body">
-          <span aria-hidden="true" className="dash-savings-empty-mark">
-            <HandCoins size={28} />
-          </span>
-          <p>Add a deal to your basket and this shows exactly how much you saved on the shop.</p>
-        </div>
-        <button className="primary-button" onClick={() => onSetView('discovery')} type="button">
-          <Tag size={18} />
-          Find your first deal
-        </button>
-      </article>
+      <button
+        className="dash-savings dash-savings-empty"
+        onClick={() => onSetView('discovery')}
+        type="button"
+      >
+        <span aria-hidden="true" className="dash-savings-empty-mark">
+          <HandCoins size={26} />
+        </span>
+        <span className="dash-savings-empty-copy">
+          <span className="eyebrow">Money you keep</span>
+          <span>Add a deal to start tracking your real basket saving.</span>
+        </span>
+        <ArrowRight aria-hidden="true" size={18} />
+      </button>
     )
   }
 
@@ -2865,7 +2949,7 @@ function SavedDealsPanel({
   )
 }
 
-function BasketPanel({
+export function BasketPanel({
   basketState,
   deletingBasketItemId,
   memberNotice,
@@ -2886,6 +2970,35 @@ function BasketPanel({
 }) {
   const basket = basketState.data.basket
   const hasItems = basket.items.length > 0
+  const storeStops = buildBasketStoreStops(basket)
+  const [checkedItemIds, setCheckedItemIds] = useState<Set<string>>(() => new Set())
+  const [shareNotice, setShareNotice] = useState('')
+  const checkedItemCount = basket.items.filter((item) => checkedItemIds.has(item.id)).length
+
+  function toggleChecked(itemId: string) {
+    setCheckedItemIds((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+  }
+
+  async function shareBasket() {
+    const text = formatBasketShareText(basket, formatRand)
+    const shareData = { text, title: 'Trolley Scout shopping list' }
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share(shareData)
+        setShareNotice('Shopping list shared.')
+        return
+      }
+      await navigator.clipboard.writeText(text)
+      setShareNotice('Shopping list copied.')
+    } catch {
+      setShareNotice('Could not share this shopping list.')
+    }
+  }
 
   return (
     <section className="basket-panel" aria-label="Basket">
@@ -2894,14 +3007,27 @@ function BasketPanel({
           <p className="eyebrow">Basket</p>
           <h1>Source-backed spend</h1>
         </div>
-        <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
-          <Wallet size={18} />
-          Saved deals
-        </button>
+        <div className="member-section-actions">
+          {hasItems && (
+            <button className="ghost-button" onClick={() => void shareBasket()} type="button">
+              <ShareNetwork size={18} />
+              Share list
+            </button>
+          )}
+          <button className="ghost-button" onClick={() => onSetView('savedDeals')} type="button">
+            <Wallet size={18} />
+            Saved deals
+          </button>
+        </div>
       </div>
 
       {basketState.status === 'loading' && <LoadingStrip label="Checking basket" />}
-      {memberNotice && <div className="write-notice" role="status">{memberNotice}</div>}
+      {memberNotice && (
+        <div className="write-notice" role="status">
+          {memberNotice}
+        </div>
+      )}
+      {shareNotice && <div className="write-notice" role="status">{shareNotice}</div>}
 
       {hasItems ? (
         <>
@@ -2919,88 +3045,137 @@ function BasketPanel({
               <p>Based on previous price text when present.</p>
             </article>
             <article className="basket-total-card">
-              <span>Items</span>
-              <strong>{basket.summary.itemCount}</strong>
-              <p>Quantities from saved source rows.</p>
+              <span>Store stops</span>
+              <strong>{storeStops.length}</strong>
+              <p>{basket.summary.itemCount} items grouped for the shop.</p>
             </article>
           </div>
 
-          <div className="basket-list">
-            {basket.items.map((item) => {
-              const isUpdating = updatingBasketItemId === item.id
-              const isDeleting = deletingBasketItemId === item.id
+          <div className="basket-run-progress" role="status">
+            <CheckCircle aria-hidden="true" size={22} weight="fill" />
+            <span>
+              <strong>
+                {checkedItemCount} of {basket.items.length}
+              </strong>{' '}
+              products are in your trolley. The checklist lasts for this shopping session.
+            </span>
+          </div>
 
-              return (
-                <article className="basket-row" key={item.id}>
-                  {item.deal.imageUrl && (
-                    <img
-                      alt=""
-                      className="basket-product-image"
-                      loading="lazy"
-                      onError={(event) => { event.currentTarget.hidden = true }}
-                      src={item.deal.imageUrl}
-                    />
-                  )}
-                  <div className="basket-row-main">
-                    <p className="eyebrow">{item.deal.retailerName}</p>
-                    <h3>{item.deal.title}</h3>
-                    <div className="deal-price-line">
-                      {item.deal.priceText && <strong>{item.deal.priceText}</strong>}
-                      {meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText) && <span>{meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText)}</span>}
-                      {item.deal.savingText && <span>{item.deal.savingText}</span>}
-                    </div>
-                    <p>{item.deal.sourceLabel}</p>
+          <div className="basket-store-list">
+            {storeStops.map((stop, stopIndex) => (
+              <section className="basket-store-stop" key={stop.retailerId}>
+                <header className="basket-store-head">
+                  <span className="basket-stop-number" aria-hidden="true">
+                    {stopIndex + 1}
+                  </span>
+                  <div>
+                    <p className="eyebrow">Store stop {stopIndex + 1}</p>
+                    <h2>{stop.retailerName}</h2>
+                    <p>
+                      {stop.itemCount} {stop.itemCount === 1 ? 'item' : 'items'} · {stop.knownPriceItemCount} priced
+                    </p>
                   </div>
+                  <div className="basket-stop-money">
+                    <span>Known subtotal</span>
+                    <strong>{stop.knownPriceItemCount === 0 ? 'Price not found' : formatRand(stop.totalCents)}</strong>
+                    {stop.savingsCents > 0 && <small>{formatRand(stop.savingsCents)} saved</small>}
+                  </div>
+                </header>
 
-                  <div className="basket-row-side">
-                    <div className="quantity-control" aria-label={`Quantity for ${item.deal.title}`}>
-                      <button
-                        disabled={isUpdating || item.quantity <= 1}
-                        onClick={() => onUpdateQuantity(item, item.quantity - 1)}
-                        type="button"
-                        aria-label="Decrease quantity"
+                <div className="basket-list">
+                  {stop.items.map((item) => {
+                    const isUpdating = updatingBasketItemId === item.id
+                    const isDeleting = deletingBasketItemId === item.id
+                    const isChecked = checkedItemIds.has(item.id)
+
+                    return (
+                      <article
+                        className={clsx('basket-row', {
+                          'is-checked': isChecked,
+                        })}
+                        key={item.id}
                       >
-                        <Minus size={16} />
-                      </button>
-                      <span aria-live="polite">{item.quantity}</span>
-                      <button
-                        disabled={isUpdating || item.quantity >= 99}
-                        onClick={() => onUpdateQuantity(item, item.quantity + 1)}
-                        type="button"
-                        aria-label="Increase quantity"
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
-                    <strong className="basket-line-total">
-                      {item.linePriceCents === undefined ? 'Price not found' : formatRand(item.linePriceCents)}
-                    </strong>
-                    <div className="offer-actions">
-                      <a href={withReferralSource(item.deal.sourceUrl)} rel="noreferrer" target="_blank">
-                        Source
-                        <LinkSimple size={14} />
-                      </a>
-                      <a href={withReferralSource(item.deal.productUrl)} rel="noreferrer" target="_blank">
-                        Product
-                        <LinkSimple size={14} />
-                      </a>
-                      <button className="ghost-button" onClick={() => onReviewDeal(item.deal)} type="button">
-                        Review
-                      </button>
-                      <button
-                        className="ghost-button"
-                        disabled={isDeleting}
-                        onClick={() => onDeleteItem(item.id)}
-                        type="button"
-                      >
-                        <Trash size={16} />
-                        {isDeleting ? 'Removing' : 'Remove'}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
+                        <div className="basket-row-copy">
+                          {item.deal.imageUrl && (
+                            <img
+                              alt=""
+                              className="basket-product-image"
+                              loading="lazy"
+                              onError={(event) => {
+                                event.currentTarget.hidden = true
+                              }}
+                              src={item.deal.imageUrl}
+                            />
+                          )}
+                          <div className="basket-row-main">
+                            <label className="basket-check-control">
+                              <input checked={isChecked} onChange={() => toggleChecked(item.id)} type="checkbox" />
+                              <span>{isChecked ? 'In trolley' : 'Mark in trolley'}</span>
+                            </label>
+                            <h3>{item.deal.title}</h3>
+                            <div className="deal-price-line">
+                              {item.deal.priceText && <strong>{item.deal.priceText}</strong>}
+                              {meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText) && (
+                                <span>{meaningfulWasPrice(item.deal.previousPriceText, item.deal.priceText)}</span>
+                              )}
+                              {item.deal.savingText && <span>{item.deal.savingText}</span>}
+                            </div>
+                            <p>{item.deal.sourceLabel}</p>
+                          </div>
+                        </div>
+
+                        <div className="basket-row-side">
+                          <div className="quantity-control" aria-label={`Quantity for ${item.deal.title}`}>
+                            <button
+                              disabled={isUpdating || item.quantity <= 1}
+                              onClick={() => onUpdateQuantity(item, item.quantity - 1)}
+                              type="button"
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus size={16} />
+                            </button>
+                            <span aria-live="polite">{item.quantity}</span>
+                            <button
+                              disabled={isUpdating || item.quantity >= 99}
+                              onClick={() => onUpdateQuantity(item, item.quantity + 1)}
+                              type="button"
+                              aria-label="Increase quantity"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                          <strong className="basket-line-total">
+                            {item.linePriceCents === undefined ? 'Price not found' : formatRand(item.linePriceCents)}
+                          </strong>
+                          <div className="offer-actions">
+                            <a href={withReferralSource(item.deal.sourceUrl)} rel="noreferrer" target="_blank">
+                              Source
+                              <LinkSimple size={14} />
+                            </a>
+                            <a href={withReferralSource(item.deal.productUrl)} rel="noreferrer" target="_blank">
+                              Product
+                              <LinkSimple size={14} />
+                            </a>
+                            <button className="ghost-button" onClick={() => onReviewDeal(item.deal)} type="button">
+                              Review
+                            </button>
+                            <button
+                              className="ghost-button"
+                              disabled={isDeleting}
+                              onClick={() => onDeleteItem(item.id)}
+                              type="button"
+                            >
+                              <Trash size={16} />
+                              {isDeleting ? 'Removing' : 'Remove'}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         </>
       ) : (
@@ -3130,6 +3305,16 @@ export function SubscriptionPanel({
   const quoteCurrency =
     subscriptionState.data.plans.find((plan) => plan.localPrices)?.localPrices?.currencyCode ?? 'ZAR'
   const businessApplication = subscriptionState.data.businessApplications[0]
+  const hasDeveloperAccess =
+    account.role === 'admin' ||
+    (billingAccount.planId === 'developers' && billingAccount.planStatus === 'active')
+
+  function openDeveloperAccess() {
+    document.getElementById('developer-access-title')?.scrollIntoView?.({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
 
   function updateApplicationField(name: keyof OrganizationApplicationDraft, value: string) {
     setApplicationDraft((current) => ({ ...current, [name]: value }))
@@ -3165,7 +3350,7 @@ export function SubscriptionPanel({
           <p className="eyebrow">Subscription</p>
           <h1>Plan and billing</h1>
           <p className="section-lede">
-            Free covers the core shopping tools. Paid plans add space for power savers.{' '}
+            Free covers the core shopping tools. Paid plans add more alerts, larger lists, Properties Scout, and business or developer tools.{' '}
             {quoteCurrency === 'ZAR'
               ? 'PayFast handles the payment securely.'
               : `Prices are in ${quoteCurrency}. PayFast settles securely in rand, and the exact rand charge is on every paid plan below.`}
@@ -3408,19 +3593,23 @@ export function SubscriptionPanel({
             monthlyEquivalent(billingAccount.planId, planCycle ?? billingCycle)
           const isComingSoon = plan.comingSoon === true
           const isBusinessPlan = plan.id === 'organization' || plan.id === 'developers'
+          const opensDeveloperAccess = plan.id === 'developers' && hasDeveloperAccess
           const needsBusinessApplication =
             isBusinessPlan &&
+            !opensDeveloperAccess &&
             (!businessApplication || businessApplication.status === 'rejected')
-          const buttonText = isCurrent
-            ? 'Current plan'
-            : needsBusinessApplication
-              ? businessApplication?.status === 'rejected'
-                ? 'Update Organisation application'
-                : 'Apply for Organisation access'
-              : isBusinessPlan &&
-                  businessApplication?.status === 'pending' &&
-                  !businessApplication.businessSubscriptionActive
-                ? 'Finish Organisation subscription'
+          const buttonText = opensDeveloperAccess
+            ? 'Open developer tools'
+            : isCurrent
+              ? 'Current plan'
+              : needsBusinessApplication
+                ? businessApplication?.status === 'rejected'
+                  ? 'Update Organisation application'
+                  : 'Apply for Organisation access'
+                : isBusinessPlan &&
+                    businessApplication?.status === 'pending' &&
+                    !businessApplication.businessSubscriptionActive
+                  ? 'Finish Organisation subscription'
             : isComingSoon
               ? 'Coming soon'
               : needsBilling
@@ -3511,9 +3700,18 @@ export function SubscriptionPanel({
                 ))}
               </ul>
               <button
-                className={isCurrent ? 'ghost-button' : 'primary-button'}
-                disabled={isCurrent || isComingSoon || checkoutPlanId === plan.id || needsBilling}
+                className={isCurrent && !opensDeveloperAccess ? 'ghost-button' : 'primary-button'}
+                disabled={
+                  (!opensDeveloperAccess && isCurrent) ||
+                  isComingSoon ||
+                  checkoutPlanId === plan.id ||
+                  (!opensDeveloperAccess && needsBilling)
+                }
                 onClick={() => {
+                  if (opensDeveloperAccess) {
+                    openDeveloperAccess()
+                    return
+                  }
                   if (needsBusinessApplication) {
                     setApplicationOpen(true)
                     return
@@ -3532,6 +3730,7 @@ export function SubscriptionPanel({
           )
         })}
       </div>
+      {hasDeveloperAccess && <DeveloperAccessPanel />}
     </section>
   )
 }
@@ -3563,6 +3762,7 @@ function MemberProfilePanel({
         <ProfileRow label="Member since" value={account.createdAt.slice(0, 10)} />
       </div>
       <AccountSettings account={account} />
+      <ShopperCalculatorSetting />
       {(account.planId === 'developers' || account.role === 'admin') && <DeveloperAccessPanel />}
       <DealLearningControls />
       <button className="ghost-button" onClick={onSignOut} type="button">
@@ -4513,6 +4713,8 @@ function AdminConsole({
         <AdminAnalyticsPanel countryCode={activeCountryCode} />
       )}
 
+      {overview && adminTab === 'reports' && <AdminDealReportsPanel />}
+
       {overview && adminTab === 'members' && (
         <AdminMembersPanel
           onChangePlan={onChangePlan}
@@ -4595,12 +4797,13 @@ function AdminConsole({
   )
 }
 
-type AdminTab = 'overview' | 'members' | 'analytics' | 'support' | 'business'
+type AdminTab = 'overview' | 'members' | 'analytics' | 'reports' | 'support' | 'business'
 
 const ADMIN_TABS: Array<[AdminTab, string]> = [
   ['overview', 'Overview'],
   ['members', 'Members'],
   ['analytics', 'Analytics'],
+  ['reports', 'Deal reports'],
   ['support', 'Support'],
   ['business', 'Business'],
 ]
@@ -4761,23 +4964,71 @@ function AdminTrend({ days, label, values }: { days: string[]; label: string; va
   )
 }
 
+function CatalogueStoreLogo({
+  logoUrl,
+  retailerName,
+}: {
+  logoUrl?: string
+  retailerName: string
+}) {
+  return (
+    <span aria-hidden="true" className="catalogue-store-avatar">
+      <span className="catalogue-store-avatar-fallback">
+        {retailerName.charAt(0).toUpperCase()}
+      </span>
+      {logoUrl && (
+        <img
+          alt=""
+          decoding="async"
+          loading="lazy"
+          onError={(event) => { event.currentTarget.hidden = true }}
+          referrerPolicy="no-referrer"
+          src={logoUrl}
+        />
+      )}
+    </span>
+  )
+}
+
 function CatalogueGroupsBoard({
+  deals,
   initialCatalogueId,
   leaflets,
 }: {
+  deals: DiscoveredDeal[]
   initialCatalogueId?: string
   leaflets: StoreLeaflet[]
 }) {
   const [openLeaflet, setOpenLeaflet] = useState<StoreLeaflet | undefined>()
   const [catalogueQuery, setCatalogueQuery] = useState('')
   const [catalogueSort, setCatalogueSort] = useState<CatalogueSort>('latest')
+  const [catalogueTimingFilter, setCatalogueTimingFilter] =
+    useState<CatalogueTimingFilter>('current')
+  const timingCounts = useMemo(() => Object.fromEntries(
+    catalogueTimingOptions.map((option) => [
+      option.id,
+      filterCataloguesByTiming(leaflets, option.id).length,
+    ]),
+  ) as Record<CatalogueTimingFilter, number>, [leaflets])
+  const timedLeaflets = useMemo(
+    () => filterCataloguesByTiming(leaflets, catalogueTimingFilter),
+    [catalogueTimingFilter, leaflets],
+  )
   const filteredLeaflets = useMemo(() => {
     const query = catalogueQuery.normalize('NFKC').trim().toLowerCase()
-    if (!query) return leaflets
-    return leaflets.filter((leaflet) =>
+    if (!query) return timedLeaflets
+    return timedLeaflets.filter((leaflet) =>
       `${leaflet.retailerName} ${leaflet.name}`.normalize('NFKC').toLowerCase().includes(query),
     )
-  }, [catalogueQuery, leaflets])
+  }, [catalogueQuery, timedLeaflets])
+  const retailerGroups = useMemo(
+    () => groupLeafletsByRetailer(timedLeaflets, 'store')
+      .sort((left, right) =>
+        right.leaflets.length - left.leaflets.length ||
+        left.retailerName.localeCompare(right.retailerName),
+      ),
+    [timedLeaflets],
+  )
   const groups = useMemo(
     () => groupLeafletsByRetailer(filteredLeaflets, catalogueSort),
     [catalogueSort, filteredLeaflets],
@@ -4805,15 +5056,31 @@ function CatalogueGroupsBoard({
       <header className="catalogue-library-head">
         <div>
           <p className="eyebrow">Fresh from stores</p>
-          <h3>Current catalogues</h3>
+          <h3>{catalogueTimingTitle(catalogueTimingFilter)}</h3>
           <p>Open a cover to read every available page in order.</p>
         </div>
         <span>
-          {filteredLeaflets.length === leaflets.length
-            ? `${leaflets.length} available`
-            : `${filteredLeaflets.length} of ${leaflets.length}`}
+          {filteredLeaflets.length === timedLeaflets.length
+            ? `${timedLeaflets.length} available`
+            : `${filteredLeaflets.length} of ${timedLeaflets.length}`}
         </span>
       </header>
+
+      <div aria-label="Catalogue dates" className="catalogue-timing-filters" role="group">
+        {catalogueTimingOptions.map((option) => (
+          <button
+            aria-label={`${option.label} ${timingCounts[option.id]}`}
+            aria-pressed={catalogueTimingFilter === option.id}
+            className={clsx('catalogue-timing-filter', catalogueTimingFilter === option.id && 'is-active')}
+            key={option.id}
+            onClick={() => setCatalogueTimingFilter(option.id)}
+            type="button"
+          >
+            <span>{option.label}</span>
+            <strong>{timingCounts[option.id]}</strong>
+          </button>
+        ))}
+      </div>
 
       <div className="catalogue-controls" aria-label="Catalogue filters">
         <label>
@@ -4838,13 +5105,62 @@ function CatalogueGroupsBoard({
         </label>
       </div>
 
+      {!catalogueQuery.trim() && retailerGroups.length > 1 && (
+        <section
+          aria-labelledby="catalogue-retailer-shelf-title"
+          className="catalogue-retailer-shelf"
+        >
+          <header>
+            <div>
+              <p className="eyebrow">Quick store access</p>
+              <h3 id="catalogue-retailer-shelf-title">Shop by retailer</h3>
+              <p>Jump straight to a store in this catalogue view.</p>
+            </div>
+            <span>{retailerGroups.length} stores</span>
+          </header>
+          <div className="catalogue-retailer-row">
+            {retailerGroups.map((group) => {
+              const count = group.leaflets.length
+              return (
+                <button
+                  aria-label={`Show ${count} ${count === 1 ? 'catalogue' : 'catalogues'} from ${group.retailerName}`}
+                  className="catalogue-retailer-card"
+                  key={group.retailerId}
+                  onClick={() => setCatalogueQuery(group.retailerName)}
+                  type="button"
+                >
+                  <CatalogueStoreLogo
+                    logoUrl={group.retailerLogoUrl}
+                    retailerName={group.retailerName}
+                  />
+                  <span>
+                    <strong>{group.retailerName}</strong>
+                    <small>{count} {count === 1 ? 'catalogue' : 'catalogues'}</small>
+                  </span>
+                  <ArrowRight aria-hidden="true" size={17} />
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       {groups.length === 0 ? (
         <div className="discovery-empty" role="status">
           <MagnifyingGlass size={42} />
-          <h3>No catalogues match “{catalogueQuery.trim()}”</h3>
-          <button className="ghost-button" onClick={() => setCatalogueQuery('')} type="button">
-            Clear catalogue search
-          </button>
+          {catalogueQuery.trim() ? (
+            <>
+              <h3>No catalogues match “{catalogueQuery.trim()}”</h3>
+              <button className="ghost-button" onClick={() => setCatalogueQuery('')} type="button">
+                Clear catalogue search
+              </button>
+            </>
+          ) : (
+            <>
+              <h3>No {catalogueTimingOptions.find((option) => option.id === catalogueTimingFilter)?.label.toLowerCase()} catalogues</h3>
+              <p>Choose another date view to see the available store catalogues.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="catalogue-store-list">
@@ -4855,13 +5171,14 @@ function CatalogueGroupsBoard({
             key={group.retailerId}
           >
             <header className="catalogue-store-head">
-              <span aria-hidden="true" className="catalogue-store-avatar">
-                {group.retailerName.charAt(0).toUpperCase()}
-              </span>
+              <CatalogueStoreLogo
+                logoUrl={group.retailerLogoUrl}
+                retailerName={group.retailerName}
+              />
               <div>
                 <h4 id={`catalogue-store-${group.retailerId}`}>{group.retailerName}</h4>
                 <p>
-                  {group.leaflets.length} current {group.leaflets.length === 1 ? 'catalogue' : 'catalogues'}
+                  {group.leaflets.length} {group.leaflets.length === 1 ? 'catalogue' : 'catalogues'}
                 </p>
               </div>
             </header>
@@ -4869,6 +5186,7 @@ function CatalogueGroupsBoard({
             <div className="catalogue-shelf">
               {group.leaflets.map((leaflet) => {
                 const cover = leaflet.imageUrl ?? leaflet.pages?.[0]?.imageUrl
+                const timing = catalogueTiming(leaflet)
                 return (
                   <button
                     aria-label={`Read ${leaflet.name} from ${group.retailerName}`}
@@ -4899,6 +5217,11 @@ function CatalogueGroupsBoard({
                     </span>
                     <span className="catalogue-tile-copy">
                       <strong>{leaflet.name}</strong>
+                      {timing !== 'current' && (
+                        <em className={clsx('catalogue-timing-badge', `is-${timing}`)}>
+                          {timing === 'upcoming' ? 'Upcoming' : 'Ending soon'}
+                        </em>
+                      )}
                       <span>{describeCatalogueFormat(leaflet)}</span>
                       {(leaflet.validFrom || leaflet.validTo) && (
                         <small>{describeLeafletDates(leaflet.validFrom, leaflet.validTo)}</small>
@@ -4914,7 +5237,7 @@ function CatalogueGroupsBoard({
       )}
 
       {openLeaflet && (
-        <LeafletViewer leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
+        <LeafletViewer deals={deals} leaflet={openLeaflet} onClose={() => setOpenLeaflet(undefined)} />
       )}
     </div>
   )
@@ -5083,7 +5406,9 @@ export function DiscoveredStoreDirectory({
   onLoadMore,
   onQueryChange,
   onRetry,
+  onViewStoreDeals,
   query = '',
+  marketplace,
 }: {
   discovered: DiscoveredStoresResource
   isAuthenticated?: boolean
@@ -5091,9 +5416,11 @@ export function DiscoveredStoreDirectory({
   onLoadMore?: () => void
   onQueryChange?: (value: string) => void
   onRetry?: () => void
+  onViewStoreDeals?: (store: NearbyStoreResult) => void
   query?: string
+  marketplace?: DiscoveryRun
 }) {
-  const allGroups = groupDiscoveredStores(discovered.stores)
+  const allGroups = groupDiscoveredStores(discovered.stores, marketplace)
   const { favouriteCount, isFavourite, toggle } = useFavouriteStores(isAuthenticated)
   const [storeTab, setStoreTab] = useState<'all' | 'favourites'>('all')
   const groups = storeTab === 'favourites'
@@ -5250,7 +5577,8 @@ export function DiscoveredStoreDirectory({
                     <strong>{cleanUiPunctuation(group.displayName)}</strong>
                     <span>{group.branchCount} {group.branchCount === 1 ? 'location' : 'locations'}</span>
                     <span>
-                      {group.promotionCount} live promotion{group.promotionCount === 1 ? '' : 's'}
+                      {group.dealCount} {group.dealCount === 1 ? 'deal' : 'deals'} Â·{' '}
+                      {group.catalogueCount} {group.catalogueCount === 1 ? 'catalogue' : 'catalogues'}
                     </span>
                     {group.nearestDistanceM !== undefined && (
                       <span>Nearest {formatStoreDistance(group.nearestDistanceM)}</span>
@@ -5261,6 +5589,16 @@ export function DiscoveredStoreDirectory({
                     </span>
                   </span>
                 </button>
+                {onViewStoreDeals && group.promotionCount > 0 && (
+                  <button
+                    className="discovered-store-marketplace-action"
+                    onClick={() => onViewStoreDeals(group.branches[0])}
+                    type="button"
+                  >
+                    Browse current offers
+                    <ArrowRight size={15} />
+                  </button>
+                )}
               </article>
             )
           })}
@@ -5306,7 +5644,9 @@ export function DiscoveredStoreDirectory({
                 </h3>
                 <p>
                   {openGroup.branchCount} {openGroup.branchCount === 1 ? 'branch' : 'branches'}.{' '}
-                  Specials stay with the location that published them.
+                  {openGroup.dealCount} {openGroup.dealCount === 1 ? 'Marketplace deal' : 'Marketplace deals'} and{' '}
+                  {openGroup.catalogueCount} {openGroup.catalogueCount === 1 ? 'catalogue' : 'catalogues'}.{' '}
+                  Branch availability can vary.
                 </p>
               </div>
               <button
@@ -5491,16 +5831,20 @@ function SourcePanel({
   retailers: sourceRetailers,
   country,
   isLoading,
+  marketplace,
   memberMode = false,
   onSaveSource,
+  onViewStoreDeals,
   savedSourceUrls = new Set<string>(),
   savingSourceUrl,
 }: {
   retailers: Retailer[]
   country?: CountryOption
   isLoading: boolean
+  marketplace?: DiscoveryRun
   memberMode?: boolean
   onSaveSource?: (retailerId: Retailer['id'], sourceUrl: string) => void
+  onViewStoreDeals?: (store: NearbyStoreResult) => void
   savedSourceUrls?: Set<string>
   savingSourceUrl?: string
 }) {
@@ -5588,9 +5932,11 @@ function SourcePanel({
         discovered={discovered}
         isAuthenticated={memberMode}
         isLoading={isDirectoryLoading}
+        marketplace={marketplace}
         onLoadMore={() => void loadMoreStores()}
         onQueryChange={setDirectoryQuery}
         onRetry={() => setDirectoryReload((value) => value + 1)}
+        onViewStoreDeals={onViewStoreDeals}
         query={directoryQuery}
       />
       <div className="source-grid">
@@ -5702,11 +6048,19 @@ function discoveryDealImages(deal: DiscoveredDeal) {
 function MarketplaceImageViewer({
   deal,
   onClose,
+  onSelectSimilar,
+  similarDeals,
 }: {
   deal: DiscoveredDeal
   onClose: () => void
+  onSelectSimilar: (deal: DiscoveredDeal) => void
+  similarDeals: DiscoveredDeal[]
 }) {
   const images = discoveryDealImages(deal)
+  const validTo = deal.validTo?.slice(0, 10)
+  const isExpired = Boolean(
+    deal.validTo && !Number.isNaN(Date.parse(deal.validTo)) && Date.parse(deal.validTo) < Date.now(),
+  )
   const trackRef = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
 
@@ -5747,7 +6101,7 @@ function MarketplaceImageViewer({
       role="presentation"
     >
       <section
-        aria-label={`${deal.title} images`}
+        aria-label={`${deal.title} details`}
         aria-modal="true"
         className="marketplace-viewer-card"
         role="dialog"
@@ -5758,7 +6112,7 @@ function MarketplaceImageViewer({
             <h2>{deal.title}</h2>
           </div>
           <button
-            aria-label="Close product images"
+            aria-label="Close deal details"
             className="icon-button"
             onClick={onClose}
             type="button"
@@ -5768,22 +6122,29 @@ function MarketplaceImageViewer({
         </header>
 
         <div className="marketplace-viewer-stage">
-          <div
-            className="marketplace-viewer-track"
-            onScroll={handleScroll}
-            ref={trackRef}
-          >
-            {images.map((image, imageIndex) => (
-              <div className="marketplace-viewer-slide" key={`${image}-${imageIndex}`}>
-                <img
-                  alt={`${deal.title}, image ${imageIndex + 1}`}
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                  src={image}
-                />
-              </div>
-            ))}
-          </div>
+          {images.length > 0 ? (
+            <div
+              className="marketplace-viewer-track"
+              onScroll={handleScroll}
+              ref={trackRef}
+            >
+              {images.map((image, imageIndex) => (
+                <div className="marketplace-viewer-slide" key={`${image}-${imageIndex}`}>
+                  <img
+                    alt={`${deal.title}, image ${imageIndex + 1}`}
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    src={image}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="marketplace-viewer-no-image">
+              <Storefront aria-hidden="true" size={48} weight="duotone" />
+              <span>Official listing available without a product image</span>
+            </div>
+          )}
           {images.length > 1 && (
             <>
               <button
@@ -5806,9 +6167,11 @@ function MarketplaceImageViewer({
               </button>
             </>
           )}
-          <span className="marketplace-viewer-counter">
-            {index + 1} of {images.length}
-          </span>
+          {images.length > 0 && (
+            <span className="marketplace-viewer-counter">
+              {index + 1} of {images.length}
+            </span>
+          )}
           {deal.soldOut && <span className="deal-stock-badge marketplace-viewer-stock">Sold out</span>}
         </div>
 
@@ -5818,30 +6181,79 @@ function MarketplaceImageViewer({
             {deal.soldOut
               ? <span className="deal-stock-badge">Sold out</span>
               : deal.savingText && <span>{deal.savingText}</span>}
+            <span>{deal.sourceLabel}</span>
+            {validTo ? <span>{isExpired ? `Expired ${validTo}` : `Valid until ${validTo}`}</span> : null}
           </div>
-          <a
-            className="primary-button marketplace-viewer-product"
-            href={withReferralSource(deal.productUrl)}
-            onClick={() => {
-              recordBusinessPublicationEvent(deal, 'image_view')
-              recordBusinessPublicationEvent(deal, 'link_click')
-              recordUsage('deal_view', deal.id)
-            }}
-            rel="noreferrer"
-            target="_blank"
-          >
-            View product
-            <LinkSimple size={17} />
-          </a>
+          <div className="marketplace-viewer-links">
+            {deal.sourceUrl ? (
+              <a
+                className="ghost-button marketplace-viewer-product"
+                href={withReferralSource(deal.sourceUrl)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Official source
+                <ShieldCheck size={17} />
+              </a>
+            ) : null}
+            {deal.productUrl ? (
+              <a
+                className="primary-button marketplace-viewer-product"
+                href={withReferralSource(deal.productUrl)}
+                onClick={() => {
+                  recordBusinessPublicationEvent(deal, 'image_view')
+                  recordBusinessPublicationEvent(deal, 'link_click')
+                  recordUsage('deal_view', deal.id)
+                }}
+                rel="noreferrer"
+                target="_blank"
+              >
+                View product
+                <LinkSimple size={17} />
+              </a>
+            ) : null}
+          </div>
         </footer>
+
+        {similarDeals.length > 0 && (
+          <section className="marketplace-viewer-similar" aria-label="Similar deals">
+            <div>
+              <p className="eyebrow">Compare before you buy</p>
+              <h3>Similar deals</h3>
+            </div>
+            <div className="marketplace-viewer-similar-track">
+              {similarDeals.map((similar) => (
+                <button key={similar.id} onClick={() => onSelectSimilar(similar)} type="button">
+                  {similar.imageUrl ? <img alt="" loading="lazy" src={similar.imageUrl} /> : null}
+                  <span>{similar.retailerName}</span>
+                  <strong>{similar.title}</strong>
+                  {similar.priceText ? <mark>{similar.priceText}</mark> : null}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </section>
     </div>
   )
 }
 
+function RetailSeasonGlyph({ icon }: { icon: RetailSeasonIcon }) {
+  const props = { 'aria-hidden': true, size: 22, weight: 'duotone' as const }
+  if (icon === 'gift') return <Gift {...props} />
+  if (icon === 'graduation') return <GraduationCap {...props} />
+  if (icon === 'travel') return <AirplaneTilt {...props} />
+  if (icon === 'school') return <Books {...props} />
+  if (icon === 'tag') return <Tag {...props} />
+  return <CalendarBlank {...props} />
+}
+
 function DiscoveryPanel({
+  canReportDeals = false,
   canRunDiscovery = false,
   canWatchItems = false,
+  countryCode,
+  countryName,
   initialFilter,
   isDiscovering,
   onAddDealToBasket,
@@ -5854,8 +6266,11 @@ function DiscoveryPanel({
   savingDealUrl,
   state,
 }: {
+  canReportDeals?: boolean
   canRunDiscovery?: boolean
   canWatchItems?: boolean
+  countryCode: string
+  countryName: string
   initialFilter?: { retailerId?: string; query?: string }
   isDiscovering: boolean
   onAddDealToBasket?: (deal: DiscoveredDeal) => void
@@ -5870,10 +6285,68 @@ function DiscoveryPanel({
   savingDealUrl?: string
   state: ResourceState<DiscoveryResource>
 }) {
+  const calendarPreferenceKey = 'trolley-scout-shopping-calendar-expanded-v1'
   const discovery = state.data.discovery
+  const [retailHolidays, setRetailHolidays] = useState<RetailHoliday[]>([])
+  const [publicDealSiteDeals, setPublicDealSiteDeals] = useState<DiscoveredDeal[]>([])
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>()
+  const [seasonCalendarExpanded, setSeasonCalendarExpanded] = useState(() => {
+    try {
+      return window.localStorage.getItem(calendarPreferenceKey) !== 'false'
+    } catch {
+      return true
+    }
+  })
+  const setCalendarExpanded = (expanded: boolean) => {
+    setSeasonCalendarExpanded(expanded)
+    try {
+      window.localStorage.setItem(calendarPreferenceKey, String(expanded))
+    } catch {
+      // The control still works when browser storage is unavailable.
+    }
+  }
+  useEffect(() => {
+    const controller = new AbortController()
+    setRetailHolidays([])
+    setSelectedSeasonId(undefined)
+    loadRetailHolidays(countryCode, controller.signal)
+      .then(setRetailHolidays)
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setRetailHolidays([])
+        }
+      })
+    return () => controller.abort()
+  }, [countryCode])
+  useEffect(() => {
+    const controller = new AbortController()
+    setPublicDealSiteDeals([])
+    if (countryCode.trim().toUpperCase() !== 'ZA') return () => controller.abort()
+    loadPublicDealSiteDeals(controller.signal)
+      .then(setPublicDealSiteDeals)
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setPublicDealSiteDeals([])
+        }
+      })
+    return () => controller.abort()
+  }, [countryCode])
+  const retailSeasons = useMemo(
+    () => buildRetailSeasons(countryCode, new Date(), retailHolidays),
+    [countryCode, retailHolidays],
+  )
   const allDeals = useMemo(
-    () => sortDealsByPage(discovery.deals),
-    [discovery.deals],
+    () => {
+      const unique = new Map<string, DiscoveredDeal>()
+      for (const deal of [...discovery.deals, ...publicDealSiteDeals]) {
+        const key = deal.productUrl || deal.id
+        if (!unique.has(key)) unique.set(key, deal)
+      }
+      const sorted = sortDealsByPage([...unique.values()])
+      const dealLimit = discovery.access?.dealLimit
+      return dealLimit == null ? sorted : sorted.slice(0, dealLimit)
+    },
+    [discovery, publicDealSiteDeals],
   )
   const dealIndex = useMemo(
     () => createDealSearchIndex(allDeals),
@@ -5918,6 +6391,7 @@ function DiscoveryPanel({
   }
   const [retailerId, setRetailerId] = useState(initialFilter?.retailerId ?? 'all')
   const [sourceLabel, setSourceLabel] = useState('all')
+  const [favouritesOnly, setFavouritesOnly] = useState(false)
   const [imagesOnly, setImagesOnly] = useState(false)
   const [savingsOnly, setSavingsOnly] = useState(false)
   const [hideSoldOut, setHideSoldOut] = useState(false)
@@ -5925,6 +6399,15 @@ function DiscoveryPanel({
   const [dealSort, setDealSort] = useState<DealSortOrder>('store')
   const [category, setCategory] = useState<DealCategory | 'all'>('all')
   const [foodSubcategory, setFoodSubcategory] = useState<FoodSubcategory | 'all'>('all')
+  const { favouriteIds, favourites } = useFavouriteStores(Boolean(onSaveDeal))
+  const favouriteNames = useMemo(
+    () => new Set(favourites.map((favourite) => favourite.displayName
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim())),
+    [favourites],
+  )
   const sharedCatalogueId = typeof window === 'undefined'
     ? undefined
     : new URLSearchParams(window.location.search).get('catalogue') ?? undefined
@@ -5938,10 +6421,12 @@ function DiscoveryPanel({
     () => sortIndexedDiscoveryDeals(dealIndex, dealSort),
     [dealIndex, dealSort],
   )
-  const deals = useMemo(
+  const filteredDeals = useMemo(
     () => filterIndexedDiscoveryDeals(sortedDealIndex, {
       category,
       foodSubcategory,
+      favouriteRetailerIds: favouritesOnly ? favouriteIds : undefined,
+      favouriteRetailerNames: favouritesOnly ? favouriteNames : undefined,
       hideBids,
       hideSoldOut,
       imagesOnly,
@@ -5955,6 +6440,9 @@ function DiscoveryPanel({
       sortedDealIndex,
       debouncedDealQuery,
       foodSubcategory,
+      favouriteIds,
+      favouriteNames,
+      favouritesOnly,
       hideBids,
       hideSoldOut,
       imagesOnly,
@@ -5962,6 +6450,16 @@ function DiscoveryPanel({
       savingsOnly,
       sourceLabel,
     ],
+  )
+  const selectedSeason = useMemo(
+    () => retailSeasons.find((season) => season.id === selectedSeasonId),
+    [retailSeasons, selectedSeasonId],
+  )
+  const deals = useMemo(
+    () => selectedSeason
+      ? filteredDeals.filter((deal) => matchesRetailSeason(deal, selectedSeason))
+      : filteredDeals,
+    [filteredDeals, selectedSeason],
   )
   const retailers = useMemo(
     () => buildRetailerPickerOptions(allDeals, leaflets, retailerCatalog),
@@ -5976,6 +6474,10 @@ function DiscoveryPanel({
       leaflets.map((leaflet) => leaflet.retailerId || leaflet.retailerName.toLowerCase()),
     ).size,
     [leaflets],
+  )
+  const previewSimilarDeals = useMemo(
+    () => previewDeal ? findSimilarDeals(previewDeal, deals) : [],
+    [deals, previewDeal],
   )
 
   const dealsPerPage = 24
@@ -6015,6 +6517,8 @@ function DiscoveryPanel({
       dealSort,
       category,
       foodSubcategory,
+      favouritesOnly,
+      selectedSeasonId,
     ],
   )
 
@@ -6128,6 +6632,16 @@ function DiscoveryPanel({
               <input checked={hideBids} onChange={(event) => setHideBids(event.target.checked)} type="checkbox" />
               Hide bids
             </label>
+            {favourites.length > 0 && (
+              <label className="deal-filter-check">
+                <input
+                  checked={favouritesOnly}
+                  onChange={(event) => setFavouritesOnly(event.target.checked)}
+                  type="checkbox"
+                />
+                My favourite stores ({favourites.length})
+              </label>
+            )}
             <label>
               Sort
               <select
@@ -6142,6 +6656,80 @@ function DiscoveryPanel({
           </div>
         </details>
       </div>
+
+      <section
+        className={clsx('retail-season-panel', !seasonCalendarExpanded && 'is-collapsed')}
+        aria-labelledby="retail-season-title"
+      >
+        <header>
+          <CalendarBlank aria-hidden="true" size={24} weight="duotone" />
+          <div>
+            <p className="eyebrow">Shopping calendar · {countryName}</p>
+            <h2 id="retail-season-title">What’s happening now</h2>
+            <p>Plan around local holidays and major shopping periods. Open an event to see matching deals.</p>
+          </div>
+          <button
+            aria-controls="retail-season-content"
+            aria-expanded={seasonCalendarExpanded}
+            aria-label={seasonCalendarExpanded ? 'Collapse shopping calendar' : 'Expand shopping calendar'}
+            className="retail-season-toggle"
+            onClick={() => setCalendarExpanded(!seasonCalendarExpanded)}
+            title={seasonCalendarExpanded ? 'Collapse shopping calendar' : 'Expand shopping calendar'}
+            type="button"
+          >
+            {seasonCalendarExpanded
+              ? <CaretUp aria-hidden="true" size={20} weight="bold" />
+              : <CaretDown aria-hidden="true" size={20} weight="bold" />}
+          </button>
+        </header>
+        {!seasonCalendarExpanded && retailSeasons[0] && (
+          <button
+            className="retail-season-summary"
+            onClick={() => setCalendarExpanded(true)}
+            type="button"
+          >
+            <RetailSeasonGlyph icon={retailSeasons[0].icon} />
+            <span>{retailSeasons[0].timingLabel}: {retailSeasons[0].title}</span>
+            <small>Open calendar</small>
+          </button>
+        )}
+        {seasonCalendarExpanded && (
+          <div id="retail-season-content">
+            <div className="retail-season-track">
+              {retailSeasons.map((season) => {
+                const selected = selectedSeasonId === season.id
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={clsx('retail-season-card', selected && 'is-active')}
+                    key={season.id}
+                    onClick={() => setSelectedSeasonId(selected ? undefined : season.id)}
+                    type="button"
+                  >
+                    <span className="retail-season-icon">
+                      <RetailSeasonGlyph icon={season.icon} />
+                    </span>
+                    <span className="retail-season-copy">
+                      <small>{season.timingLabel}</small>
+                      <strong>{season.title}</strong>
+                      <span>{season.subtitle}</span>
+                      <mark>
+                        {selected ? 'Showing matching deals' : 'View matching deals'}
+                      </mark>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {selectedSeason && (
+              <div className="retail-season-selection" role="status">
+                <span>Showing {selectedSeason.title.toLowerCase()} matches</span>
+                <button onClick={() => setSelectedSeasonId(undefined)} type="button">Clear</button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <div className="category-chips" role="group" aria-label="Category filter">
         <button
@@ -6242,6 +6830,17 @@ function DiscoveryPanel({
                 </div>
               </div>
               <div className="offer-actions">
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    setPreviewDeal(deal)
+                    recordUsage('deal_view', deal.id)
+                  }}
+                  type="button"
+                >
+                  <Eye size={14} />
+                  Details
+                </button>
                 <a
                   href={withReferralSource(deal.productUrl)}
                   onClick={() => {
@@ -6254,6 +6853,7 @@ function DiscoveryPanel({
                   Product
                   <LinkSimple size={14} />
                 </a>
+                {canReportDeals && <DealReportButton deal={deal} />}
                 {onSaveDeal && (
                   <button
                     className="ghost-button"
@@ -6364,13 +6964,20 @@ function DiscoveryPanel({
 
       {activeTab === 'catalogues' && (
         <CatalogueGroupsBoard
+          deals={allDeals}
           initialCatalogueId={sharedCatalogueId}
           leaflets={leaflets}
         />
       )}
 
       {previewDeal && (
-        <MarketplaceImageViewer deal={previewDeal} onClose={() => setPreviewDeal(undefined)} />
+        <MarketplaceImageViewer
+          deal={previewDeal}
+          key={previewDeal.id}
+          onClose={() => setPreviewDeal(undefined)}
+          onSelectSimilar={setPreviewDeal}
+          similarDeals={previewSimilarDeals}
+        />
       )}
 
     </section>
@@ -6917,4 +7524,3 @@ function createBlankDraft(): OfferDraft {
 }
 
 export default App
-

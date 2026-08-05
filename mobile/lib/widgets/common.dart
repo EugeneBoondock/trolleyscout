@@ -169,8 +169,7 @@ class ErrorPane extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(detail!,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: TS.mutedOf(context), fontSize: 12)),
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
               ],
               const SizedBox(height: 12),
               FilledButton(onPressed: onRetry, child: const Text('Retry')),
@@ -264,8 +263,8 @@ class MetricCard extends StatelessWidget {
 /// [Currency.format].
 String formatRand(int cents) => Currency.rand.format(cents);
 
-/// A catalogue/deal "valid until" label that flags past dates as expired
-/// instead of rendering a stale, future-looking date string.
+/// A catalogue/deal "valid until" label that keeps the offer active for its
+/// full final calendar day and marks that day as expiring.
 class ValidUntilInfo {
   const ValidUntilInfo({required this.label, required this.isExpired});
 
@@ -276,10 +275,18 @@ class ValidUntilInfo {
 ValidUntilInfo? validUntilInfo(String? validTo) {
   if (validTo == null || validTo.isEmpty) return null;
   final end = DateTime.tryParse(validTo);
-  final isExpired = end != null && end.isBefore(DateTime.now());
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final endDay = end == null ? null : DateTime(end.year, end.month, end.day);
+  final isExpired = endDay != null && endDay.isBefore(today);
+  final endsToday = endDay != null && endDay.isAtSameMomentAs(today);
   final datePart = validTo.length >= 10 ? validTo.substring(0, 10) : validTo;
   return ValidUntilInfo(
-    label: isExpired ? 'Expired' : 'Until $datePart',
+    label: isExpired
+        ? 'Expired'
+        : endsToday
+            ? 'Expiring today'
+            : 'Until $datePart',
     isExpired: isExpired,
   );
 }

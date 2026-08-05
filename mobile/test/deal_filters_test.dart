@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trolley_scout/api_models.dart';
 import 'package:trolley_scout/deal_categories.dart';
 import 'package:trolley_scout/deal_filters.dart';
+import 'package:trolley_scout/favourite_stores_store.dart';
 
 void main() {
   const deals = [
@@ -45,10 +46,70 @@ void main() {
         filterDeals(deals, savingsOnly: true).map((deal) => deal.id), ['one']);
   });
 
+  test('matches favourite store groups and legacy store names', () {
+    const shopriteFavourite = FavouriteStore(
+      id: 'retailer:shoprite',
+      displayName: 'Shoprite',
+      savedAt: 1,
+    );
+    const localFavourite = FavouriteStore(
+      id: 'name:local-market',
+      displayName: 'Local Market',
+      savedAt: 1,
+    );
+
+    expect(
+      deals
+          .where((deal) =>
+              isDealFromFavouriteStores(deal, const [shopriteFavourite]))
+          .map((deal) => deal.id),
+      ['two'],
+    );
+    expect(
+      deals
+          .where(
+              (deal) => isDealFromFavouriteStores(deal, const [localFavourite]))
+          .map((deal) => deal.id),
+      ['one', 'three'],
+    );
+  });
+
   test('uses source metadata when a title has no product signal', () {
     expect(
       filterDeals(deals, category: DealCategory.food).map((deal) => deal.id),
       contains('three'),
+    );
+  });
+
+  test('filters a full marketplace feed by clothing without blocking', () {
+    final largeFeed = List<Deal>.generate(
+      12000,
+      (index) => Deal(
+        id: 'large-$index',
+        title: switch (index % 3) {
+          0 => 'Men’s cotton T-shirt $index',
+          1 => 'Long-life milk 1L $index',
+          _ => 'Cordless drill kit $index',
+        },
+        retailerId: 'market-$index',
+        retailerName: 'Market $index',
+        sourceLabel: 'Weekly specials',
+      ),
+    );
+    final watch = Stopwatch()..start();
+
+    final clothing = filterDeals(
+      largeFeed,
+      category: DealCategory.clothing,
+      classificationCache: DealClassificationCache(),
+    );
+    watch.stop();
+
+    expect(clothing, hasLength(4000));
+    expect(
+      watch.elapsed,
+      lessThan(const Duration(seconds: 1)),
+      reason: 'A category tap must stay responsive on a 12,000-deal feed.',
     );
   });
 

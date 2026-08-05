@@ -1,13 +1,28 @@
-// Normalizers for four South African deal/flash-sale platforms into a single
-// shape the app already renders. Each site was reverse-engineered from its own
-// public data (logged-out browsing works on all four):
+// Normalizers for public South African deal, flight and hotel offer pages into a single
+// shape the app already renders. Each site is read from public data that its own
+// logged-out website serves:
 //   - OneDayOnly: Next.js — products live in the page's __NEXT_DATA__ blob.
 //   - Hyperli: Shopify — the public /products.json feed.
 //   - Daddy's Deals: WordPress — the `product` custom post type via wp-json.
 //   - MyRunway: a REST API (/v1/products) that accepts a self-issued guest token.
+//   - Travelstart and Southern Sun: their public offer-page markup.
+//   - Flight Centre: the public deal tiles in its Next.js page data.
+//   - City Lodge: the public specials endpoint used by its own offers page.
+//   - ANEW Hotels, BushBreaks and Sun International: their public offer cards.
 // Parsing is kept pure and injectable here; fetching lives in the scout.
 
-export type DealSiteId = 'onedayonly' | 'hyperli' | 'daddysdeals' | 'myrunway'
+export type DealSiteId =
+  | 'onedayonly'
+  | 'hyperli'
+  | 'daddysdeals'
+  | 'myrunway'
+  | 'travelstart'
+  | 'southernsun'
+  | 'flightcentre'
+  | 'citylodge'
+  | 'anewhotels'
+  | 'bushbreaks'
+  | 'suninternational'
 export type WindowShoppingSource = DealSiteId | 'trolleyscout-business'
 
 export interface DealSiteItem {
@@ -36,6 +51,13 @@ const SITE_LABEL: Record<DealSiteId, string> = {
   hyperli: 'Hyperli',
   daddysdeals: "Daddy's Deals",
   myrunway: 'MyRunway',
+  travelstart: 'Travelstart',
+  southernsun: 'Southern Sun',
+  flightcentre: 'Flight Centre',
+  citylodge: 'City Lodge Hotels',
+  anewhotels: 'ANEW Hotels & Resorts',
+  bushbreaks: 'BushBreaks',
+  suninternational: 'Sun International',
 }
 
 // ---------- OneDayOnly ----------
@@ -236,6 +258,397 @@ export function parseDaddysDeals(payload: unknown): DealSiteItem[] {
   return out
 }
 
+// ---------- Travelstart (public flight-deals page) ----------
+
+export function parseTravelstart(html: string): DealSiteItem[] {
+  const out: DealSiteItem[] = []
+  const seen = new Set<string>()
+  const anchors = html.matchAll(
+    /<a\b([^>]*\bclass=(?:"[^"]*\bfare-card\b[^"]*"|'[^']*\bfare-card\b[^']*')[^>]*)>([\s\S]*?)<\/a>/gi,
+  )
+
+  for (const match of anchors) {
+    const attributes = match[1]
+    const body = match[2]
+    const productUrl = htmlAttribute(attributes, 'href')
+    if (!productUrl || !/^https:\/\/(?:www\.)?travelstart\.co\.za\/search\?/i.test(productUrl)) {
+      continue
+    }
+
+    const url = new URL(productUrl)
+    const date = url.searchParams.get('depart_date') ?? ''
+    const departure = htmlTextCapture(body, /<h3\b[^>]*class=(?:"[^"]*\bdeparture\b[^"]*"|'[^']*\bdeparture\b[^']*')[^>]*>([\s\S]*?)<\/h3>/i)
+    const destination = htmlTextCapture(body, /<h3\b[^>]*class=(?:"[^"]*\bdestination\b[^"]*"|'[^']*\bdestination\b[^']*')[^>]*>([\s\S]*?)<\/h3>/i)
+    const airlineTag = body.match(/<img\b[^>]*\bclass=(?:"[^"]*\bairline-image\b[^"]*"|'[^']*\bairline-image\b[^']*')[^>]*>/i)?.[0] ?? ''
+    const airline = decodeEntities(htmlAttribute(airlineTag, 'alt') ?? 'Airline')
+    const imageUrl = htmlAttribute(airlineTag, 'data-lazy-src')
+    const priceText = htmlTextCapture(body, /<div\b[^>]*class=(?:"[^"]*\bfare-card-price\b[^"]*"|'[^']*\bfare-card-price\b[^']*')[^>]*>[\s\S]*?<h3\b[^>]*>([\s\S]*?)<\/h3>/i)
+    if (!departure || !destination || !priceText) continue
+
+    const id = `travelstart-${date || 'open'}-${departure}-${destination}-${airline}-${priceText}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+
+    out.push({
+      category: 'Flights',
+      ...(date ? { expiresAt: `${date} 23:59:59` } : {}),
+      id,
+      ...(imageUrl && /^https?:\/\//i.test(imageUrl) ? { imageUrl, images: [imageUrl] } : {}),
+      priceText,
+      productUrl,
+      retailerName: airline,
+      source: 'travelstart',
+      sourceLabel: 'Travelstart flight deals',
+      title: `${airline} flight: ${departure} to ${destination}`,
+    })
+  }
+  return out
+}
+
+// ---------- Southern Sun (public hotel-offers page) ----------
+
+export function parseSouthernSun(html: string): DealSiteItem[] {
+  const out: DealSiteItem[] = []
+  const articles = html.matchAll(
+    /<article\b[^>]*\bclass=(?:"[^"]*\bspecial-entry\b[^"]*"|'[^']*\bspecial-entry\b[^']*')[^>]*>([\s\S]*?)<\/article>/gi,
+  )
+
+  for (const match of articles) {
+    const body = match[1]
+    const title = htmlTextCapture(body, /<h3\b[^>]*\bclass=(?:"[^"]*\bspecial-title\b[^"]*"|'[^']*\bspecial-title\b[^']*')[^>]*>([\s\S]*?)<\/h3>/i)
+    const description = htmlTextCapture(body, /<p\b[^>]*\bclass=(?:"[^"]*\bspecial-descr\b[^"]*"|'[^']*\bspecial-descr\b[^']*')[^>]*>([\s\S]*?)<\/p>/i)
+    if (!title || !/(?:travel|stay|accommodation|resort|room|package|getaway|holiday|rate of the day|frequentguest|sungift)/i.test(`${title} ${description}`)) {
+      continue
+    }
+
+    const linkTag = body.match(/<a\b[^>]*\blearn-more-link\b[^>]*>/i)?.[0] ?? ''
+    const href = htmlAttribute(linkTag, 'href')
+    if (!href) continue
+    const productUrl = absoluteWebUrl(href, 'https://www.southernsun.com')
+    if (!productUrl) continue
+    const imageTag = body.match(/<img\b[^>]*>/i)?.[0] ?? ''
+    const imageUrl = absoluteWebUrl(
+      htmlAttribute(imageTag, 'data-src') ?? htmlAttribute(imageTag, 'src') ?? '',
+      'https://www.southernsun.com',
+    )
+    const id = `southernsun-${new URL(productUrl).pathname}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    out.push({
+      category: 'Hotel stays',
+      id,
+      ...(imageUrl ? { imageUrl, images: [imageUrl] } : {}),
+      priceText: firstRand(`${title} ${description}`),
+      productUrl,
+      retailerName: 'Southern Sun',
+      savingText: percentageSaving(`${title} ${description}`),
+      source: 'southernsun',
+      sourceLabel: 'Southern Sun hotel specials',
+      title,
+    })
+  }
+  return out
+}
+
+// ---------- Flight Centre (public travel-deals page data) ----------
+
+export function parseFlightCentre(html: string): DealSiteItem[] {
+  const data = extractNextData(html)
+  const deals = pathValue(data, ['props', 'pageProps', 'deals'])
+  if (!Array.isArray(deals)) return []
+
+  const out: DealSiteItem[] = []
+  const seen = new Set<string>()
+  const seenTitles = new Set<string>()
+  for (const raw of deals) {
+    if (!raw || typeof raw !== 'object') continue
+    const deal = raw as Record<string, unknown>
+    const id = String(deal.id ?? '').trim()
+    const productUrl = webUrl(deal.link)
+    if (!id || !productUrl || seen.has(id) || !isFlightCentreDealUrl(productUrl)) continue
+
+    const title = flightCentreTitle(deal)
+    if (!title) continue
+    const titleKey = title.toLocaleLowerCase('en-ZA')
+    if (seenTitles.has(titleKey)) continue
+    seen.add(id)
+    seenTitles.add(titleKey)
+    const imageUrl = webUrl(deal.image)
+    const category = firstString(pathValue(deal, ['productType', 'holidayType'])) ??
+      firstString(pathValue(deal, ['productType', 'tourType'])) ??
+      firstString(pathValue(deal, ['productType', 'travellerType'])) ??
+      (/flight/i.test(`${title} ${new URL(productUrl).pathname}`) ? 'Flights' : 'Travel')
+
+    out.push({
+      category,
+      id: `flightcentre-${id}`,
+      ...(imageUrl ? { imageUrl, images: [imageUrl] } : {}),
+      productUrl,
+      retailerName: SITE_LABEL.flightcentre,
+      source: 'flightcentre',
+      sourceLabel: 'Flight Centre travel deals',
+      title,
+    })
+  }
+  return out
+}
+
+function isFlightCentreDealUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    if (!/(?:^|\.)flightcentre\.co\.za$/i.test(url.hostname)) return false
+    return /^\/(?:deals(?:\/|$)|holidays(?:\/|\?|$)|flights(?:\/|$)|promotions\/flight-deals(?:\/|$)|product\/\d+(?:\/|$))/i
+      .test(`${url.pathname}${url.search}`)
+  } catch {
+    return false
+  }
+}
+
+function flightCentreTitle(deal: Record<string, unknown>): string | undefined {
+  const alt = typeof deal.alt === 'string' ? deal.alt.trim() : ''
+  const raw = typeof deal.title === 'string' ? deal.title.trim() : ''
+  const altIsAssetCopy =
+    /\.(?:jpe?g|png|webp|gif)$/i.test(alt) ||
+    /^(?:a|an|the)\s+(?:view|couple|person|family|group|picture|photo|image)\b/i.test(alt) ||
+    /\bregarding\b/i.test(alt) ||
+    alt.length > 70
+  const title = alt && !altIsAssetCopy ? alt : raw
+  return title
+    .replace(/\s*\|\s*.*$/, '')
+    .replace(/\s+(?:deals?\s+tile|banner(?:\s*&\s*deals?\s+tile)?)(?:\s+.*)?$/i, '')
+    .trim() || undefined
+}
+
+// ---------- City Lodge Hotels (public specials endpoint) ----------
+
+export function parseCityLodge(payload: unknown): DealSiteItem[] {
+  const offers = pathValue(payload, ['special_offers'])
+  if (!Array.isArray(offers)) return []
+
+  const out: DealSiteItem[] = []
+  for (const raw of offers) {
+    if (!raw || typeof raw !== 'object') continue
+    const offer = raw as Record<string, unknown>
+    if (offer.is_active !== true || offer.special_type === 'not_visible') continue
+
+    const id = String(offer.id ?? '').trim()
+    const title = typeof offer.name === 'string' ? offer.name.trim() : ''
+    const slug = typeof offer.slug === 'string' ? offer.slug.trim() : ''
+    if (!id || !title || !slug) continue
+
+    const description = typeof offer.description === 'string' ? offer.description : ''
+    const imageUrl = webUrl(pathValue(offer, ['image', 'url'])) ??
+      webUrl(pathValue(offer, ['banner_image', 'url']))
+    const expiresAt = typeof offer.end_at === 'string' ? offer.end_at : undefined
+
+    out.push({
+      category: 'Hotel stays',
+      ...(expiresAt ? { expiresAt } : {}),
+      id: `citylodge-${id}`,
+      ...(imageUrl ? { imageUrl, images: [imageUrl] } : {}),
+      productUrl: `https://citylodgehotels.com/special-offers/${encodeURIComponent(slug)}`,
+      retailerName: SITE_LABEL.citylodge,
+      savingText: percentageSaving(`${title} ${description}`),
+      source: 'citylodge',
+      sourceLabel: 'City Lodge hotel specials',
+      title,
+    })
+  }
+  return out
+}
+
+// ---------- ANEW Hotels & Resorts (public accommodation specials page) ----------
+
+export function parseAnewHotels(html: string): DealSiteItem[] {
+  const out: DealSiteItem[] = []
+  const seenTitles = new Set<string>()
+  const cards = html.split(/<div\s+data-elementor-type=(?:"loop-item"|'loop-item')/i).slice(1)
+
+  for (const card of cards) {
+    if (!/\bdeals\s+type-deals\b/i.test(card.slice(0, 700))) continue
+    const id = /\bpost-(\d+)\b/i.exec(card.slice(0, 700))?.[1]
+    const title = htmlTextCapture(
+      card,
+      /elementor-widget-theme-post-title[\s\S]*?<h3\b[^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i,
+    )
+    if (!id || !title || /^book now$/i.test(title)) continue
+    const titleKey = title.toLocaleLowerCase('en-ZA')
+    if (seenTitles.has(titleKey)) continue
+    seenTitles.add(titleKey)
+
+    const imageTag = card.match(/<img\b[^>]*(?:data-lazy-src|data-src|src)\s*=\s*(?:"[^"]+"|'[^']+')[^>]*>/i)?.[0] ?? ''
+    const rawImage = htmlAttribute(imageTag, 'data-lazy-src') ??
+      htmlAttribute(imageTag, 'data-src') ??
+      htmlAttribute(imageTag, 'src')
+    const imageUrl = rawImage && !rawImage.startsWith('data:')
+      ? absoluteWebUrl(rawImage, 'https://anewhotels.com')
+      : undefined
+    const excerpt = htmlText(card)
+
+    out.push({
+      category: 'Hotel stays',
+      ...(offerExpiry(excerpt) ? { expiresAt: offerExpiry(excerpt) } : {}),
+      id: `anewhotels-${id}`,
+      ...(imageUrl ? { imageUrl, images: [imageUrl] } : {}),
+      priceText: firstRand(excerpt),
+      productUrl: `https://anewhotels.com/all-specials/#deal-${id}`,
+      retailerName: SITE_LABEL.anewhotels,
+      savingText: percentageSaving(excerpt) ?? randSaving(excerpt),
+      source: 'anewhotels',
+      sourceLabel: 'ANEW accommodation specials',
+      title,
+    })
+  }
+  return out
+}
+
+// ---------- BushBreaks (public lodge specials page) ----------
+
+export function parseBushBreaks(html: string): DealSiteItem[] {
+  const out: DealSiteItem[] = []
+  const cards = html.split(
+    /<div\b[^>]*class=(?:"[^"]*\bcard-column\b[^"]*\bcard_column_bush_break\b[^"]*"|'[^']*\bcard-column\b[^']*\bcard_column_bush_break\b[^']*')[^>]*>/i,
+  ).slice(1)
+
+  for (const card of cards) {
+    const title = htmlTextCapture(
+      card,
+      /<h5\b[^>]*\bcard-title\b[^>]*>([\s\S]*?)<br\s*\/?\s*>/i,
+    )
+    const linkTag = card.match(/<a\b[^>]*href=(?:"\/listing\/[^"]+"|'\/listing\/[^']+')[^>]*>\s*View\s*<\/a>/i)?.[0] ?? ''
+    const href = htmlAttribute(linkTag, 'href')
+    if (!title || !href) continue
+    const productUrl = absoluteWebUrl(href, 'https://www.bushbreaks.co.za')
+    if (!productUrl) continue
+
+    const specialName = htmlTextCapture(
+      card,
+      /<small\b[^>]*\bspecial-name\b[^>]*>([\s\S]*?)<\/small>/i,
+    )
+    const validity = htmlTextCapture(
+      card,
+      /<small\b[^>]*\bvalid-until\b[^>]*>([\s\S]*?)<\/small>/i,
+    )
+    const saving = htmlTextCapture(
+      card,
+      /<span\b[^>]*\bsavings-percent\b[^>]*>([\s\S]*?)<\/span>/i,
+    )
+    const priceText = htmlTextCapture(
+      card,
+      /<strong\b[^>]*\bfrom-price\b[^>]*>([\s\S]*?)<\/strong>/i,
+    )
+    const gallery = uniqueImageUrls(
+      [...card.matchAll(/data-flickity-bg-lazyload\s*=\s*(?:"([^"]+)"|'([^']+)')/gi)]
+        .map((match) => decodeEntities(match[1] ?? match[2] ?? '')),
+    )
+    const id = `bushbreaks-${new URL(productUrl).pathname}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    out.push({
+      category: 'Safari and lodge stays',
+      ...(validity && offerExpiry(validity) ? { expiresAt: offerExpiry(validity) } : {}),
+      id,
+      imageUrl: gallery[0],
+      images: gallery.length > 0 ? gallery : undefined,
+      priceText,
+      productUrl,
+      retailerName: title,
+      savingText: saving ? `${saving.replace(/\s+/g, '')} off` : undefined,
+      source: 'bushbreaks',
+      sourceLabel: 'BushBreaks lodge specials',
+      title: specialName ? `${title}: ${specialName}` : title,
+    })
+  }
+  return out
+}
+
+// ---------- Sun International (public specials page) ----------
+
+export function parseSunInternational(html: string): DealSiteItem[] {
+  const out: DealSiteItem[] = []
+  const main = html.split(/<\/main>/i)[0] ?? html
+  const cards = main.matchAll(
+    /<a\b([^>]*\bOfferCard_offer-card__link[^>]*)>([\s\S]*?)<\/a>/gi,
+  )
+
+  for (const match of cards) {
+    const href = htmlAttribute(match[1], 'href')
+    const body = match[2]
+    const property = htmlTextCapture(
+      body,
+      /<span\b[^>]*\bOfferCard_offer-card__property[^>]*>([\s\S]*?)<\/span>/i,
+    )
+    const title = htmlTextCapture(
+      body,
+      /<p\b[^>]*\bOfferCard_offer-card__title[^>]*>([\s\S]*?)<\/p>/i,
+    )
+    const timing = htmlTextCapture(
+      body,
+      /<p\b[^>]*\bOfferCard_offer-card__date[^>]*>([\s\S]*?)<\/p>/i,
+    )
+    if (!href || !property || !title) continue
+    if (!/(?:accommodation|escape|getaway|holiday|hotel|lodge|package|pay\d*stay|resort|room|stay|vacation|villa)/i
+      .test(`${property} ${title} ${href}`)) continue
+    const productUrl = absoluteWebUrl(href, 'https://www.suninternational.com')
+    if (!productUrl) continue
+    const imageTag = body.match(/<img\b[^>]*>/i)?.[0] ?? ''
+    const imageUrl = absoluteWebUrl(
+      htmlAttribute(imageTag, 'src') ?? htmlAttribute(imageTag, 'data-src') ?? '',
+      'https://www.suninternational.com',
+    )
+    const id = `suninternational-${new URL(productUrl).pathname}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    out.push({
+      category: 'Resort and hotel stays',
+      ...(timing && offerExpiry(timing) ? { expiresAt: offerExpiry(timing) } : {}),
+      id,
+      ...(imageUrl ? { imageUrl, images: [imageUrl] } : {}),
+      priceText: firstRand(`${title} ${timing ?? ''}`),
+      productUrl,
+      retailerName: property,
+      savingText: percentageSaving(`${title} ${timing ?? ''}`),
+      source: 'suninternational',
+      sourceLabel: 'Sun International stay specials',
+      title,
+    })
+  }
+  return out
+}
+
+function percentageSaving(text: string): string | undefined {
+  const match = /\b(up\s+to\s+)?(?:save\s+)?(\d{1,3})\s*%(?:\s*off\b)?/i.exec(text)
+  if (!match) return undefined
+  return `${match[1] ? 'Up to ' : ''}${match[2]}% off`
+}
+
+function randSaving(text: string): string | undefined {
+  const match = /\bsave\s+(up\s+to\s+)?(R\s?\d[\d\s,.]*)/i.exec(text)
+  if (!match) return undefined
+  return `Save ${match[1] ? 'up to ' : ''}${match[2].replace(/\s+/g, '')}`
+}
+
+function offerExpiry(text: string): string | undefined {
+  const matches = [...text.matchAll(/\b(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(20\d{2})\b/gi)]
+  const last = matches.at(-1)
+  if (!last) return undefined
+  const month = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  ].indexOf(last[2].slice(0, 3).toLowerCase()) + 1
+  if (month <= 0) return undefined
+  return `${last[3]}-${String(month).padStart(2, '0')}-${String(Number(last[1])).padStart(2, '0')} 23:59:59`
+}
+
 // ---------- MyRunway ----------
 
 export function parseMyRunway(payload: unknown): DealSiteItem[] {
@@ -315,6 +728,34 @@ function myRunwaySaving(
     return `Save R${(discount / 100).toFixed(0)}`
   }
   return undefined
+}
+
+function htmlAttribute(tag: string, name: string): string | undefined {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`\\b${escapedName}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)
+  const value = decodeEntities(match?.[1] ?? match?.[2] ?? '').trim()
+  return value || undefined
+}
+
+function htmlTextCapture(html: string, pattern: RegExp): string | undefined {
+  const match = pattern.exec(html)
+  if (!match?.[1]) return undefined
+  const value = decodeEntities(match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim()
+  return value || undefined
+}
+
+function htmlText(html: string): string {
+  return decodeEntities(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim()
+}
+
+function absoluteWebUrl(value: string, base: string): string | undefined {
+  if (!value.trim()) return undefined
+  try {
+    const url = new URL(value.trim().startsWith('//') ? `https:${value.trim()}` : value.trim(), base)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function myRunwayUrl(product: Record<string, unknown>): string {

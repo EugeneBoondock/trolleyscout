@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api_models.dart';
 import '../dashboard_stories.dart';
 import '../theme.dart';
 import 'catalogue_reader.dart';
@@ -68,6 +69,12 @@ class _StoryReelItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final frameImages = story.frames
+        .map((frame) => frame.imageUrl.trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+    final imageUrl =
+        story.logoUrl ?? (frameImages.isEmpty ? null : frameImages.first);
     return Tooltip(
       message: 'View ${story.retailerName} story',
       child: InkWell(
@@ -89,13 +96,16 @@ class _StoryReelItem extends StatelessWidget {
                 child: ClipOval(
                   child: ColoredBox(
                     color: TS.surfaceOf(context),
-                    child: story.logoUrl == null
+                    child: imageUrl == null
                         ? Icon(Icons.storefront,
                             color: TS.greenOf(context), size: 26)
                         : Image.network(
-                            story.logoUrl!,
+                            imageUrl,
+                            key: Key('story-reel-image-${story.id}'),
                             cacheWidth: 128,
-                            fit: BoxFit.contain,
+                            fit: story.logoUrl == null
+                                ? BoxFit.cover
+                                : BoxFit.contain,
                             errorBuilder: (_, __, ___) => Icon(
                               Icons.storefront,
                               color: TS.greenOf(context),
@@ -265,7 +275,14 @@ class _StoryViewerState extends State<_StoryViewer> {
   Future<void> _openFrame() async {
     final catalogue = _frame.catalogue;
     if (catalogue != null) {
-      await showCatalogueReader(context, catalogue);
+      await showCatalogueReader(
+        context,
+        catalogue,
+        deals: _story.frames
+            .map((frame) => frame.deal)
+            .whereType<Deal>()
+            .toList(growable: false),
+      );
       return;
     }
     if (_frame.sourceUrl.isNotEmpty) {

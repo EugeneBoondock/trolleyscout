@@ -530,6 +530,10 @@ const List<_CategoryOverride> _metadataHints = [
       ['food', 'grocery', 'groceries', 'pantry', 'fresh produce']),
 ];
 
+final Map<DealCategory, List<String>> _metadataPhrasesByCategory = {
+  for (final hint in _metadataHints) hint.category: hint.phrases,
+};
+
 class _FoodRule {
   const _FoodRule(this.subcategory, this.patterns);
   final FoodSubcategory subcategory;
@@ -702,10 +706,7 @@ DealClassification classifyDeal(String title,
   var bestScore = 0;
 
   for (final rule in _categoryRules) {
-    final metadataPhrases = _metadataHints
-        .where((hint) => hint.category == rule.category)
-        .map((hint) => hint.phrases)
-        .firstOrNull;
+    final metadataPhrases = _metadataPhrasesByCategory[rule.category];
     final metadataScore =
         _scoreMatches(metadataText, metadataPhrases ?? const [], 1).clamp(0, 2);
     final score = _scoreMatches(text, rule.strong, 5) +
@@ -758,7 +759,7 @@ DealCategory _retailerFallback(String? retailerId) {
 
 bool _matchesAny(String paddedText, List<String> patterns) {
   for (final pattern in patterns) {
-    if (paddedText.contains(_normalize(pattern))) return true;
+    if (paddedText.contains(_normalizePattern(pattern))) return true;
   }
   return false;
 }
@@ -766,17 +767,25 @@ bool _matchesAny(String paddedText, List<String> patterns) {
 int _scoreMatches(String paddedText, List<String> patterns, int weight) {
   var score = 0;
   for (final pattern in patterns) {
-    if (paddedText.contains(_normalize(pattern))) score += weight;
+    if (paddedText.contains(_normalizePattern(pattern))) score += weight;
   }
   return score;
 }
 
+final RegExp _apostrophePattern = RegExp("['\u2018\u2019]");
+final RegExp _nonAlphanumericPattern = RegExp(r'[^a-z0-9]+');
+final RegExp _repeatedSpacePattern = RegExp(r'\s+');
+final Map<String, String> _normalizedPatternCache = {};
+
+String _normalizePattern(String value) =>
+    _normalizedPatternCache.putIfAbsent(value, () => _normalize(value));
+
 String _normalize(String value) {
   final normalized = value
       .toLowerCase()
-      .replaceAll(RegExp("[’']"), '')
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(_apostrophePattern, '')
+      .replaceAll(_nonAlphanumericPattern, ' ')
+      .replaceAll(_repeatedSpacePattern, ' ')
       .trim();
   return normalized.isEmpty ? ' ' : ' $normalized ';
 }

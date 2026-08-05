@@ -12,11 +12,13 @@ class VouchersScreen extends StatefulWidget {
   const VouchersScreen({
     super.key,
     required this.api,
+    this.countryName = 'South Africa',
     required this.isAuthenticated,
     required this.onRequireAuth,
   });
 
   final Api api;
+  final String countryName;
   final bool isAuthenticated;
   final VoidCallback onRequireAuth;
 
@@ -27,6 +29,9 @@ class VouchersScreen extends StatefulWidget {
 class _VouchersScreenState extends State<VouchersScreen> {
   List<Voucher> _vouchers = const [];
   List<VoucherCode> _codes = const [];
+  List<String> _retailerIds = const [];
+  bool _codesLoading = true;
+  String? _codesError;
   bool _loading = true;
   String? _error;
   String _query = '';
@@ -38,14 +43,49 @@ class _VouchersScreenState extends State<VouchersScreen> {
     super.initState();
     _load();
     _loadCodes();
+    unawaited(_loadRetailers());
   }
 
   Future<void> _loadCodes() async {
+    setState(() {
+      _codesLoading = true;
+      _codesError = null;
+    });
     try {
       final codes = await widget.api.voucherCodes();
-      if (mounted) setState(() => _codes = codes);
+      if (!mounted) return;
+      setState(() {
+        _codes = codes;
+        _retailerIds = {
+          ..._retailerIds,
+          ..._vouchers.map((voucher) => voucher.retailerId),
+        }.toList()
+          ..sort();
+        _codesLoading = false;
+      });
     } catch (_) {
-      // Codes are additive: the loyalty wall still loads without them.
+      if (!mounted) return;
+      setState(() {
+        _codesLoading = false;
+        _codesError =
+            'Checkout codes could not be loaded. Pull down to try again.';
+      });
+    }
+  }
+
+  Future<void> _loadRetailers() async {
+    try {
+      final retailers = await widget.api.retailers();
+      if (!mounted) return;
+      setState(() {
+        _retailerIds = {
+          ..._retailerIds,
+          ...retailers.retailers.map((retailer) => retailer.id),
+        }.toList()
+          ..sort();
+      });
+    } catch (_) {
+      // Codes remain usable when the shop directory is unavailable.
     }
   }
 
@@ -64,9 +104,8 @@ class _VouchersScreenState extends State<VouchersScreen> {
           ]);
       if (worked) uxReward();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(worked
-            ? 'Thanks, that helps the next shopper.'
-            : 'Noted, thanks.'),
+        content: Text(
+            worked ? 'Thanks, that helps the next shopper.' : 'Noted, thanks.'),
       ));
     } on ApiException catch (error) {
       if (mounted) {
@@ -87,8 +126,7 @@ class _VouchersScreenState extends State<VouchersScreen> {
       showDragHandle: true,
       builder: (_) => _ShareCodeSheet(
         api: widget.api,
-        retailerIds: _vouchers.map((voucher) => voucher.retailerId).toSet().toList()
-          ..sort(),
+        retailerIds: _retailerIds,
       ),
     );
     if (shared == true) await _loadCodes();
@@ -107,6 +145,11 @@ class _VouchersScreenState extends State<VouchersScreen> {
         // vouchers, but never let a stale one render as claimable.
         _vouchers = vouchers.where((voucher) => !_isExpired(voucher)).toList();
         _loading = false;
+        _retailerIds = {
+          ..._retailerIds,
+          ...vouchers.map((voucher) => voucher.retailerId),
+        }.toList()
+          ..sort();
       });
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -176,7 +219,7 @@ class _VouchersScreenState extends State<VouchersScreen> {
     if (_loading) {
       return const LoadingPane();
     }
-    if (_error != null) {
+    if (_error != null && _codesError != null) {
       return ErrorPane(message: _error!, onRetry: _load);
     }
 
@@ -195,7 +238,9 @@ class _VouchersScreenState extends State<VouchersScreen> {
     }).toList();
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () async {
+        await Future.wait([_load(), _loadCodes(), _loadRetailers()]);
+      },
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -207,8 +252,8 @@ class _VouchersScreenState extends State<VouchersScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Codes to paste at checkout, plus the loyalty prices and clip coupons '
-            'you redeem in the shop. Personal single-use codes are never stored.',
+            'Codes to paste at checkout, plus retailer loyalty prices and clip '
+            'coupons. Personal single-use codes are never stored.',
             style: TextStyle(color: TS.mutedOf(context)),
           ),
           const SizedBox(height: 18),
@@ -229,18 +274,28 @@ class _VouchersScreenState extends State<VouchersScreen> {
             ],
           ),
           Text(
-            'Shared by shoppers and ranked by what actually worked. We cannot test '
-            'these at the shop, so try the top one first and say how it went.',
+            'Shared by shoppers in ${widget.countryName} and ranked by recent '
+            'results. New codes stay unconfirmed until another shopper reports '
+            'success. Undated codes disappear after 30 days without one.',
             style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
           ),
           const SizedBox(height: 10),
-          if (_codes.isEmpty)
+          if (_codesLoading)
+            const LinearProgressIndicator()
+          else if (_codesError != null)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: TS.card(context),
-              child: const Text(
-                'No codes yet. If you have one that works, share it so the next '
-                'shopper does not pay full price.',
+              child: Text(_codesError!),
+            )
+          else if (_codes.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: TS.card(context),
+              child: Text(
+                'No public checkout codes have been shared in '
+                '${widget.countryName} yet. If you used a reusable code, share '
+                'it for the next shopper.',
               ),
             )
           else
@@ -255,50 +310,75 @@ class _VouchersScreenState extends State<VouchersScreen> {
           Text('IN-STORE AND ON-SITE', style: TS.eyebrowOf(context)),
           const SizedBox(height: 4),
           Text(
-            'Loyalty prices and clip coupons. Not typed at checkout. These are '
-            'scanned at the till or clipped on the product page.',
+            'Retailer-issued prices and coupons available in '
+            '${widget.countryName}. These are scanned at the till or clipped '
+            'on the product page, not typed at checkout.',
             style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
           ),
           const SizedBox(height: 14),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Search vouchers',
-              prefixIcon: Icon(Icons.search),
+          if (_error != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: TS.card(context),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_error!)),
+                  TextButton(onPressed: _load, child: const Text('Retry')),
+                ],
+              ),
             ),
-            onChanged: (value) =>
-                setState(() => _query = value.trim().toLowerCase()),
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: _retailerId,
-            decoration: const InputDecoration(labelText: 'Retailer'),
-            items: [
-              const DropdownMenuItem(
-                  value: 'all', child: Text('All retailers')),
-              for (final retailerId in retailerIds)
-                DropdownMenuItem(
-                    value: retailerId, child: Text(_retailerName(retailerId))),
-            ],
-            onChanged: (value) => setState(() => _retailerId = value ?? 'all'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Saved only'),
-            value: _savedOnly,
-            onChanged: (value) => setState(() => _savedOnly = value),
-          ),
-          if (filtered.isEmpty)
+          if (_error == null)
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Search vouchers',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) =>
+                  setState(() => _query = value.trim().toLowerCase()),
+            ),
+          if (_error == null) const SizedBox(height: 10),
+          if (_error == null)
+            DropdownButtonFormField<String>(
+              initialValue: _retailerId,
+              decoration: const InputDecoration(labelText: 'Retailer'),
+              items: [
+                const DropdownMenuItem(
+                    value: 'all', child: Text('All retailers')),
+                for (final retailerId in retailerIds)
+                  DropdownMenuItem(
+                      value: retailerId,
+                      child: Text(_retailerName(retailerId))),
+              ],
+              onChanged: (value) =>
+                  setState(() => _retailerId = value ?? 'all'),
+            ),
+          if (_error == null)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Saved only'),
+              value: _savedOnly,
+              onChanged: (value) => setState(() => _savedOnly = value),
+            ),
+          if (_error == null && _vouchers.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: TS.card(context),
+              child: Text('No current retailer-issued vouchers are available '
+                  'in ${widget.countryName}.'),
+            )
+          else if (_error == null && filtered.isEmpty)
             Container(
               padding: const EdgeInsets.all(18),
               decoration: TS.card(context),
               child: const Text('No vouchers match those filters.'),
             ),
-          for (final voucher in filtered)
-            _VoucherCard(
-              voucher: voucher,
-              onToggleClaim: () => _toggleClaim(voucher),
-              onRecordView: () => widget.api.recordUsage('voucher_view'),
-            ),
+          if (_error == null)
+            for (final voucher in filtered)
+              _VoucherCard(
+                voucher: voucher,
+                onToggleClaim: () => _toggleClaim(voucher),
+                onRecordView: () => widget.api.recordUsage('voucher_view'),
+              ),
         ],
       ),
     );
@@ -374,10 +454,9 @@ class _VoucherCodeCard extends StatelessWidget {
                 style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5)),
           const SizedBox(height: 4),
           Text(
-            voucherCode.isFromAffiliate
-                ? '${voucherCode.confidenceText} · from '
-                    '${voucherCode.source.replaceFirst('affiliate:', '')}'
-                : voucherCode.confidenceText,
+            '${voucherCode.moderationStatus == 'approved' ? 'Confirmed by shoppers' : 'Unconfirmed'} · '
+            '${voucherCode.isFromAffiliate ? '${voucherCode.confidenceText} · from '
+                '${voucherCode.source.replaceFirst('affiliate:', '')}' : voucherCode.confidenceText}',
             style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -451,15 +530,24 @@ class _ShareCodeSheet extends StatefulWidget {
 }
 
 class _ShareCodeSheetState extends State<_ShareCodeSheet> {
+  final _shopController = TextEditingController();
   final _codeController = TextEditingController();
   final _benefitController = TextEditingController();
   final _minimumController = TextEditingController();
   String? _retailerId;
+  bool _isPublicReusable = false;
   bool _saving = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.retailerIds.isEmpty) _retailerId = '__other__';
+  }
+
+  @override
   void dispose() {
+    _shopController.dispose();
     _codeController.dispose();
     _benefitController.dispose();
     _minimumController.dispose();
@@ -467,9 +555,15 @@ class _ShareCodeSheetState extends State<_ShareCodeSheet> {
   }
 
   Future<void> _submit() async {
-    final retailerId = _retailerId;
-    if (retailerId == null || _codeController.text.trim().isEmpty) {
-      setState(() => _error = 'Choose a shop and enter the code.');
+    final retailerId = _retailerId == '__other__'
+        ? _shopSlug(_shopController.text)
+        : _retailerId;
+    if (retailerId == null ||
+        retailerId.isEmpty ||
+        _codeController.text.trim().isEmpty ||
+        !_isPublicReusable) {
+      setState(() => _error =
+          'Choose a shop, enter the code, and confirm it is public and reusable.');
       return;
     }
     setState(() {
@@ -514,10 +608,27 @@ class _ShareCodeSheetState extends State<_ShareCodeSheet> {
                 items: [
                   for (final retailerId in widget.retailerIds)
                     DropdownMenuItem(
-                        value: retailerId, child: Text(_retailerName(retailerId))),
+                        value: retailerId,
+                        child: Text(_retailerName(retailerId))),
+                  const DropdownMenuItem(
+                    value: '__other__',
+                    child: Text('Other shop'),
+                  ),
                 ],
                 onChanged: (value) => setState(() => _retailerId = value),
               ),
+              if (_retailerId == '__other__') ...[
+                const SizedBox(height: 10),
+                TextField(
+                  key: const Key('share-code-other-shop'),
+                  controller: _shopController,
+                  decoration: const InputDecoration(
+                    labelText: 'Shop name',
+                    hintText: 'Local supermarket',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+              ],
               const SizedBox(height: 10),
               TextField(
                 key: const Key('share-code-value'),
@@ -541,6 +652,18 @@ class _ShareCodeSheetState extends State<_ShareCodeSheet> {
                     labelText: 'Minimum spend (optional)',
                     hintText: 'Spend R500 or more'),
               ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text(
+                  'This code is public, reusable, and not a personal or referral code.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                value: _isPublicReusable,
+                onChanged: (value) =>
+                    setState(() => _isPublicReusable = value ?? false),
+              ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Text(_error!, style: TextStyle(color: TS.redOf(context))),
@@ -560,6 +683,15 @@ class _ShareCodeSheetState extends State<_ShareCodeSheet> {
       );
 }
 
+String? _shopSlug(String value) {
+  final slug = value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  return slug.isEmpty ? null : slug;
+}
+
 class _VoucherCard extends StatelessWidget {
   const _VoucherCard({
     required this.voucher,
@@ -569,6 +701,7 @@ class _VoucherCard extends StatelessWidget {
 
   final Voucher voucher;
   final VoidCallback onToggleClaim;
+
   /// Counts the view for the admin console. Absent in tests and previews.
   final Future<void> Function()? onRecordView;
 

@@ -4,6 +4,62 @@ const _missingCatalogueTime = -9007199254740991;
 
 enum CatalogueSort { latest, oldest, store }
 
+enum CatalogueTimingFilter { current, endingSoon, upcoming, all }
+
+enum CatalogueTiming { current, endingSoon, upcoming }
+
+extension CatalogueTimingFilterLabel on CatalogueTimingFilter {
+  String get label => switch (this) {
+        CatalogueTimingFilter.current => 'Current',
+        CatalogueTimingFilter.endingSoon => 'Ending soon',
+        CatalogueTimingFilter.upcoming => 'Upcoming',
+        CatalogueTimingFilter.all => 'All',
+      };
+
+  String get title => switch (this) {
+        CatalogueTimingFilter.current => 'Current catalogues',
+        CatalogueTimingFilter.endingSoon => 'Catalogues ending soon',
+        CatalogueTimingFilter.upcoming => 'Upcoming catalogues',
+        CatalogueTimingFilter.all => 'All catalogue dates',
+      };
+}
+
+CatalogueTiming catalogueTiming(Catalogue catalogue, {DateTime? now}) {
+  final today = _dateOnly(now ?? DateTime.now());
+  final validFrom = _catalogueDay(catalogue.validFrom);
+  if (validFrom != null && validFrom.isAfter(today)) {
+    return CatalogueTiming.upcoming;
+  }
+
+  final validTo = _catalogueDay(catalogue.validTo);
+  if (validTo != null && !validTo.isAfter(today.add(const Duration(days: 3)))) {
+    return CatalogueTiming.endingSoon;
+  }
+  return CatalogueTiming.current;
+}
+
+List<Catalogue> filterCataloguesByTiming(
+  Iterable<Catalogue> catalogues,
+  CatalogueTimingFilter filter, {
+  DateTime? now,
+}) {
+  if (filter == CatalogueTimingFilter.all) return catalogues.toList();
+  return catalogues.where((catalogue) {
+    final timing = catalogueTiming(catalogue, now: now);
+    return filter == CatalogueTimingFilter.current
+        ? timing != CatalogueTiming.upcoming
+        : timing.name == filter.name;
+  }).toList();
+}
+
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+DateTime? _catalogueDay(String? value) {
+  final parsed = DateTime.tryParse(value ?? '');
+  return parsed == null ? null : _dateOnly(parsed);
+}
+
 extension CatalogueSortLabel on CatalogueSort {
   String get label => switch (this) {
         CatalogueSort.latest => 'Latest',

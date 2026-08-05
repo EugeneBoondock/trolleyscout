@@ -182,6 +182,7 @@ export async function listDiscoveredVoucherSources(
   ).all<{ parser: string; retailer_id: string; source_key: string; url: string }>()
 
   return rows.results.map((row) => ({
+    countryCode: 'ZA',
     parser: row.parser === 'amazon' || row.parser === 'promotion-sweep'
       ? row.parser
       : 'public-code',

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/window_shopping_screen.dart';
 import 'package:trolley_scout/theme.dart';
 import 'package:trolley_scout/window_seen_store.dart';
@@ -63,6 +64,29 @@ void main() {
 
     expect(find.byKey(const Key('scroll-sold-out-deal-stocked')), findsNothing);
     expect(find.text('40% off'), findsOneWidget);
+  });
+
+  testWidgets('search text stays visible in light and dark themes',
+      (tester) async {
+    for (final brightness in [Brightness.light, Brightness.dark]) {
+      final api = _WindowApi(initialDeals: const [_deal1]);
+      await tester.pumpWidget(
+        _wrap(_window(api), brightness: brightness),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Search the window'));
+      await tester.pump();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.style?.color, Colors.white);
+      expect(field.decoration?.filled, isTrue);
+      expect(field.decoration?.fillColor, Colors.transparent);
+      await tester.enterText(find.byType(TextField), 'coffee');
+      expect(find.text('coffee'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('labels a Bob Shop auction amount as a current bid in the reel',
@@ -308,6 +332,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip('Close full screen'), findsOneWidget);
+    final voiceButton = find.byTooltip('Ask Mr Scout about this product');
+    expect(voiceButton, findsOneWidget);
     expect(find.byTooltip('Zoom out'), findsOneWidget);
     expect(find.byTooltip('Reset zoom'), findsOneWidget);
     expect(find.byTooltip('Zoom in'), findsOneWidget);
@@ -319,6 +345,21 @@ void main() {
       ),
       isTrue,
     );
+    final logicalHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(
+      tester.getBottomRight(voiceButton).dy,
+      lessThanOrEqualTo(logicalHeight - 20),
+      reason: 'Showcase controls must stay above Android gesture navigation.',
+    );
+
+    await tester.tap(voiceButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byKey(const ValueKey('scout-voice-sheet')), findsOneWidget);
+    await tester.tap(find.byTooltip('Close voice chat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
 
     final showcasePager =
         find.descendant(of: showcase, matching: find.byType(PageView));
@@ -590,9 +631,27 @@ WindowShoppingScreen _window(
 }) {
   return WindowShoppingScreen(
     api: api,
+    cacheStore: _MemoryDiscoveryCache(),
     seenStore: api.seenStore,
     now: now,
   );
+}
+
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load([
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async =>
+      null;
+
+  @override
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {}
 }
 
 /// Matches the reel's page count. The reel always builds one page past the

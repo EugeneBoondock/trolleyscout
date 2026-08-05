@@ -5,6 +5,7 @@
 // mixing the two is what made the voucher wall useless.
 
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { detectRequestCountry } from '../_shared/countryContext'
 import { getMemberSession } from '../_shared/memberStore'
 import {
   listVoucherCodes,
@@ -19,6 +20,7 @@ const privateHeaders = { 'cache-control': 'private, no-store' }
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) => {
   const session = await getMemberSession(env, request)
   const accountId = session.account?.id
+  const countryCode = session.account?.countryCode ?? detectRequestCountry(request).code
 
   if (request.method === 'GET') {
     const params = new URL(request.url).searchParams
@@ -34,6 +36,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       {
         codes: await listVoucherCodes(env, {
           accountId,
+          countryCode,
           retailerId: retailerValue || undefined,
         }),
       },
@@ -79,13 +82,14 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       )
     }
 
-    const result = await voteVoucherCode(env, voucherCodeId, accountId, body.worked)
+    const result = await voteVoucherCode(env, voucherCodeId, accountId, body.worked, countryCode)
     return json(result, { headers: privateHeaders, status: result.issues ? 422 : 200 })
   }
 
   const result = await submitVoucherCode(env, {
     benefitText: text(body.benefitText),
     code: text(body.code),
+    countryCode,
     minimumSpendText: optionalText(body.minimumSpendText),
     retailerId: text(body.retailerId),
     termsText: optionalText(body.termsText),

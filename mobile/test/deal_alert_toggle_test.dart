@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/deal_alert_scheduler.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
 import 'package:trolley_scout/theme.dart';
 
@@ -20,16 +21,17 @@ void main() {
       home: Scaffold(
         body: DealsScreen(
           api: api,
+          cacheStore: _MemoryDiscoveryCache(),
           isAuthenticated: true,
           alertScheduler: scheduler,
           requestNotificationPermission: () async => true,
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpUntil(tester, find.byType(Switch));
 
     tester.widget<Switch>(find.byType(Switch)).onChanged!(true);
-    await tester.pumpAndSettle();
+    await _pumpUntil(tester, find.byType(Switch), gone: true);
     expect(api.savedPreferences, [true]);
     expect(tasks.scheduledNames, [DealAlertScheduler.uniqueTaskName]);
 
@@ -51,6 +53,7 @@ void main() {
       home: Scaffold(
         body: DealsScreen(
           api: api,
+          cacheStore: _MemoryDiscoveryCache(),
           isAuthenticated: true,
           alertScheduler: DealAlertScheduler(platform: tasks),
           requestNotificationPermission: () async => false,
@@ -61,17 +64,22 @@ void main() {
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpUntil(tester, find.byType(Switch));
 
     tester.widget<Switch>(find.byType(Switch)).onChanged!(true);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      find.text('Notifications are off for Trolley Scout.'),
+    );
 
     expect(api.savedPreferences, isEmpty);
     expect(tasks.scheduledNames, isEmpty);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     expect(
         find.text('Notifications are off for Trolley Scout.'), findsOneWidget);
-    await tester.tap(find.text('Settings'));
+    tester
+        .widget<SnackBarAction>(find.widgetWithText(SnackBarAction, 'Settings'))
+        .onPressed();
     await tester.pump();
     expect(openedSettings, isTrue);
   });
@@ -87,12 +95,13 @@ void main() {
       home: Scaffold(
         body: DealsScreen(
           api: api,
+          cacheStore: _MemoryDiscoveryCache(),
           isAuthenticated: true,
           alertScheduler: DealAlertScheduler(platform: tasks),
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpUntil(tester, find.byType(Switch));
 
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     expect(tasks.scheduledNames, isEmpty);
@@ -108,22 +117,39 @@ void main() {
       home: Scaffold(
         body: DealsScreen(
           api: api,
+          cacheStore: _MemoryDiscoveryCache(),
           isAuthenticated: true,
           alertScheduler: DealAlertScheduler(platform: tasks),
           requestNotificationPermission: () async => true,
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await _pumpUntil(tester, find.byType(Switch));
 
     tester.widget<Switch>(find.byType(Switch)).onChanged!(true);
-    await tester.pumpAndSettle();
+    await _pumpUntil(
+      tester,
+      find.text('Could not update deal alerts. Try again.'),
+    );
 
     expect(tasks.scheduledNames, isEmpty);
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     expect(
         find.text('Could not update deal alerts. Try again.'), findsOneWidget);
   });
+}
+
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  Finder finder, {
+  bool gone = false,
+}) async {
+  for (var attempt = 0; attempt < 50; attempt += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+    final matches = finder.evaluate().isNotEmpty;
+    if (gone ? !matches : matches) return;
+  }
+  fail('Timed out waiting for ${gone ? 'the widget to leave' : finder}.');
 }
 
 class _ToggleApi extends Api {
@@ -175,6 +201,23 @@ class _ToggleApi extends Api {
         latestCursor: 0,
         totalNewDealCount: 0,
       );
+}
+
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load([
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async =>
+      null;
+
+  @override
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {}
 }
 
 class _TaskPlatform implements DealAlertTaskPlatform {

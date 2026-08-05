@@ -6,6 +6,27 @@ import type { NearbyStore } from './nearbyStores'
 import { retailers, retailerById } from '../data/retailers'
 import type { Retailer } from '../types'
 
+const CATALOGUE_LOGO_ORIGIN =
+  'https://img.offers-cdn.net/assets/uploads/stores/za/logos/200x72_webp'
+
+// These public catalogue-directory logos are checked before release. Several
+// South African retailer sites do not expose a usable favicon, which left an
+// empty brand tile in catalogue and store views.
+const verifiedRetailerLogoSlugs: Partial<Record<Retailer['id'], string>> = {
+  ackermans: 'ackermans',
+  boxer: 'boxer',
+  checkers: 'checkers',
+  clicks: 'clicks',
+  game: 'game',
+  'ok-foods': 'ok-foods',
+  pep: 'pep',
+  'pick-n-pay': 'pick-n-pay',
+  shoprite: 'shoprite',
+  spar: 'spar',
+  usave: 'usave',
+  woolworths: 'woolworths',
+}
+
 export function logoUrlForWebsite(website: string | undefined): string | undefined {
   if (!website) {
     return undefined
@@ -19,7 +40,13 @@ export function logoUrlForWebsite(website: string | undefined): string | undefin
   }
 }
 
-export function retailerLogoUrl(retailer: Pick<Retailer, 'sources'>): string | undefined {
+export function retailerLogoUrl(
+  retailer: Pick<Retailer, 'id' | 'sources'>,
+): string | undefined {
+  const verifiedSlug = verifiedRetailerLogoSlugs[retailer.id]
+  if (verifiedSlug) {
+    return `${CATALOGUE_LOGO_ORIGIN}/${verifiedSlug}.webp`
+  }
   return logoUrlForWebsite(retailer.sources[0]?.url)
 }
 

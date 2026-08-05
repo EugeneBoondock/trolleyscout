@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class AuthDraft {
   const AuthDraft.login({required this.email, required this.password})
       : intent = 'login',
@@ -197,6 +199,7 @@ class Retailer {
     required this.id,
     required this.name,
     required this.shortName,
+    this.aliases = const [],
     required this.group,
     required this.program,
     required this.sourceNote,
@@ -211,6 +214,7 @@ class Retailer {
   final String id;
   final String name;
   final String shortName;
+  final List<String> aliases;
   final String group;
   final String program;
   final String sourceNote;
@@ -225,6 +229,8 @@ class Retailer {
         id: _string(json['id']),
         name: _string(json['name']),
         shortName: _string(json['shortName']),
+        aliases:
+            _mapList(json['aliases']).map((value) => value.toString()).toList(),
         group: _string(json['group']),
         program: _string(json['program']),
         sourceNote: _string(json['sourceNote']),
@@ -321,6 +327,112 @@ class CountryPricing {
         rateFromZar: _double(json['rateFromZar'], 1),
         capital: _optionalString(json['capital']),
         flag: _optionalString(json['flag']),
+      );
+}
+
+class CoverageLedger {
+  const CoverageLedger({
+    required this.generatedAt,
+    required this.markets,
+    required this.summary,
+  });
+
+  final String generatedAt;
+  final List<CoverageMarket> markets;
+  final CoverageSummary summary;
+
+  factory CoverageLedger.fromJson(Map<String, dynamic> json) => CoverageLedger(
+        generatedAt: _string(json['generatedAt']),
+        markets: _mapList(json['markets'])
+            .map(CoverageMarket.fromJson)
+            .toList(growable: false),
+        summary: CoverageSummary.fromJson(_mapOrEmpty(json['summary'])),
+      );
+}
+
+class CoverageSummary {
+  const CoverageSummary({
+    required this.activeCatalogueCount,
+    required this.activeDealCount,
+    required this.activeMarketCount,
+    required this.discoveredStoreCount,
+    required this.liveMarketCount,
+    required this.officialSourceCount,
+    required this.retailerCount,
+  });
+
+  final int activeCatalogueCount;
+  final int activeDealCount;
+  final int activeMarketCount;
+  final int discoveredStoreCount;
+  final int liveMarketCount;
+  final int officialSourceCount;
+  final int retailerCount;
+
+  factory CoverageSummary.fromJson(Map<String, dynamic> json) =>
+      CoverageSummary(
+        activeCatalogueCount: _int(json['activeCatalogueCount']),
+        activeDealCount: _int(json['activeDealCount']),
+        activeMarketCount: _int(json['activeMarketCount']),
+        discoveredStoreCount: _int(json['discoveredStoreCount']),
+        liveMarketCount: _int(json['liveMarketCount']),
+        officialSourceCount: _int(json['officialSourceCount']),
+        retailerCount: _int(json['retailerCount']),
+      );
+}
+
+class CoverageMarket {
+  const CoverageMarket({
+    required this.activeCatalogueCount,
+    required this.activeCatalogueRetailerCount,
+    required this.activeDealCount,
+    required this.activeDealRetailerCount,
+    required this.code,
+    required this.discoveredStoreCount,
+    required this.flag,
+    required this.freshness,
+    required this.name,
+    required this.officialSourceCount,
+    required this.retailerCount,
+    required this.storesWithPromotionsCount,
+    this.directoryCheckedAt,
+    this.catalogueCheckedAt,
+    this.lastDealCapturedAt,
+  });
+
+  final int activeCatalogueCount;
+  final int activeCatalogueRetailerCount;
+  final int activeDealCount;
+  final int activeDealRetailerCount;
+  final String code;
+  final String? catalogueCheckedAt;
+  final int discoveredStoreCount;
+  final String? directoryCheckedAt;
+  final String flag;
+  final String freshness;
+  final String? lastDealCapturedAt;
+  final String name;
+  final int officialSourceCount;
+  final int retailerCount;
+  final int storesWithPromotionsCount;
+
+  factory CoverageMarket.fromJson(Map<String, dynamic> json) => CoverageMarket(
+        activeCatalogueCount: _int(json['activeCatalogueCount']),
+        activeCatalogueRetailerCount:
+            _int(json['activeCatalogueRetailerCount']),
+        activeDealCount: _int(json['activeDealCount']),
+        activeDealRetailerCount: _int(json['activeDealRetailerCount']),
+        code: _string(json['code']),
+        catalogueCheckedAt: _optionalString(json['catalogueCheckedAt']),
+        discoveredStoreCount: _int(json['discoveredStoreCount']),
+        directoryCheckedAt: _optionalString(json['directoryCheckedAt']),
+        flag: _string(json['flag']),
+        freshness: _string(json['freshness'], 'building'),
+        lastDealCapturedAt: _optionalString(json['lastDealCapturedAt']),
+        name: _string(json['name']),
+        officialSourceCount: _int(json['officialSourceCount']),
+        retailerCount: _int(json['retailerCount']),
+        storesWithPromotionsCount: _int(json['storesWithPromotionsCount']),
       );
 }
 
@@ -469,6 +581,53 @@ class ProductComparisonResult {
       );
 }
 
+class ImageCrop {
+  const ImageCrop({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  bool get isValid =>
+      x >= 0 &&
+      y >= 0 &&
+      width > 0 &&
+      height > 0 &&
+      x + width <= 1.001 &&
+      y + height <= 1.001;
+
+  factory ImageCrop.fromJson(Map<String, dynamic> json) => ImageCrop(
+        x: _double(json['x']),
+        y: _double(json['y']),
+        width: _double(json['width']),
+        height: _double(json['height']),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ImageCrop &&
+      x == other.x &&
+      y == other.y &&
+      width == other.width &&
+      height == other.height;
+
+  @override
+  int get hashCode => Object.hash(x, y, width, height);
+}
+
 class Deal {
   const Deal({
     required this.title,
@@ -489,6 +648,7 @@ class Deal {
     this.productUrl,
     this.imageUrl,
     this.images = const [],
+    this.imageCrop,
     this.pageNumber,
     this.personalizationReason,
     this.soldOut = false,
@@ -512,6 +672,7 @@ class Deal {
   final String? productUrl;
   final String? imageUrl;
   final List<String> images;
+  final ImageCrop? imageCrop;
 
   List<String> get gallery {
     final seen = <String>{};
@@ -558,6 +719,11 @@ class Deal {
                 .where((url) => url.isNotEmpty)
                 .toList()
             : const [],
+        imageCrop: json['imageCrop'] is Map
+            ? ImageCrop.fromJson(
+                Map<String, dynamic>.from(json['imageCrop'] as Map),
+              )
+            : null,
         pageNumber: _intOrNull(json['pageNumber']),
         personalizationReason: _optionalString(json['personalizationReason']),
         soldOut: json['soldOut'] == true,
@@ -582,10 +748,53 @@ class Deal {
         'evidenceText': evidenceText,
         'imageUrl': imageUrl,
         if (images.isNotEmpty) 'images': images,
+        if (imageCrop != null) 'imageCrop': imageCrop!.toJson(),
         'pageNumber': pageNumber,
         'personalizationReason': personalizationReason,
         'soldOut': soldOut,
       };
+}
+
+class DealReport {
+  const DealReport({
+    required this.id,
+    required this.dealId,
+    required this.countryCode,
+    required this.retailerName,
+    required this.title,
+    required this.sourceUrl,
+    required this.reason,
+    required this.status,
+    required this.createdAt,
+    this.productUrl,
+    this.note,
+  });
+
+  factory DealReport.fromJson(Map<String, dynamic> json) => DealReport(
+        id: _string(json['id']),
+        dealId: _string(json['dealId']),
+        countryCode: _string(json['countryCode']),
+        retailerName: _string(json['retailerName']),
+        title: _string(json['title']),
+        sourceUrl: _string(json['sourceUrl']),
+        productUrl: _optionalString(json['productUrl']),
+        reason: _string(json['reason']),
+        note: _optionalString(json['note']),
+        status: _string(json['status']),
+        createdAt: _string(json['createdAt']),
+      );
+
+  final String id;
+  final String dealId;
+  final String countryCode;
+  final String retailerName;
+  final String title;
+  final String sourceUrl;
+  final String? productUrl;
+  final String reason;
+  final String? note;
+  final String status;
+  final String createdAt;
 }
 
 class DiscoveryAccess {
@@ -1082,6 +1291,90 @@ class SubscriptionData {
   }
 }
 
+class DeveloperAllowance {
+  const DeveloperAllowance({
+    required this.callsPerMinute,
+    required this.callsPerMonth,
+  });
+
+  final int callsPerMinute;
+  final int callsPerMonth;
+
+  factory DeveloperAllowance.fromJson(Map<String, dynamic> json) =>
+      DeveloperAllowance(
+        callsPerMinute: _int(json['callsPerMinute']),
+        callsPerMonth: _int(json['callsPerMonth']),
+      );
+}
+
+class DeveloperApiKeySummary {
+  const DeveloperApiKeySummary({
+    required this.id,
+    required this.keyPrefix,
+    required this.name,
+    required this.scopes,
+    required this.createdAt,
+    this.expiresAt,
+    this.lastUsedAt,
+    this.revokedAt,
+  });
+
+  final String id;
+  final String keyPrefix;
+  final String name;
+  final List<String> scopes;
+  final String createdAt;
+  final String? expiresAt;
+  final String? lastUsedAt;
+  final String? revokedAt;
+
+  bool get isRevoked => revokedAt != null;
+
+  factory DeveloperApiKeySummary.fromJson(Map<String, dynamic> json) =>
+      DeveloperApiKeySummary(
+        id: _string(json['id']),
+        keyPrefix: _string(json['keyPrefix']),
+        name: _string(json['name']),
+        scopes: (json['scopes'] as List? ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
+        createdAt: _string(json['createdAt']),
+        expiresAt: _optionalString(json['expiresAt']),
+        lastUsedAt: _optionalString(json['lastUsedAt']),
+        revokedAt: _optionalString(json['revokedAt']),
+      );
+}
+
+class DeveloperKeyResource {
+  const DeveloperKeyResource({
+    required this.allowance,
+    required this.keys,
+    required this.scopes,
+    required this.usage,
+    this.secret,
+  });
+
+  final DeveloperAllowance allowance;
+  final List<DeveloperApiKeySummary> keys;
+  final List<String> scopes;
+  final int usage;
+  final String? secret;
+
+  factory DeveloperKeyResource.fromJson(Map<String, dynamic> json) =>
+      DeveloperKeyResource(
+        allowance: DeveloperAllowance.fromJson(
+            _mapOrNull(json['allowance']) ?? const {}),
+        keys: _mapList(json['keys'])
+            .map(DeveloperApiKeySummary.fromJson)
+            .toList(growable: false),
+        scopes: (json['scopes'] as List? ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
+        usage: _int(json['usage']),
+        secret: _optionalString(json['secret']),
+      );
+}
+
 class OrganizationApplicationDraft {
   const OrganizationApplicationDraft({
     required this.organisationName,
@@ -1497,6 +1790,7 @@ class AdminOverview {
   final int leafletCount;
   final int sourceCount;
   final List<CountryOption> countries;
+
   /// Countries that actually have members, most populous first.
   final List<MemberCountryTally> memberCountries;
   final CountryOption selectedCountry;
@@ -1726,6 +2020,7 @@ class Catalogue {
     this.validFrom,
     this.validTo,
     this.imageUrl,
+    this.retailerLogoUrl,
     this.retailerName,
     this.pages = const [],
   });
@@ -1740,6 +2035,7 @@ class Catalogue {
   final String? validFrom;
   final String? validTo;
   final String? imageUrl;
+  final String? retailerLogoUrl;
   final String? retailerName;
   final List<CataloguePage> pages;
 
@@ -1768,6 +2064,7 @@ class Catalogue {
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         imageUrl: _optionalString(json['imageUrl']),
+        retailerLogoUrl: _optionalString(json['retailerLogoUrl']),
         retailerName: _optionalString(json['retailerName']),
         pages: _mapList(json['pages']).map(CataloguePage.fromJson).toList(),
       );
@@ -1783,6 +2080,7 @@ class Catalogue {
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         imageUrl: _optionalString(json['imageUrl']),
+        retailerLogoUrl: _optionalString(json['retailerLogoUrl']),
         retailerName: _optionalString(json['storeName']),
         pages: _mapList(json['pages']).map(CataloguePage.fromJson).toList(),
       );
@@ -1800,6 +2098,7 @@ class Catalogue {
         'validFrom': validFrom,
         'validTo': validTo,
         'imageUrl': imageUrl,
+        'retailerLogoUrl': retailerLogoUrl,
         'retailerName': retailerName,
         'pages': pages.map((page) => page.toJson()).toList(),
       };
@@ -1816,6 +2115,7 @@ class Catalogue {
         validFrom: validFrom,
         validTo: validTo,
         imageUrl: imageUrl,
+        retailerLogoUrl: retailerLogoUrl,
         retailerName: retailerName,
         pages: pages ?? this.pages,
       );
@@ -2114,6 +2414,48 @@ class ScoutChatAnswer {
             ? ScoutGroceryPlan.fromJson(_mapOrEmpty(json['groceryPlan']))
             : null,
       );
+}
+
+class ScoutVoiceSource {
+  const ScoutVoiceSource({required this.title, required this.url});
+
+  final String title;
+  final String url;
+
+  factory ScoutVoiceSource.fromJson(Map<String, dynamic> json) =>
+      ScoutVoiceSource(
+        title: _string(json['title'], 'Source'),
+        url: _string(json['url']),
+      );
+}
+
+class ScoutVoiceReply {
+  const ScoutVoiceReply({
+    required this.answer,
+    required this.audioBytes,
+    required this.mediaType,
+    required this.model,
+    this.sources = const [],
+  });
+
+  final String answer;
+  final List<int> audioBytes;
+  final String mediaType;
+  final String model;
+  final List<ScoutVoiceSource> sources;
+
+  factory ScoutVoiceReply.fromJson(Map<String, dynamic> json) {
+    final encoded = _string(json['audioBase64']);
+    return ScoutVoiceReply(
+      answer: _string(json['answer'], 'Mr Scout could not answer right now.'),
+      audioBytes: encoded.isEmpty ? const [] : base64Decode(encoded),
+      mediaType: _string(json['mediaType'], 'audio/mpeg'),
+      model: _string(json['model'], 's2.1-pro-free'),
+      sources: _mapList(json['sources'])
+          .map(ScoutVoiceSource.fromJson)
+          .toList(growable: false),
+    );
+  }
 }
 
 class DiscoveredStoresResult {
@@ -2787,9 +3129,43 @@ class MapRoute {
     required this.path,
     required this.distanceMeters,
     required this.durationSeconds,
+    this.steps = const [],
   });
 
   final List<List<double>> path; // [lat, lon] pairs
   final double distanceMeters;
   final double durationSeconds;
+  final List<MapRouteStep> steps;
+}
+
+class MapRouteStep {
+  const MapRouteStep({
+    required this.type,
+    required this.modifier,
+    required this.name,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    required this.location,
+  });
+
+  final String type;
+  final String modifier;
+  final String name;
+  final double distanceMeters;
+  final double durationSeconds;
+  final List<double> location; // [lat, lon]
+
+  factory MapRouteStep.fromJson(Map<String, dynamic> json) => MapRouteStep(
+        type: _string(json['type'], 'turn'),
+        modifier: _string(json['modifier']),
+        name: _string(json['name']),
+        distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0,
+        durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0,
+        location: (json['location'] as List?)
+                ?.whereType<num>()
+                .map((value) => value.toDouble())
+                .take(2)
+                .toList(growable: false) ??
+            const [],
+      );
 }

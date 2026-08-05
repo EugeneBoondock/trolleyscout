@@ -15,6 +15,7 @@ export function filterRetailers(
       [
         retailer.name,
         retailer.shortName,
+        ...(retailer.aliases ?? []),
         retailer.group,
         retailer.program,
         retailer.sourceNote,

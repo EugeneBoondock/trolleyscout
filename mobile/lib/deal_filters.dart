@@ -1,5 +1,6 @@
 import 'api_models.dart';
 import 'deal_categories.dart';
+import 'favourite_stores_store.dart';
 import 'retailer_identity.dart';
 import 'price_compare.dart';
 import 'taste_profile.dart';
@@ -33,6 +34,44 @@ const dealSortOptions = <DealSortOption>[
   DealSortOption(DealSort.priceLowToHigh, 'Price: low to high'),
 ];
 
+class DealClassificationCache {
+  final Map<String, _CachedDealClassification> _byId = {};
+
+  DealClassification classify(Deal deal) {
+    final signature = Object.hash(
+      deal.title,
+      deal.retailerId,
+      deal.retailerName,
+      deal.sourceLabel,
+      deal.sourceUrl,
+      deal.evidenceText,
+    );
+    final cached = _byId[deal.id];
+    if (cached?.signature == signature) return cached!.classification;
+
+    final classification = classifyDeal(
+      deal.title,
+      deal.retailerId,
+      DealClassificationContext(
+        evidenceText: deal.evidenceText,
+        retailerName: deal.retailerName,
+        sourceLabel: deal.sourceLabel,
+        sourceUrl: deal.sourceUrl,
+      ),
+    );
+    if (_byId.length >= 20000) _byId.clear();
+    _byId[deal.id] = _CachedDealClassification(signature, classification);
+    return classification;
+  }
+}
+
+class _CachedDealClassification {
+  const _CachedDealClassification(this.signature, this.classification);
+
+  final int signature;
+  final DealClassification classification;
+}
+
 /// When a deal first appeared to us, which is what a shopper means by newest.
 ///
 /// `capturedAt` is restamped every time a source is rescanned, so ordering by
@@ -40,7 +79,8 @@ const dealSortOptions = <DealSortOption>[
 /// `addedAt` is the first sighting and only falls back when an older row
 /// predates that column.
 DateTime? dealFirstSeenAt(Deal deal) {
-  final added = deal.addedAt.isNotEmpty ? DateTime.tryParse(deal.addedAt) : null;
+  final added =
+      deal.addedAt.isNotEmpty ? DateTime.tryParse(deal.addedAt) : null;
   return added ?? DateTime.tryParse(deal.capturedAt);
 }
 
@@ -51,6 +91,18 @@ bool isBidDeal(Deal deal) {
   final qualifier = deal.unitText;
   if (qualifier == null || qualifier.isEmpty) return false;
   return qualifier.toLowerCase().contains('bid');
+}
+
+bool isDealFromFavouriteStores(
+  Deal deal,
+  Iterable<FavouriteStore> favourites,
+) {
+  final canonical = canonicalRetailerId(deal.retailerId, deal.retailerName);
+  final name = retailerNameKey(deal.retailerName);
+  return favourites.any((favourite) =>
+      favourite.id.toLowerCase() == 'retailer:$canonical' ||
+      favourite.id.toLowerCase() == canonical ||
+      retailerNameKey(favourite.displayName) == name);
 }
 
 /// The rand a deal saves, computed from the marked-down and previous prices,
@@ -126,7 +178,14 @@ List<Deal> sortDeals(List<Deal> deals, DealSort sort, {TasteProfile? taste}) {
     if (taste == null || taste.isEmpty) return deals;
     final indexed = [
       for (var i = 0; i < deals.length; i++)
-        (deal: deals[i], index: i, score: taste.score(deals[i].title))
+        (
+          deal: deals[i],
+          index: i,
+          score: taste.score(
+            deals[i].title,
+            category: deals[i].retailerName,
+          ),
+        )
     ];
     indexed.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
@@ -202,6 +261,7 @@ List<Deal> filterDeals(
   bool hideBids = false,
   DealCategory? category,
   FoodSubcategory? foodSubcategory,
+  DealClassificationCache? classificationCache,
 }) {
   final normalizedQuery = query.trim().toLowerCase();
   return deals.where((deal) {
@@ -222,16 +282,17 @@ List<Deal> filterDeals(
 
     var matchesCategory = true;
     if (category != null || foodSubcategory != null) {
-      final classification = classifyDeal(
-        deal.title,
-        deal.retailerId,
-        DealClassificationContext(
-          evidenceText: deal.evidenceText,
-          retailerName: deal.retailerName,
-          sourceLabel: deal.sourceLabel,
-          sourceUrl: deal.sourceUrl,
-        ),
-      );
+      final classification = classificationCache?.classify(deal) ??
+          classifyDeal(
+            deal.title,
+            deal.retailerId,
+            DealClassificationContext(
+              evidenceText: deal.evidenceText,
+              retailerName: deal.retailerName,
+              sourceLabel: deal.sourceLabel,
+              sourceUrl: deal.sourceUrl,
+            ),
+          );
       matchesCategory =
           (category == null || classification.category == category) &&
               (foodSubcategory == null ||

@@ -11,6 +11,7 @@
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 
 const MAX_LIST = 100
+const UNDATED_CODE_TTL_MS = 30 * 24 * 60 * 60 * 1_000
 /** Failures with nothing to offset them before a code is retired. */
 const FAILURE_RETIRE_THRESHOLD = 3
 /** Once this many people have voted, a mostly-failing code is retired. */
@@ -20,11 +21,13 @@ const RETIRE_FAILURE_RATIO = 0.7
 export interface VoucherCode {
   benefitText: string
   code: string
+  countryCode: string
   createdAt: string
   failedCount: number
   id: string
   lastWorkedAt?: string
   minimumSpendText?: string
+  moderationStatus: 'approved' | 'unconfirmed'
   retailerId: string
   source: string
   sourceUrl?: string
@@ -38,6 +41,7 @@ export interface VoucherCode {
 export interface VoucherCodeDraft {
   benefitText: string
   code: string
+  countryCode: string
   minimumSpendText?: string
   retailerId: string
   source?: string
@@ -80,51 +84,86 @@ export async function submitVoucherCode(
     return { issues: ['Say what the code gives you, like "10% off".'] }
   }
 
+  const countryCode = normalizeCountryCode(draft.countryCode)
+  if (!countryCode) {
+    return { issues: ['Choose the country where this code works.'] }
+  }
+  if (looksPrivateOrUnsafe(
+    `${draft.code} ${benefitText} ${draft.minimumSpendText ?? ''} ${draft.termsText ?? ''}`,
+  )) {
+    return { issues: ['Share only public, reusable codes. Personal and referral codes are not accepted.'] }
+  }
+
+  const source = draft.source?.trim().slice(0, 40) || 'member'
+  const affiliateSubmission = source.startsWith('affiliate:')
+
   const id = crypto.randomUUID()
   await env.DB.prepare(
     `INSERT INTO voucher_codes (
-      id, retailer_id, code, benefit_text, terms_text, minimum_spend_text,
-      valid_to, source, source_url, submitted_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (retailer_id, code) DO UPDATE SET
-      benefit_text = excluded.benefit_text,
-      terms_text = COALESCE(excluded.terms_text, voucher_codes.terms_text),
-      minimum_spend_text =
-        COALESCE(excluded.minimum_spend_text, voucher_codes.minimum_spend_text),
-      valid_to = COALESCE(excluded.valid_to, voucher_codes.valid_to),
-      -- Re-submitting a retired code gives it another chance: somebody has
-      -- just seen it work.
-      status = 'active',
-      updated_at = CURRENT_TIMESTAMP`,
+      id, country_code, retailer_id, code, benefit_text, terms_text,
+      minimum_spend_text, valid_to, source, source_url, submitted_by,
+      moderation_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (country_code, retailer_id, code) DO UPDATE SET
+      -- A licensed feed may refresh authoritative terms and dates. A member
+      -- duplicate never overwrites another shopper's description or revives a
+      -- code that the crowd retired.
+      benefit_text = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN excluded.benefit_text ELSE voucher_codes.benefit_text END,
+      terms_text = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN COALESCE(excluded.terms_text, voucher_codes.terms_text)
+        ELSE voucher_codes.terms_text END,
+      minimum_spend_text = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN COALESCE(excluded.minimum_spend_text, voucher_codes.minimum_spend_text)
+        ELSE voucher_codes.minimum_spend_text END,
+      valid_to = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN COALESCE(excluded.valid_to, voucher_codes.valid_to)
+        ELSE voucher_codes.valid_to END,
+      status = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN 'active' ELSE voucher_codes.status END,
+      moderation_status = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN 'approved' ELSE voucher_codes.moderation_status END,
+      updated_at = CASE WHEN excluded.source LIKE 'affiliate:%'
+        THEN CURRENT_TIMESTAMP ELSE voucher_codes.updated_at END`,
   )
     .bind(
       id,
+      countryCode,
       retailerId,
       code,
       benefitText,
       draft.termsText?.trim().slice(0, 400) || null,
       draft.minimumSpendText?.trim().slice(0, 80) || null,
       isoDate(draft.validTo),
-      draft.source?.trim().slice(0, 40) || 'member',
+      source,
       draft.sourceUrl?.trim().slice(0, 500) || null,
       accountId ?? null,
+      affiliateSubmission ? 'approved' : 'unconfirmed',
     )
     .run()
 
-  const stored = await readVoucherCode(env, retailerId, code, accountId)
+  const stored = await readVoucherCode(env, countryCode, retailerId, code, accountId)
   return stored ? { voucherCode: stored } : { issues: ['Could not save that code.'] }
 }
 
 export async function listVoucherCodes(
   env: TrolleyScoutEnv,
-  options: { accountId?: string; limit?: number; retailerId?: string } = {},
+  options: { accountId?: string; countryCode: string; limit?: number; retailerId?: string },
 ): Promise<VoucherCode[]> {
   if (!hasTrolleyScoutDatabase(env)) return []
 
   const limit = Math.min(MAX_LIST, Math.max(1, options.limit ?? 60))
   const today = new Date().toISOString().slice(0, 10)
-  const filters = ["status = 'active'", '(valid_to IS NULL OR substr(valid_to, 1, 10) >= ?)']
-  const bindings: unknown[] = [today]
+  const freshnessCutoff = new Date(Date.now() - UNDATED_CODE_TTL_MS).toISOString()
+  const countryCode = normalizeCountryCode(options.countryCode)
+  if (!countryCode) return []
+  const filters = [
+    "status = 'active'",
+    'country_code = ?',
+    '(valid_to IS NULL OR substr(valid_to, 1, 10) >= ?)',
+    '(valid_to IS NOT NULL OR last_worked_at >= ? OR created_at >= ?)',
+  ]
+  const bindings: unknown[] = [countryCode, today, freshnessCutoff, freshnessCutoff]
 
   if (options.retailerId && options.retailerId !== 'all') {
     filters.push('retailer_id = ?')
@@ -135,6 +174,7 @@ export async function listVoucherCodes(
     `SELECT * FROM voucher_codes
       WHERE ${filters.join(' AND ')}
       ORDER BY
+        CASE moderation_status WHEN 'approved' THEN 0 ELSE 1 END,
         -- What worked most recently, for the most people, first. A brand new
         -- code with no votes still gets a place near the top so it can be
         -- tried at all, rather than being buried forever by older ones.
@@ -159,10 +199,20 @@ export async function voteVoucherCode(
   voucherCodeId: string,
   accountId: string,
   worked: boolean,
+  countryCodeValue: string,
 ): Promise<{ issues?: string[]; voucherCode?: VoucherCode }> {
   if (!hasTrolleyScoutDatabase(env)) {
     return { issues: ['Voucher codes are unavailable right now.'] }
   }
+
+  const countryCode = normalizeCountryCode(countryCodeValue)
+  if (!countryCode) return { issues: ['That code is gone.'] }
+  const codeExists = await env.DB.prepare(
+    'SELECT id FROM voucher_codes WHERE id = ? AND country_code = ?',
+  )
+    .bind(voucherCodeId, countryCode)
+    .first<{ id: string }>()
+  if (!codeExists) return { issues: ['That code is gone.'] }
 
   const existing = await env.DB.prepare(
     'SELECT worked FROM voucher_code_votes WHERE voucher_code_id = ? AND account_id = ?',
@@ -171,7 +221,7 @@ export async function voteVoucherCode(
     .first<{ worked: number }>()
 
   if (existing && (existing.worked === 1) === worked) {
-    const unchanged = await readVoucherCodeById(env, voucherCodeId, accountId)
+    const unchanged = await readVoucherCodeById(env, voucherCodeId, countryCode, accountId)
     return unchanged ? { voucherCode: unchanged } : { issues: ['That code is gone.'] }
   }
 
@@ -194,15 +244,18 @@ export async function voteVoucherCode(
       failed_count = (SELECT COUNT(*) FROM voucher_code_votes
         WHERE voucher_code_id = voucher_codes.id AND worked = 0),
       last_worked_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE last_worked_at END,
+      moderation_status = CASE
+        WHEN ? AND (submitted_by IS NULL OR submitted_by <> ?) THEN 'approved'
+        ELSE moderation_status END,
       updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?`,
+      WHERE id = ? AND country_code = ?`,
   )
-    .bind(worked ? 1 : 0, voucherCodeId)
+    .bind(worked ? 1 : 0, worked ? 1 : 0, accountId, voucherCodeId, countryCode)
     .run()
 
   await retireIfSpent(env, voucherCodeId)
 
-  const updated = await readVoucherCodeById(env, voucherCodeId, accountId)
+  const updated = await readVoucherCodeById(env, voucherCodeId, countryCode, accountId)
   return updated ? { voucherCode: updated } : { issues: ['That code is gone.'] }
 }
 
@@ -231,15 +284,16 @@ async function retireIfSpent(env: TrolleyScoutEnv, voucherCodeId: string): Promi
 
 async function readVoucherCode(
   env: TrolleyScoutEnv,
+  countryCode: string,
   retailerId: string,
   code: string,
   accountId?: string,
 ): Promise<VoucherCode | undefined> {
   if (!env.DB) return undefined
   const row = await env.DB.prepare(
-    'SELECT * FROM voucher_codes WHERE retailer_id = ? AND code = ?',
+    'SELECT * FROM voucher_codes WHERE country_code = ? AND retailer_id = ? AND code = ?',
   )
-    .bind(retailerId, code)
+    .bind(countryCode, retailerId, code)
     .first<VoucherCodeRow>()
   if (!row) return undefined
   const votes = await readVotes(env, accountId, [row.id])
@@ -249,11 +303,14 @@ async function readVoucherCode(
 async function readVoucherCodeById(
   env: TrolleyScoutEnv,
   id: string,
+  countryCode: string,
   accountId?: string,
 ): Promise<VoucherCode | undefined> {
   if (!env.DB) return undefined
-  const row = await env.DB.prepare('SELECT * FROM voucher_codes WHERE id = ?')
-    .bind(id)
+  const row = await env.DB.prepare(
+    'SELECT * FROM voucher_codes WHERE id = ? AND country_code = ?',
+  )
+    .bind(id, countryCode)
     .first<VoucherCodeRow>()
   if (!row) return undefined
   const votes = await readVotes(env, accountId, [row.id])
@@ -285,11 +342,13 @@ async function readVotes(
 interface VoucherCodeRow {
   benefit_text: string
   code: string
+  country_code: string
   created_at: string
   failed_count: number
   id: string
   last_worked_at: string | null
   minimum_spend_text: string | null
+  moderation_status: 'approved' | 'unconfirmed'
   retailer_id: string
   source: string
   source_url: string | null
@@ -302,9 +361,11 @@ function rowToVoucherCode(row: VoucherCodeRow, vote?: boolean): VoucherCode {
   return {
     benefitText: row.benefit_text,
     code: row.code,
+    countryCode: row.country_code,
     createdAt: row.created_at,
     failedCount: Number(row.failed_count),
     id: row.id,
+    moderationStatus: row.moderation_status,
     retailerId: row.retailer_id,
     source: row.source,
     workedCount: Number(row.worked_count),
@@ -321,4 +382,18 @@ function isoDate(value?: string): string | null {
   if (!value) return null
   const parsed = Date.parse(value)
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
+}
+
+function normalizeCountryCode(value: string): string | undefined {
+  const code = value.trim().toUpperCase()
+  return /^[A-Z]{2}$/.test(code) ? code : undefined
+}
+
+function looksPrivateOrUnsafe(value: string): boolean {
+  return /\b(?:personal|private|single[- ]use|non[- ]transferable|do not share|referral|invite)\b/i.test(value) ||
+    /(?:https?:\/\/|www\.|@[a-z0-9.-]+\.[a-z]{2,})/i.test(value) ||
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0)
+      return code <= 8 || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127
+    })
 }

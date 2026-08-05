@@ -70,7 +70,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     input.query,
     {
       currencyCode: country.currencyCode,
-      searcher: (query) => searchWeb(query, env.JINA_API_KEY),
+      searcher: (query) => searchWeb(query, env.JINA_API_KEY, env),
     },
   )))
   // Stores without a searchable storefront (Checkers, Shoprite, Boxer…)

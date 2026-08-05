@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:pdfx/pdfx.dart';
 
 import '../theme.dart';
 import 'catalogue_source_button.dart';
@@ -25,70 +28,151 @@ class CataloguePdfView extends StatefulWidget {
 }
 
 class _CataloguePdfViewState extends State<CataloguePdfView> {
-  WebViewController? _controller;
-  bool _failed = false;
+  PdfController? _controller;
+  int _page = 1;
+  int _pages = 0;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prepareViewer());
-  }
-
-  Future<void> _prepareViewer() async {
-    final source = Uri.tryParse(widget.url);
-    if (source == null ||
-        (source.scheme != 'https' && source.scheme != 'http') ||
-        !mounted) {
-      if (mounted) setState(() => _failed = true);
-      return;
-    }
-
-    final backgroundColor = TS.surfaceOf(context);
-    try {
-      final viewer = Uri.https('docs.google.com', '/gview', {
-        'embedded': '1',
-        'url': source.toString(),
-      });
-      final controller = WebViewController();
-      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-      await controller.setBackgroundColor(backgroundColor);
-      await controller.setNavigationDelegate(NavigationDelegate(
-        onNavigationRequest: (request) {
-          final uri = Uri.tryParse(request.url);
-          return uri?.host == 'docs.google.com'
-              ? NavigationDecision.navigate
-              : NavigationDecision.prevent;
-        },
-        onWebResourceError: (error) {
-          if (error.isForMainFrame == true && mounted) {
-            setState(() => _failed = true);
-          }
-        },
-      ));
-      await controller.loadRequest(viewer);
-      if (mounted) setState(() => _controller = controller);
-    } catch (_) {
-      if (mounted) setState(() => _failed = true);
+    final uri = Uri.tryParse(widget.url);
+    if (uri != null && (uri.scheme == 'https' || uri.scheme == 'http')) {
+      _controller = PdfController(document: _openDocument(uri));
     }
   }
 
   @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller == null) {
+      return _fallback();
+    }
     return SizedBox.expand(
       key: const ValueKey('catalogue-pdf-view'),
-      child: _failed
-          ? _PdfCoverFallback(
-              label: widget.label,
-              imageUrl: widget.fallbackImageUrl,
-              sourceUrl: widget.sourceUrl,
-              openExternal: widget.openExternal,
-            )
-          : _controller == null
-              ? Center(
-                  child: CircularProgressIndicator(color: TS.redOf(context)),
-                )
-              : WebViewWidget(controller: _controller!),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ColoredBox(
+              color: TS.bgOf(context),
+              child: PdfView(
+                controller: controller,
+                scrollDirection: Axis.vertical,
+                backgroundDecoration: BoxDecoration(color: TS.bgOf(context)),
+                onDocumentLoaded: (document) {
+                  if (!mounted) return;
+                  setState(() {
+                    _pages = document.pagesCount;
+                    _page = 1;
+                  });
+                },
+                onPageChanged: (page) {
+                  if (mounted) setState(() => _page = page);
+                },
+                builders: PdfViewBuilders<DefaultBuilderOptions>(
+                  options: const DefaultBuilderOptions(),
+                  documentLoaderBuilder: (_) => Center(
+                    child: CircularProgressIndicator(color: TS.redOf(context)),
+                  ),
+                  pageLoaderBuilder: (_) => Center(
+                    child: CircularProgressIndicator(color: TS.redOf(context)),
+                  ),
+                  errorBuilder: (_, __) => _fallback(),
+                ),
+              ),
+            ),
+          ),
+          if (_pages > 0)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(
+                top: false,
+                child: Center(child: _pageControls(context, controller)),
+              ),
+            ),
+        ],
+      ),
     );
+  }
+
+  Widget _pageControls(BuildContext context, PdfController controller) {
+    final multiple = _pages > 1;
+    return Material(
+      color: TS.surfaceOf(context),
+      elevation: 8,
+      shadowColor: Colors.black38,
+      borderRadius: BorderRadius.circular(999),
+      child: Semantics(
+        liveRegion: true,
+        label: multiple ? 'Page $_page of $_pages' : 'One page catalogue',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (multiple)
+                IconButton(
+                  tooltip: 'Previous page',
+                  onPressed: _page > 1
+                      ? () => controller.previousPage(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                          )
+                      : null,
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  multiple ? 'Page $_page of $_pages' : '1 page',
+                  key: const ValueKey('catalogue-pdf-page-count'),
+                  style: TextStyle(
+                    color: TS.inkOf(context),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (multiple)
+                IconButton(
+                  tooltip: 'Next page',
+                  onPressed: _page < _pages
+                      ? () => controller.nextPage(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                          )
+                      : null,
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback() => _PdfCoverFallback(
+        label: widget.label,
+        imageUrl: widget.fallbackImageUrl,
+        sourceUrl: widget.sourceUrl,
+        openExternal: widget.openExternal,
+      );
+
+  static Future<PdfDocument> _openDocument(Uri uri) async {
+    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Catalogue PDF returned ${response.statusCode}.');
+    }
+    if (response.bodyBytes.isEmpty) {
+      throw StateError('Catalogue PDF was empty.');
+    }
+    return PdfDocument.openData(response.bodyBytes);
   }
 }
 
@@ -129,13 +213,13 @@ class _PdfCoverFallback extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                'This PDF could not be embedded.',
+                'This PDF could not be opened.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               Text(
-                'The catalogue cover remains available in Trolley Scout.',
+                'The cover remains available. You can also open the official source.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: TS.mutedOf(context)),
               ),

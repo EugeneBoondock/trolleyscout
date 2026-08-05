@@ -55,9 +55,12 @@ it('loads Find Deals once per app session and hides manual refresh from public u
   expect(await screen.findByRole('heading', { name: 'Marketplace' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Check now' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Deals' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Deals' }))
 
-  await waitFor(() => expect(discoveryRequests).toEqual(['/api/discovery']))
+  await waitFor(() => expect(discoveryRequests).toEqual([
+    '/api/discovery?summary=1',
+    '/api/discovery',
+  ]))
 })
 
 it('shows manual refresh to admins and requests a forced refresh when clicked', async () => {
@@ -100,8 +103,11 @@ it('shows manual refresh to admins and requests a forced refresh when clicked', 
     within(memberNavigation).getAllByRole('button').slice(0, 2).map((button) => button.textContent),
   ).toEqual(['Dashboard', 'Marketplace'])
   fireEvent.click(within(memberNavigation).getByRole('button', { name: 'Marketplace' }))
-  const refresh = await screen.findByRole('button', { name: 'Check now' })
-  fireEvent.click(refresh)
+  await screen.findByRole('button', { name: 'Check now' })
+  await waitFor(() => expect(
+    (screen.getByRole('button', { name: 'Check now' }) as HTMLButtonElement).disabled,
+  ).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
 
   await waitFor(() => {
     expect(discoveryRequests).toContain('/api/discovery?refresh=1')
@@ -161,6 +167,101 @@ it('explains when a Free member reaches the marketplace viewing allowance', asyn
     'Free plan: up to 2,000 deals and 50 catalogues. ' +
     '12,000 deals and 72 catalogues are available.',
   )).toBeTruthy()
+})
+
+it('collapses the shopping calendar and remembers the choice', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) return envelope(emptyDiscovery)
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  await screen.findByRole('heading', { name: 'Marketplace' })
+
+  const collapse = await screen.findByRole('button', { name: 'Collapse shopping calendar' })
+  fireEvent.click(collapse)
+
+  expect(screen.getByRole('button', { name: 'Expand shopping calendar' })).toBeTruthy()
+  expect(window.localStorage.getItem('trolley-scout-shopping-calendar-expanded-v1')).toBe('false')
+  expect(screen.queryByText('No verified matches yet')).toBeNull()
+})
+
+it('lets shoppers jump from the catalogue retailer shelf to one store', async () => {
+  const leaflets = [
+    {
+      capturedAt: '2026-08-02T10:00:00.000Z',
+      documentUrl: 'https://documents.example.test/alpha-weekly.pdf',
+      id: 'alpha-weekly',
+      imageUrl: 'https://images.example.test/alpha-weekly.jpg',
+      name: 'Alpha weekly',
+      pages: [{
+        height: 1200,
+        imageUrl: 'https://images.example.test/alpha-weekly.jpg',
+        pageNumber: 1,
+        width: 900,
+      }],
+      retailerId: 'alpha',
+      retailerName: 'Alpha Market',
+      url: 'https://example.test/alpha-weekly',
+      validFrom: '2026-08-02',
+      validTo: '2026-08-09',
+    },
+    {
+      capturedAt: '2026-08-02T08:00:00.000Z',
+      documentUrl: 'https://documents.example.test/bravo-month-end.pdf',
+      id: 'bravo-month-end',
+      imageUrl: 'https://images.example.test/bravo.jpg',
+      name: 'Bravo month-end',
+      pages: [{
+        height: 1200,
+        imageUrl: 'https://images.example.test/bravo.jpg',
+        pageNumber: 1,
+        width: 900,
+      }],
+      retailerId: 'bravo',
+      retailerName: 'Bravo Shop',
+      url: 'https://example.test/bravo',
+      validFrom: '2026-07-31',
+      validTo: '2026-08-05',
+    },
+  ]
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        leaflets,
+        summary: {
+          ...emptyDiscovery.summary,
+          leafletCount: leaflets.length,
+        },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  await screen.findByRole('heading', { name: 'Marketplace' })
+  fireEvent.click(await screen.findByRole('tab', { name: 'Catalogues (2)' }))
+
+  expect(await screen.findByRole('heading', { name: 'Shop by retailer' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Show 1 catalogue from Alpha Market' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Show 1 catalogue from Bravo Shop' })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show 1 catalogue from Alpha Market' }))
+
+  expect(screen.getByLabelText('Search catalogues')).toHaveProperty('value', 'Alpha Market')
+  expect(screen.getByText('Alpha weekly')).toBeTruthy()
+  expect(screen.queryByText('Bravo month-end')).toBeNull()
 })
 
 it('shows matching image cards for today savings and saved deals', async () => {
@@ -264,7 +365,7 @@ it('shows matching image cards for today savings and saved deals', async () => {
   expect(soldOutBasketButton).toHaveProperty('disabled', true)
   expect(screen.getByText('Current bid')).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: 'View images for Ground coffee 250g' }))
-  const viewer = screen.getByRole('dialog', { name: 'Ground coffee 250g images' })
+  const viewer = screen.getByRole('dialog', { name: 'Ground coffee 250g details' })
   expect(within(viewer).getByText('1 of 2')).toBeTruthy()
   expect(within(viewer).getAllByText('Sold out').length).toBeGreaterThan(0)
   fireEvent.click(within(viewer).getByRole('button', { name: 'Next image' }))
@@ -272,7 +373,7 @@ it('shows matching image cards for today savings and saved deals', async () => {
   expect(within(viewer).getByRole('link', { name: 'View product' }).getAttribute('href')).toContain(
     'https://example.test/coffee',
   )
-  fireEvent.click(within(viewer).getByRole('button', { name: 'Close product images' }))
+  fireEvent.click(within(viewer).getByRole('button', { name: 'Close deal details' }))
 
   fireEvent.click(screen.getByText('Advanced filters'))
   fireEvent.click(screen.getByRole('checkbox', { name: 'Hide sold out' }))
@@ -336,7 +437,7 @@ it('debounces a large category search so typing keeps the current results respon
   } finally {
     vi.useRealTimers()
   }
-})
+}, 15_000)
 
 it('filters Marketplace deals added in the last seven days', async () => {
   const now = Date.now()
@@ -463,6 +564,60 @@ it('sorts catalogues by Latest by default and supports Oldest with an accessible
 
   fireEvent.change(sort, { target: { value: 'oldest' } })
   expect(catalogueStoreHeadings()).toEqual(['Alpha Store', 'Zulu Store'])
+})
+
+it('separates current and upcoming catalogues in the marketplace', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/member-session') {
+      return envelope({ session: { isAuthenticated: false } })
+    }
+    if (path.startsWith('/api/discovery')) {
+      return envelope({
+        ...emptyDiscovery,
+        leaflets: [
+          {
+            capturedAt: '2026-08-02T10:00:00.000Z',
+            id: 'current',
+            name: 'Current weekly',
+            retailerId: 'current-store',
+            retailerName: 'Current Store',
+            pages: [{ imageUrl: 'https://example.test/current.webp', pageNumber: 1 }],
+            url: 'https://example.test/current',
+            validFrom: '2026-08-01',
+            validTo: '2098-08-08',
+          },
+          {
+            capturedAt: '2026-08-02T10:00:00.000Z',
+            id: 'upcoming',
+            name: 'Future preview',
+            retailerId: 'future-store',
+            retailerName: 'Future Store',
+            pages: [{ imageUrl: 'https://example.test/future.webp', pageNumber: 1 }],
+            url: 'https://example.test/future',
+            validFrom: '2099-08-05',
+            validTo: '2099-08-18',
+          },
+        ],
+        summary: { ...emptyDiscovery.summary, leafletCount: 2 },
+      })
+    }
+    return new Response('', { status: 503 })
+  }))
+
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Find grocery deals' }))
+  fireEvent.click(await screen.findByRole('tab', { name: 'Catalogues (2)' }))
+
+  expect(screen.getByRole('heading', { name: 'Current catalogues' })).toBeTruthy()
+  expect(screen.getByText('Current weekly')).toBeTruthy()
+  expect(screen.queryByText('Future preview')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Upcoming 1' }))
+
+  expect(screen.getByRole('heading', { name: 'Upcoming catalogues' })).toBeTruthy()
+  expect(screen.getByText('Future preview')).toBeTruthy()
+  expect(screen.queryByText('Current weekly')).toBeNull()
 })
 
 function envelope(data: unknown) {

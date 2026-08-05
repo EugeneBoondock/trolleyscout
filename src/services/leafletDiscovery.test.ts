@@ -112,6 +112,30 @@ describe('Zimbabwe official PDF catalogues', () => {
   })
 })
 
+describe('South African official catalogue sources', () => {
+  test('registers public retailer catalogue pages without depending on a competitor directory', () => {
+    expect(leafletTargets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'official-html-index',
+        pageUrl: 'https://kitkatgroup.com/promotions.php',
+        retailerId: 'kit-kat',
+      }),
+      expect.objectContaining({
+        kind: 'official-html-index',
+        pageUrl: 'https://rootsbutchery.co.za/specials/',
+        retailerId: 'roots-butchery',
+      }),
+      expect.objectContaining({
+        kind: 'sitebuilder-pdf',
+        pageUrls: expect.arrayContaining([
+          'https://www.presidenthyper.co.za/weekly-specials-rustenburg/',
+        ]),
+        retailerId: 'president-hyper',
+      }),
+    ]))
+  })
+})
+
 describe('TM Pick n Pay Zimbabwe catalogues', () => {
   test('maps the official catalogue API into one multi-page leaflet', () => {
     const payload = [{

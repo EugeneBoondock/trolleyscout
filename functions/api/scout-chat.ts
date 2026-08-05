@@ -1,4 +1,11 @@
 import type { SearchActiveDealItemsOptions } from '../_shared/dealItemStore'
+import {
+  DEEPSEEK_FALLBACK_MODEL,
+  isOpenAICreditExhausted,
+  openAITextPayload,
+  runDeepSeekFallback,
+  type DeepSeekFallbackRequest,
+} from '../_shared/deepSeekFallback'
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberPlan } from '../../src/data/memberPlans'
@@ -104,6 +111,10 @@ export interface ScoutChatDependencies {
     input: ScoutRetrievalLogInput,
   ) => Promise<string | undefined>
   retrieveProducts: (message: string) => Promise<ProductRetrievalResult>
+  runDeepSeek: (
+    env: TrolleyScoutEnv,
+    request: DeepSeekFallbackRequest,
+  ) => Promise<string>
 }
 
 const defaultDependencies: ScoutChatDependencies = {
@@ -135,6 +146,7 @@ const defaultDependencies: ScoutChatDependencies = {
   loadPersonalContext: loadScoutPersonalContext,
   logRetrieval: logScoutRetrieval,
   retrieveProducts: (message) => retrieveProducts(message),
+  runDeepSeek: runDeepSeekFallback,
 }
 
 export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }) =>
@@ -163,7 +175,7 @@ export async function handleScoutChat(
       { headers: privateHeaders, status: 503 },
     )
   }
-  if (!env.OPENAI_API_KEY) {
+  if (!env.OPENAI_API_KEY && !env.AI) {
     return json(
       { error: 'Mr Scout is not configured yet.' },
       { headers: privateHeaders, status: 503 },
@@ -298,6 +310,13 @@ export async function handleScoutChat(
       { headers: privateHeaders },
     )
   }
+  const persona = buildScoutPersona({
+    countryCode,
+    currencyCode,
+    hasLiveProducts: liveCards.length > 0,
+    today: new Date().toISOString().slice(0, 10),
+  })
+  const verifiedContext = `Verified shopping context:\n${JSON.stringify(scoutContext)}`
   const openAIRequest = new Request('https://api.openai.com/v1/responses', {
     body: JSON.stringify({
       model: MODEL,
@@ -307,16 +326,11 @@ export async function handleScoutChat(
       input: [
         {
           role: 'developer',
-          content: buildScoutPersona({
-            countryCode,
-            currencyCode,
-            hasLiveProducts: liveCards.length > 0,
-            today: new Date().toISOString().slice(0, 10),
-          }),
+          content: persona,
         },
         {
           role: 'developer',
-          content: `Verified shopping context:\n${JSON.stringify(scoutContext)}`,
+          content: verifiedContext,
         },
         ...input.history.map((turn) => ({ role: turn.role, content: turn.text })),
         { role: 'user', content: input.message },
@@ -332,34 +346,93 @@ export async function handleScoutChat(
     }),
     headers: {
       accept: 'application/json',
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      authorization: `Bearer ${env.OPENAI_API_KEY ?? ''}`,
       'content-type': 'application/json',
     },
     method: 'POST',
     signal: AbortSignal.timeout(30_000),
   })
 
-  let openAIResponse: Response
-  try {
-    openAIResponse = await dependencies.fetchOpenAI(openAIRequest)
-  } catch {
-    return json(
-      { error: 'Mr Scout could not connect. Try again.' },
-      { headers: privateHeaders, status: 502 },
-    )
+  let modelPayload: unknown
+  let modelUsed = MODEL
+  if (env.OPENAI_API_KEY) {
+    let openAIResponse: Response
+    try {
+      openAIResponse = await dependencies.fetchOpenAI(openAIRequest)
+    } catch {
+      return json(
+        { error: 'Mr Scout could not connect. Try again.' },
+        { headers: privateHeaders, status: 502 },
+      )
+    }
+
+    if (openAIResponse.ok) {
+      modelPayload = await openAIResponse.json().catch(() => undefined)
+    } else if (
+      env.AI &&
+      await isOpenAICreditExhausted(openAIResponse)
+    ) {
+      try {
+        modelPayload = openAITextPayload(await dependencies.runDeepSeek(env, {
+          jsonSchema: scoutAnswerSchema,
+          maxTokens: 1_200,
+          messages: [
+            {
+              content: `${persona}\nReturn only JSON matching the supplied schema.`,
+              role: 'system',
+            },
+            { content: verifiedContext, role: 'system' },
+            ...input.history.map((turn) => ({
+              content: turn.text,
+              role: turn.role,
+            })),
+            { content: input.message, role: 'user' },
+          ],
+        }))
+        modelUsed = DEEPSEEK_FALLBACK_MODEL
+      } catch {
+        return json(
+          { error: 'Mr Scout could not answer right now.' },
+          { headers: privateHeaders, status: 502 },
+        )
+      }
+    } else {
+      return json(
+        { error: openAIResponse.status === 429
+          ? 'Mr Scout is busy. Try again shortly.'
+          : 'Mr Scout could not answer right now.' },
+        { headers: privateHeaders, status: openAIResponse.status === 429 ? 429 : 502 },
+      )
+    }
+  } else {
+    try {
+      modelPayload = openAITextPayload(await dependencies.runDeepSeek(env, {
+        jsonSchema: scoutAnswerSchema,
+        maxTokens: 1_200,
+        messages: [
+          {
+            content: `${persona}\nReturn only JSON matching the supplied schema.`,
+            role: 'system',
+          },
+          { content: verifiedContext, role: 'system' },
+          ...input.history.map((turn) => ({
+            content: turn.text,
+            role: turn.role,
+          })),
+          { content: input.message, role: 'user' },
+        ],
+      }))
+      modelUsed = DEEPSEEK_FALLBACK_MODEL
+    } catch {
+      return json(
+        { error: 'Mr Scout could not connect. Try again.' },
+        { headers: privateHeaders, status: 502 },
+      )
+    }
   }
 
-  if (!openAIResponse.ok) {
-    return json(
-      { error: openAIResponse.status === 429
-        ? 'Mr Scout is busy. Try again shortly.'
-        : 'Mr Scout could not answer right now.' },
-      { headers: privateHeaders, status: openAIResponse.status === 429 ? 429 : 502 },
-    )
-  }
-
   try {
-    const modelAnswer = parseScoutModelAnswer(await openAIResponse.json())
+    const modelAnswer = parseScoutModelAnswer(modelPayload)
     const answer = mapScoutAnswer(modelAnswer, scoutContext)
     if (groceryRequest) {
       answer.groceryPlan = buildGroceryPlan(input.message, visibleDeals, currencyCode)
@@ -414,7 +487,7 @@ export async function handleScoutChat(
     return json(
       {
         answer,
-        model: MODEL,
+        model: modelUsed,
         retrievalId,
       },
       { headers: privateHeaders },

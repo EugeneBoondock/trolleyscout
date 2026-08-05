@@ -2,6 +2,7 @@ import type { Retailer, RetailerGroup, SourceKind } from '../types'
 
 interface CataloguePlatformRetailerDefinition {
   accentColor?: string
+  aliases?: string[]
   group: RetailerGroup
   id: string
   kind?: SourceKind
@@ -10,7 +11,7 @@ interface CataloguePlatformRetailerDefinition {
   url: string
 }
 
-const verifiedOn = '2026-07-26'
+const verifiedOn = '2026-08-02'
 
 const groupAccent: Record<RetailerGroup, string> = {
   Fashion: '#2f3136',
@@ -39,11 +40,18 @@ const source = (
   ...options,
 })
 
-// Kimbino and Catalogue Specials are used only to identify retailer coverage
-// gaps. Every link below points to the retailer or its appointed storefront.
+// Catalogue competitors are used only to identify retailer coverage gaps.
+// Every link below points to the retailer or its appointed storefront.
 const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[] = [
+  source('acdc-express', 'ACDC Express', 'Homeware', 'https://acdcexpress.com/specials'),
   source('one-up-cash-and-carry', '1UP Cash & Carry', 'Wholesale', 'https://www.1uponline.co.za/'),
   source('africa-cash-and-carry', 'Africa Cash & Carry', 'Wholesale', 'https://www.africacashandcarry.co.za/'),
+  source('a5-cash-and-carry', 'A5 Cash & Carry', 'Wholesale', 'https://a5cashandcarry.co.za/', {
+    aliases: ['A5 Cash and Carry'],
+  }),
+  source('advance-cash-and-carry', 'Advance Cash & Carry', 'Wholesale', 'https://www.advancecashncarry.co.za/', {
+    aliases: ['Advance Cash and Carry'],
+  }),
   source('big-save', 'Big Save', 'Wholesale', 'https://www.bigsave.co.za/'),
   source('bluff-meat-supply', 'Bluff Meat Supply', 'Fresh market', 'https://bluffmeatsupply.co.za/'),
   source('check-save', 'Check Save', 'Value grocer', 'https://checksave.co.za/'),
@@ -52,6 +60,12 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
   source('diamond-discount-liquors', 'Diamond Discount Liquors', 'General retailer', 'https://diamondliquors.co.za/'),
   source('jumbo-cash-and-carry', 'Jumbo Cash & Carry', 'Wholesale', 'https://www.jumbo.co.za/'),
   source('kit-kat-cash-and-carry', 'KIT KAT Cash & Carry', 'Wholesale', 'https://kitkatgroup.com/specials/'),
+  source('ma-powertrade', 'M.A Powertrade', 'Wholesale', 'https://mapowertrade.co.za/offers-and-deals/', {
+    aliases: ['MA Powertrade'],
+  }),
+  source('obc-better-butchery', 'OBC Better Butchery', 'Fresh market', 'https://obc.co.za/', {
+    aliases: ['OBC', 'OBC Butchery'],
+  }),
   source('oxford-freshmarket', 'Oxford Freshmarket', 'Fresh market', 'https://oxfordfreshmarket.co.za/'),
   source('president-hyper', 'President Hyper', 'Value grocer', 'https://presidenthyper.co.za/'),
   source('save', 'Save', 'Value grocer', 'https://save.co.za/'),
@@ -60,10 +74,17 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
   source('take-n-pay', 'Take n Pay', 'Value grocer', 'https://takenpay.co.za/'),
   source('the-total-store', 'The Total Store', 'General retailer', 'https://thetotalstore.co.za/'),
   source('ultra-liquors', 'Ultra Liquors', 'General retailer', 'https://www.ultraliquors.co.za/'),
+  source('giant-hyper', 'Giant Hyper', 'Supermarket', 'https://gianthyper.co.za/'),
+  source('prestons-liquors', 'Prestons Liquors', 'General retailer', 'https://prestonsliquors.co.za/specials-brochure/', {
+    aliases: ['Prestons', 'Prestons Liquor Stores'],
+  }),
+  source('west-pack-lifestyle', 'West Pack Lifestyle', 'Homeware', 'https://www.westpacklifestyle.co.za/promotions/promo'),
 
   source('cash-crusaders', 'Cash Crusaders', 'General retailer', 'https://www.cashcrusaders.co.za/'),
   source('cell-c', 'Cell C', 'General retailer', 'https://www.cellc.co.za/cell-c-deals'),
   source('cellucity', 'Cellucity', 'General retailer', 'https://cellucity.co.za/'),
+  source('chatz-connect', 'Chatz Connect', 'General retailer', 'https://chatzconnect.co.za/shop/'),
+  source('cosmetic-connection', 'Cosmetic Connection', 'Pharmacy', 'https://www.cosmeticconnection.co.za/pages/promotion-catalogue'),
   source('hifi-corp', 'HiFi Corp', 'General retailer', 'https://www.hificorp.co.za/'),
   source('hirschs', 'Hirsch’s', 'General retailer', 'https://www.hirschs.co.za/'),
   source('mtn', 'MTN', 'General retailer', 'https://www.mtn.co.za/shop/deals/'),
@@ -88,7 +109,9 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
   source('coricraft', 'Coricraft', 'Homeware', 'https://coricraft.co.za/'),
   source('crazy-plastics', 'Crazy Plastics', 'Homeware', 'https://crazyplastics.co.za/'),
   source('ctm', 'CTM', 'Homeware', 'https://www.ctm.co.za/'),
-  source('decofurn', 'Decofurn', 'Homeware', 'https://decofurnsa.co.za/'),
+  source('decofurn', 'Decofurn', 'Homeware', 'https://decofurnsa.co.za/', {
+    aliases: ['Decofurn Furniture'],
+  }),
   source('furnmart', 'Furnmart', 'Homeware', 'https://www.furnmart.co.za/'),
   source('gelmar', 'Gelmar', 'Homeware', 'https://www.gelmar.co.za/'),
   source('house-and-home', 'House & Home', 'Homeware', 'https://www.houseandhome.co.za/'),
@@ -100,6 +123,7 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
   source('mrp-home', 'MRP Home', 'Homeware', 'https://www.mrphome.com/'),
   source('ok-furniture', 'OK Furniture', 'Homeware', 'https://www.okfurniture.co.za/'),
   source('russells', 'Russells', 'Homeware', 'https://www.russells.co.za/'),
+  source('rochester', 'Rochester', 'Homeware', 'https://www.rochester.co.za/'),
   source('schulmans-home', 'Schulman’s Home', 'Homeware', 'https://www.schulmanshome.co.za/'),
   source('sheet-street', 'Sheet Street', 'Homeware', 'https://www.sheetstreet.com/'),
   source('sleepmasters', 'Sleepmasters', 'Homeware', 'https://www.sleepmasters.co.za/'),
@@ -110,9 +134,25 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
   source('home-corp', 'Home Corp', 'Homeware', 'https://www.homecorp.co.za/'),
   source('homechoice', 'HomeChoice', 'Homeware', 'https://www.homechoice.co.za/'),
 
+  source('amc-cookware', 'AMC Cookware', 'Homeware', 'https://www.amcsa.co.za/en/home/', {
+    aliases: ['AMC'],
+  }),
+  source('shzen', 'Sh’Zen', 'Pharmacy', 'https://store.shzen.co.za/specials/', {
+    aliases: ["Sh'Zen"],
+  }),
+  source('the-bed-shop', 'The Bed Shop', 'Homeware', 'https://thebedshop.co.za/', {
+    aliases: ['Bed Shop'],
+  }),
+  source('samsung-za', 'Samsung', 'General retailer', 'https://www.samsung.com/za/offer/', {
+    aliases: ['Samsung Store', 'Samsung South Africa'],
+  }),
+
   source('ackermans', 'Ackermans', 'Fashion', 'https://www.ackermans.co.za/'),
   source('foschini', 'Foschini', 'Fashion', 'https://bash.com/foschini'),
-  source('jet', 'Jet', 'Fashion', 'https://bash.com/jet/sale', { accentColor: '#ed1b2f' }),
+  source('jet', 'Jet', 'Fashion', 'https://bash.com/jet/sale', {
+    accentColor: '#ed1b2f',
+    aliases: ['Jet Mart'],
+  }),
   source('markham', 'Markham', 'Fashion', 'https://bash.com/markham'),
   source('mrp-sport', 'MRP Sport', 'Sports and outdoors', 'https://www.mrpsport.com/'),
   source('spitz', 'Spitz', 'Fashion', 'https://bash.com/spitz'),
@@ -120,6 +160,7 @@ const cataloguePlatformRetailerDefinitions: CataloguePlatformRetailerDefinition[
 
   source('avon', 'Avon', 'Pharmacy', 'https://my.avon.co.za/'),
   source('justine', 'Justine', 'Pharmacy', 'https://www.justine.co.za/'),
+  source('liquor-city', 'Liquor City', 'General retailer', 'https://www.liquorcity.co.za/promotions'),
   source('autozone', 'AutoZone', 'General retailer', 'https://www.autozone.co.za/'),
   source('babies-r-us', 'Babies R Us', 'General retailer', 'https://www.babiesrus.co.za/'),
   source('baby-city', 'Baby City', 'General retailer', 'https://www.babycity.co.za/'),
@@ -139,6 +180,7 @@ export const cataloguePlatformRetailers: Retailer[] =
     id: definition.id,
     name: definition.name,
     shortName: definition.shortName ?? definition.name,
+    aliases: definition.aliases,
     group: definition.group,
     program: `${definition.name} offers`,
     sourceNote: `Official ${definition.name} store, deals, or catalogue source.`,

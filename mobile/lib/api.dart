@@ -8,11 +8,13 @@ import 'ad_pricing.dart';
 import 'api_models.dart';
 import 'currency.dart';
 import 'platform_http_client.dart';
+import 'retail_seasons.dart';
 import 'session_cookie_store.dart';
 import 'voucher_models.dart';
 
 export 'ad_pricing.dart';
 export 'api_models.dart';
+export 'retail_seasons.dart';
 export 'voucher_models.dart';
 
 /// An advertiser's ads plus the current rate card, as /api/ads returns them.
@@ -139,11 +141,15 @@ class Api {
   String? _adminCountryCode;
   String? _memberCountryCode;
   String? _memberCurrencyCode;
+  String? _memberPlanId;
+  String? _memberRole;
   String? _lookedUpCurrencyCode;
   bool _adminCountryLoaded = false;
 
   String get effectiveCountryCode =>
       _adminCountryCode ?? _memberCountryCode ?? 'ZA';
+  String get discoveryCacheScope =>
+      _memberRole == 'admin' ? 'admin' : (_memberPlanId ?? 'free');
 
   /// The currency the shopper's country prices in — what shopping money is
   /// shown in. Membership and advertising stay in rand whoever is looking.
@@ -160,6 +166,8 @@ class Api {
       final session = MemberSession.fromJson(_map(data['session']));
       _memberCountryCode = session.account?.countryCode;
       _memberCurrencyCode = session.account?.currencyCode;
+      _memberPlanId = session.account?.planId;
+      _memberRole = session.account?.role;
       await _cacheSession(session);
       return session;
     } on ApiException catch (error) {
@@ -169,6 +177,8 @@ class Api {
       if (cached != null) {
         _memberCountryCode = cached.account?.countryCode;
         _memberCurrencyCode = cached.account?.currencyCode;
+        _memberPlanId = cached.account?.planId;
+        _memberRole = cached.account?.role;
         return MemberSession(
           isAuthenticated: true,
           account: cached.account,
@@ -187,6 +197,8 @@ class Api {
     if (cached == null) return;
     _memberCountryCode = cached.account?.countryCode;
     _memberCurrencyCode = cached.account?.currencyCode;
+    _memberPlanId = cached.account?.planId;
+    _memberRole = cached.account?.role;
   }
 
   Future<MemberSession> authenticate(AuthDraft draft) async {
@@ -195,6 +207,8 @@ class Api {
     final session = MemberSession.fromJson(_map(data['session']));
     _memberCountryCode = session.account?.countryCode;
     _memberCurrencyCode = session.account?.currencyCode;
+    _memberPlanId = session.account?.planId;
+    _memberRole = session.account?.role;
     await _cacheSession(session);
     return session;
   }
@@ -219,6 +233,8 @@ class Api {
     _adminCountryCode = null;
     _memberCountryCode = null;
     _memberCurrencyCode = null;
+    _memberPlanId = null;
+    _memberRole = null;
     _lookedUpCurrencyCode = null;
     _adminCountryLoaded = true;
     try {
@@ -245,6 +261,51 @@ class Api {
   }
 
   Future<List<Deal>> deals() async => (await discovery()).deals;
+
+  Future<List<RetailHoliday>> retailHolidays() async {
+    await _loadAdminCountryOverride();
+    final countryCode = Uri.encodeComponent(effectiveCountryCode);
+    final data = await _request(
+      'GET',
+      '/api/retail-calendar?country=$countryCode',
+    );
+    return _maps(data['holidays']).map(RetailHoliday.fromJson).toList();
+  }
+
+  Future<CoverageLedger> coverage() async {
+    final data = await _request('GET', '/api/coverage');
+    return CoverageLedger.fromJson(_map(data['coverage']));
+  }
+
+  Future<void> reportDeal(
+    Deal deal,
+    String reason, {
+    String? note,
+  }) async {
+    await _request('POST', '/api/deal-reports', body: {
+      'dealId': deal.id,
+      'retailerId': deal.retailerId,
+      'retailerName': deal.retailerName,
+      'title': deal.title,
+      'sourceUrl': deal.sourceUrl,
+      if (deal.productUrl != null) 'productUrl': deal.productUrl,
+      'reason': reason,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  Future<List<DealReport>> adminDealReports() async {
+    final data = await _request('GET', '/api/admin/deal-reports');
+    return _maps(data['reports']).map(DealReport.fromJson).toList();
+  }
+
+  Future<List<DealReport>> reviewDealReport(String id, String status) async {
+    final data = await _request('PATCH', '/api/admin/deal-reports', body: {
+      'id': id,
+      'status': status,
+    });
+    return _maps(data['reports']).map(DealReport.fromJson).toList();
+  }
 
   /// [lat] and [lon] narrow the directory to shops the shopper could reach.
   /// Without them the whole country comes back, which is what the stores page
@@ -287,9 +348,10 @@ class Api {
   /// Checkout codes: what a shopper pastes into a promo-code box. Separate
   /// from vouchers(), which returns loyalty prices and clip coupons.
   Future<List<VoucherCode>> voucherCodes({String? retailerId}) async {
-    final suffix = retailerId != null && retailerId.isNotEmpty && retailerId != 'all'
-        ? '?retailerId=${Uri.encodeQueryComponent(retailerId)}'
-        : '';
+    final suffix =
+        retailerId != null && retailerId.isNotEmpty && retailerId != 'all'
+            ? '?retailerId=${Uri.encodeQueryComponent(retailerId)}'
+            : '';
     final data = await _request('GET', '/api/voucher-codes$suffix');
     return _maps(data['codes']).map(VoucherCode.fromJson).toList();
   }
@@ -312,7 +374,8 @@ class Api {
   }
 
   /// Records whether a code worked. This is the whole ranking signal.
-  Future<VoucherCode?> rateVoucherCode(String voucherCodeId, bool worked) async {
+  Future<VoucherCode?> rateVoucherCode(
+      String voucherCodeId, bool worked) async {
     final data = await _request('POST', '/api/voucher-codes', body: {
       'action': 'vote',
       'voucherCodeId': voucherCodeId,
@@ -484,6 +547,30 @@ class Api {
         await _request('GET', '/api/subscription'));
   }
 
+  Future<DeveloperKeyResource> developerKeys() async {
+    return DeveloperKeyResource.fromJson(
+        await _request('GET', '/api/developer-keys'));
+  }
+
+  Future<DeveloperKeyResource> createDeveloperKey(
+    String name,
+    List<String> scopes,
+  ) async {
+    return DeveloperKeyResource.fromJson(await _request(
+      'POST',
+      '/api/developer-keys',
+      body: {'name': name, 'scopes': scopes},
+    ));
+  }
+
+  Future<DeveloperKeyResource> revokeDeveloperKey(String keyId) async {
+    return DeveloperKeyResource.fromJson(await _request(
+      'DELETE',
+      '/api/developer-keys',
+      body: {'keyId': keyId},
+    ));
+  }
+
   Future<List<OrganizationApplication>> submitOrganizationApplication(
     OrganizationApplicationDraft draft,
   ) async {
@@ -545,6 +632,7 @@ class Api {
         path: path,
         distanceMeters: (data['distanceMeters'] as num?)?.toDouble() ?? 0,
         durationSeconds: (data['durationSeconds'] as num?)?.toDouble() ?? 0,
+        steps: _maps(data['steps']).map(MapRouteStep.fromJson).toList(),
       );
     } catch (_) {
       return null;
@@ -584,6 +672,8 @@ class Api {
     final account = MemberAccount.fromJson(_map(data['account']));
     _memberCountryCode = account.countryCode;
     _memberCurrencyCode = account.currencyCode;
+    _memberPlanId = account.planId;
+    _memberRole = account.role;
     await _cacheSession(
       MemberSession(isAuthenticated: true, account: account),
     );
@@ -648,7 +738,8 @@ class Api {
       'compareBlocked': compareBlocked,
       'scoutChatBlocked': scoutChatBlocked,
       if (note != null) 'note': note,
-      if (scoutMessagesPerDay != null) 'scoutMessagesPerDay': scoutMessagesPerDay,
+      if (scoutMessagesPerDay != null)
+        'scoutMessagesPerDay': scoutMessagesPerDay,
       if (visibleCatalogues != null) 'visibleCatalogues': visibleCatalogues,
       if (visibleDeals != null) 'visibleDeals': visibleDeals,
     });
@@ -926,7 +1017,10 @@ class Api {
   }
 
   /// Deals from the external deal sites (OneDayOnly, Hyperli, Daddy's Deals,
-  /// MyRunway) for the endless Scroll reel. Public, no auth.
+  /// MyRunway, Travelstart, Southern Sun, Flight Centre, City Lodge Hotels,
+  /// ANEW Hotels, BushBreaks and Sun International)
+  /// for the endless Scroll reel.
+  /// Public, no auth.
   Future<List<ScrollDeal>> dealSites({bool forceLive = false}) async {
     final suffix = forceLive ? '?refresh=1' : '';
     final data = await _request(
@@ -1096,6 +1190,43 @@ class Api {
       timeout: const Duration(seconds: 35),
     );
     return ScoutChatAnswer.fromJson(_map(data['answer']));
+  }
+
+  Future<ScoutVoiceReply> scoutVoice({
+    required String question,
+    required String surface,
+    List<ScoutChatTurn> history = const [],
+    ScrollDeal? product,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/api/scout-voice',
+      body: {
+        'question': question,
+        'surface': surface,
+        'history': history.map((turn) => turn.toJson()).toList(growable: false),
+        if (product != null)
+          'product': {
+            'title': product.title,
+            'retailerName': product.retailerName,
+            'priceText': product.priceText,
+            'category': product.category,
+            'productUrl': product.productUrl,
+          },
+      },
+      timeout: const Duration(seconds: 70),
+    );
+    return ScoutVoiceReply.fromJson(data);
+  }
+
+  Future<ScoutVoiceReply> navigationVoice(String instruction) async {
+    final data = await _request(
+      'POST',
+      '/api/navigation-voice',
+      body: {'instruction': instruction},
+      timeout: const Duration(seconds: 30),
+    );
+    return ScoutVoiceReply.fromJson(data);
   }
 
   Future<Map<String, dynamic>> _request(

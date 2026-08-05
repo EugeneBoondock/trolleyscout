@@ -90,7 +90,7 @@ export async function searchGlobalProperties(
   if (listings.length === 0 && sources.length === 0) {
     const action = params.listingType === 'rent' ? 'property to rent' : 'property for sale'
     const resultGroups = await Promise.all([
-      searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY),
+      searchWeb(`${action} ${locationText} ${country.name}`, env.JINA_API_KEY, env),
       searchWeb(
         `(immobilier OR imoveis OR nyumba) ${locationText} ${country.name} ${
           params.listingType === 'rent'
@@ -98,6 +98,7 @@ export async function searchGlobalProperties(
             : '(vente OR venda OR inauzwa)'
         }`,
         env.JINA_API_KEY,
+        env,
       ),
     ])
     const registeredSources = [

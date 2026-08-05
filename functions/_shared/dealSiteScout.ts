@@ -1,16 +1,27 @@
-// Fetches the four external deal sites and caches their normalized deals in D1,
+// Fetches the public external deal and travel sources and caches normalized deals in D1,
 // one row per site. Each fetch is isolated and time-bounded so a slow or broken
 // site never blocks the others or the Worker. Public reads only use the D1
 // cache; the scheduled Worker and an administrator own upstream refreshes.
 
 import {
+  parseAnewHotels,
+  parseBushBreaks,
+  parseCityLodge,
   parseDaddysDeals,
+  parseFlightCentre,
   parseHyperli,
   parseMyRunway,
   parseOneDayOnly,
+  parseSouthernSun,
+  parseTravelstart,
+  parseSunInternational,
   type DealSiteId,
   type DealSiteItem,
 } from '../../src/services/dealSites'
+import {
+  buildRetailSeasons,
+  southAfricanRetailHolidayFallback,
+} from '../../src/services/retailSeasons'
 import { hasTrolleyScoutDatabase, type TrolleyScoutEnv } from './env'
 
 const BROWSER_UA =
@@ -50,6 +61,13 @@ const SITE_LABELS: Record<DealSiteId, string> = {
   hyperli: 'Hyperli',
   daddysdeals: "Daddy's Deals",
   myrunway: 'MyRunway',
+  travelstart: 'Travelstart',
+  southernsun: 'Southern Sun',
+  flightcentre: 'Flight Centre',
+  citylodge: 'City Lodge Hotels',
+  anewhotels: 'ANEW Hotels & Resorts',
+  bushbreaks: 'BushBreaks',
+  suninternational: 'Sun International',
 }
 
 async function fetchOneDayOnly(fetcher: typeof fetch): Promise<DealSiteItem[]> {
@@ -61,17 +79,26 @@ async function fetchOneDayOnly(fetcher: typeof fetch): Promise<DealSiteItem[]> {
 }
 
 async function fetchHyperli(fetcher: typeof fetch): Promise<DealSiteItem[]> {
-  const response = await timedFetch(fetcher, 'https://hyperli.com/products.json?limit=250', {
-    headers: { 'user-agent': BROWSER_UA, accept: 'application/json' },
-  })
-  if (!response.ok) return []
-  return parseHyperli(await response.json())
+  const responses = await Promise.allSettled(
+    Array.from({ length: 4 }, (_, index) => timedFetch(
+      fetcher,
+      `https://hyperli.com/products.json?limit=250&page=${index + 1}`,
+      { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' } },
+    )),
+  )
+  const products: unknown[] = []
+  for (const result of responses) {
+    if (result.status !== 'fulfilled' || !result.value.ok) continue
+    const payload = await result.value.json() as { products?: unknown }
+    if (Array.isArray(payload.products)) products.push(...payload.products)
+  }
+  return parseHyperli({ products })
 }
 
 async function fetchDaddysDeals(fetcher: typeof fetch): Promise<DealSiteItem[]> {
   const response = await timedFetch(
     fetcher,
-    'https://daddysdeals.co.za/wp-json/wp/v2/product?per_page=50&_embed=1',
+    'https://daddysdeals.co.za/wp-json/wp/v2/product?per_page=100&_embed=1',
     { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' } },
   )
   if (!response.ok) return []
@@ -101,6 +128,66 @@ async function fetchMyRunway(fetcher: typeof fetch): Promise<DealSiteItem[]> {
       : []
   const enriched = await enrichMyRunwayProducts(products, fetcher, headers)
   return parseMyRunway(enriched)
+}
+
+async function fetchTravelstart(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(fetcher, 'https://www.travelstart.co.za/lp/travel-deals', {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+  })
+  if (!response.ok) return []
+  return parseTravelstart(await response.text())
+}
+
+async function fetchSouthernSun(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(fetcher, 'https://www.southernsun.com/offers', {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+  })
+  if (!response.ok) return []
+  return parseSouthernSun(await response.text())
+}
+
+async function fetchFlightCentre(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(fetcher, 'https://www.flightcentre.co.za/deals', {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+  })
+  if (!response.ok) return []
+  return parseFlightCentre(await response.text())
+}
+
+async function fetchCityLodge(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(
+    fetcher,
+    'https://citylodgehotels.com/api/web/special_offers',
+    { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' } },
+  )
+  if (!response.ok) return []
+  return parseCityLodge(await response.json())
+}
+
+async function fetchAnewHotels(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(fetcher, 'https://anewhotels.com/all-specials/', {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+  })
+  if (!response.ok) return []
+  return parseAnewHotels(await response.text())
+}
+
+async function fetchBushBreaks(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(
+    fetcher,
+    'https://www.bushbreaks.co.za/popular-requests/specials/',
+    { headers: { 'user-agent': BROWSER_UA, accept: 'text/html' } },
+  )
+  if (!response.ok) return []
+  return parseBushBreaks(await response.text())
+}
+
+async function fetchSunInternational(fetcher: typeof fetch): Promise<DealSiteItem[]> {
+  const response = await timedFetch(fetcher, 'https://www.suninternational.com/specials', {
+    headers: { 'user-agent': BROWSER_UA, accept: 'text/html' },
+  })
+  if (!response.ok) return []
+  return parseSunInternational(await response.text())
 }
 
 export interface MyRunwayEnrichmentOptions {
@@ -186,6 +273,13 @@ const SITE_FETCHERS: Record<DealSiteId, (fetcher: typeof fetch) => Promise<DealS
   hyperli: fetchHyperli,
   daddysdeals: fetchDaddysDeals,
   myrunway: fetchMyRunway,
+  travelstart: fetchTravelstart,
+  southernsun: fetchSouthernSun,
+  flightcentre: fetchFlightCentre,
+  citylodge: fetchCityLodge,
+  anewhotels: fetchAnewHotels,
+  bushbreaks: fetchBushBreaks,
+  suninternational: fetchSunInternational,
 }
 
 // Refreshes every site's cache row. Each site is independent: a failure keeps
@@ -197,10 +291,14 @@ export async function refreshDealSites(
 ): Promise<number> {
   if (!hasTrolleyScoutDatabase(env)) return 0
 
+  const campaignTerms = currentCampaignPriorityTerms()
   const ids = Object.keys(SITE_FETCHERS) as DealSiteId[]
   const results = await Promise.allSettled(
     ids.map(async (id) => {
-      const items = (await SITE_FETCHERS[id](fetcher)).slice(0, MAX_ITEMS_PER_SITE)
+      const items = prioritizeCampaignItems(
+        await SITE_FETCHERS[id](fetcher),
+        campaignTerms,
+      ).slice(0, MAX_ITEMS_PER_SITE)
       if (items.length === 0) return 0
       await writeSiteRow(env, id, items)
       return items.length
@@ -211,6 +309,48 @@ export async function refreshDealSites(
     (total, result) => total + (result.status === 'fulfilled' ? result.value : 0),
     0,
   )
+}
+
+export function currentCampaignPriorityTerms(now = new Date()): string[] {
+  return [...new Set(
+    buildRetailSeasons('ZA', now, southAfricanRetailHolidayFallback(now))
+      .filter((season) => season.status !== 'always')
+      .flatMap((season) => [
+        season.title,
+        season.title.replace(/^National\s+/i, ''),
+        ...season.searchTerms,
+      ])
+      .map(normalizeCampaignText)
+      .filter(Boolean),
+  )]
+}
+
+export function prioritizeCampaignItems(
+  items: readonly DealSiteItem[],
+  terms: readonly string[],
+): DealSiteItem[] {
+  return items.map((item, index) => ({
+    index,
+    item,
+    score: campaignItemScore(item, terms),
+  })).sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(({ item }) => item)
+}
+
+function campaignItemScore(item: DealSiteItem, terms: readonly string[]): number {
+  const searchable = normalizeCampaignText([
+    item.title,
+    item.category,
+    item.retailerName,
+    item.sourceLabel,
+    item.savingText,
+  ].filter(Boolean).join(' '))
+  return terms.reduce((score, term) => score + Number(term && searchable.includes(term)), 0)
+}
+
+function normalizeCampaignText(value: string): string {
+  return value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
 export async function readDealSiteFeed(

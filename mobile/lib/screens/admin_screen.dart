@@ -129,7 +129,7 @@ class _AdminScreenState extends State<AdminScreen> {
         }
         final overview = snapshot.data!;
         return DefaultTabController(
-          length: 5,
+          length: 6,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -151,6 +151,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   const Tab(text: 'Overview'),
                   Tab(text: 'Members (${overview.accounts.length})'),
                   const Tab(text: 'Analytics'),
+                  const Tab(text: 'Deal reports'),
                   Tab(text: 'Support (${overview.supportOpenCount})'),
                   const Tab(text: 'Business'),
                 ],
@@ -161,6 +162,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     _overviewTab(overview),
                     _membersTab(overview),
                     AdminAnalyticsTab(api: widget.api),
+                    DealReportsAdminTab(api: widget.api),
                     _supportTab(overview),
                     _businessTab(),
                   ],
@@ -177,181 +179,183 @@ class _AdminScreenState extends State<AdminScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-            PaperCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        PaperCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'App test location',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Changes stores, deals, compare, and properties for your admin session.',
+                style: TextStyle(
+                  color: TS.mutedOf(context),
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: const Key('admin-test-country'),
+                initialValue: overview.selectedCountry.code,
+                decoration: const InputDecoration(
+                  labelText: 'Country',
+                  prefixIcon: Icon(Icons.public),
+                ),
+                isExpanded: true,
+                items: [
+                  for (final country in overview.countries)
+                    DropdownMenuItem(
+                      value: country.code,
+                      child: Text('${country.flag} ${country.name}'),
+                    ),
+                ],
+                onChanged: _changingCountry ? null : _changeTestCountry,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            SizedBox(
+                width: 170,
+                child: MetricCard(
+                    label: 'Accounts',
+                    value: '${overview.accountCount}',
+                    icon: Icons.people_outline)),
+            SizedBox(
+                width: 170,
+                child: MetricCard(
+                    label: 'Stored deals',
+                    value: '${overview.dealCount}',
+                    icon: Icons.local_offer_outlined)),
+            SizedBox(
+                width: 170,
+                child: MetricCard(
+                    label: 'Leaflets',
+                    value: '${overview.leafletCount}',
+                    icon: Icons.menu_book_outlined)),
+            SizedBox(
+                width: 170,
+                child: MetricCard(
+                    label: 'Sources',
+                    value: '${overview.sourceCount}',
+                    icon: Icons.storefront_outlined)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // Stacked, not a row: beside a line of text the button ran out of
+        // width on a phone and was pushed off the edge of the card, which
+        // read as there being no way to refresh at all.
+        PaperCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    'App test location',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                  Icon(Icons.sync, color: TS.redOf(context)),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Deal source refresh',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Changes stores, deals, compare, and properties for your admin session.',
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _lastRefreshSummary ??
+                    'Runs discovery, the retailer feeds, and a slice of the '
+                        'online-store sweep for '
+                        '${overview.selectedCountry.name} now.',
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
+              ),
+              // One press takes a slice, so the count left is the honest
+              // answer to "will pressing this again do anything".
+              if (_storesPending != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _storesPending == 0
+                        ? 'Every ${overview.selectedCountry.name} shop is swept for now.'
+                        : '$_storesPending ${overview.selectedCountry.name} '
+                            'shop${_storesPending == 1 ? '' : 's'} still to sweep.',
                     style: TextStyle(
                       color: TS.mutedOf(context),
-                      fontSize: 13,
-                      height: 1.35,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    key: const Key('admin-test-country'),
-                    initialValue: overview.selectedCountry.code,
-                    decoration: const InputDecoration(
-                      labelText: 'Country',
-                      prefixIcon: Icon(Icons.public),
-                    ),
-                    isExpanded: true,
-                    items: [
-                      for (final country in overview.countries)
-                        DropdownMenuItem(
-                          value: country.code,
-                          child: Text('${country.flag} ${country.name}'),
-                        ),
-                    ],
-                    onChanged: _changingCountry ? null : _changeTestCountry,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SizedBox(
-                    width: 170,
-                    child: MetricCard(
-                        label: 'Accounts',
-                        value: '${overview.accountCount}',
-                        icon: Icons.people_outline)),
-                SizedBox(
-                    width: 170,
-                    child: MetricCard(
-                        label: 'Stored deals',
-                        value: '${overview.dealCount}',
-                        icon: Icons.local_offer_outlined)),
-                SizedBox(
-                    width: 170,
-                    child: MetricCard(
-                        label: 'Leaflets',
-                        value: '${overview.leafletCount}',
-                        icon: Icons.menu_book_outlined)),
-                SizedBox(
-                    width: 170,
-                    child: MetricCard(
-                        label: 'Sources',
-                        value: '${overview.sourceCount}',
-                        icon: Icons.storefront_outlined)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Stacked, not a row: beside a line of text the button ran out of
-            // width on a phone and was pushed off the edge of the card, which
-            // read as there being no way to refresh at all.
-            PaperCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                // A plain FilledButton, not FilledButton.icon: the icon
+                // constructor builds a private subclass that byType finders
+                // never match, which puts the control out of reach of the
+                // tests that guard it.
+                child: FilledButton(
+                  onPressed: _refreshingDeals ? null : _refreshDeals,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.sync, color: TS.redOf(context)),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                      if (_refreshingDeals)
+                        const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        const Icon(Icons.sync, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(
                         child: Text(
-                          'Deal source refresh',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                          _refreshingDeals
+                              ? 'Refreshing'
+                              : 'Fetch ${overview.selectedCountry.name} deals now',
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _lastRefreshSummary ??
-                        'Runs discovery, the retailer feeds, and a slice of the '
-                            'online-store sweep for '
-                            '${overview.selectedCountry.name} now.',
-                    style: TextStyle(color: TS.mutedOf(context), fontSize: 12),
-                  ),
-                  // One press takes a slice, so the count left is the honest
-                  // answer to "will pressing this again do anything".
-                  if (_storesPending != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _storesPending == 0
-                            ? 'Every ${overview.selectedCountry.name} shop is swept for now.'
-                            : '$_storesPending ${overview.selectedCountry.name} '
-                                'shop${_storesPending == 1 ? '' : 's'} still to sweep.',
-                        style: TextStyle(
-                          color: TS.mutedOf(context),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    // A plain FilledButton, not FilledButton.icon: the icon
-                    // constructor builds a private subclass that byType finders
-                    // never match, which puts the control out of reach of the
-                    // tests that guard it.
-                    child: FilledButton(
-                      onPressed: _refreshingDeals ? null : _refreshDeals,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_refreshingDeals)
-                            const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            const Icon(Icons.sync, size: 18),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              _refreshingDeals
-                                  ? 'Refreshing'
-                                  : 'Fetch ${overview.selectedCountry.name} deals now',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final entry in overview.planCounts.entries)
-                  Chip(label: Text('${entry.key}: ${entry.value}')),
-              ],
-            ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final entry in overview.planCounts.entries)
+              Chip(label: Text('${entry.key}: ${entry.value}')),
+          ],
+        ),
       ],
     );
   }
 
   Widget _membersTab(AdminOverview overview) {
     final countries = overview.memberCountries;
-    final total = countries.fold<int>(0, (sum, entry) => sum + entry.memberCount);
+    final total =
+        countries.fold<int>(0, (sum, entry) => sum + entry.memberCount);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Text('Accounts',
-            style: Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+            style:
+                Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
         const SizedBox(height: 4),
         Text(
           'Every country by default. Tap a card for what a member actually uses '
@@ -385,8 +389,7 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                     ),
                 ],
-                onChanged: (value) =>
-                    _reloadMembers(country: value ?? 'ALL'),
+                onChanged: (value) => _reloadMembers(country: value ?? 'ALL'),
               ),
             ),
             SizedBox(
@@ -397,13 +400,16 @@ class _AdminScreenState extends State<AdminScreen> {
                 decoration: const InputDecoration(labelText: 'Membership'),
                 isExpanded: true,
                 items: const [
-                  DropdownMenuItem(value: 'all', child: Text('All memberships')),
+                  DropdownMenuItem(
+                      value: 'all', child: Text('All memberships')),
                   DropdownMenuItem(value: 'free', child: Text('Free')),
                   DropdownMenuItem(value: 'scout', child: Text('Scout')),
-                  DropdownMenuItem(value: 'household', child: Text('Household')),
+                  DropdownMenuItem(
+                      value: 'household', child: Text('Household')),
                   DropdownMenuItem(
                       value: 'organization', child: Text('Organisation')),
-                  DropdownMenuItem(value: 'developers', child: Text('Developers')),
+                  DropdownMenuItem(
+                      value: 'developers', child: Text('Developers')),
                 ],
                 onChanged: (value) => _reloadMembers(plan: value ?? 'all'),
               ),
@@ -469,6 +475,149 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 }
+
+class DealReportsAdminTab extends StatefulWidget {
+  const DealReportsAdminTab({super.key, required this.api});
+
+  final Api api;
+
+  @override
+  State<DealReportsAdminTab> createState() => _DealReportsAdminTabState();
+}
+
+class _DealReportsAdminTabState extends State<DealReportsAdminTab> {
+  late Future<List<DealReport>> _future = widget.api.adminDealReports();
+  final Set<String> _busy = {};
+
+  void _reload() => setState(() => _future = widget.api.adminDealReports());
+
+  Future<void> _review(DealReport report, String status) async {
+    setState(() => _busy.add(report.id));
+    try {
+      final reports = await widget.api.reviewDealReport(report.id, status);
+      if (mounted) {
+        setState(() {
+          _future = Future.value(reports);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(status == 'confirmed'
+                  ? 'Issue confirmed.'
+                  : 'Report dismissed.')),
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    } finally {
+      if (mounted) setState(() => _busy.remove(report.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<DealReport>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingPane();
+        }
+        if (snapshot.hasError || snapshot.data == null) {
+          return ErrorPane(
+              message: 'Deal reports are unavailable.', onRetry: _reload);
+        }
+        final reports = snapshot.data!;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const ScreenHeader(
+              eyebrow: 'Deal accuracy',
+              title: 'Shopper reports',
+              description:
+                  'Check each claim against the saved retailer source before changing a deal.',
+            ),
+            if (reports.isEmpty)
+              const EmptyCard(
+                message: 'No deal reports need review.',
+                icon: Icons.verified_outlined,
+              )
+            else
+              for (final report in reports)
+                PaperCard(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.flag, color: TS.redOf(context), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _dealReportReason(report.reason),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          Text(
+                            report.countryCode,
+                            style: TextStyle(
+                                color: TS.mutedOf(context), fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(report.title,
+                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(report.retailerName,
+                          style: TextStyle(color: TS.mutedOf(context))),
+                      if (report.note != null) ...[
+                        const SizedBox(height: 8),
+                        Text(report.note!),
+                      ],
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => openExternal(report.sourceUrl),
+                            icon: const Icon(Icons.open_in_new, size: 17),
+                            label: const Text('Retailer source'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _busy.contains(report.id)
+                                ? null
+                                : () => _review(report, 'dismissed'),
+                            icon: const Icon(Icons.close, size: 17),
+                            label: const Text('Dismiss'),
+                          ),
+                          FilledButton.icon(
+                            key: Key('confirm-deal-report-${report.id}'),
+                            onPressed: _busy.contains(report.id)
+                                ? null
+                                : () => _review(report, 'confirmed'),
+                            icon: const Icon(Icons.check, size: 17),
+                            label: const Text('Confirm issue'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String _dealReportReason(String reason) => switch (reason) {
+      'price_wrong' => 'Price is wrong',
+      'expired' => 'Offer has ended',
+      'unavailable' => 'Item is unavailable',
+      'wrong_item' => 'Wrong item or description',
+      _ => 'Other issue',
+    };
 
 class OrganizationApplicationReviewSection extends StatefulWidget {
   const OrganizationApplicationReviewSection({
@@ -809,8 +958,10 @@ class _MemberDetailSheetState extends State<_MemberDetailSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('${countryFlag(account.countryCode)} ${account.displayName}',
-                style: Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
-            Text('${account.email} · ${account.countryName} · ${account.planName}',
+                style:
+                    Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
+            Text(
+                '${account.email} · ${account.countryName} · ${account.planName}',
                 style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5)),
             const SizedBox(height: 14),
             if (_error != null)
@@ -826,15 +977,19 @@ class _MemberDetailSheetState extends State<_MemberDetailSheet> {
                 spacing: 10,
                 children: [
                   _statTile('Deals viewed', '${_stat('dealViewCount')}'),
-                  _statTile('Properties viewed', '${_stat('propertyViewCount')}'),
+                  _statTile(
+                      'Properties viewed', '${_stat('propertyViewCount')}'),
                   _statTile('Vouchers viewed', '${_stat('voucherViewCount')}'),
-                  _statTile('Vouchers saved', '${_stat('voucherClaimedCount')}'),
-                  _statTile('Mr Scout messages', '${_stat('scoutMessageCount')}'),
+                  _statTile(
+                      'Vouchers saved', '${_stat('voucherClaimedCount')}'),
+                  _statTile(
+                      'Mr Scout messages', '${_stat('scoutMessageCount')}'),
                   _statTile('Saved deals', '${_stat('savedDealCount')}'),
                   _statTile('Basket items', '${_stat('basketItemCount')}'),
                   _statTile(
                       'Saved properties', '${_stat('savedPropertyCount')}'),
-                  _statTile('Window saves', '${_stat('windowShoppingSaveCount')}'),
+                  _statTile(
+                      'Window saves', '${_stat('windowShoppingSaveCount')}'),
                   _statTile('Window shopping',
                       _formatDuration(_stat('windowShoppingSeconds'))),
                 ],
@@ -869,7 +1024,11 @@ class _MemberDetailSheetState extends State<_MemberDetailSheet> {
               width: double.infinity,
               child: FilledButton(
                 key: const Key('admin-save-limits'),
-                onPressed: _saving ? null : () { _save(); },
+                onPressed: _saving
+                    ? null
+                    : () {
+                        _save();
+                      },
                 child: Text(_saving ? 'Saving...' : 'Save limits'),
               ),
             ),
@@ -899,14 +1058,15 @@ class _MemberDetailSheetState extends State<_MemberDetailSheet> {
         ),
       );
 
-  Widget _limitField(String label, TextEditingController controller, String key) =>
+  Widget _limitField(
+          String label, TextEditingController controller, String key) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: TextField(
           key: Key(key),
           controller: controller,
-          decoration: InputDecoration(
-              labelText: label, hintText: 'Plan default'),
+          decoration:
+              InputDecoration(labelText: label, hintText: 'Plan default'),
           keyboardType: TextInputType.number,
         ),
       );
@@ -969,7 +1129,8 @@ class _MemberCard extends StatelessWidget {
                         Text(account.displayName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
                         Text('${account.email} · ${account.countryName}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -991,8 +1152,10 @@ class _MemberCard extends StatelessWidget {
                 runSpacing: 4,
                 children: [
                   _countChip('${account.dealViewCount}', 'deals', context),
-                  _countChip('${account.propertyViewCount}', 'properties', context),
-                  _countChip('${account.voucherViewCount}', 'vouchers', context),
+                  _countChip(
+                      '${account.propertyViewCount}', 'properties', context),
+                  _countChip(
+                      '${account.voucherViewCount}', 'vouchers', context),
                 ],
               ),
               const SizedBox(height: 6),
@@ -1098,8 +1261,8 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
     setState(() => _busy = true);
     try {
       uxTap();
-      final updated = await widget.api
-          .setMemberBanned(account.id, banning, reason: reason);
+      final updated =
+          await widget.api.setMemberBanned(account.id, banning, reason: reason);
       if (!mounted) return;
       setState(() => _account = updated);
       showNotice(
@@ -1226,8 +1389,9 @@ class _MemberAccessTileState extends State<_MemberAccessTile> {
               child: OutlinedButton(
                 key: ValueKey('ban-${account.id}'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor:
-                      account.isBanned ? TS.greenOf(context) : TS.redOf(context),
+                  foregroundColor: account.isBanned
+                      ? TS.greenOf(context)
+                      : TS.redOf(context),
                   side: BorderSide(
                     color: account.isBanned
                         ? TS.greenOf(context)
@@ -1316,7 +1480,8 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                _metric('Members', '${report.accountCount}', Icons.people_outline),
+                _metric(
+                    'Members', '${report.accountCount}', Icons.people_outline),
                 _metric('Online today', '${report.activeToday}',
                     Icons.wifi_tethering),
                 _metric('Active this week', '${report.activeThisWeek}',
@@ -1330,7 +1495,9 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab> {
             ),
             const SizedBox(height: 16),
             _TrendCard(
-                label: 'New members', days: report.days, values: report.signups),
+                label: 'New members',
+                days: report.days,
+                values: report.signups),
             const SizedBox(height: 10),
             _TrendCard(
                 label: 'Members online',
@@ -1343,8 +1510,10 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab> {
                 values: report.dealViews),
             const SizedBox(height: 20),
             Text('Site traffic',
-                style:
-                    Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.merge(TS.display)),
             const SizedBox(height: 8),
             if (!traffic.hasData)
               PaperCard(
@@ -1385,8 +1554,10 @@ class _AdminAnalyticsTabState extends State<AdminAnalyticsTab> {
             ],
             const SizedBox(height: 20),
             Text('What they searched for',
-                style:
-                    Theme.of(context).textTheme.headlineSmall?.merge(TS.display)),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.merge(TS.display)),
             const SizedBox(height: 8),
             if (report.topSearches.isEmpty)
               Text('No searches recorded in this window.',

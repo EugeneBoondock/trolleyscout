@@ -1,11 +1,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Voucher } from '../services/vouchers/types'
 import { VouchersView } from './VouchersView'
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { codes: [] } }), {
+    headers: { 'content-type': 'application/json' },
+    status: 200,
+  })))
+})
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   Object.defineProperty(window.navigator, 'clipboard', {
     configurable: true,
     value: undefined,
@@ -159,7 +167,7 @@ describe('VouchersView', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy voucher code SAVE25' }))
-    expect((await screen.findByRole('status')).textContent).toContain('Voucher code copied.')
+    expect(await screen.findByText('Voucher code copied.')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /voucher code copied/i }))
     expect((await screen.findByRole('alert')).textContent).toContain(

@@ -31,7 +31,8 @@ void main() {
     });
 
     test('labels a future date as "Until <date>"', () {
-      final future = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+      final future =
+          DateTime.now().add(const Duration(days: 30)).toIso8601String();
       final info = validUntilInfo(future);
       expect(info, isNotNull);
       expect(info!.isExpired, isFalse);
@@ -39,11 +40,25 @@ void main() {
     });
 
     test('labels a past date as "Expired"', () {
-      final past = DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
+      final past =
+          DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
       final info = validUntilInfo(past);
       expect(info, isNotNull);
       expect(info!.isExpired, isTrue);
       expect(info.label, 'Expired');
+    });
+
+    test('keeps a date current through the end of its final day', () {
+      final now = DateTime.now();
+      final today = '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+
+      final info = validUntilInfo(today);
+
+      expect(info, isNotNull);
+      expect(info!.isExpired, isFalse);
+      expect(info.label, 'Expiring today');
     });
   });
 }

@@ -1,13 +1,16 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
+import 'package:trolley_scout/discovery_cache.dart';
 import 'package:trolley_scout/screens/dashboard_screen.dart';
 import 'package:trolley_scout/screens/deals_screen.dart';
 import 'package:trolley_scout/theme.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  DiscoveryCache testCache() => _MemoryDiscoveryCache();
 
   testWidgets('dashboard saved-deal artwork stays clipped inside its card',
       (tester) async {
@@ -21,14 +24,19 @@ void main() {
           api: api,
           session: _memberSession,
           onNavigate: (_) {},
+          cacheStore: testCache(),
         ),
       ),
     ));
+    final cardFinder = find.byKey(const Key('saved-deal-card-saved-tv'));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -420));
+    await tester.scrollUntilVisible(
+      cardFinder,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
-    final cardFinder = find.byKey(const Key('saved-deal-card-saved-tv'));
     expect(cardFinder, findsOneWidget);
     final card = tester.widget<Container>(cardFinder);
     expect(card.clipBehavior, Clip.antiAlias);
@@ -42,7 +50,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home: Scaffold(
-        body: DealsScreen(api: api, isAuthenticated: true),
+        body: DealsScreen(
+          api: api,
+          isAuthenticated: true,
+          cacheStore: testCache(),
+        ),
       ),
     ));
     await tester.pumpAndSettle();
@@ -58,6 +70,40 @@ void main() {
     expect(tester.getSize(cardFinder).height, lessThanOrEqualTo(280));
   });
 
+  testWidgets('signed-in shopper can send a source-backed deal report',
+      (tester) async {
+    await _usePhoneViewport(tester);
+    final api = _LayoutApi();
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      darkTheme: TS.darkTheme(),
+      home: Scaffold(
+        body: DealsScreen(
+          api: api,
+          isAuthenticated: true,
+          cacheStore: testCache(),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('report-deal-long-deal')));
+    await tester.pumpAndSettle();
+    expect(find.text('Report an issue'), findsOneWidget);
+    await tester.tap(find.text('Offer has ended'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(TextField).last, 'The shelf label ended yesterday.');
+    await tester.tap(find.byKey(const Key('submit-deal-report')));
+    await tester.pumpAndSettle();
+
+    expect(api.reportedReason, 'expired');
+    expect(api.reportedNote, 'The shelf label ended yesterday.');
+    expect(find.text('Report received. An admin can review the source.'),
+        findsOneWidget);
+  });
+
   testWidgets('Marketplace labels a Bob Shop auction amount as a current bid',
       (tester) async {
     await _usePhoneViewport(tester);
@@ -65,7 +111,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home: Scaffold(
-        body: DealsScreen(api: _BidLayoutApi(), isAuthenticated: true),
+        body: DealsScreen(
+          api: _BidLayoutApi(),
+          isAuthenticated: true,
+          cacheStore: testCache(),
+        ),
       ),
     ));
     await tester.pumpAndSettle();
@@ -86,6 +136,7 @@ void main() {
         body: DealsScreen(
           api: _AvailabilityLayoutApi(),
           isAuthenticated: true,
+          cacheStore: testCache(),
         ),
       ),
     ));
@@ -110,7 +161,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: TS.lightTheme(),
       home: Scaffold(
-        body: DealsScreen(api: _AvailabilityLayoutApi(), isAuthenticated: true),
+        body: DealsScreen(
+          api: _AvailabilityLayoutApi(),
+          isAuthenticated: true,
+          cacheStore: testCache(),
+        ),
       ),
     ));
     await tester.pumpAndSettle();
@@ -124,7 +179,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.getRect(menu), before,
-        reason: 'the Filters control must not move or resize when a filter is on');
+        reason:
+            'the Filters control must not move or resize when a filter is on');
     expect(find.text('Filters'), findsOneWidget);
   });
 
@@ -138,6 +194,7 @@ void main() {
         body: DealsScreen(
           api: _BidLayoutApi(),
           isAuthenticated: true,
+          cacheStore: testCache(),
         ),
       ),
     ));
@@ -165,6 +222,7 @@ void main() {
         body: DealsScreen(
           api: _RecentLayoutApi(),
           isAuthenticated: true,
+          cacheStore: testCache(),
         ),
       ),
     ));
@@ -189,6 +247,7 @@ void main() {
         body: DealsScreen(
           api: _LimitedLayoutApi(),
           isAuthenticated: true,
+          cacheStore: testCache(),
         ),
       ),
     ));
@@ -221,6 +280,7 @@ void main() {
         body: DealsScreen(
           api: _MergedLimitLayoutApi(),
           isAuthenticated: true,
+          cacheStore: testCache(),
         ),
       ),
     ));
@@ -229,6 +289,46 @@ void main() {
     expect(find.byKey(const Key('deal-card-access-discovery')), findsOneWidget);
     expect(find.byKey(const Key('deal-card-access-site')), findsNothing);
   });
+
+  for (final themeMode in [ThemeMode.light, ThemeMode.dark]) {
+    testWidgets(
+        'deal details show official context and alternatives in ${themeMode.name} mode',
+        (tester) async {
+      await _usePhoneViewport(tester);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: TS.lightTheme(),
+        darkTheme: TS.darkTheme(),
+        themeMode: themeMode,
+        home: Scaffold(
+          body: DealsScreen(
+            api: _SimilarLayoutApi(),
+            isAuthenticated: true,
+            cacheStore: testCache(),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('deal-card-milk-one')));
+      await tester.pumpAndSettle();
+
+      final viewer = find.byKey(const Key('marketplace-product-viewer'));
+      expect(viewer, findsOneWidget);
+      expect(Theme.of(tester.element(viewer)).brightness,
+          themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light);
+      expect(find.text('Deal details'), findsOneWidget);
+      expect(find.text('View official source'), findsOneWidget);
+      expect(find.text('Similar live deals from other stores'), findsOneWidget);
+      expect(find.byKey(const Key('similar-deal-milk-two')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('similar-deal-milk-two')));
+      await tester.pumpAndSettle();
+      expect(
+          find.byKey(const Key('deal-detail-title-milk-two')), findsOneWidget);
+      expect(find.byKey(const Key('view-product-milk-two')), findsOneWidget);
+    });
+  }
 }
 
 Future<void> _usePhoneViewport(WidgetTester tester) async {
@@ -238,12 +338,38 @@ Future<void> _usePhoneViewport(WidgetTester tester) async {
   addTearDown(tester.view.resetPhysicalSize);
 }
 
+class _MemoryDiscoveryCache extends DiscoveryCache {
+  @override
+  Future<CachedDiscovery?> load([
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async =>
+      null;
+
+  @override
+  Future<void> save(
+    DiscoveryResult result,
+    DateTime fetchedAt, [
+    String countryCode = 'ZA',
+    String accessScope = 'free',
+  ]) async {}
+}
+
 const _longTitle =
     'TechByte Nipple Covers for Women Reusable Sticky Adhesive Silicone '
     'Covers One Pair Five Colours Available One Size Fits All';
 
 class _LayoutApi extends Api {
   _LayoutApi() : super(baseUrl: 'https://example.test');
+
+  String? reportedReason;
+  String? reportedNote;
+
+  @override
+  Future<void> reportDeal(Deal deal, String reason, {String? note}) async {
+    reportedReason = reason;
+    reportedNote = note;
+  }
 
   @override
   Future<DiscoveryResult> discovery(
@@ -496,6 +622,45 @@ class _MergedLimitLayoutApi extends _LimitedLayoutApi {
         unavailableSourceCount: 0,
         leafletCount: 0,
       );
+}
+
+class _SimilarLayoutApi extends _LayoutApi {
+  @override
+  Future<DiscoveryResult> discovery(
+          {bool forceLive = false, bool summary = false}) async =>
+      const DiscoveryResult(
+        deals: [
+          Deal(
+            id: 'milk-one',
+            retailerId: 'spar',
+            retailerName: 'SPAR',
+            sourceLabel: 'Weekly offers',
+            sourceUrl: 'https://example.test/spar-offers',
+            productUrl: 'https://example.test/spar-milk',
+            title: 'Long life full cream milk 6 x 1L',
+            priceText: 'R89.99',
+            validTo: '2099-08-08',
+          ),
+          Deal(
+            id: 'milk-two',
+            retailerId: 'shoprite',
+            retailerName: 'Shoprite',
+            sourceLabel: 'Official specials',
+            sourceUrl: 'https://example.test/shoprite-offers',
+            productUrl: 'https://example.test/shoprite-milk',
+            title: 'Full cream long life milk 1L',
+            priceText: 'R14.99',
+            validTo: '2099-08-09',
+          ),
+        ],
+        foundDealCount: 2,
+        checkedSourceCount: 2,
+        unavailableSourceCount: 0,
+        leafletCount: 0,
+      );
+
+  @override
+  Future<void> recordUsage(String metric, {int amount = 1}) async {}
 }
 
 const _memberSession = MemberSession(

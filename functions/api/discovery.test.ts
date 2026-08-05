@@ -6,6 +6,7 @@ import type { DiscoveredDeal, StoreLeaflet } from '../../src/types'
 const mocks = vi.hoisted(() => ({
   getMemberSession: vi.fn(),
   listLiveOrganizationPublications: vi.fn(),
+  readMemberLimits: vi.fn(),
   runDealRefreshWithAlerts: vi.fn(),
 }))
 
@@ -22,6 +23,10 @@ vi.mock('../_shared/organizationPublicationStore', async (importOriginal) => ({
   ...await importOriginal<typeof import('../_shared/organizationPublicationStore')>(),
   listLiveOrganizationPublications: mocks.listLiveOrganizationPublications,
 }))
+vi.mock('../_shared/memberUsageStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../_shared/memberUsageStore')>(),
+  readMemberLimits: mocks.readMemberLimits,
+}))
 import {
   buildInternationalRefreshStores,
   buildNormalizedDiscoveryChecks,
@@ -36,6 +41,7 @@ import {
   refreshLeafletCache,
   resolveEmbeddedViewers,
   resolvePnpHflipDocuments,
+  selectVisibleDeals,
   storePromotionsToDiscovery,
   summaryPreviewDeals,
 } from './discovery'
@@ -45,6 +51,11 @@ beforeEach(() => {
   mocks.getMemberSession.mockResolvedValue({ isAuthenticated: false })
   mocks.listLiveOrganizationPublications.mockReset()
   mocks.listLiveOrganizationPublications.mockResolvedValue([])
+  mocks.readMemberLimits.mockReset()
+  mocks.readMemberLimits.mockResolvedValue({
+    compareBlocked: false,
+    scoutChatBlocked: false,
+  })
   mocks.runDealRefreshWithAlerts.mockReset()
   mocks.runDealRefreshWithAlerts.mockImplementation(async (
     _env: unknown,
@@ -302,6 +313,35 @@ describe('summary preview', () => {
     expect(statements.some(({ query, run }) => (
       query.includes("VALUES (?, 'system'") && run.mock.calls.length === 1
     ))).toBe(true)
+  })
+})
+
+describe('visible discovery rows', () => {
+  it('keeps interactive catalogue products inside a limited plan response', () => {
+    const deals = Array.from({ length: 2_100 }, (_, index): DiscoveredDeal => ({
+      capturedAt: '2026-08-02T08:00:00.000Z',
+      evidenceText: `Deal ${index}`,
+      id: `deal-${index}`,
+      productUrl: `https://official.test/products/${index}`,
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      sourceLabel: 'Official specials',
+      sourceUrl: 'https://official.test/specials',
+      title: `Deal ${index}`,
+    }))
+    deals[2_099] = {
+      ...deals[2_099],
+      id: 'interactive-catalogue-product',
+      imageCrop: { x: 0.1, y: 0.2, width: 0.2, height: 0.2 },
+      imageUrl: 'https://official.test/catalogue/page-1.webp',
+      pageNumber: 1,
+      sourceLabel: 'Catalogue scan',
+    }
+
+    const visible = selectVisibleDeals(deals, 2_000)
+
+    expect(visible).toHaveLength(2_000)
+    expect(visible.some((deal) => deal.id === 'interactive-catalogue-product')).toBe(true)
   })
 })
 
@@ -955,6 +995,72 @@ describe('normalized discovery cutover', () => {
     }
   })
 
+  it('uses an administrator’s per-member marketplace limits', async () => {
+    const current = new Date().toISOString()
+    const deals = Array.from({ length: 100 }, (_, index): DiscoveredDeal => ({
+      capturedAt: current,
+      evidenceText: `Override deal ${index}`,
+      id: `override-deal-${index}`,
+      productUrl: `https://shop.example.test/override/${index}`,
+      retailerId: 'override-market',
+      retailerName: 'Override Market',
+      sourceLabel: 'Official specials',
+      sourceUrl: 'https://shop.example.test/specials',
+      title: `Override deal ${index}`,
+    }))
+    const leaflets = Array.from({ length: 10 }, (_, index): StoreLeaflet => ({
+      capturedAt: current,
+      countryCode: 'ZA',
+      documentUrl: `https://catalogues.example.test/override-${index}.pdf`,
+      id: `override-catalogue-${index}`,
+      name: `Override catalogue ${index}`,
+      retailerId: `override-retailer-${index}`,
+      retailerName: `Override Retailer ${index}`,
+      url: `https://catalogues.example.test/override-${index}.pdf`,
+      validTo: '2099-12-31',
+    }))
+    mocks.getMemberSession.mockResolvedValue({
+      account: {
+        countryCode: 'ZA',
+        id: 'custom-free-member',
+        planId: 'free',
+        role: 'member',
+      },
+      isAuthenticated: true,
+    })
+    mocks.readMemberLimits.mockResolvedValue({
+      compareBlocked: false,
+      scoutChatBlocked: false,
+      visibleCatalogues: 7,
+      visibleDeals: 80,
+    })
+
+    const response = await onRequest({
+      env: { DB: discoveryAccessDatabase(deals, leaflets) },
+      request: new Request('https://trolleyscout.co.za/api/discovery'),
+      waitUntil: vi.fn(),
+    } as never)
+    const body = await response.json() as {
+      data: {
+        access: { catalogueLimit: number; dealLimit: number; planId: string }
+        deals: DiscoveredDeal[]
+        leaflets: StoreLeaflet[]
+      }
+    }
+
+    expect(mocks.readMemberLimits).toHaveBeenCalledWith(
+      expect.anything(),
+      'custom-free-member',
+    )
+    expect(body.data.deals).toHaveLength(80)
+    expect(body.data.leaflets).toHaveLength(7)
+    expect(body.data.access).toMatchObject({
+      catalogueLimit: 7,
+      dealLimit: 80,
+      planId: 'free',
+    })
+  })
+
   it('rejects a forced refresh from a non-admin account before fetching sources', async () => {
     mocks.getMemberSession.mockResolvedValue({
       isAuthenticated: true,
@@ -1432,7 +1538,229 @@ describe('catalogue deal dedupe', () => {
 })
 
 describe('leaflet refresh retention', () => {
-  it('collects every validated catalogue directory page', async () => {
+  it('resolves a current Shoprite Group branch before requesting its leaflets', async () => {
+    const requested: Array<{ body: unknown; pathname: string }> = []
+    const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url)
+      requested.push({
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        pathname: url.pathname,
+      })
+      if (url.pathname.endsWith('/get-stores-by-location')) {
+        return Response.json({
+          stores: [
+            { brand: 'Checkers LiquorShop', id: 'liquor-1', name: 'Checkers LiquorShop Johannesburg' },
+            { brand: 'Checkers', id: 'current-checkers-code', name: 'Checkers Johannesburg' },
+          ],
+        })
+      }
+      return Response.json([{
+        endDate: '2026-08-10T21:59:00.000+0000',
+        imageUrl: '/medias/checkers-current.jpg',
+        metaPdfUrl: 'https://specials.checkers.co.za/deals/current/checkers-current.pdf',
+        name: 'Checkers current savings',
+        startDate: '2026-07-20T22:00:00.000+0000',
+        url: 'https://specials.checkers.co.za/deals/current/index.html',
+      }])
+    })
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      [],
+      {
+        fetcher,
+        saveSnapshot: vi.fn(async () => undefined),
+        targets: [{
+          apiBase: 'https://www.checkers.co.za',
+          kind: 'sixty60-api',
+          locator: { latitude: -26.2041, longitude: 28.0473 },
+          retailerId: 'checkers',
+          retailerName: 'Checkers',
+          storeId: 'stale-checkers-code',
+        }],
+      },
+    )
+
+    expect(requested.filter((request) => request.pathname.startsWith('/api/'))).toEqual([
+      {
+        body: { payload: { latitude: -26.2041, longitude: 28.0473 } },
+        pathname: '/api/browse-by-store/get-stores-by-location',
+      },
+      {
+        body: { posSiteCode: 'current-checkers-code' },
+        pathname: '/api/stores/get-store-leaflets',
+      },
+    ])
+    expect(leaflets).toContainEqual(expect.objectContaining({
+      priceScope: { storeIds: ['current-checkers-code'], type: 'store' },
+      retailerId: 'checkers',
+    }))
+  })
+
+  it('keeps prior retailer catalogues when an official API returns an empty successful response', async () => {
+    const prior: StoreLeaflet[] = [{
+      capturedAt: '2026-08-01T10:00:00.000Z',
+      documentUrl: 'https://specials.shoprite.co.za/deals/current/catalogue.pdf',
+      id: 'shoprite-current',
+      name: 'Shoprite current catalogue',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      url: 'https://specials.shoprite.co.za/deals/current/',
+      validTo: '2026-08-10',
+    }, {
+      capturedAt: '2026-08-01T10:00:00.000Z',
+      documentUrl: 'https://specials.checkers.co.za/deals/current/catalogue.pdf',
+      id: 'checkers-current',
+      name: 'Checkers current catalogue',
+      retailerId: 'checkers',
+      retailerName: 'Checkers',
+      url: 'https://specials.checkers.co.za/deals/current/',
+      validTo: '2026-08-10',
+    }]
+    const saveSnapshot = vi.fn(async () => undefined)
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      prior,
+      {
+        fetcher: vi.fn(async () => Response.json([])),
+        saveSnapshot,
+        targets: [{
+          apiBase: 'https://www.shoprite.co.za',
+          kind: 'sixty60-api',
+          retailerId: 'shoprite',
+          retailerName: 'Shoprite',
+          storeId: 'old-shoprite-code',
+        }, {
+          apiBase: 'https://www.checkers.co.za',
+          kind: 'sixty60-api',
+          retailerId: 'checkers',
+          retailerName: 'Checkers',
+          storeId: 'old-checkers-code',
+        }],
+      },
+    )
+
+    expect(leaflets).toHaveLength(prior.length)
+    expect(leaflets).toEqual(expect.arrayContaining(prior))
+    expect(saveSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('keeps a valid public-directory catalogue when an unrelated official source refreshes', async () => {
+    const prior: StoreLeaflet[] = [{
+      capturedAt: '2026-08-01T10:00:00.000Z',
+      countryCode: 'ZA',
+      documentUrl: 'https://www.guzzle.co.za/catalogues/old-directory-catalogue.pdf',
+      id: 'guzzle-123',
+      imageUrl: 'https://example.com/cover.jpg',
+      name: 'Old directory catalogue',
+      retailerId: 'shoprite',
+      retailerName: 'Shoprite',
+      sourceId: 'guzzle-za',
+      sourceLabel: 'Guzzle',
+      url: 'https://www.guzzle.co.za/shoprite/',
+    }]
+    const fetcher = vi.fn(async () => new Response(`
+      <h2>Roots August specials</h2>
+      <a href="/wp-content/uploads/2026/08/roots-august-specials.pdf">Catalogue</a>
+    `))
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      prior,
+      {
+        fetcher,
+        saveSnapshot: vi.fn(async () => undefined),
+        targets: [{
+          countryCode: 'ZA',
+          kind: 'official-html-index',
+          pageUrl: 'https://rootsbutchery.co.za/specials/',
+          retailerId: 'roots-butchery',
+          retailerName: 'Roots Butchery',
+        }],
+      },
+    )
+
+    expect(leaflets).toContainEqual(expect.objectContaining({
+      id: 'guzzle-123',
+      sourceId: 'guzzle-za',
+    }))
+    expect(leaflets).toContainEqual(expect.objectContaining({
+      retailerId: 'roots-butchery',
+    }))
+  })
+
+  it('reads a catalogue document from an official retailer page', async () => {
+    const fetcher = vi.fn(async () => new Response(`
+      <h2>Roots August specials</h2>
+      <a href="https://rootsbutchery.co.za/wp-content/uploads/2026/08/roots-august-specials.pdf">
+        Download the catalogue
+      </a>
+    `))
+    const saveSnapshot = vi.fn(async () => undefined)
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      [],
+      {
+        fetcher,
+        saveSnapshot,
+        targets: [{
+          countryCode: 'ZA',
+          kind: 'official-html-index',
+          pageUrl: 'https://rootsbutchery.co.za/specials/',
+          retailerId: 'roots-butchery',
+          retailerName: 'Roots Butchery',
+        }],
+      },
+    )
+
+    expect(leaflets).toEqual([
+      expect.objectContaining({
+        countryCode: 'ZA',
+        documentUrl:
+          'https://rootsbutchery.co.za/wp-content/uploads/2026/08/roots-august-specials.pdf',
+        retailerId: 'roots-butchery',
+        sourceId: 'roots-butchery',
+      }),
+    ])
+    expect(saveSnapshot).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to a public reader when an official page hides its PDF links in browser scripts', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => (
+      String(input).includes('r.jina.ai/http')
+        ? new Response(`
+          [Citizen Weekly Special](https://kitkatgroup.com/pdfs/Kit%20Kat%207%20Day%20Promotion.pdf)
+        `)
+        : new Response('<main>Promotions load in the browser.</main>')
+    ))
+
+    const leaflets = await refreshLeafletCache(
+      { DB: {} as D1Database },
+      [],
+      {
+        fetcher,
+        saveSnapshot: vi.fn(async () => undefined),
+        targets: [{
+          countryCode: 'ZA',
+          kind: 'official-html-index',
+          pageUrl: 'https://kitkatgroup.com/promotions.php',
+          retailerId: 'kit-kat',
+          retailerName: 'KIT KAT Cash & Carry',
+        }],
+      },
+    )
+
+    expect(leaflets).toContainEqual(expect.objectContaining({
+      documentUrl:
+        'https://kitkatgroup.com/pdfs/Kit%20Kat%207%20Day%20Promotion.pdf',
+      retailerId: 'kit-kat',
+    }))
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the public catalogue landing page without crawling disallowed query pages', async () => {
     const card = (flyerId: string, store: string, name: string) => `
       <a href="/stores/${store}/catalogues-specials">
         <div class="flyer" data-flyer-id="${flyerId}" data-flyer-name="${name}">
@@ -1443,7 +1771,7 @@ describe('leaflet refresh retention', () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       return new Response(
-        url.endsWith('page=1')
+        !url.includes('?')
           ? `${card('3700001', 'boxer', 'Boxer')}
              <a href="/latest-catalogues?page=2">2</a>`
           : card('3700002', 'a5-cash-carry', 'A5 Cash & Carry'),
@@ -1460,16 +1788,16 @@ describe('leaflet refresh retention', () => {
         targets: [{
           countryCode: 'ZA',
           kind: 'catalogue-directory',
-          pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues?page=1',
+          pageUrl: 'https://www.cataloguespecials.co.za/latest-catalogues',
           retailerId: 'catalogue-specials-za',
           retailerName: 'South African catalogue directory',
         }],
       },
     )
 
-    expect(leaflets).toHaveLength(2)
-    expect(leaflets.map((leaflet) => leaflet.countryCode)).toEqual(['ZA', 'ZA'])
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(leaflets).toHaveLength(1)
+    expect(leaflets.map((leaflet) => leaflet.countryCode)).toEqual(['ZA'])
+    expect(fetcher).toHaveBeenCalledOnce()
     expect(saveSnapshot).toHaveBeenCalledOnce()
   })
 

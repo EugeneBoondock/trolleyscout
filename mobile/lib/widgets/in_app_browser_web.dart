@@ -2,6 +2,7 @@ import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
 
+import '../assisted_store_cart.dart';
 import '../outbound_link.dart';
 import 'package:web/web.dart' as web;
 
@@ -24,6 +25,7 @@ Future<void> showInAppBrowser(
   BuildContext context,
   String? value, {
   String title = 'Trolley Scout browser',
+  List<AssistedStoreCartItem> assistedItems = const [],
 }) async {
   final uri = safeInAppBrowserUri(value);
   if (uri == null) {
@@ -35,7 +37,11 @@ Future<void> showInAppBrowser(
   }
 
   await Navigator.of(context).push(MaterialPageRoute<void>(
-    builder: (_) => TrolleyScoutBrowser(uri: uri, title: title),
+    builder: (_) => TrolleyScoutBrowser(
+      uri: uri,
+      title: title,
+      assistedItems: assistedItems,
+    ),
   ));
 }
 
@@ -44,8 +50,10 @@ class TrolleyScoutBrowser extends StatefulWidget {
     super.key,
     required this.uri,
     required this.title,
+    this.assistedItems = const [],
   });
 
+  final List<AssistedStoreCartItem> assistedItems;
   final Uri uri;
   final String title;
 
@@ -100,7 +108,25 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
       ),
       body: SafeArea(
         top: false,
-        child: HtmlElementView(viewType: _viewType),
+        child: Column(
+          children: [
+            Expanded(child: HtmlElementView(viewType: _viewType)),
+            if (widget.assistedItems.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                color: TS.surfaceOf(context),
+                child: Text(
+                  'Open each listed product in this browser session and use the retailer basket control. Browser security keeps store controls user-operated on the web.',
+                  style: TextStyle(
+                    color: TS.mutedOf(context),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

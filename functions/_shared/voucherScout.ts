@@ -26,6 +26,7 @@ const CURSOR_VERSION = 1
 const MAX_AFFILIATE_CODES_PER_RUN = 60
 
 export interface VoucherScoutSource {
+  countryCode?: string
   parser: 'amazon' | 'promotion-sweep' | 'public-code'
   retailerId: string
   sourceKey: string
@@ -39,6 +40,7 @@ export interface VoucherScoutRepository {
   readCursor(sourceKey: string): Promise<FeedCursor | undefined>
   upsert(input: {
     candidates: readonly VoucherCandidate[]
+    countryCode: string
     errorText?: string
     retailerId: string
     sourceKey: string
@@ -69,6 +71,7 @@ export interface VoucherScoutSourceResult {
  */
 export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   {
+    countryCode: 'ZA',
     parser: 'promotion-sweep',
     retailerId: 'pick-n-pay',
     sourceKey: 'pick-n-pay::smart-shopper',
@@ -76,6 +79,7 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
     url: 'https://www.pnp.co.za',
   },
   {
+    countryCode: 'ZA',
     parser: 'promotion-sweep',
     retailerId: 'checkers',
     sourceKey: 'checkers::xtra-savings',
@@ -83,6 +87,7 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
     url: 'https://www.checkers.co.za',
   },
   {
+    countryCode: 'ZA',
     parser: 'promotion-sweep',
     retailerId: 'shoprite',
     sourceKey: 'shoprite::xtra-savings',
@@ -90,6 +95,7 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
     url: 'https://www.shoprite.co.za',
   },
   {
+    countryCode: 'ZA',
     // /coupons now 301s to the deals collection; fetch the destination
     // directly — it embeds the same clip-coupon product objects.
     parser: 'amazon',
@@ -100,6 +106,7 @@ export const defaultVoucherSources: readonly VoucherScoutSource[] = [
   // Boxer's "eCoupons" are purchasable gift money, not discounts — never a
   // voucher source.
   {
+    countryCode: 'ZA',
     // Kept because Yuppiechef does occasionally announce a code in prose;
     // /specials.htm now 301s here, and following it lost the page body.
     parser: 'public-code',
@@ -152,6 +159,7 @@ export async function runVoucherScout(
       const status = remaining > 0 ? 'partial' : 'success'
       const write = await repository.upsert({
         candidates: batch,
+        countryCode: source.countryCode ?? 'ZA',
         retailerId: source.retailerId,
         sourceKey: source.sourceKey,
         status,
@@ -178,6 +186,7 @@ export async function runVoucherScout(
       try {
         await repository.upsert({
           candidates: [],
+          countryCode: source.countryCode ?? 'ZA',
           errorText: message,
           retailerId: source.retailerId,
           sourceKey: source.sourceKey,

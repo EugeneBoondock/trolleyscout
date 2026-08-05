@@ -104,7 +104,10 @@ List<DashboardStory> buildDashboardStories({
     final retailerName = catalogue.retailerName?.trim().isNotEmpty == true
         ? catalogue.retailerName!.trim()
         : 'Store';
-    final retailer = retailerByName[retailerName.toLowerCase()];
+    final retailerId = catalogue.retailerId?.trim();
+    final retailer =
+        (retailerId?.isNotEmpty == true ? retailerById[retailerId] : null) ??
+            retailerByName[retailerName.toLowerCase()];
     final id = retailer?.id ?? 'name:${_slug(retailerName)}';
     final story = storyFor(id, retailerName);
     if (story == null || story.catalogues.length >= maxFramesPerStory) {

@@ -517,6 +517,20 @@ function ScoutCartPanel({
                   </li>
                 ))}
               </ul>
+              <a
+                aria-label={`Shop ${group.retailerName} with Mr Scout`}
+                className="scout-chat-assisted-shop"
+                href={withReferralSource(group.items[0].productUrl)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Shop this store
+                <ArrowSquareOut aria-hidden="true" size={16} />
+              </a>
+              <small className="scout-chat-assisted-note">
+                Open each item in the same browser session so the retailer can retain your basket.
+                Checkout rules and sign-in remain controlled by the store.
+              </small>
               <button
                 disabled={cart.isMoving}
                 onClick={() => void move(group.retailerName)}

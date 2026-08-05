@@ -4,7 +4,8 @@ import 'package:trolley_scout/api.dart';
 import 'package:trolley_scout/screens/vouchers_screen.dart';
 
 void main() {
-  testWidgets('renders vouchers and asks anonymous users to log in before saving',
+  testWidgets(
+      'renders vouchers and asks anonymous users to log in before saving',
       (tester) async {
     var authRequested = false;
     await tester.pumpWidget(MaterialApp(
@@ -148,7 +149,8 @@ class _VoucherApi extends Api {
       ];
 
   @override
-  Future<VoucherCode?> rateVoucherCode(String voucherCodeId, bool worked) async {
+  Future<VoucherCode?> rateVoucherCode(
+      String voucherCodeId, bool worked) async {
     ratedWorked = worked;
     if (worked) workedCount += 1;
     return VoucherCode(
@@ -184,10 +186,10 @@ class _VoucherApi extends Api {
           createdAt: '2026-07-16T10:00:00.000Z',
           updatedAt: '2026-07-16T10:00:00.000Z',
           lastSeenAt: '2026-07-16T10:00:00.000Z',
-          expiresAt: '2026-07-31T21:59:59.999Z',
+          expiresAt: '2099-07-31T21:59:59.999Z',
           status: 'active',
           code: 'SAVE25',
-          validTo: '2026-07-31',
+          validTo: '2099-07-31',
         ),
       ];
 

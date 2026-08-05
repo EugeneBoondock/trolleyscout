@@ -128,6 +128,33 @@ describe('deal watch store', () => {
       .first<{ total: number }>()
     expect(count?.total).toBe(1)
   })
+
+  it('grants the larger watched-item allowance only to an active paid plan', async () => {
+    await db.prepare(
+      `CREATE TABLE member_accounts (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        plan_status TEXT NOT NULL,
+        role TEXT NOT NULL
+      )`,
+    ).run()
+    await db.prepare(
+      `INSERT INTO member_accounts (id, plan_id, plan_status, role)
+        VALUES ('account-1', 'scout', 'active', 'member')`,
+    ).run()
+    for (let index = 0; index < 20; index += 1) {
+      await insertPendingWatch(db, `watch-${index}`, `item ${index}`)
+    }
+
+    const paid = await createDealWatch(env, 'account-1', 'twenty first item')
+    expect(paid.watch).toBeDefined()
+
+    await db.prepare(
+      `UPDATE member_accounts SET plan_id = 'free' WHERE id = 'account-1'`,
+    ).run()
+    const free = await createDealWatch(env, 'account-1', 'another item')
+    expect(free.issue).toContain('20 watched items')
+  })
 })
 
 async function insertPendingWatch(db: D1Database, id: string, queryText: string): Promise<void> {

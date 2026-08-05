@@ -13,6 +13,49 @@ const publicHeaders = {
 
 const OSRM_ORIGIN = 'https://router.project-osrm.org'
 
+interface OsrmRoute {
+  distance?: number
+  duration?: number
+  geometry?: { coordinates?: Array<[number, number]> }
+  legs?: Array<{
+    steps?: Array<{
+      distance?: number
+      duration?: number
+      name?: string
+      maneuver?: {
+        location?: [number, number]
+        modifier?: string
+        type?: string
+      }
+    }>
+  }>
+}
+
+export function mapOsrmRoute(route: OsrmRoute) {
+  const path = (route.geometry?.coordinates ?? []).map(([lon, lat]) => [lat, lon])
+  const steps = (route.legs ?? []).flatMap((leg) =>
+    (leg.steps ?? []).flatMap((step) => {
+      const location = step.maneuver?.location
+      if (!location) return []
+      const [lon, lat] = location
+      return [{
+        distanceMeters: step.distance ?? 0,
+        durationSeconds: step.duration ?? 0,
+        location: [lat, lon],
+        modifier: step.maneuver?.modifier ?? '',
+        name: step.name ?? '',
+        type: step.maneuver?.type ?? 'turn',
+      }]
+    }),
+  )
+  return {
+    distanceMeters: route.distance ?? 0,
+    durationSeconds: route.duration ?? 0,
+    path,
+    steps,
+  }
+}
+
 export const onRequest: PagesFunction = async ({ request }) => {
   if (request.method !== 'GET') {
     return methodNotAllowed(request.method, 'GET')
@@ -31,7 +74,7 @@ export const onRequest: PagesFunction = async ({ request }) => {
 
   const osrmUrl =
     `${OSRM_ORIGIN}/route/v1/${profile}/${fromLon},${fromLat};${toLon},${toLat}` +
-    '?overview=full&alternatives=false&steps=false&geometries=geojson'
+    '?overview=full&alternatives=false&steps=true&geometries=geojson'
 
   try {
     const response = await fetch(osrmUrl, {
@@ -47,11 +90,7 @@ export const onRequest: PagesFunction = async ({ request }) => {
     }
 
     const payload = (await response.json()) as {
-      routes?: Array<{
-        distance?: number
-        duration?: number
-        geometry?: { coordinates?: Array<[number, number]> }
-      }>
+      routes?: OsrmRoute[]
     }
     const route = payload.routes?.[0]
 
@@ -59,13 +98,7 @@ export const onRequest: PagesFunction = async ({ request }) => {
       return json({ message: 'No route found.' }, { headers: publicHeaders, status: 404 })
     }
 
-    // OSRM returns [lon, lat]; Leaflet wants [lat, lon].
-    const path = route.geometry.coordinates.map(([lon, lat]) => [lat, lon])
-
-    return json(
-      { distanceMeters: route.distance ?? 0, durationSeconds: route.duration ?? 0, path },
-      { headers: publicHeaders },
-    )
+    return json(mapOsrmRoute(route), { headers: publicHeaders })
   } catch {
     return json({ message: 'Route service unavailable.' }, { headers: publicHeaders, status: 502 })
   }

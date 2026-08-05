@@ -6,12 +6,16 @@ class StoreGroup {
     required this.displayName,
     required this.branches,
     this.retailerId,
+    this.marketplaceDeals = const [],
+    this.marketplaceCatalogues = const [],
   });
 
   final String id;
   final String displayName;
   final String? retailerId;
   final List<NearbyStore> branches;
+  final List<Deal> marketplaceDeals;
+  final List<Catalogue> marketplaceCatalogues;
 
   bool get isKnownChain => retailerId != null;
 
@@ -22,7 +26,7 @@ class StoreGroup {
     return null;
   }
 
-  int get offerCount {
+  int get dealCount {
     final content = <String>{};
     for (final branch in branches) {
       for (final deal in branch.deals) {
@@ -30,17 +34,48 @@ class StoreGroup {
             ? 'deal:${deal.id}'
             : 'deal:${deal.productUrl ?? deal.sourceUrl}:${deal.title}');
       }
+    }
+    final marketplace = <String>{
+      for (final deal in marketplaceDeals)
+        deal.id.isNotEmpty
+            ? 'deal:${deal.id}'
+            : 'deal:${deal.productUrl ?? deal.sourceUrl}:${deal.title}',
+    };
+    return content.length > marketplace.length
+        ? content.length
+        : marketplace.length;
+  }
+
+  int get catalogueCount {
+    final content = <String>{};
+    for (final branch in branches) {
       for (final catalogue in branch.catalogues) {
         content.add(catalogue.id?.isNotEmpty == true
             ? 'catalogue:${catalogue.id}'
             : 'catalogue:${catalogue.url}:${catalogue.name}');
       }
     }
-    if (content.isNotEmpty) return content.length;
-    return branches.fold(
+    final marketplace = <String>{
+      for (final catalogue in marketplaceCatalogues)
+        catalogue.id?.isNotEmpty == true
+            ? 'catalogue:${catalogue.id}'
+            : 'catalogue:${catalogue.url}:${catalogue.name}',
+    };
+    return content.length > marketplace.length
+        ? content.length
+        : marketplace.length;
+  }
+
+  int get offerCount {
+    final knownContent = dealCount + catalogueCount;
+    if (branches.every((branch) => branch.detailsLoaded)) {
+      return knownContent;
+    }
+    final summaryCount = branches.fold(
       0,
       (total, branch) => total + branch.promotionCount,
     );
+    return knownContent > summaryCount ? knownContent : summaryCount;
   }
 
   num? get nearestDistanceM {
@@ -52,7 +87,11 @@ class StoreGroup {
   }
 }
 
-List<StoreGroup> groupNearbyStores(Iterable<NearbyStore> stores) {
+List<StoreGroup> groupNearbyStores(
+  Iterable<NearbyStore> stores, {
+  Iterable<Deal> marketplaceDeals = const [],
+  Iterable<Catalogue> marketplaceCatalogues = const [],
+}) {
   final buckets = <String, List<NearbyStore>>{};
   final retailerIds = <String, String?>{};
 
@@ -71,15 +110,74 @@ List<StoreGroup> groupNearbyStores(Iterable<NearbyStore> stores) {
 
   final groups = buckets.entries.map((entry) {
     final retailerId = retailerIds[entry.key];
+    final displayName = _groupName(retailerId, entry.value);
     return StoreGroup(
       id: entry.key,
       retailerId: retailerId,
-      displayName: _groupName(retailerId, entry.value),
+      displayName: displayName,
       branches: List.unmodifiable(entry.value),
+      marketplaceDeals: List.unmodifiable(_uniqueDeals(marketplaceDeals.where(
+        (deal) => _matchesMarketplaceStore(
+          retailerId,
+          displayName,
+          deal.retailerId,
+          deal.retailerName,
+        ),
+      ))),
+      marketplaceCatalogues:
+          List.unmodifiable(_uniqueCatalogues(marketplaceCatalogues.where(
+        (catalogue) => _matchesMarketplaceStore(
+          retailerId,
+          displayName,
+          catalogue.retailerId,
+          catalogue.retailerName,
+        ),
+      ))),
     );
   }).toList()
     ..sort((a, b) => a.displayName.compareTo(b.displayName));
   return List.unmodifiable(groups);
+}
+
+List<Deal> _uniqueDeals(Iterable<Deal> deals) {
+  final seen = <String>{};
+  return deals.where((deal) {
+    final key = deal.id.isNotEmpty
+        ? deal.id
+        : '${deal.productUrl ?? deal.sourceUrl}:${deal.title}';
+    return seen.add(key);
+  }).toList();
+}
+
+List<Catalogue> _uniqueCatalogues(Iterable<Catalogue> catalogues) {
+  final seen = <String>{};
+  return catalogues.where((catalogue) {
+    final key = catalogue.id?.isNotEmpty == true
+        ? catalogue.id!
+        : '${catalogue.url}:${catalogue.name}';
+    return seen.add(key);
+  }).toList();
+}
+
+bool _matchesMarketplaceStore(
+  String? groupRetailerId,
+  String groupName,
+  String? contentRetailerId,
+  String? contentRetailerName,
+) {
+  final groupId = _canonicalRetailerId(groupRetailerId);
+  final contentId = _canonicalRetailerId(contentRetailerId);
+  if (groupId != null && contentId != null) return groupId == contentId;
+  return _normaliseBrand(groupName) ==
+      _normaliseBrand(contentRetailerName ?? '');
+}
+
+String? _canonicalRetailerId(String? value) {
+  final id = _normaliseRetailerId(value);
+  return switch (id) {
+    'picknpay' || 'pnp' => 'pick-n-pay',
+    _ => id,
+  };
 }
 
 String? _normaliseRetailerId(String? value) {

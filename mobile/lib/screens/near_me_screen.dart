@@ -12,6 +12,7 @@ import '../widgets/login_gate_card.dart';
 import '../widgets/in_app_browser.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/sponsored_ad_card.dart';
+import '../widgets/store_map_view.dart';
 
 enum _LocationSettingsTarget { app, device }
 
@@ -23,6 +24,7 @@ class NearMeScreen extends StatefulWidget {
     this.addressStore,
     this.onViewStoreDeals,
     this.isAuthenticated = false,
+    this.isAdmin = false,
     this.onWantsAuth,
     this.isLocationServiceEnabled,
     this.checkLocationPermission,
@@ -37,6 +39,7 @@ class NearMeScreen extends StatefulWidget {
   // Called when a shopper taps a store card to see its deals in the marketplace.
   final void Function(String? retailerId, String storeName)? onViewStoreDeals;
   final bool isAuthenticated;
+  final bool isAdmin;
   final VoidCallback? onWantsAuth;
   final Future<bool> Function()? isLocationServiceEnabled;
   final Future<LocationPermission> Function()? checkLocationPermission;
@@ -495,7 +498,9 @@ class _NearMeScreenState extends State<NearMeScreen> {
           sliver: SliverList.builder(
             itemCount: visibleStores.length,
             itemBuilder: (context, index) => _StoreCard(
+              api: widget.api,
               store: visibleStores[index],
+              isAdmin: widget.isAdmin,
               onViewDeals: widget.onViewStoreDeals == null
                   ? null
                   : () => widget.onViewStoreDeals!(
@@ -906,8 +911,15 @@ class _HistoryChip extends StatelessWidget {
 // deals themselves live on the store's own curated page, so the Near me
 // list stays scannable no matter how many specials a store has.
 class _StoreCard extends StatelessWidget {
-  const _StoreCard({required this.store, this.onViewDeals});
+  const _StoreCard({
+    required this.api,
+    required this.store,
+    required this.isAdmin,
+    this.onViewDeals,
+  });
+  final Api api;
   final NearbyStore store;
+  final bool isAdmin;
   final VoidCallback? onViewDeals;
 
   @override
@@ -920,7 +932,9 @@ class _StoreCard extends StatelessWidget {
       child: InkWell(
         onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => _NearStoreDetailScreen(
+            api: api,
             store: store,
+            isAdmin: isAdmin,
             onViewDeals: onViewDeals,
           ),
         )),
@@ -1017,9 +1031,18 @@ class _StoreCard extends StatelessWidget {
 // The curated per-store page: every deal and catalogue this store
 // published, in one place.
 class _NearStoreDetailScreen extends StatelessWidget {
-  const _NearStoreDetailScreen({required this.store, this.onViewDeals});
+  const _NearStoreDetailScreen({
+    required this.api,
+    required this.store,
+    required this.isAdmin,
+    this.onViewDeals,
+  });
+  final Api api;
   final NearbyStore store;
+  final bool isAdmin;
   final VoidCallback? onViewDeals;
+
+  bool get _hasLocation => store.lat != 0 && store.lon != 0;
 
   @override
   Widget build(BuildContext context) {
@@ -1054,6 +1077,25 @@ class _NearStoreDetailScreen extends StatelessWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w700),
             ),
+          if (_hasLocation) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => StoreMapView.open(
+                  context,
+                  api: api,
+                  storeName: store.name,
+                  lat: store.lat.toDouble(),
+                  lon: store.lon.toDouble(),
+                  storeAddress: store.address,
+                  isAdmin: isAdmin,
+                ),
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('View on map'),
+              ),
+            ),
+          ],
           if (onViewDeals != null && store.hasSomething) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -1141,7 +1183,11 @@ class _NearStoreDetailScreen extends StatelessWidget {
             const SizedBox(height: 6),
             for (final cat in catalogues)
               InkWell(
-                onTap: () => showCatalogueReader(context, cat),
+                onTap: () => showCatalogueReader(
+                  context,
+                  cat,
+                  deals: store.deals,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5),
                   child: Row(

@@ -126,6 +126,30 @@ void main() {
     expect(find.text('Registered business name'), findsOneWidget);
     expect(api.checkoutCalls, 0);
   });
+
+  testWidgets('administrator opens developer tools without an application',
+      (tester) async {
+    final api = _SubscriptionApi(
+      account: _adminAccount,
+      checkoutResult: const SubscriptionCheckout(
+        message: 'Checkout ready.',
+        planId: 'developers',
+        billingCycle: 'monthly',
+        status: 'checkout_required',
+      ),
+      plan: _developerPlan,
+    );
+    await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Open developer tools'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('MCP and API credentials'), findsOneWidget);
+    expect(find.text('Tell us about your business'), findsNothing);
+    expect(api.checkoutCalls, 0);
+    expect(api.developerKeyCalls, 1);
+  });
 }
 
 Widget _wrap(Widget child) => MaterialApp(
@@ -144,6 +168,7 @@ class _SubscriptionApi extends Api {
     ),
     this.currencyCode = 'ZAR',
     this.plan = _householdPlan,
+    this.account = _paidAccount,
   }) : super(baseUrl: 'https://example.test');
 
   final SubscriptionCheckout checkoutResult;
@@ -154,7 +179,9 @@ class _SubscriptionApi extends Api {
 
   /// The paid plan the server priced for this shopper.
   final MemberPlan plan;
+  final MemberAccount account;
   int checkoutCalls = 0;
+  int developerKeyCalls = 0;
 
   @override
   String get effectiveCurrencyCode => currencyCode;
@@ -163,8 +190,22 @@ class _SubscriptionApi extends Api {
   Future<SubscriptionData> subscription() async => SubscriptionData(
         billingReady: true,
         plans: [_freePlan, plan],
-        account: _paidAccount,
+        account: account,
       );
+
+  @override
+  Future<DeveloperKeyResource> developerKeys() async {
+    developerKeyCalls += 1;
+    return const DeveloperKeyResource(
+      allowance: DeveloperAllowance(
+        callsPerMinute: 120,
+        callsPerMonth: 25000,
+      ),
+      keys: [],
+      scopes: ['shopping:read', 'trends:read'],
+      usage: 0,
+    );
+  }
 
   @override
   Future<CountryPricing> country() async => countryPricing;
@@ -187,6 +228,20 @@ const _paidAccount = MemberAccount(
   planStatus: 'active',
   role: 'member',
   propertiesAccess: false,
+  createdAt: '2026-07-22T00:00:00.000Z',
+  updatedAt: '2026-07-22T00:00:00.000Z',
+);
+
+const _adminAccount = MemberAccount(
+  id: 'admin-1',
+  email: 'admin@example.test',
+  displayName: 'Admin User',
+  initials: 'AU',
+  planId: 'free',
+  planName: 'Free',
+  planStatus: 'active',
+  role: 'admin',
+  propertiesAccess: true,
   createdAt: '2026-07-22T00:00:00.000Z',
   updatedAt: '2026-07-22T00:00:00.000Z',
 );
@@ -225,6 +280,18 @@ const _organizationPlan = MemberPlan(
   features: ['Business workspace'],
   monthlyCents: 49900,
   annualCents: 499000,
+);
+
+const _developerPlan = MemberPlan(
+  id: 'developers',
+  name: 'Developers',
+  description: 'MCP and API access.',
+  badge: 'For builders',
+  isPaid: true,
+  statusText: 'Available',
+  features: ['Scoped API keys'],
+  monthlyCents: 29900,
+  annualCents: 299000,
 );
 
 // The same plan as the server prices it for an American: quoted at a whole $10,

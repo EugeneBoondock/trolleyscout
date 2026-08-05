@@ -4,10 +4,15 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../app_controller.dart';
 import '../biometric_gate.dart';
+import '../data_saver_store.dart';
+import '../shopper_calculator.dart';
+import '../store_visit_assistant.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_avatar_view.dart';
+import 'developer_access_screen.dart';
+import 'store_visit_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.controller});
@@ -30,6 +35,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _showCurrentPassword = false;
   bool _showNewPassword = false;
   bool _showConfirmPassword = false;
+
+  @override
+  void initState() {
+    super.initState();
+    DataSaverStore.instance.load();
+    ShopperCalculatorStore.instance.load();
+    StoreVisitPreferences.instance.load();
+  }
 
   @override
   void dispose() {
@@ -96,6 +109,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       destructive: true,
     );
     if (confirmed) await widget.controller.signOut();
+  }
+
+  Future<void> _setInStoreAssistant(bool enabled) async {
+    final preferences = StoreVisitPreferences.instance;
+    if (!enabled) {
+      await preferences.setEnabled(false);
+      return;
+    }
+    final result = await preferences.requestEnable();
+    if (!mounted || result == StoreVisitEnableResult.enabled) return;
+    showNotice(
+      context,
+      result == StoreVisitEnableResult.locationOff
+          ? 'Turn on device location, then try again.'
+          : 'Allow location access to use In-store Scout.',
+    );
   }
 
   @override
@@ -171,6 +200,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+        if (account?.isAdmin == true ||
+            (account?.planId == 'developers' &&
+                account?.planStatus == 'active'))
+          PaperCard(
+            margin: const EdgeInsets.only(bottom: 14),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.code, color: TS.redOf(context)),
+              title: const Text('Developer tools'),
+              subtitle: const Text('Manage MCP and API credentials'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (context) =>
+                    DeveloperAccessScreen(api: widget.controller.api),
+              )),
+            ),
+          ),
         PaperCard(
           margin: const EdgeInsets.only(bottom: 14),
           child: Column(
@@ -297,6 +343,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // is immediately rewarded with the nicest of them.
                     if (enabled) uxSuccess();
                   },
+                ),
+              ],
+            ),
+          ),
+        ),
+        PaperCard(
+          key: const Key('shopping-tool-settings'),
+          margin: const EdgeInsets.only(bottom: 14),
+          child: AnimatedBuilder(
+            animation: ShopperCalculatorStore.instance,
+            builder: (context, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Shopping tools',
+                  style:
+                      Theme.of(context).textTheme.titleLarge?.merge(TS.display),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tools that stay close while you move through the app or a store.',
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                ),
+                SwitchListTile(
+                  key: const Key('shopper-calculator-toggle'),
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.calculate_outlined),
+                  title: const Text('Floating shopper calculator'),
+                  subtitle: const Text(
+                    'Keeps a budget, discounts, unit prices, and your live trolley total one tap away',
+                  ),
+                  value: ShopperCalculatorStore.instance.enabled,
+                  onChanged: (enabled) {
+                    ShopperCalculatorStore.instance.setEnabled(enabled);
+                    if (enabled) uxSuccess();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        PaperCard(
+          key: const Key('in-store-scout-settings'),
+          margin: const EdgeInsets.only(bottom: 14),
+          child: AnimatedBuilder(
+            animation: StoreVisitPreferences.instance,
+            builder: (context, _) {
+              final preferences = StoreVisitPreferences.instance;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'In-store Scout',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.merge(TS.display),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Optional foreground location checks for timely store specials and a private visit history.',
+                    style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                  ),
+                  SwitchListTile(
+                    key: const Key('in-store-scout-toggle'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.store_mall_directory_outlined),
+                    title: const Text('Detect when I’m in a store'),
+                    subtitle: const Text(
+                      'Checks only while Trolley Scout is open or resumed. No background location permission.',
+                    ),
+                    value: preferences.enabled,
+                    onChanged: _setInStoreAssistant,
+                  ),
+                  ListTile(
+                    key: const Key('shopping-visit-history'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.history),
+                    title: const Text('Shopping visit history'),
+                    subtitle: Text(
+                      preferences.visits.isEmpty
+                          ? 'No visits recorded on this device'
+                          : '${preferences.visits.length} ${preferences.visits.length == 1 ? 'visit' : 'visits'} · ${preferences.frequentStores.length} known ${preferences.frequentStores.length == 1 ? 'store' : 'stores'}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => StoreVisitHistoryScreen(),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        PaperCard(
+          key: const Key('data-and-offline-settings'),
+          margin: const EdgeInsets.only(bottom: 14),
+          child: AnimatedBuilder(
+            animation: DataSaverStore.instance,
+            builder: (context, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Data and offline',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.merge(TS.display)),
+                const SizedBox(height: 4),
+                Text(
+                  'Recent deals already work from the on-device cache.',
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
+                ),
+                SwitchListTile(
+                  key: const Key('data-saver-toggle'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Data saver'),
+                  subtitle: const Text(
+                    'Stops Window Shopping image preloading and keeps cached deal lists for longer',
+                  ),
+                  value: DataSaverStore.instance.enabled,
+                  onChanged: DataSaverStore.instance.setEnabled,
                 ),
               ],
             ),

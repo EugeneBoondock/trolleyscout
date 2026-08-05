@@ -34,4 +34,23 @@ describe('topSavingsDeals', () => {
   it('returns an empty list when nothing has a real saving', () => {
     expect(topSavingsDeals([deal({ priceText: 'R50' })])).toEqual([])
   })
+
+  it('does not present auction bids as shopper savings', () => {
+    const picks = topSavingsDeals([
+      deal({
+        evidenceText: 'Retail value R15000',
+        id: 'bid',
+        previousPriceText: 'R15000',
+        priceText: 'R10',
+        productUrl: 'https://market.test/item/bid',
+        retailerId: 'online-marketplace',
+        retailerName: 'Bob Shop',
+        sourceLabel: 'Online marketplace',
+        title: '4.86ct Colombian Emerald & Diamond Ring',
+      }),
+      deal({ id: 'groceries', previousPriceText: 'R130', priceText: 'R80' }),
+    ])
+
+    expect(picks.map((pick) => pick.id)).toEqual(['groceries'])
+  })
 })

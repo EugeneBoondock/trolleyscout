@@ -22,6 +22,12 @@ export interface TrolleyScoutEnv {
   // Optional: a free r.jina.ai key makes the search-proxy fallback reliable;
   // without it the keyless tier applies and scouts retry hourly.
   JINA_API_KEY?: string
+  // Optional server-side search providers. They broaden public retailer,
+  // campaign and catalogue discovery. Keys are Cloudflare secrets and never
+  // sent to browser or mobile clients.
+  EXA_API_KEY?: string
+  TAVILY_API_KEY?: string
+  FIRECRAWL_API_KEY?: string
   // Licensed voucher-code feeds. Both need a publisher account; without them
   // the checkout codes are whatever shoppers have shared. See
   // affiliateVoucherFeeds.ts.
@@ -38,6 +44,7 @@ export interface TrolleyScoutEnv {
   PAYFAST_PASSPHRASE?: string
   SCOUT_DEBUG?: string
   OPENAI_API_KEY?: string
+  FISH_AUDIO_API_KEY?: string
 }
 
 export type TrolleyScoutD1Env = TrolleyScoutEnv & { DB: D1Database }

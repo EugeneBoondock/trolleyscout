@@ -1,0 +1,253 @@
+.coverage-view {
+  display: grid;
+  gap: clamp(1.25rem, 3vw, 2rem);
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  color: var(--ink);
+}
+
+.member-main .coverage-view {
+  padding: 0;
+}
+
+.coverage-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: end;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+}
+
+.coverage-hero h1,
+.coverage-board-heading h2,
+.coverage-market-card h3,
+.coverage-hero p,
+.coverage-board-heading p,
+.coverage-note p {
+  margin: 0;
+}
+
+.coverage-hero h1 {
+  margin-top: 0.25rem;
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  line-height: 1;
+}
+
+.coverage-hero p:not(.eyebrow) {
+  max-width: 46rem;
+  margin-top: 0.8rem;
+  color: var(--muted);
+}
+
+.coverage-hero > svg {
+  color: var(--red);
+}
+
+.coverage-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.coverage-metric {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  align-items: center;
+  min-width: 0;
+  padding: 1rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.coverage-metric svg {
+  grid-row: 1 / span 2;
+  color: var(--red);
+}
+
+.coverage-metric strong {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.coverage-metric span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.coverage-board {
+  display: grid;
+  gap: 1rem;
+}
+
+.coverage-board-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  justify-content: space-between;
+  padding-bottom: 0.7rem;
+  border-bottom: 3px solid var(--line);
+}
+
+.coverage-board-heading > p {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.coverage-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(21rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.coverage-market-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.15rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.coverage-market-title {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.coverage-flag {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.coverage-market-card h3 {
+  font-size: 1.25rem;
+}
+
+.coverage-status {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.coverage-status > span {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.coverage-status.is-live > span {
+  background: var(--green);
+}
+
+.coverage-status.is-recent > span {
+  background: var(--yellow);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.coverage-status-detail,
+.coverage-last-check {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.coverage-market-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.coverage-market-stats > div {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+
+.coverage-market-stats dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.coverage-market-stats dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--display);
+  font-size: 1.3rem;
+}
+
+.coverage-message,
+.coverage-note {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 1rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.coverage-message {
+  flex-wrap: wrap;
+}
+
+.coverage-message span {
+  color: var(--muted);
+}
+
+.coverage-note svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.coverage-note p {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .coverage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .coverage-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .coverage-hero > svg {
+    display: none;
+  }
+
+  .coverage-summary,
+  .coverage-market-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coverage-board-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

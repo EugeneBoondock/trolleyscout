@@ -23,18 +23,22 @@ interface VoucherFeedback {
 }
 
 export function VouchersView({
+  countryName = 'South Africa',
   isAuthenticated,
   isLoading,
   onClaim,
   onRemove,
   onRequireAuth,
+  retailerOptions = [],
   vouchers,
 }: {
+  countryName?: string
   isAuthenticated: boolean
   isLoading: boolean
   onClaim: (voucherId: string) => void | Promise<void>
   onRemove: (voucherId: string) => void | Promise<void>
   onRequireAuth: () => void
+  retailerOptions?: Array<{ id: string; name: string }>
   vouchers: Voucher[]
 }) {
   const [query, setQuery] = useState('')
@@ -45,9 +49,13 @@ export function VouchersView({
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set())
   const copiedTimerRef = useRef<number | undefined>(undefined)
   const pendingIdsRef = useRef(new Set<string>())
-  const retailers = useMemo(
-    () => [...new Set(vouchers.map((voucher) => voucher.retailerId))].sort(),
-    [vouchers],
+  const retailers = useMemo(() => [...new Set([
+    ...retailerOptions.map((retailer) => retailer.id),
+    ...vouchers.map((voucher) => voucher.retailerId),
+  ])].sort(), [retailerOptions, vouchers])
+  const retailerNames = useMemo(
+    () => new Map(retailerOptions.map((retailer) => [retailer.id, retailer.name])),
+    [retailerOptions],
   )
   const filtered = vouchers.filter((voucher) => {
     const haystack = [
@@ -135,12 +143,13 @@ export function VouchersView({
       </div>
 
       <VoucherCodesPanel
+        countryName={countryName}
         isAuthenticated={isAuthenticated}
         onRequireAuth={onRequireAuth}
         retailerId={retailerId}
         retailerOptions={retailers.map((retailer) => ({
           id: retailer,
-          name: formatRetailer(retailer),
+          name: retailerNames.get(retailer) ?? formatRetailer(retailer),
         }))}
       />
 
@@ -149,8 +158,8 @@ export function VouchersView({
           <p className="eyebrow">In-store and on-site</p>
           <h2>Loyalty prices and clip coupons</h2>
           <p className="section-lede">
-            Not typed at checkout. These are scanned at the till or clipped on the
-            product page.
+            Retailer-issued prices and coupons available in {countryName}. These are
+            scanned at the till or clipped on the product page, not typed at checkout.
           </p>
         </div>
       </div>
@@ -170,7 +179,9 @@ export function VouchersView({
           <select onChange={(event) => setRetailerId(event.target.value)} value={retailerId}>
             <option value="all">All retailers</option>
             {retailers.map((retailer) => (
-              <option key={retailer} value={retailer}>{formatRetailer(retailer)}</option>
+              <option key={retailer} value={retailer}>
+                {retailerNames.get(retailer) ?? formatRetailer(retailer)}
+              </option>
             ))}
           </select>
         </label>
@@ -205,6 +216,11 @@ export function VouchersView({
         <div className="loading-strip" role="status">
           <ScoutMark motion="spin" size={28} />
           Loading current vouchers
+        </div>
+      ) : vouchers.length === 0 ? (
+        <div aria-live="polite" className="empty-panel" role="status">
+          <Ticket size={42} />
+          <p>No current retailer-issued vouchers are available in {countryName}.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div aria-live="polite" className="empty-panel" role="status">
