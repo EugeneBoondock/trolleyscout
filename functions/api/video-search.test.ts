@@ -75,6 +75,22 @@ describe('searchTopVideos', () => {
     })
   })
 
+  it('prefers videos that name the exact product over merely popular ones', async () => {
+    const videos = await searchTopVideos('Sunlight dishwashing liquid 750ml review', async () =>
+      innertubeResponse([
+        videoRenderer('vague', 'Top 10 cleaning products this year', '9,000,000 views'),
+        videoRenderer('exact', 'Sunlight dishwashing liquid honest review', '40,000 views'),
+        videoRenderer('close', 'Sunlight liquid 750ml test', '12,000 views'),
+        videoRenderer('other-brand', 'Fairy liquid review', '2,000,000 views'),
+      ]))
+
+    // The two that actually name the product lead; the 9M-view listicle and
+    // the other brand never outrank them.
+    expect(videos.map((video) => video.videoId).slice(0, 2))
+      .toEqual(['exact', 'close'])
+    expect(videos.map((video) => video.videoId)).not.toContain('vague')
+  })
+
   it('sends the query to the open InnerTube endpoint', async () => {
     let requestedBody = ''
     await searchTopVideos('huggies nappies review', async (input, init) => {

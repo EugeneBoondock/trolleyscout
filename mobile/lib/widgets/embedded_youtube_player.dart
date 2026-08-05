@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../api.dart';
 import '../theme.dart';
@@ -53,31 +54,60 @@ class _YouTubeModalContentState extends State<_YouTubeModalContent> {
   List<ProductVideo> _videos = const [];
   int _index = 0;
 
-  String get _searchFallbackUrl =>
-      'https://www.youtube.com/embed?listType=search&list=${Uri.encodeComponent("${widget.productTitle} review")}&autoplay=1';
-
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) {
           if (mounted) setState(() => _loading = false);
         },
       ));
+    // Without this, Android's WebView refuses the embed's autoplay and the
+    // player just sits on its thumbnail looking broken.
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      platform.setMediaPlaybackRequiresUserGesture(false);
+    }
 
     final videoId = widget.customVideoId?.trim();
     if (videoId != null && videoId.isNotEmpty) {
-      _controller.loadRequest(Uri.parse(_embedUrl(videoId)));
+      _showEmbed('https://www.youtube.com/embed/$videoId'
+          '?autoplay=1&playsinline=1&rel=0');
       return;
     }
-    _controller.loadRequest(Uri.parse(_searchFallbackUrl));
+    _showEmbed(_searchFallbackEmbedUrl);
     _loadTopVideos();
   }
 
-  static String _embedUrl(String videoId) =>
-      'https://www.youtube.com/embed/$videoId?autoplay=1&enablejsapi=1';
+  String get _searchFallbackEmbedUrl =>
+      'https://www.youtube.com/embed?listType=search&list=${Uri.encodeComponent("${widget.productTitle} review")}&autoplay=1&playsinline=1';
+
+  /// YouTube refuses to play inside a WebView that loads the embed URL bare —
+  /// there is no embedding page, so playback dies with "Video unavailable".
+  /// Hosting the embed in a real page with our own origin satisfies it.
+  void _showEmbed(String embedUrl) {
+    _controller.loadHtmlString(
+      '''
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
+iframe{border:0;width:100%;height:100%}</style>
+</head>
+<body>
+<iframe src="$embedUrl"
+  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+  allowfullscreen></iframe>
+</body>
+</html>
+''',
+      baseUrl: 'https://trolleyscout.co.za',
+    );
+  }
 
   Future<void> _loadTopVideos() async {
     final api = widget.api;
@@ -91,7 +121,8 @@ class _YouTubeModalContentState extends State<_YouTubeModalContent> {
         _index = 0;
         _loading = true;
       });
-      await _controller.loadRequest(Uri.parse(_embedUrl(videos.first.videoId)));
+      _showEmbed('https://www.youtube.com/embed/${videos.first.videoId}'
+          '?autoplay=1&playsinline=1&rel=0');
     } catch (_) {
       // The search-playlist fallback is already playing; leave it be.
     }
@@ -104,7 +135,8 @@ class _YouTubeModalContentState extends State<_YouTubeModalContent> {
       _index = index;
       _loading = true;
     });
-    _controller.loadRequest(Uri.parse(_embedUrl(_videos[index].videoId)));
+    _showEmbed('https://www.youtube.com/embed/${_videos[index].videoId}'
+        '?autoplay=1&playsinline=1&rel=0');
   }
 
   @override

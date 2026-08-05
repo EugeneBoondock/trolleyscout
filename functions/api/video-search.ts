@@ -61,12 +61,51 @@ export async function searchTopVideos(
     })
     if (!response.ok) return []
     const payload: unknown = await response.json()
-    return collectVideoRenderers(payload)
-      .sort((left, right) => right.viewCount - left.viewCount)
-      .slice(0, MAX_RESULTS)
+    return pickMostRelevant(query, collectVideoRenderers(payload))
   } catch {
     return []
   }
+}
+
+/** Specificity first, popularity second. A video must actually name the
+ * product — at least half of the query's meaningful words in its title —
+ * before view count is allowed to order it; otherwise a million-view video
+ * about a different product outranks the exact review the shopper wanted. */
+export function pickMostRelevant(
+  query: string,
+  videos: VideoSearchResult[],
+): VideoSearchResult[] {
+  const tokens = significantTokens(query)
+  const required = Math.max(1, Math.ceil(tokens.length / 2))
+  const scored = videos.map((video) => {
+    const title = ` ${video.title.toLowerCase()} `
+    const matched = tokens.filter((token) => title.includes(token)).length
+    return { matched, video }
+  })
+  const specific = scored.filter((entry) => entry.matched >= required)
+  // When nothing names the product closely enough, YouTube's own relevance
+  // order (the input order) beats view count for a niche query.
+  const pool = specific.length > 0 ? specific : scored
+  return pool
+    .sort((left, right) => right.matched - left.matched === 0
+      ? right.video.viewCount - left.video.viewCount
+      : right.matched - left.matched)
+    .slice(0, MAX_RESULTS)
+    .map((entry) => entry.video)
+}
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'for', 'of', 'or', 'per', 'review', 'the', 'with',
+])
+
+function significantTokens(query: string): string[] {
+  return [...new Set(
+    query
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(' ')
+      .filter((token) => token.length >= 2 && !STOP_WORDS.has(token)),
+  )]
 }
 
 /** Walks the InnerTube response for videoRenderer nodes wherever they sit —
