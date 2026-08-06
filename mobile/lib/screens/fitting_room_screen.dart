@@ -1,4 +1,3 @@
-import '../widgets/turntable_view.dart';
 import '../widgets/more_fittings_sheet.dart';
 import 'earn_rewards_screen.dart';
 import 'dart:async';
@@ -69,9 +68,6 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
   Uint8List? _photoBytes;
   Uint8List? _resultBytes;
 
-  /// True while the result is shown on the turntable rather than as a
-  /// before/after wipe.
-  bool _rotating = false;
   TryOnQuota? _quota;
   String? _gateMessage;
   String? _tryOnError;
@@ -478,42 +474,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
           curve: Curves.easeOutBack,
           builder: (context, scale, child) =>
               Transform.scale(scale: scale, child: child),
-          child: _rotating
-              ? TurntableView(
-                  key: const Key('vton-turntable'),
-                  image: MemoryImage(after),
-                )
-              : _BeforeAfterSlider(before: before, after: after),
-        ),
-        const SizedBox(height: 10),
-        // Two ways to look at one render. The before/after wipe and the
-        // turntable both want the horizontal drag, so they take turns rather
-        // than fight over it.
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _ViewToggle(
-              key: const Key('vton-view-compare'),
-              label: 'Compare',
-              icon: Icons.compare_arrows_rounded,
-              selected: !_rotating,
-              onTap: () {
-                uxTap();
-                setState(() => _rotating = false);
-              },
-            ),
-            const SizedBox(width: 8),
-            _ViewToggle(
-              key: const Key('vton-view-rotate'),
-              label: 'Rotate',
-              icon: Icons.threesixty_rounded,
-              selected: _rotating,
-              onTap: () {
-                uxTap();
-                setState(() => _rotating = true);
-              },
-            ),
-          ],
+          child: _BeforeAfterSlider(before: before, after: after),
         ),
         if (_celebrate) ...[
           const SizedBox(height: 10),
@@ -1342,52 +1303,3 @@ class _ScoutPlanGateCard extends StatelessWidget {
   }
 }
 
-/// One of the two ways to view a finished look.
-class _ViewToggle extends StatelessWidget {
-  const _ViewToggle({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? TS.yellow : Colors.transparent,
-          border: Border.all(
-            color: selected ? TS.yellow : TS.lineSoftOf(context),
-          ),
-          borderRadius: BorderRadius.circular(TS.pillRadius),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 15, color: selected ? TS.ink : TS.mutedOf(context)),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? TS.ink : TS.mutedOf(context),
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

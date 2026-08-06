@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../currency.dart';
 import '../saved_fits_store.dart';
 import '../theme.dart';
-import '../widgets/turntable_view.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
 
@@ -170,7 +169,7 @@ class _FullScreenFit extends StatelessWidget {
                 minScale: 1,
                 maxScale: 5,
                 panEnabled: false,
-                child: TurntableView(image: MemoryImage(bytes)),
+                child: Image(image: MemoryImage(bytes), fit: BoxFit.contain),
               ),
             ),
           ),
