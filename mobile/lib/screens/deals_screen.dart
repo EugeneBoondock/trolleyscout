@@ -487,12 +487,17 @@ class _DealsScreenState extends State<DealsScreen> {
       final reuseDuration = DataSaverStore.instance.enabled
           ? _dataSaverCacheReuseDuration
           : _cacheReuseDuration;
-      if (!age.isNegative && age < reuseDuration && !widget.isAuthenticated) {
+      // The same reuse window for everyone. Signed-in shoppers used to be
+      // excluded here so an administrator's change to their limits would show
+      // immediately, which meant re-reading the entire feed every single time
+      // Marketplace was opened — the "refreshing" banner on every visit, and a
+      // large share of the database reads behind it. The scout only gathers
+      // every three hours, so a fetch inside that window cannot return
+      // anything new; a limit change now shows on the next refresh instead.
+      if (!age.isNegative && age < reuseDuration) {
         return cached.result;
       }
 
-      // Signed-in limits can be changed by an administrator at any time. Keep
-      // the cached board instant, then re-read the authoritative access block.
       _startFullFeedRefresh();
       return cached.result;
     }

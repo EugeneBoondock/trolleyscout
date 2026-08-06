@@ -146,6 +146,15 @@ const NOT_APPAREL = [
   'chocolate', 'sweets', 'juice', 'cooldrink', 'soda', 'beer', 'wine',
   'cider', 'whisky', 'vodka', 'eggs', 'butter', 'margarine', 'oil', 'mayo',
   'sauce', 'soup', 'beans', 'peanut', 'jam', 'honey', 'frozen', 'produce',
+  // Appliances and household chemicals, which arrive in the deal feed by the
+  // hundred and borrow clothing words: a microwave is a "counter top", a
+  // water bottle and a hand wash both have a "pump".
+  'microwave', 'oven', 'stove', 'hob', 'fridge', 'freezer', 'dishwasher',
+  'washing machine', 'tumble dryer', 'kettle', 'toaster', 'air fryer',
+  'blender', 'vacuum', 'heater', 'television', 'monitor', 'printer',
+  'hand wash', 'handwash', 'dishwashing', 'antiseptic', 'disinfectant',
+  'sanitiser', 'sanitizer', 'bleach', 'detergent', 'fabric softener',
+  'cleaner', 'polish', 'air freshener', 'insecticide', 'toilet',
   // "pencil" only as a pencil case: a pencil skirt is a skirt.
   'stationery', 'pencil case', 'crayon', 'sharpener',
 ]
@@ -197,11 +206,47 @@ export function audienceFor(text: string): ClothingAudience {
   return 'any'
 }
 
-export function garmentTypeFor(text: string): GarmentType {
+/**
+ * Garment words that are also ordinary English.
+ *
+ * Each of these is a real clothing word and a common word in a title that has
+ * nothing to do with clothes: a "Counter Top Microwave" is a top, a "Pump
+ * Water 750ml" and a "Hand Wash Pump" are both pumps, a "Laptop Sleeve" is a
+ * sleeve. In a clothing catalogue that ambiguity never bites, because
+ * everything on the page is clothing. In the deal feed — which is mostly
+ * groceries and appliances — it is the whole problem.
+ *
+ * So they still classify normally when reading a clothing shop, and count for
+ * nothing when reading the deal feed. See the `strict` option below.
+ */
+const AMBIGUOUS = new Set([
+  'top', 'tops', 'pump', 'pumps', 'slide', 'slides', 'court', 'courts',
+  'vest', 'wrap', 'crop', 'flats', 'mule', 'mules', 'wedge', 'wedges',
+  'clog', 'clogs', 'trainer', 'trainers', 'shopper', 'tote', 'totes',
+  'watch', 'watches', 'purse', 'purses', 'hat', 'hats', 'cargo', 'pant',
+  'suit', 'brief', 'briefs', 'tank', 'polo', 'sling back', 'slingback',
+])
+
+/**
+ * What part of the body a title describes, or 'any' when it does not say.
+ *
+ * `strict` is for sources that are not clothing shops. It refuses to classify
+ * on an ambiguous word alone, which costs a few real garments in the deal
+ * feed and keeps microwaves, bottled water and hand wash out of a fitting
+ * room — a rail with fewer clothes beats a rail offering to dress someone in
+ * a Dettol pump.
+ */
+export function garmentTypeFor(
+  text: string,
+  options: { strict?: boolean } = {},
+): GarmentType {
   const words = tokens(text)
   const phrase = ` ${[...words].join(' ')} `
   for (const [type, candidates] of TYPES) {
-    if (mentions(words, phrase, candidates)) return type
+    const usable = options.strict
+      ? candidates.filter((word) => !AMBIGUOUS.has(word))
+      : candidates
+    if (usable.length > 0 && mentions(words, phrase, usable)) return type
   }
   return 'any'
 }

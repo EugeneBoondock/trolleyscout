@@ -297,6 +297,10 @@ export async function harvestClothingFromDeals(
   for (const row of result.results) {
     if (!row.image_url || !row.product_url || !row.title) continue
     if (!isApparel(row.title)) continue
+    // Strict: the deal feed is mostly groceries and appliances, so a single
+    // ambiguous word like "top" or "pump" must not be enough to shelve
+    // something as clothing.
+    if (garmentTypeFor(row.title, { strict: true }) === 'any') continue
     const products = byRetailer.get(row.retailer_id) ?? []
     products.push({
       // Prefixed so a deal-sourced garment can never collide with one the

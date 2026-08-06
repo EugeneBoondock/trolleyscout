@@ -146,3 +146,36 @@ describe('the deal feed is mostly groceries', () => {
     expect(garmentTypeFor('Leather Handbag')).toBe('accessories')
   })
 })
+
+describe('reading a feed that is not a clothing shop', () => {
+  /// The gate the deal harvest actually applies.
+  const shelved = (title: string) =>
+    isApparel(title) && garmentTypeFor(title, { strict: true }) !== 'any'
+
+  it('turns away what the fitting room was actually showing', () => {
+    // All four were live on the rail. Each got in on a single ordinary word:
+    // a microwave is a "counter top", bottled water and hand wash both have a
+    // "pump", a laptop case is a "sleeve". Safe in a clothing catalogue,
+    // wrong in a feed that is mostly groceries and appliances.
+    expect(shelved('Kenmore 0.7-Cu.-Ft. Counter Top Microwave Oven')).toBe(false)
+    expect(shelved('BONAQUA PUMP WATER LEMON 750, ML')).toBe(false)
+    expect(shelved('Dettol Skincare Hand Wash Pump + Refill')).toBe(false)
+    expect(shelved('Volkano Wrap series 14-1inch Laptop Sleeve')).toBe(false)
+  })
+
+  it('still shelves the clothes in that same feed', () => {
+    expect(shelved('Mens Slim Fit Denim Jeans')).toBe(true)
+    expect(shelved('Ladies Floral Maxi Dress')).toBe(true)
+    expect(shelved('Canvas Sneakers White')).toBe(true)
+    expect(shelved('Denim Jacket Blue')).toBe(true)
+  })
+
+  it('reads a clothing shop exactly as before', () => {
+    // Strict mode is only for feeds that are not clothing shops. A real shop
+    // page still gets the ambiguous words, so a crop top is a top there.
+    expect(garmentTypeFor('Ribbed Crop Top')).toBe('tops')
+    expect(garmentTypeFor('Court Pump Black Heel')).toBe('footwear')
+    // ...and the same words alone prove nothing in the deal feed.
+    expect(garmentTypeFor('Ribbed Crop Top', { strict: true })).toBe('any')
+  })
+})

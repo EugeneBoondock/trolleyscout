@@ -34,8 +34,12 @@ void main() {
   });
 
   testWidgets(
-      'signed-in marketplace refreshes fresh cache for admin limit changes',
+      'a signed-in shopper reuses a fresh cache instead of refetching',
       (tester) async {
+    // This used to refetch the whole feed every time Marketplace opened, so
+    // a shopper saw "refreshing" on every visit and the database paid for it.
+    // The scout only gathers every three hours, so a fetch inside that window
+    // cannot return anything new.
     final cache = _MemoryDiscoveryCache.withValue(
       const DiscoveryResult(
         deals: [_cachedDeal],
@@ -55,11 +59,12 @@ void main() {
     )));
     for (var attempt = 0; attempt < 20; attempt += 1) {
       await tester.pump(const Duration(milliseconds: 50));
-      if (find.text('Stored server deal').evaluate().isNotEmpty) break;
+      if (find.text('Cached rice deal').evaluate().isNotEmpty) break;
     }
 
-    expect(find.text('Stored server deal'), findsOneWidget);
-    expect(api.discoveryCalls, 1);
+    // The board the shopper already had, with no round trip behind it.
+    expect(find.text('Cached rice deal'), findsOneWidget);
+    expect(api.discoveryCalls, 0);
   });
 
   testWidgets('a cold marketplace paints a small preview before the full feed',
