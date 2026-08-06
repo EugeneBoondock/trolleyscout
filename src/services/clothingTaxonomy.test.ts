@@ -45,6 +45,48 @@ describe('clothing taxonomy', () => {
     expect(audienceFor('Ladies Socks Size 4-7')).toBe('women')
   })
 
+  it('keeps the sewing word out of the Disney list', () => {
+    // "Stitch" is a seam far more often than it is a cartoon, and reading it
+    // as one put men's tees and sandals in front of parents shopping for kids.
+    expect(audienceFor('RVCA Mens Contrast Stitch Dad Hat')).toBe('men')
+    expect(audienceFor('Stitch Detail Single Band Sandal')).toBe('any')
+    expect(audienceFor('Lilo & Stitch Pyjama Set')).toBe('kids')
+  })
+
+  it('names the shoes and garments shops actually list', () => {
+    // These titles carried no word the taxonomy knew, so they fell through to
+    // whatever the shop was assumed to sell and the type filter missed them.
+    expect(garmentTypeFor('Girls Blossom Strip Clog - Cream')).toBe('footwear')
+    expect(garmentTypeFor('Croc Patent Full Court High Heel')).toBe('footwear')
+    expect(garmentTypeFor('Pointy Studded Mary Jane Push In Pump')).toBe('footwear')
+    expect(garmentTypeFor('Christelle 8 B2 Bootie - Black')).toBe('footwear')
+    expect(garmentTypeFor('Boxy Cord Shacket With Gold Shanks')).toBe('outerwear')
+    expect(garmentTypeFor('Sleeveless Knitwear Waistcoat')).toBe('outerwear')
+    expect(garmentTypeFor('Pull On Jeggings Dark Blue')).toBe('bottoms')
+    expect(garmentTypeFor('Green Wideleg Jogger Trackpants')).toBe('bottoms')
+    expect(garmentTypeFor('Hi-Rise Turnup Cigarette Denim')).toBe('bottoms')
+    expect(garmentTypeFor('3 Pack Lace G-String - Black')).toBe('underwear')
+    expect(garmentTypeFor('Straight Leg Rib Sleep Pant')).toBe('underwear')
+    expect(garmentTypeFor('Elle Woven Tote - Black')).toBe('accessories')
+    expect(garmentTypeFor('Half Daisy Statement Earring')).toBe('accessories')
+    // A short sleeve is not a bottom.
+    expect(garmentTypeFor('Short Sleeve Cotton Shirt')).toBe('tops')
+  })
+
+  it('turns away the phones and lunchboxes general shops stock', () => {
+    // PEP and Ackermans sell clothing beside electronics, and an assumed shop
+    // type carried the rest of the aisle onto the rail.
+    expect(isApparel('Galaxy A06 Black Smartphone')).toBe(false)
+    expect(isApparel('Salmon Pink Wireless Earbuds')).toBe(false)
+    expect(isApparel('Seasons soft water flask')).toBe(false)
+    expect(isApparel('Hot Wheels Lunch Bag')).toBe(false)
+    expect(isApparel('Bathu Gift Card')).toBe(false)
+    expect(isApparel('Legit Beauty Hair Wax Stick')).toBe(false)
+    // Real clothing with an unlucky word stays.
+    expect(isApparel("Women's Maasai Maxi Pencil Skirt")).toBe(true)
+    expect(isApparel('Luella Embossed Shopper with Laptop Bag')).toBe(true)
+  })
+
   it('sorts garments into the shape a shopper filters by', () => {
     expect(garmentTypeFor('Denim jacket')).toBe('outerwear')
     expect(garmentTypeFor('Slim fit jeans')).toBe('bottoms')

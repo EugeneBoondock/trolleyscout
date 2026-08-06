@@ -25,8 +25,10 @@ const KIDS = [
   'paw patrol', 'peppa', 'bluey', 'cocomelon', 'frozen elsa', 'minions',
   'barbie', 'hot wheels', 'thomas', 'sesame', 'mickey', 'minnie',
   'spongebob', 'scooby', 'transformers', 'my little pony', 'teletubbies',
-  'gabbys', 'encanto', 'moana', 'stitch', 'kuromi', 'hello kitty',
+  'gabbys', 'encanto', 'moana', 'lilo', 'kuromi', 'hello kitty',
   'sonic', 'pokemon', 'bokkie',
+  // "Youth" is a size class on sports kit, not a style.
+  'youth',
 ]
 
 /// Age and size markings that only ever appear on children's clothing:
@@ -55,27 +57,44 @@ const TYPES: Array<[GarmentType, string[]]> = [
     // Sneaker cuts, listed before tops so a "High Top" is never mistaken for
     // a shirt and offered as a torso try-on.
     'high top', 'low top', 'mid top', 'hightop', 'lowtop',
+    // How shoes are actually titled on the shelf: a "Clog", a "Court", a
+    // "Slingback". Untyped, these fell through to whatever the shop was
+    // assumed to sell.
+    'clog', 'clogs', 'pump', 'court', 'courts', 'slingback', 'slingbacks',
+    'sling back', 'mary jane', 'trainer', 'bootie', 'booties', 'wedge',
+    'wedges', 'flats', 'espadrille', 'espadrilles', 'mule', 'mules',
+    'brogue', 'brogues', 'stiletto', 'stilettos', 'plimsoll',
   ]],
   ['dresses', ['dress', 'dresses', 'gown', 'jumpsuit', 'romper', 'frock']],
   ['outerwear', [
     'jacket', 'jackets', 'coat', 'coats', 'blazer', 'hoodie', 'hoodies',
     'sweater', 'jersey', 'cardigan', 'pullover', 'fleece', 'parka',
     'windbreaker', 'puffer', 'gilet', 'sweatshirt',
+    'shacket', 'waistcoat', 'knitwear', 'tracktop', 'tracktops', 'anorak',
+    'bodywarmer', 'poncho',
   ]],
   ['underwear', [
     'underwear', 'briefs', 'boxers', 'bra', 'bras', 'bralette', 'panties',
     'thong', 'vest', 'socks', 'sock', 'stockings', 'tights', 'pyjama',
     'pyjamas', 'sleepwear', 'nightie', 'lingerie', 'shapewear',
+    'panty', 'g string', 'gstring', 'brazilian', 'balconette', 'bodyshorts',
+    'sleepshirt', 'sleepshirts', 'sleep set', 'sleep pant', 'nightdress',
+    'boyleg', 'bodysuit',
   ]],
   ['bottoms', [
     'jean', 'jeans', 'trouser', 'trousers', 'pants', 'chino', 'chinos',
     'shorts', 'skirt', 'skirts', 'leggings', 'joggers', 'cargo',
+    'pant', 'jegging', 'jeggings', 'trackpant', 'trackpants', 'sweatpant',
+    // "short" is left out on purpose: a short-sleeve shirt is not a bottom.
+    'sweatpants', 'jogger', 'capri', 'culotte', 'culottes', 'denim',
   ]],
   ['accessories', [
     'cap', 'caps', 'hat', 'hats', 'beanie', 'scarf', 'belt', 'belts', 'glove',
     'gloves', 'bag', 'bags', 'handbag', 'backpack', 'wallet', 'sunglasses',
     'watch', 'jewellery', 'necklace', 'earrings', 'bracelet', 'tie',
     'headband',
+    'earring', 'ring', 'rings', 'tote', 'shopper', 'satchel', 'slingbag',
+    'clutch', 'purse', 'glasses', 'cardholder', 'anklet',
   ]],
   ['tops', [
     'shirt', 'shirts', 'tshirt', 'tee', 'tees', 'top', 'tops', 'blouse',
@@ -94,6 +113,19 @@ const NOT_APPAREL = [
   'iron', 'steamer', 'mannequin', 'wardrobe', 'paint', 'ceiling', 'ceilings',
   'wall', 'walls', 'primer', 'varnish', 'enamel', 'undercoat', 'litre',
   'sealer', 'plaster', 'candle', 'mug', 'plate', 'bowl',
+  // General retailers shelve phones and lunchboxes next to the clothing, and
+  // an assumed shop type carries them onto the rail with everything else.
+  // "laptop" and "tablet" are left out: a shopper bag with a laptop pocket is
+  // still a bag.
+  'smartphone', 'cellphone handset', 'earbuds',
+  'earphones', 'headphones', 'speaker', 'charger', 'powerbank', 'battery',
+  'gift card', 'giftcard', 'voucher', 'airtime',
+  'flask', 'lunch', 'lunchbox', 'water bottle', 'thermos', 'cutlery',
+  'shampoo', 'conditioner', 'perfume', 'deodorant', 'lotion', 'moisturiser',
+  'nail polish', 'lipstick', 'mascara', 'hair wax', 'razor', 'toothpaste',
+  'nappy', 'nappies', 'wipes',
+  // "pencil" only as a pencil case: a pencil skirt is a skirt.
+  'stationery', 'pencil case', 'crayon', 'sharpener',
 ]
 
 /// Garment shapes a try-on model can actually dress a body in.
