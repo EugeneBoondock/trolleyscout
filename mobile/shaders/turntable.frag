@@ -5,20 +5,25 @@
 //
 // A real rotation needs geometry nobody has: one photo cannot show a back.
 // What it CAN do is exploit the one thing every standing body has in common —
-// it is roughly a cylinder. The middle of a torso is nearer the camera than
-// its edges, so turning it shifts the middle across the frame further than the
-// edges. Sampling with exactly that displacement reads as a body turning, and
-// it costs one texture lookup rather than a model call.
+// it is roughly a cylinder. The earlier version pushed pixels sideways by a
+// fake depth, which moved the silhouette and squashed the person. This one
+// does what rotating-product viewers do instead: the silhouette holds still
+// and the PICTURE slides around the cylinder. A pixel at cylinder angle phi
+// shows whatever sat at phi + turn before the turn. Texture bunches on the
+// edge coming toward the eye, spreads on the edge leaving it, and past the
+// rim sin() folds back so the far edge mirrors away like a shoulder wrapping
+// out of view.
 //
-// Honest about its range: this is a believable +/- 20 degrees, not a way to
-// see someone's back. Past that the wrap becomes visible, so the Dart side
-// clamps the angle rather than letting it smear.
+// Honest about its range: believable to roughly +/- 28 degrees, not a way to
+// see someone's back. The Dart side clamps the angle rather than letting the
+// wrap smear. The body band (uCenter, uHalfWidth) is measured from the photo
+// itself — see body_bounds.dart — so the cylinder sits on the person, not on
+// an assumption about where they stood.
 
 uniform vec2 uSize;
-// -1 turns left, +1 turns right, 0 is the photo as taken.
+// Radians. Negative turns left, positive right, 0 is the photo as taken.
 uniform float uAngle;
-// Where the body sits in the frame, and how wide it is, both 0..1. Defaults
-// suit a full-body photo taken at arm's length.
+// Where the body sits in the frame, and how wide it is, both 0..1.
 uniform float uCenter;
 uniform float uHalfWidth;
 uniform sampler2D uImage;
@@ -28,28 +33,25 @@ out vec4 fragColor;
 void main() {
   vec2 uv = FlutterFragCoord().xy / uSize;
 
+  float halfWidth = max(uHalfWidth, 0.001);
   // How far across the body this pixel is, -1 at one edge, +1 at the other.
-  float acrossBody = (uv.x - uCenter) / max(uHalfWidth, 0.001);
+  float across = (uv.x - uCenter) / halfWidth;
 
-  // Cylindrical depth: 1 at the centre line, falling to 0 at the sides, and
-  // flat zero for the background either side of the body so the room behind
-  // the shopper stays still while they turn.
-  float inBody = step(abs(acrossBody), 1.0);
-  float depth = sqrt(max(0.0, 1.0 - acrossBody * acrossBody)) * inBody;
+  // The room behind the shopper has no depth, so it does not turn.
+  if (abs(across) >= 1.0) {
+    fragColor = texture(uImage, uv);
+    return;
+  }
 
-  // The turn itself. Nearer pixels travel further, which is the whole effect.
-  float shift = uAngle * 0.13 * depth;
+  float phi = asin(clamp(across, -1.0, 1.0));
+  float psi = phi + uAngle;
+  vec2 sampled = vec2(uCenter + halfWidth * sin(psi), uv.y);
 
-  // A body turning also narrows slightly, and its far edge rises a touch.
-  float squeeze = 1.0 - abs(uAngle) * 0.04 * depth;
-  vec2 sampled = vec2(
-    uCenter + (uv.x - uCenter - shift) / max(squeeze, 0.001),
-    uv.y - uAngle * 0.008 * depth * acrossBody
-  );
+  // A patch of body rotating away from the light darkens a touch, one coming
+  // round brightens. Kept faint: the photo's own shading stays the star, this
+  // just stops the turn from reading as a flat slide.
+  float shade = clamp(1.0 + 0.35 * (cos(psi) - cos(phi)), 0.65, 1.08);
 
-  // Outside the frame there is nothing to sample; showing the edge pixel
-  // stretched is less distracting than a black band.
-  sampled = clamp(sampled, vec2(0.0), vec2(1.0));
-
-  fragColor = texture(uImage, sampled);
+  vec4 colour = texture(uImage, clamp(sampled, vec2(0.0), vec2(1.0)));
+  fragColor = vec4(colour.rgb * shade, colour.a);
 }
