@@ -146,6 +146,17 @@ async function run() {
 
   const commitData = await commitRes.json();
   console.log('Commit Response:', commitData);
+
+  // The commit is the release. Reporting success after a rejected commit is
+  // worse than reporting nothing: it leaves a version everyone believes has
+  // shipped sitting in a discarded edit.
+  if (!commitRes.ok || commitData.error) {
+    console.error(
+      `Play REJECTED this release: ${commitData.error?.message ?? commitRes.status}`,
+    );
+    process.exit(1);
+  }
+
   console.log('Successfully published release to Google Play Console via CLI!');
 }
 
