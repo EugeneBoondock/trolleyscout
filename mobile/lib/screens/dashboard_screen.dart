@@ -677,6 +677,12 @@ class _SavingsRing extends StatelessWidget {
   }
 }
 
+/// The savings ring, drawn as a compass rose.
+///
+/// Trolley Scout's mark is a compass and the app is called Scout, so the one
+/// dial on the dashboard may as well be one too. The arc still reads as a
+/// proportion — the share of full price the shopper kept — but a compass face
+/// gives it a reason to be round instead of looking like a loading spinner.
 class _RingPainter extends CustomPainter {
   const _RingPainter({
     required this.fraction,
@@ -690,28 +696,70 @@ class _RingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 9.0;
+    const stroke = 7.0;
     final rect = Offset.zero & size;
     final circle = rect.deflate(stroke / 2);
-    final trackPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..color = track;
-    final fillPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
-      ..color = fill;
+    final centre = rect.center;
+    final radius = circle.width / 2;
 
-    canvas.drawArc(circle, 0, math.pi * 2, false, trackPaint);
+    canvas.drawArc(
+      circle,
+      0,
+      math.pi * 2,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..color = track,
+    );
+
+    // The bezel: a tick every 30 degrees, the four cardinals longer. Thin and
+    // low contrast, so it reads as engraving rather than decoration.
+    final tick = Paint()
+      ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round
+      ..color = track;
+    for (var step = 0; step < 12; step += 1) {
+      final angle = step * math.pi / 6 - math.pi / 2;
+      final cardinal = step % 3 == 0;
+      final inner = radius - stroke - (cardinal ? 7 : 4);
+      final outer = radius - stroke - 1;
+      canvas.drawLine(
+        centre + Offset(math.cos(angle), math.sin(angle)) * inner,
+        centre + Offset(math.cos(angle), math.sin(angle)) * outer,
+        tick..strokeWidth = cardinal ? 1.6 : 1.0,
+      );
+    }
+
     if (fraction > 0) {
       canvas.drawArc(
         circle,
         -math.pi / 2,
         math.pi * 2 * fraction,
         false,
-        fillPaint,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round
+          ..color = fill,
       );
+
+      // The needle points at what was kept. A compass with no needle is a
+      // dial; this is what makes the metaphor land.
+      final heading = -math.pi / 2 + math.pi * 2 * fraction;
+      final tip = centre +
+          Offset(math.cos(heading), math.sin(heading)) * (radius - stroke - 9);
+      final tail = centre -
+          Offset(math.cos(heading), math.sin(heading)) * (radius * 0.30);
+      canvas.drawLine(
+        tail,
+        tip,
+        Paint()
+          ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round
+          ..color = fill,
+      );
+      canvas.drawCircle(centre, 3.0, Paint()..color = fill);
     }
   }
 
@@ -1065,7 +1113,35 @@ class _DashboardDealCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DealThumb(imageUrl: deal.imageUrl),
+              // The shop and a small square of the product share the top row.
+              // A full-width banner image made every card look like an advert
+              // and pushed the price, which is the reason anyone is reading
+              // the card, down out of the first glance.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        deal.retailerName.toUpperCase(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TS.eyebrowOf(context).copyWith(fontSize: 9.5),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(TS.tileRadius),
+                      child: SizedBox(
+                        width: 46,
+                        height: 46,
+                        child: _DealThumb(imageUrl: deal.imageUrl),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               // Expanded, not a bare Padding: the strip has a fixed height,
               // so the text block must take exactly what is left rather than
               // its natural size, or a long product name overflows the card.
@@ -1075,13 +1151,6 @@ class _DashboardDealCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        deal.retailerName.toUpperCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TS.eyebrowOf(context).copyWith(fontSize: 9.5),
-                      ),
-                      const SizedBox(height: 3),
                       Expanded(
                         child: Text(
                           deal.title,
@@ -1152,26 +1221,22 @@ class _DealThumb extends StatelessWidget {
 
   final String? imageUrl;
 
-  static const _height = 88.0;
-
+  /// Fills whatever box it is given. It used to fix its own height, which is
+  /// why it could only ever be a full-width banner.
   @override
   Widget build(BuildContext context) {
     final placeholder = Container(
-      height: _height,
-      width: double.infinity,
       color: TS.surfaceSoftOf(context),
       alignment: Alignment.center,
       child: PhosphorIcon(PhosphorIconsFill.shoppingCart,
-          size: 26, color: TS.mutedOf(context)),
+          size: 18, color: TS.mutedOf(context)),
     );
     if (imageUrl == null || imageUrl!.trim().isEmpty) return placeholder;
     return Container(
-      height: _height,
-      width: double.infinity,
       color: TS.surfaceSoftOf(context),
       child: Image.network(
         imageUrl!,
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => placeholder,
         // Fade the photo in rather than letting it pop, and hold the card's
         // shape while it downloads so the strip never jumps.

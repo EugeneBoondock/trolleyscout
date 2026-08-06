@@ -841,8 +841,10 @@ class _RootShellState extends State<RootShell>
                     ),
                 ],
               ],
-              shape: Border(
-                  bottom: BorderSide(color: TS.lineOf(context), width: 3)),
+              // No rule under the bar. A 3px line across the top cut the mark
+              // off from the page it belongs to; without it the header and
+              // the screen read as one surface.
+              shape: null,
             ),
             drawer: AppMenuDrawer(
               destination: _destination,
