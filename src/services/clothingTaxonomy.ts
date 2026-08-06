@@ -122,6 +122,11 @@ const NOT_APPAREL = [
   'bedding', 'comforter', 'quilt', 'linen', 'valance', 'mattress',
   'protector', 'hanger', 'hangers', 'rail', 'rails', 'basket', 'laundry',
   'iron', 'steamer', 'mannequin', 'wardrobe', 'paint', 'ceiling', 'ceilings',
+  // Groceries that borrow a garment word. Nothing you drink or eat belongs
+  // on a rail that dresses a photograph of a person.
+  'juice', 'soda', 'cola', 'lemonade', 'drink', 'drinks', 'pouch', 'pouches',
+  'snack', 'snacks', 'cereal', 'yogurt', 'yoghurt', 'candy', 'chocolate',
+  'coffee', 'tea', 'water', 'beverage', 'punch', 'nectar', 'smoothie',
   'wall', 'walls', 'primer', 'varnish', 'enamel', 'undercoat', 'litre',
   'sealer', 'plaster', 'candle', 'mug', 'plate', 'bowl',
   // General retailers shelve phones and lunchboxes next to the clothing, and
@@ -225,6 +230,9 @@ const AMBIGUOUS = new Set([
   'clog', 'clogs', 'trainer', 'trainers', 'shopper', 'tote', 'totes',
   'watch', 'watches', 'purse', 'purses', 'hat', 'hats', 'cargo', 'pant',
   'suit', 'brief', 'briefs', 'tank', 'polo', 'sling back', 'slingback',
+  // Capri pants are real, and so is Capri Sun. A US deal feed put a juice
+  // pouch on the try-on rail on the strength of this one word.
+  'capri', 'capris', 'jersey', 'boxer', 'bermuda', 'oxford', 'derby',
 ])
 
 /**

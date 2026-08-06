@@ -16,7 +16,6 @@ import '../widgets/common.dart';
 import '../widgets/dashboard_stories.dart';
 import '../widgets/dashboard_stories_skeleton.dart';
 import '../widgets/in_app_browser.dart';
-import '../widgets/scout_avatar_view.dart';
 
 /// The first screen after sign-in, so it has to do more than report numbers.
 ///
@@ -360,61 +359,54 @@ class _GreetingHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    return PaperCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ScoutAvatarView(initials: initials, size: 44),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_greetingFor(now).toUpperCase(),
-                    style: TS.eyebrowOf(context)),
-                const SizedBox(height: 3),
-                Text(
-                  name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 24,
-                    height: 1.05,
-                    letterSpacing: -0.2,
-                  ),
+    // Open on the page, not boxed. The mark is centred in the bar above, so
+    // the greeting under it reads as a masthead; a card around it turned the
+    // top of the screen into a stack of containers.
+    return Stack(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: Column(
+            children: [
+              const SizedBox(height: 2),
+              Text(_greetingFor(now).toUpperCase(),
+                  style: TS.eyebrowOf(context)),
+              const SizedBox(height: 4),
+              Text(
+                name,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 30,
+                  height: 1.05,
+                  letterSpacing: -0.3,
                 ),
-                const SizedBox(height: 6),
-                // Wrap, not Row: a long plan name next to a long weekday
-                // ("Wednesday 24 September") is wider than a small phone, and
-                // this drops to a second line instead of overflowing.
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _PlanPill(planName: planName),
-                    Text(
-                      _dateLine(now),
-                      style:
-                          TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              _PlanPill(planName: planName),
+              const SizedBox(height: 6),
+              Text(
+                _dateLine(now),
+                style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+              ),
+            ],
           ),
-          IconButton(
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          child: IconButton(
             tooltip: 'Refresh dashboard',
             onPressed: () {
               uxTap();
               onRefresh();
             },
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 20),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -641,13 +633,14 @@ class _SavingsRing extends StatelessWidget {
       duration: animate ? const Duration(milliseconds: 900) : Duration.zero,
       curve: Curves.easeOutCubic,
       builder: (context, value, _) => SizedBox(
-        width: 72,
-        height: 72,
+        width: 92,
+        height: 92,
         child: CustomPaint(
           painter: _RingPainter(
             fraction: value,
             track: TS.lineSoftOf(context),
             fill: TS.greenOf(context),
+            label: TS.mutedOf(context),
           ),
           child: Center(
             child: Column(
@@ -683,24 +676,36 @@ class _SavingsRing extends StatelessWidget {
 /// dial on the dashboard may as well be one too. The arc still reads as a
 /// proportion — the share of full price the shopper kept — but a compass face
 /// gives it a reason to be round instead of looking like a loading spinner.
+/// The savings dial, drawn as a compass face.
+///
+/// A compass people would recognise: N, E, S and W engraved round the bezel,
+/// minor ticks between them, and the green arc sweeping from north round to
+/// the share of full price the shopper kept. No needle — the arc's leading
+/// edge is the pointer, and anything drawn across the middle fights the
+/// percentage that lives there.
 class _RingPainter extends CustomPainter {
   const _RingPainter({
     required this.fraction,
     required this.track,
     required this.fill,
+    required this.label,
   });
 
   final double fraction;
   final Color track;
   final Color fill;
+  final Color label;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 7.0;
+    const stroke = 8.0;
     final rect = Offset.zero & size;
-    final circle = rect.deflate(stroke / 2);
     final centre = rect.center;
-    final radius = circle.width / 2;
+    // The ring sits inside the cardinal letters, so the letters get the
+    // outermost band and the arc runs just inside them.
+    final letterBand = size.width / 2 - 7;
+    final ringRadius = size.width / 2 - 18;
+    final circle = Rect.fromCircle(center: centre, radius: ringRadius);
 
     canvas.drawArc(
       circle,
@@ -713,22 +718,44 @@ class _RingPainter extends CustomPainter {
         ..color = track,
     );
 
-    // The bezel: a tick every 30 degrees, the four cardinals longer. Thin and
-    // low contrast, so it reads as engraving rather than decoration.
+    // Minor ticks between the cardinals, on the letter band so the bezel
+    // reads as engraved rather than empty.
     final tick = Paint()
-      ..strokeWidth = 1.2
+      ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round
       ..color = track;
-    for (var step = 0; step < 12; step += 1) {
-      final angle = step * math.pi / 6 - math.pi / 2;
-      final cardinal = step % 3 == 0;
-      final inner = radius - stroke - (cardinal ? 7 : 4);
-      final outer = radius - stroke - 1;
+    for (var step = 0; step < 8; step += 1) {
+      if (step % 2 == 0) continue; // Cardinals get letters, not ticks.
+      final angle = step * math.pi / 4 - math.pi / 2;
+      final direction = Offset(math.cos(angle), math.sin(angle));
       canvas.drawLine(
-        centre + Offset(math.cos(angle), math.sin(angle)) * inner,
-        centre + Offset(math.cos(angle), math.sin(angle)) * outer,
-        tick..strokeWidth = cardinal ? 1.6 : 1.0,
+        centre + direction * (letterBand - 4),
+        centre + direction * (letterBand + 1),
+        tick,
       );
+    }
+
+    // The cardinals. Small caps in the muted bezel colour, upright rather
+    // than rotated: a dashboard dial is read, not navigated by.
+    const cardinals = ['N', 'E', 'S', 'W'];
+    for (var i = 0; i < 4; i += 1) {
+      final angle = i * math.pi / 2 - math.pi / 2;
+      final painter = TextPainter(
+        text: TextSpan(
+          text: cardinals[i],
+          style: TextStyle(
+            color: label,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final position = centre +
+          Offset(math.cos(angle), math.sin(angle)) * letterBand -
+          Offset(painter.width / 2, painter.height / 2);
+      painter.paint(canvas, position);
     }
 
     if (fraction > 0) {
@@ -743,29 +770,15 @@ class _RingPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..color = fill,
       );
-
-      // The needle points at what was kept. A compass with no needle is a
-      // dial; this is what makes the metaphor land.
-      final heading = -math.pi / 2 + math.pi * 2 * fraction;
-      final tip = centre +
-          Offset(math.cos(heading), math.sin(heading)) * (radius - stroke - 9);
-      final tail = centre -
-          Offset(math.cos(heading), math.sin(heading)) * (radius * 0.30);
-      canvas.drawLine(
-        tail,
-        tip,
-        Paint()
-          ..strokeWidth = 2.4
-          ..strokeCap = StrokeCap.round
-          ..color = fill,
-      );
-      canvas.drawCircle(centre, 3.0, Paint()..color = fill);
     }
   }
 
   @override
   bool shouldRepaint(_RingPainter old) =>
-      old.fraction != fraction || old.fill != fill || old.track != track;
+      old.fraction != fraction ||
+      old.fill != fill ||
+      old.track != track ||
+      old.label != label;
 }
 
 /// Counts up to the amount on load. A number that lands rather than appears is
@@ -962,7 +975,7 @@ class _TopSavingsStrip extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         SizedBox(
-          height: 212,
+          height: 132,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
@@ -1065,7 +1078,7 @@ class _SavedDealsStrip extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         SizedBox(
-          height: 212,
+          height: 132,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,

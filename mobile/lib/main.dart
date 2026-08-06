@@ -754,11 +754,10 @@ class _RootShellState extends State<RootShell>
                   icon: const Icon(Icons.menu),
                 ),
               ),
+              // Centred, like a crest. Left-aligned it read as one more
+              // button in the hamburger's row rather than the app's mark.
+              centerTitle: true,
               titleSpacing: 4,
-              // The mark alone. The wordmark beside it only appeared on wider
-              // phones, where it promptly ran out of room and rendered as
-              // "TROLLEY SC" — so the app was named differently depending on
-              // the handset, and named wrongly on half of them.
               title: const AnimatedScoutMark(
                 key: ValueKey('navbar-scout-mark'),
                 motion: ScoutMarkMotion.scout,

@@ -5,6 +5,7 @@ import {
   canTryOn,
   garmentTypeFor,
   isApparel,
+  isNonApparel,
 } from './clothingTaxonomy'
 
 describe('clothing taxonomy', () => {
@@ -177,5 +178,21 @@ describe('reading a feed that is not a clothing shop', () => {
     expect(garmentTypeFor('Court Pump Black Heel')).toBe('footwear')
     // ...and the same words alone prove nothing in the deal feed.
     expect(garmentTypeFor('Ribbed Crop Top', { strict: true })).toBe('any')
+  })
+
+  it('keeps a juice pouch off the try-on rail', () => {
+    // Capri pants are real clothing, so 'capri' earns its place in the
+    // bottoms list. Capri Sun is a drink. A US deal feed shelved one as
+    // bottoms and put a Try it on button under it.
+    expect(garmentTypeFor('Capri Sun Or Country Time', { strict: true }))
+      .toBe('any')
+    expect(isNonApparel('Capri Sun 10 Pack Juice Pouches')).toBe(true)
+    expect(isNonApparel('Coca Cola 2L Soda')).toBe(true)
+  })
+
+  it('still recognises the garment the word belongs to', () => {
+    // Strict mode is only for feeds that are not clothing shops. A real
+    // clothing scout still gets its capris.
+    expect(garmentTypeFor('Ladies Capri Pants')).toBe('bottoms')
   })
 })
