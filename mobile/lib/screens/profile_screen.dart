@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_avatar_view.dart';
+import 'earn_rewards_screen.dart';
 import 'developer_access_screen.dart';
 import 'store_visit_history_screen.dart';
 
@@ -224,6 +225,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               )),
             ),
           ),
+        // Opt-in only, and deliberately quiet: a shopper who never taps this
+        // never sees an ad anywhere in Trolley Scout.
+        PaperCard(
+          margin: const EdgeInsets.only(bottom: 14),
+          child: ListTile(
+            key: const Key('profile-earn-rewards'),
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.play_circle_outline, color: TS.redOf(context)),
+            title: const Text('Earn rewards'),
+            subtitle: const Text(
+              'Watch an ad by choice for fittings or more Marketplace stores',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (context) =>
+                  EarnRewardsScreen(api: widget.controller.api),
+            )),
+          ),
+        ),
         PaperCard(
           margin: const EdgeInsets.only(bottom: 14),
           child: Column(

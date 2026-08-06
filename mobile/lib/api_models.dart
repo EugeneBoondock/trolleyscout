@@ -945,6 +945,119 @@ class TryOnCreditPack {
   final int perFittingCents;
 }
 
+/// One thing a shopper can earn by watching ads, and what it costs in ads.
+class AdRewardRate {
+  const AdRewardRate({
+    required this.kind,
+    required this.label,
+    required this.description,
+    required this.adsPerReward,
+    this.lifetimeCap,
+  });
+
+  final String kind;
+  final String label;
+  final String description;
+  final int adsPerReward;
+
+  /// How many of this reward may ever be earned, or null for no ceiling.
+  final int? lifetimeCap;
+
+  factory AdRewardRate.fromJson(Map<String, dynamic> json) => AdRewardRate(
+        kind: _string(json['kind'], ''),
+        label: _string(json['label'], ''),
+        description: _string(json['description'], ''),
+        adsPerReward: _int(json['adsPerReward'], 5),
+        lifetimeCap:
+            json['lifetimeCap'] is num ? (json['lifetimeCap'] as num).toInt() : null,
+      );
+}
+
+/// How far along the shopper is, per reward.
+class AdRewardProgress {
+  const AdRewardProgress({
+    this.adsToday = 0,
+    this.adsRemainingToday = 0,
+    this.progress = const {},
+    this.earned = const {},
+  });
+
+  final int adsToday;
+  final int adsRemainingToday;
+
+  /// Ads banked toward the next one of each reward.
+  final Map<String, int> progress;
+
+  /// How many of each reward has been earned in total.
+  final Map<String, int> earned;
+
+  factory AdRewardProgress.fromJson(Map<String, dynamic> json) =>
+      AdRewardProgress(
+        adsToday: _int(json['adsToday'], 0),
+        adsRemainingToday: _int(json['adsRemainingToday'], 0),
+        progress: _counts(json['progress']),
+        earned: _counts(json['earned']),
+      );
+
+  static Map<String, int> _counts(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _int(entry.value, 0),
+    };
+  }
+}
+
+class AdRewardState {
+  const AdRewardState({
+    this.maxAdsPerDay = 0,
+    this.rates = const [],
+    this.progress = const AdRewardProgress(),
+  });
+
+  final int maxAdsPerDay;
+  final List<AdRewardRate> rates;
+  final AdRewardProgress progress;
+
+  factory AdRewardState.fromJson(Map<String, dynamic> json) => AdRewardState(
+        maxAdsPerDay: _int(json['maxAdsPerDay'], 0),
+        rates: _mapList(json['rates']).map(AdRewardRate.fromJson).toList(),
+        progress: json['progress'] is Map
+            ? AdRewardProgress.fromJson(
+                Map<String, dynamic>.from(json['progress'] as Map))
+            : const AdRewardProgress(),
+      );
+}
+
+/// What one completed ad bought.
+class AdRewardOutcome {
+  const AdRewardOutcome({
+    this.granted = 0,
+    this.kind = '',
+    this.reason,
+    this.progress = const AdRewardProgress(),
+  });
+
+  final int granted;
+  final String kind;
+
+  /// Why nothing was granted, when nothing was — a daily cap reached, an ad
+  /// already counted, a lifetime cap hit.
+  final String? reason;
+  final AdRewardProgress progress;
+
+  factory AdRewardOutcome.fromJson(Map<String, dynamic> json) =>
+      AdRewardOutcome(
+        granted: _int(json['granted'], 0),
+        kind: _string(json['kind'], ''),
+        reason: _optionalString(json['reason']),
+        progress: json['progress'] is Map
+            ? AdRewardProgress.fromJson(
+                Map<String, dynamic>.from(json['progress'] as Map))
+            : const AdRewardProgress(),
+      );
+}
+
 class TryOnCreditOptions {
   const TryOnCreditOptions({
     required this.packs,

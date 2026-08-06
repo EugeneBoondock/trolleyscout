@@ -45,6 +45,14 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // AdMob application id. Google's public test id by default, so a
+        // build without an AdMob account still runs and still shows (test)
+        // rewarded ads. Pass the real one to swap it in:
+        //   flutter build appbundle --dart-define=... -Padmob=ca-app-pub-XXX~YYY
+        manifestPlaceholders["admobAppId"] =
+            (project.findProperty("admob") as String?)
+                ?: "ca-app-pub-3940256099942544~3347511713"
     }
 
     flavorDimensions += "audience"

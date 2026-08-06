@@ -34,6 +34,7 @@ dependencies:
   path_provider: ^2.1.5
   barcode_widget: ^2.0.4
   pdfx: ^2.9.2
+  google_mobile_ads: ^7.0.0
 
 dev_dependencies:
   flutter_test:

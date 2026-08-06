@@ -906,6 +906,24 @@ class Api {
     return SubscriptionCheckout.fromJson(_map(data['checkout']));
   }
 
+  /// The rewards a shopper can earn by choosing to watch an ad, and how far
+  /// along they are.
+  Future<AdRewardState> adRewards() async {
+    final data = await _request('GET', '/api/ad-rewards');
+    return AdRewardState.fromJson(data);
+  }
+
+  /// Reports one completed rewarded ad. [viewId] is the ad's own id, so the
+  /// server can refuse to pay for the same ad twice.
+  Future<AdRewardOutcome> claimAdReward(String kind, String viewId) async {
+    final data = await _request(
+      'POST',
+      '/api/ad-rewards',
+      body: {'kind': kind, 'viewId': viewId},
+    );
+    return AdRewardOutcome.fromJson(data);
+  }
+
   /// Admin: who has been using the fitting room this month.
   Future<TryOnUsageReport> adminTryOnStats({String? month}) async {
     final suffix = month == null || month.isEmpty

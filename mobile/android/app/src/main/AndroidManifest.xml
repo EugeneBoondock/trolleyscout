@@ -42,6 +42,13 @@
                 <data android:scheme="${appLinkScheme}"/>
             </intent-filter>
         </activity>
+        <!-- AdMob. Rewarded ads are the only ads in Trolley Scout, they are
+             opt-in, and the SDK is only initialised once a shopper opens the
+             rewards screen. The id comes from the Gradle placeholder so a real
+             one can replace the Google test id without touching this file. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

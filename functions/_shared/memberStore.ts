@@ -1,3 +1,4 @@
+import { readEarnedSourceBonus } from './adRewards'
 import type {
   Basket,
   BasketItem,
@@ -1049,7 +1050,13 @@ async function findPlanCapacityIssue(
     .first<{ plan_id: string }>()
 
   const plan = getMemberPlan((account?.plan_id ?? 'free') as MemberPlanId)
-  const limit = plan.limits[options.limitKey]
+  // Shops earned by watching ads sit on top of the plan's own allowance, so a
+  // shopper who earns some and then subscribes keeps both.
+  const earned =
+    options.limitKey === 'savedSources'
+      ? await readEarnedSourceBonus(env, accountId)
+      : 0
+  const limit = plan.limits[options.limitKey] + earned
   const countRow = await env.DB.prepare(options.countSql)
     .bind(accountId)
     .first<{ n: number }>()

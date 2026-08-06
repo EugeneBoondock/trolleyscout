@@ -408,6 +408,11 @@ void main() {
           .first,
     );
     expect(find.text('Floating shopper calculator'), findsOneWidget);
+    // scrollUntilVisible stops as soon as the row is built, which can still be
+    // below the fold. Without this the tap lands on empty space whenever
+    // anything is added to the screen above it.
+    await tester.ensureVisible(setting);
+    await tester.pumpAndSettle();
     await tester.tap(setting);
     await tester.pumpAndSettle();
 

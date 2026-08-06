@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'app_link_coordinator.dart';
+import 'in_app_alerts.dart';
 
 /// Thin wrapper around the local-notifications plugin. The periodic deal check
 /// uses immediate notifications, so no exact-alarm permission is needed.
@@ -108,6 +109,17 @@ class DealNotifications {
           : (count == 1
               ? '1 new deal just landed. Open the app to grab it.'
               : '$count new deals just landed. Open the app to grab them.');
+      // Someone already looking at Trolley Scout gets the app's own card
+      // rather than a tray notification dropped over the screen they are
+      // using. When the app is closed — or this is the background isolate —
+      // nothing is listening and the system notification goes out as usual.
+      if (InAppAlerts.instance.publish(InAppAlert(
+        title: title,
+        body: body,
+        link: Uri.parse('trolleyscout://deals'),
+      ))) {
+        return true;
+      }
       await _plugin.show(
         1001,
         title,
@@ -154,9 +166,19 @@ class DealNotifications {
               ? '$named is ending soon. Open the app before the price goes.'
               : '1 deal you saved is ending soon. Open the app before the price goes.')
           : '$count deals you saved are ending soon. Open the app before the prices go.';
+      final title =
+          count == 1 ? 'A saved deal is ending' : 'Saved deals are ending';
+      if (InAppAlerts.instance.publish(InAppAlert(
+        title: title,
+        body: body,
+        link: Uri.parse('trolleyscout://saved'),
+        kind: InAppAlertKind.expiring,
+      ))) {
+        return true;
+      }
       await _plugin.show(
         1002,
-        count == 1 ? 'A saved deal is ending' : 'Saved deals are ending',
+        title,
         body,
         details,
         payload: 'trolleyscout://saved',
@@ -200,9 +222,20 @@ class DealNotifications {
               ? '$named just dropped below the price you saved it at.'
               : 'A deal you saved just dropped in price.')
           : '$count deals you saved just dropped in price.';
+      final title = count == 1
+          ? 'Price drop on a saved deal'
+          : 'Price drops on saved deals';
+      if (InAppAlerts.instance.publish(InAppAlert(
+        title: title,
+        body: body,
+        link: Uri.parse('trolleyscout://saved'),
+        kind: InAppAlertKind.priceDrop,
+      ))) {
+        return true;
+      }
       await _plugin.show(
         1003,
-        count == 1 ? 'Price drop on a saved deal' : 'Price drops on saved deals',
+        title,
         body,
         details,
         payload: 'trolleyscout://saved',

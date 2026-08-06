@@ -43,6 +43,7 @@ import 'screens/tools_screen.dart';
 import 'screens/vouchers_screen.dart';
 import 'theme.dart';
 import 'ux.dart';
+import 'widgets/in_app_alert_banner.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/common.dart';
 import 'widgets/scout_avatar_view.dart';
@@ -114,12 +115,16 @@ class _TrolleyScoutAppState extends State<TrolleyScoutApp> {
         theme: TS.lightTheme(),
         darkTheme: TS.darkTheme(),
         themeMode: _controller.themeMode,
-        home: AppUpdatePromptHost(
-          checkDelay: widget.launchIntroDuration,
-          service: _appUpdateService,
-          child: RootShell(
-            controller: _controller,
-            launchIntroDuration: widget.launchIntroDuration,
+        // The alert card sits above every screen, so an alert that lands
+        // while the shopper is deep in a catalogue still reaches them.
+        home: InAppAlertBanner(
+          child: AppUpdatePromptHost(
+            checkDelay: widget.launchIntroDuration,
+            service: _appUpdateService,
+            child: RootShell(
+              controller: _controller,
+              launchIntroDuration: widget.launchIntroDuration,
+            ),
           ),
         ),
       ),
