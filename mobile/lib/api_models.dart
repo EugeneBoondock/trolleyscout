@@ -774,8 +774,9 @@ class TryOnQuota {
 
   factory TryOnQuota.fromJson(Map<String, dynamic> json) => TryOnQuota(
         limit: json['limit'] is num ? (json['limit'] as num).toInt() : null,
-        remaining:
-            json['remaining'] is num ? (json['remaining'] as num).toInt() : null,
+        remaining: json['remaining'] is num
+            ? (json['remaining'] as num).toInt()
+            : null,
         used: json['used'] is num ? (json['used'] as num).toInt() : 0,
         credits: json['credits'] is num ? (json['credits'] as num).toInt() : 0,
       );
@@ -839,8 +840,8 @@ class ClothingItem {
   final String garmentType;
 
   /// Only garments a try-on can dress a body in.
-  bool get canTryOn => const ['tops', 'bottoms', 'dresses', 'outerwear']
-      .contains(garmentType);
+  bool get canTryOn =>
+      const ['tops', 'bottoms', 'dresses', 'outerwear'].contains(garmentType);
 
   /// The same garment as a Deal, so it can be saved, basketed and opened
   /// through the machinery the rest of the app already has.
@@ -869,7 +870,8 @@ class ClothingRail {
         items: json['items'] is List
             ? (json['items'] as List)
                 .whereType<Map>()
-                .map((row) => ClothingItem.fromJson(Map<String, dynamic>.from(row)))
+                .map((row) =>
+                    ClothingItem.fromJson(Map<String, dynamic>.from(row)))
                 .toList()
             : const [],
         retailers: json['retailers'] is List
@@ -912,12 +914,14 @@ class TryOnCreditPack {
     required this.perFittingCents,
   });
 
-  factory TryOnCreditPack.fromJson(Map<String, dynamic> json) => TryOnCreditPack(
+  factory TryOnCreditPack.fromJson(Map<String, dynamic> json) =>
+      TryOnCreditPack(
         id: json['id']?.toString() ?? '',
         label: json['label']?.toString() ?? '',
         credits: json['credits'] is num ? (json['credits'] as num).toInt() : 0,
-        amountCents:
-            json['amountCents'] is num ? (json['amountCents'] as num).toInt() : 0,
+        amountCents: json['amountCents'] is num
+            ? (json['amountCents'] as num).toInt()
+            : 0,
         perFittingCents: json['perFittingCents'] is num
             ? (json['perFittingCents'] as num).toInt()
             : 0,
@@ -1048,11 +1052,11 @@ class ProductReviewInfo {
   factory ProductReviewInfo.fromJson(Map<String, dynamic> json) =>
       ProductReviewInfo(
         available: json['available'] == true,
-        rating: json['rating'] is num
-            ? (json['rating'] as num).toDouble()
-            : null,
-        reviewCount:
-            json['reviewCount'] is num ? (json['reviewCount'] as num).toInt() : 0,
+        rating:
+            json['rating'] is num ? (json['rating'] as num).toDouble() : null,
+        reviewCount: json['reviewCount'] is num
+            ? (json['reviewCount'] as num).toInt()
+            : 0,
         reviews: json['reviews'] is List
             ? (json['reviews'] as List)
                 .whereType<Map<String, dynamic>>()
@@ -1107,9 +1111,8 @@ class ProductVideo {
         title: json['title']?.toString() ?? '',
         channel: json['channel']?.toString() ?? '',
         thumbnailUrl: json['thumbnailUrl']?.toString(),
-        viewCount: json['viewCount'] is num
-            ? (json['viewCount'] as num).toInt()
-            : 0,
+        viewCount:
+            json['viewCount'] is num ? (json['viewCount'] as num).toInt() : 0,
       );
 
   final String videoId;
@@ -2746,6 +2749,57 @@ class ScoutGroceryPlan {
       };
 }
 
+/// One product Mr Scout is offering to put in a shop's own cart.
+class ScoutCartActionItem {
+  const ScoutCartActionItem({
+    required this.title,
+    required this.productUrl,
+    this.quantity = 1,
+    this.priceText,
+  });
+
+  final String title;
+  final String productUrl;
+  final int quantity;
+  final String? priceText;
+
+  factory ScoutCartActionItem.fromJson(Map<String, dynamic> json) =>
+      ScoutCartActionItem(
+        title: _string(json['title'], ''),
+        productUrl: _string(json['productUrl'], ''),
+        quantity: _int(json['quantity'], 1),
+        priceText: _optionalString(json['priceText']),
+      );
+}
+
+/// Mr Scout's offer to fill one shop's cart. Nothing happens until the
+/// shopper taps it, and it always runs in their own signed-in store session.
+class ScoutCartAction {
+  const ScoutCartAction({
+    required this.retailerId,
+    required this.retailerName,
+    this.items = const [],
+  });
+
+  final String retailerId;
+  final String retailerName;
+  final List<ScoutCartActionItem> items;
+
+  bool get isUsable =>
+      items.isNotEmpty &&
+      items.every((item) =>
+          item.title.isNotEmpty && item.productUrl.startsWith('http'));
+
+  factory ScoutCartAction.fromJson(Map<String, dynamic> json) =>
+      ScoutCartAction(
+        retailerId: _string(json['retailerId'], ''),
+        retailerName: _string(json['retailerName'], 'the store'),
+        items: _mapList(json['items'])
+            .map(ScoutCartActionItem.fromJson)
+            .toList(growable: false),
+      );
+}
+
 class ScoutChatAnswer {
   const ScoutChatAnswer({
     required this.reply,
@@ -2753,6 +2807,7 @@ class ScoutChatAnswer {
     this.catalogues = const [],
     this.followUps = const [],
     this.groceryPlan,
+    this.cartAction,
   });
 
   final String reply;
@@ -2760,6 +2815,9 @@ class ScoutChatAnswer {
   final List<ScoutChatCatalogueCard> catalogues;
   final List<String> followUps;
   final ScoutGroceryPlan? groceryPlan;
+
+  /// Set when the shopper asked for something to go into a store cart.
+  final ScoutCartAction? cartAction;
 
   factory ScoutChatAnswer.fromJson(Map<String, dynamic> json) =>
       ScoutChatAnswer(
@@ -2776,6 +2834,9 @@ class ScoutChatAnswer {
         followUps: _stringList(json['followUps']),
         groceryPlan: json['groceryPlan'] is Map
             ? ScoutGroceryPlan.fromJson(_mapOrEmpty(json['groceryPlan']))
+            : null,
+        cartAction: json['cartAction'] is Map
+            ? ScoutCartAction.fromJson(_mapOrEmpty(json['cartAction']))
             : null,
       );
 }
@@ -3444,8 +3505,9 @@ class DealAlertSummary {
       expiringSavedDealTitle:
           first is Map<String, dynamic> ? _string(first['title']) : null,
       priceDropCount: _int(json['priceDropCount']),
-      priceDropTitle:
-          firstDrop is Map<String, dynamic> ? _string(firstDrop['title']) : null,
+      priceDropTitle: firstDrop is Map<String, dynamic>
+          ? _string(firstDrop['title'])
+          : null,
     );
   }
 }

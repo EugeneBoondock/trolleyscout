@@ -243,6 +243,56 @@ void main() {
     expect(store.cart, lessThan(2));
   });
 
+
+  test('tries another size when the shop only reveals stock after picking',
+      () async {
+    // PEP lists "Size 6" as pickable, then swaps its buy box for an
+    // out-of-stock notice once chosen. Reporting "no add-to-cart button" on a
+    // product that is plainly on sale is the wrong answer; trying the next
+    // size is the right one.
+    final store = _FakeStore(
+      cartBadge: 0,
+      sizes: ['6', '7', '8'],
+      sizesThatGoOutOfStockOnPick: {'6', '7'},
+    );
+    final runner = _runnerFor(_FakeBrowser(store), [_jeans]);
+
+    await runner.run();
+
+    expect(store.chosenSize, '8');
+    expect(store.cart, 1);
+    expect(runner.phase, AgentPhase.finished);
+    expect(
+      runner.log.map((entry) => entry.message).join(' | '),
+      contains('6 is sold out'),
+    );
+  });
+
+  test('says the named size is sold out instead of silently picking another',
+      () async {
+    final store = _FakeStore(
+      cartBadge: 0,
+      sizes: ['6', '8'],
+      sizesThatGoOutOfStockOnPick: {'6'},
+    );
+    final runner = _runnerFor(
+      _FakeBrowser(store),
+      [
+        AgentItemPlan(
+          title: 'Sandals',
+          productUri: Uri.parse('https://shop.test/sandals'),
+          variant: '6',
+        )
+      ],
+    );
+
+    await runner.run();
+
+    expect(store.cart, 0);
+    expect(runner.results.single.outcome, AgentItemOutcome.variantUnavailable);
+    expect(runner.results.single.note, contains('sold out'));
+  });
+
   testWidgets('the panel narrates each step as it happens', (tester) async {
     final store = _FakeStore(cartBadge: 0, signedIn: false);
     final runner = _runnerFor(_FakeBrowser(store), [_jeans]);
@@ -359,6 +409,7 @@ class _FakeStore {
     this.signedIn = true,
     this.sizes = const [],
     this.soldOutSizes = const {},
+    this.sizesThatGoOutOfStockOnPick = const {},
     this.outOfStock = false,
     this.addBlocked = false,
     this.addControlAppearsOnPoll = 0,
@@ -367,6 +418,9 @@ class _FakeStore {
   bool signedIn;
   final List<String> sizes;
   final Set<String> soldOutSizes;
+
+  /// Sizes the shop offers but refuses once chosen.
+  final Set<String> sizesThatGoOutOfStockOnPick;
   final bool outOfStock;
   final bool addBlocked;
 
@@ -430,10 +484,17 @@ class _FakeBrowser implements AgentBrowser {
       'accountLabel': null,
       'onLoginPage': !store.signedIn,
       'cartCount': store.cartBadge == null ? null : store.cart,
-      'outOfStock': store.outOfStock,
+      'outOfStock': store.outOfStock ||
+          (store.chosenSize != null &&
+              store.sizesThatGoOutOfStockOnPick.contains(store.chosenSize)),
       'needsVariant': store.sizes.isNotEmpty && store.chosenSize == null,
-      'addControlCount':
-          buyBoxUp && !store.outOfStock && !store.addBlocked ? 1 : 0,
+      'addControlCount': buyBoxUp &&
+              !store.outOfStock &&
+              !store.addBlocked &&
+              !(store.chosenSize != null &&
+                  store.sizesThatGoOutOfStockOnPick.contains(store.chosenSize))
+          ? 1
+          : 0,
       'blockedAddControl': buyBoxUp && store.addBlocked,
       'overlayCount': store.overlays,
     });
@@ -448,8 +509,16 @@ class _FakeBrowser implements AgentBrowser {
   String _selectVariant(String script) {
     final wanted =
         RegExp(r"const wanted = '([^']*)'").firstMatch(script)?.group(1) ?? '';
+    final triedRaw =
+        RegExp(r"const tried = '([^']*)'").firstMatch(script)?.group(1) ?? '';
+    final tried = triedRaw
+        .split('')
+        .where((value) => value.trim().isNotEmpty)
+        .map((value) => value.toLowerCase())
+        .toSet();
     final options = store.sizes.where((size) =>
         !store.soldOutSizes.contains(size) &&
+        !tried.contains(size.toLowerCase()) &&
         (wanted.isEmpty || size.toLowerCase() == wanted.toLowerCase()));
     if (options.isEmpty) {
       return jsonEncode({

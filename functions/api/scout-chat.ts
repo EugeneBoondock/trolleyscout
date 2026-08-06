@@ -46,6 +46,7 @@ import {
   buildGroceryPlan,
   parseGroceryPlanRequest,
 } from '../_shared/groceryPlanner'
+import { buildScoutCartAction } from '../_shared/scoutCartAction'
 import {
   parseMarketplaceProductQuery,
   rankMarketplaceProductDeals,
@@ -473,6 +474,12 @@ export async function handleScoutChat(
         answer.reply = matchingDealsReply(answer.deals.length, searchTerms)
       }
     }
+
+    // "Add the cheapest braai pack to my picknpay cart" is a job, not a
+    // question. Attaching the product the answer settled on is what lets the
+    // app hand it to the agent instead of telling the shopper to do it.
+    const cartAction = buildScoutCartAction(input.message, answer.deals)
+    if (cartAction) answer.cartAction = cartAction
 
     // Logging must never cost the shopper their answer.
     const retrievalId = retrieval

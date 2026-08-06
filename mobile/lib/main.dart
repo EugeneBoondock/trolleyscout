@@ -690,11 +690,16 @@ class _RootShellState extends State<RootShell>
         final phoneWidth = MediaQuery.sizeOf(context).width;
         final extraCompactNav = phoneWidth < 360;
         final compactNav = phoneWidth < 400;
-        final navIconSize = extraCompactNav
-            ? 18.0
-            : compactNav
-                ? 20.0
-                : 22.0;
+        final largeNavText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+        // At a big text setting the label's own height drives the bar, so the
+        // icon has to give way or the bar grows back.
+        final navIconSize = largeNavText
+            ? 17.0
+            : extraCompactNav
+                ? 18.0
+                : compactNav
+                    ? 20.0
+                    : 22.0;
         final navLabelSize = extraCompactNav
             ? 8.5
             : compactNav
@@ -963,7 +968,7 @@ class _RootShellState extends State<RootShell>
                     ),
                     child: SafeArea(
                       top: false,
-                      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 4),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: TS.surfaceOf(context),

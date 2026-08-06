@@ -162,6 +162,7 @@ class StoreAgentRunner extends ChangeNotifier {
     required List<AgentItemPlan> items,
     Future<void> Function(Duration)? wait,
     this.pollAttempts = 25,
+    this.maxVariantAttempts = 4,
     this.pollInterval = const Duration(milliseconds: 400),
   })  : _browser = browser,
         _items = List.unmodifiable(items),
@@ -171,6 +172,10 @@ class StoreAgentRunner extends ChangeNotifier {
   final List<AgentItemPlan> _items;
   final Future<void> Function(Duration) _wait;
   final int pollAttempts;
+
+  /// How many options to try before giving up on a product whose sizes only
+  /// reveal their stock once chosen.
+  final int maxVariantAttempts;
   final Duration pollInterval;
 
   final List<AgentLogEntry> _log = [];
@@ -313,24 +318,18 @@ class StoreAgentRunner extends ChangeNotifier {
             ? 'Choosing an option that is in stock'
             : 'Selecting $wanted',
       );
-      final chosen = await _evaluateJson(agentSelectVariantScript(wanted));
-      final status = chosen?['status']?.toString();
-      if (status != 'selected') {
-        final note = status == 'unavailable'
-            ? wanted.isEmpty
-                ? 'Every option is sold out.'
-                : '$wanted is not available.'
-            : 'The store wants an option chosen and I could not read the list.';
-        _emit(AgentPhase.choosingVariant, note, isError: true);
+      final chosen = await _chooseBuyableVariant(wanted);
+      if (chosen.note != null) {
+        _emit(AgentPhase.choosingVariant, chosen.note!, isError: true);
         return AgentItemResult(
           item: item,
           outcome: AgentItemOutcome.variantUnavailable,
           addedQuantity: 0,
-          note: note,
+          note: chosen.note,
         );
       }
-      _emit(AgentPhase.choosingVariant, 'Chose ${chosen?['label'] ?? wanted}');
-      state = await _readState() ?? state;
+      _emit(AgentPhase.choosingVariant, 'Chose ${chosen.label ?? wanted}');
+      state = chosen.state ?? state;
     }
 
     var added = 0;
@@ -382,6 +381,58 @@ class StoreAgentRunner extends ChangeNotifier {
       item: item,
       outcome: added > 0 ? AgentItemOutcome.added : AgentItemOutcome.failed,
       addedQuantity: added,
+    );
+  }
+
+  /// Picks an option the shop will actually sell.
+  ///
+  /// Shops list every size as pickable and only reveal the truth once one is
+  /// chosen: PEP shows "Size 6" as available, then swaps its buy box for an
+  /// out-of-stock notice. Choosing is therefore the only way to test, so when
+  /// the shopper did not name a size the agent tries the next one instead of
+  /// reporting a missing button on a product that is plainly on sale.
+  Future<_VariantChoice> _chooseBuyableVariant(String wanted) async {
+    final tried = <String>[];
+    for (var attempt = 0; attempt < maxVariantAttempts; attempt++) {
+      if (_cancelled) return const _VariantChoice(note: 'Stopped.');
+      final chosen = await _evaluateJson(
+        agentSelectVariantScript(wanted, tried: tried),
+      );
+      final status = chosen?['status']?.toString();
+      if (status != 'selected') {
+        return _VariantChoice(
+          note: status == 'unavailable'
+              ? wanted.isEmpty
+                  ? 'Every option is sold out.'
+                  : '$wanted is not available.'
+              : 'The store wants an option chosen and I could not read the list.',
+        );
+      }
+      final label = chosen?['label']?.toString();
+      if (label != null) tried.add(label);
+
+      // The buy box re-renders around the chosen option, so give it a moment
+      // before judging what it says.
+      await _wait(pollInterval);
+      final state = await _readState();
+      final buyable = state != null &&
+          !state.outOfStock &&
+          (state.addControlCount > 0 || state.blockedAddControl);
+      if (buyable) return _VariantChoice(label: label, state: state);
+
+      // The shopper named this one, so there is nothing else to try.
+      if (wanted.isNotEmpty) {
+        return _VariantChoice(
+          note: '$wanted is sold out on this product.',
+        );
+      }
+      _emit(
+        AgentPhase.choosingVariant,
+        '$label is sold out. Trying another option.',
+      );
+    }
+    return const _VariantChoice(
+      note: 'Every option I tried was sold out.',
     );
   }
 
@@ -491,4 +542,14 @@ Map<String, dynamic>? decodeAgentJson(Object? value) {
     }
   }
   return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+}
+
+/// The outcome of picking an option: the label that stuck, the page as it
+/// looked afterwards, or the reason nothing worked.
+class _VariantChoice {
+  const _VariantChoice({this.label, this.state, this.note});
+
+  final String? label;
+  final AgentPageState? state;
+  final String? note;
 }

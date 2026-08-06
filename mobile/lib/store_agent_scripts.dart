@@ -66,6 +66,16 @@ const numberIn = (value) => {
   return match ? Number(match[0]) : null;
 };
 
+// "Size: 6" is the shop telling you what is selected, not an option you can
+// pick. Treating it as one makes an agent re-choose the size it just rejected.
+const optionLabel = (value) => String(value || '')
+  .replace(/^[^:]{0,12}:\s*/, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+const isSelectionReadout = (node) => /:/.test((node.innerText || '').trim());
+const sameOption = (left, right) =>
+  optionLabel(left).toLowerCase() === optionLabel(right).toLowerCase();
+
 // How many things are in the shop's own cart, or null when the shop does not
 // say. Anchored on the cart LINK rather than on class-name soup: matching
 // `[class*=cart] [class*=count]` reads "add-to-cart-block > review-count" and
@@ -108,7 +118,7 @@ const cartCount = () => {
   const scopes = deepAll(
     'a[href*="cart" i], a[href*="basket" i], a[href*="trolley" i], ' +
     '[data-testid*="cart" i], [aria-label*="cart" i], [aria-label*="basket" i], ' +
-    '[aria-label*="trolley" i]')
+    '[aria-label*="trolley" i], [aria-label*="order" i], [data-testid*="basket" i]')
     .filter((node) => visible(node))
     .filter((node) => !/\b(add|remove|wishlist|update|view all)\b/.test(textOf(node)));
   const smallNumber = /^\(?\s*(\d{1,3})\s*\)?$/;
@@ -242,6 +252,7 @@ String agentPageStateScript() => _wrap('page-state', r'''
     }
     const buttons = [...group.querySelectorAll('button, [role="radio"], label, li, a')]
       .filter(visible)
+      .filter((node) => !isSelectionReadout(node))
       .filter((node) => (node.innerText || '').trim().length > 0 &&
         (node.innerText || '').trim().length <= 12);
     if (buttons.length < 2) continue;
@@ -312,10 +323,18 @@ String agentDismissOverlaysScript() => _wrap('dismiss-overlays', r'''
 /// Picks a size/colour. `wanted` empty means "take the first one in stock",
 /// which is what a shopper asking for "a black tee" expects when they did not
 /// name a size.
-String agentSelectVariantScript(String wanted) {
+String agentSelectVariantScript(String wanted,
+    {List<String> tried = const []}) {
   final encoded = _jsString(wanted);
+  final excluded = _jsString(tried.join(''));
   return _wrap('select-variant', '''
   const wanted = $encoded.trim().toLowerCase();
+  // Options already tried and found unbuyable. A shop that lists every size
+  // as available until you pick one can only be discovered by picking.
+  const tried = $excluded.split('').filter(Boolean)
+    .map((value) => optionLabel(value).toLowerCase());
+  const untried = (label) =>
+    !tried.includes(optionLabel(label).toLowerCase());
   const matches = (label) => {
     const value = String(label || '').trim().toLowerCase();
     if (!wanted) return true;
@@ -325,7 +344,8 @@ String agentSelectVariantScript(String wanted) {
     .filter(visible);
   for (const group of groups) {
     if (group.tagName === 'SELECT') {
-      const option = [...group.options].find((o) => o.value && !o.disabled && matches(o.textContent));
+      const option = [...group.options].find((o) => o.value && !o.disabled &&
+        matches(o.textContent) && untried(o.textContent));
       if (!option) continue;
       group.value = option.value;
       group.dispatchEvent(new Event('input', { bubbles: true }));
@@ -335,6 +355,7 @@ String agentSelectVariantScript(String wanted) {
     }
     const buttons = [...group.querySelectorAll('button, [role="radio"], label, li, a')]
       .filter(visible)
+      .filter((node) => !isSelectionReadout(node))
       .filter((node) => (node.innerText || '').trim().length > 0 &&
         (node.innerText || '').trim().length <= 12);
     const wantedNode = buttons.find((node) => matches(node.innerText) && !disabled(node) &&

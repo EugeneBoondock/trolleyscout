@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../store_agent.dart';
 import '../store_agent_scripts.dart';
+import '../store_carts.dart';
 import '../store_sessions.dart';
 import '../theme.dart';
 import 'agent_activity_panel.dart';
@@ -108,6 +109,7 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
   var _progress = 0;
   StoreAgentRunner? _agent;
   Timer? _sessionWatch;
+  final Set<String> _recordedItems = {};
   var _sessionConfirmed = false;
 
   bool get _isAgentRun => widget.agentItems.isNotEmpty;
@@ -194,16 +196,40 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
     WidgetsBinding.instance.addPostFrameCallback((_) => runner.run());
   }
 
-  /// Once the agent has seen a signed-in page, the sessions screen can say so.
+  /// Keeps the sessions screen and the store-cart list in step with what the
+  /// agent has actually seen and done.
   void _rememberSessionFromAgent() {
     final runner = _agent;
     if (runner == null) return;
     final signedIn = runner.log.any((entry) =>
         entry.phase == AgentPhase.checkingSession &&
         entry.message.startsWith('Signed in at'));
-    if (!signedIn) return;
-    final store = storeForHost(_currentUri.host);
-    if (store != null) StoreSessionStore.instance.remember(store.id);
+    if (signedIn) {
+      final store = storeForHost(_currentUri.host);
+      if (store != null) StoreSessionStore.instance.remember(store.id);
+    }
+    _recordAddedItems(runner);
+  }
+
+  /// Writes each confirmed add into the multi-store cart list, once.
+  void _recordAddedItems(StoreAgentRunner runner) {
+    for (final result in runner.results) {
+      if (result.outcome != AgentItemOutcome.added) continue;
+      if (result.addedQuantity <= 0) continue;
+      if (!_recordedItems.add(result.item.productUri.toString())) continue;
+      final host = result.item.productUri.host;
+      final store = storeForHost(host);
+      StoreCartStore.instance.record(
+        store?.id ?? host.replaceFirst(RegExp(r'^www\.'), ''),
+        store?.name ?? host.replaceFirst(RegExp(r'^www\.'), ''),
+        StoreCartLine(
+          title: result.item.title,
+          productUrl: result.item.productUri.toString(),
+          quantity: result.addedQuantity,
+          addedAt: DateTime.now(),
+        ),
+      );
+    }
   }
 
   @override

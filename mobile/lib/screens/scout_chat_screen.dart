@@ -5,10 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../assisted_store_cart.dart';
 import '../store_agent.dart';
+import '../store_carts.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
 import '../widgets/in_app_browser.dart';
+import '../widgets/store_carts_sheet.dart';
 import '../widgets/scout_mark.dart';
 import '../widgets/scout_voice_sheet.dart';
 
@@ -61,12 +63,20 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
   void initState() {
     super.initState();
     _focusNode.addListener(_handleComposerFocus);
+    // The badge counts real store carts, so it has to follow them.
+    StoreCartStore.instance.addListener(_onStoreCartsChanged);
+    StoreCartStore.instance.load();
     _restoreGroceryPlan();
+  }
+
+  void _onStoreCartsChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _focusNode.removeListener(_handleComposerFocus);
+    StoreCartStore.instance.removeListener(_onStoreCartsChanged);
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -220,6 +230,26 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
       ),
       quantity: item.quantity,
     );
+  }
+
+  /// The basket button counts what is actually sitting in shop carts, and
+  /// falls back to the temporary grocery list when nothing has been added yet.
+  int get _cartBadgeCount {
+    final inStores = StoreCartStore.instance.totalItemCount;
+    return inStores > 0 ? inStores : _groceryItems.length;
+  }
+
+  Future<void> _openCarts() async {
+    await StoreCartStore.instance.load();
+    if (!mounted) return;
+    // A built grocery list with nothing yet added is still the useful thing to
+    // open, so it wins until a shop cart exists.
+    if (StoreCartStore.instance.carts.isEmpty && _groceryItems.isNotEmpty) {
+      await _openGroceryPlan();
+      return;
+    }
+    if (!mounted) return;
+    await showStoreCartsSheet(context);
   }
 
   Future<void> _openGroceryPlan() async {
@@ -489,14 +519,14 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
                   const SizedBox(width: 6),
                   Semantics(
                     button: true,
-                    label: 'Open grocery list, ${_groceryItems.length} items',
+                    label: 'Open store carts, ${_cartBadgeCount} items',
                     child: IconButton.filledTonal(
                       key: const ValueKey('mr-scout-grocery-button'),
-                      tooltip: 'Grocery list',
-                      onPressed: _openGroceryPlan,
+                      tooltip: 'Store carts',
+                      onPressed: _openCarts,
                       icon: Badge(
-                        isLabelVisible: _groceryItems.isNotEmpty,
-                        label: Text('${_groceryItems.length}'),
+                        isLabelVisible: _cartBadgeCount > 0,
+                        label: Text('$_cartBadgeCount'),
                         backgroundColor: TS.redOf(context),
                         textColor:
                             Theme.of(context).brightness == Brightness.light
@@ -1531,9 +1561,14 @@ class _RecommendationContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cartAction = answer.cartAction;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (cartAction != null && cartAction.isUsable) ...[
+          _CartActionCard(action: cartAction),
+          const SizedBox(height: 14),
+        ],
         if (answer.deals.isNotEmpty) ...[
           _RecommendationLabel(
             icon: Icons.local_offer_outlined,
@@ -2343,6 +2378,126 @@ class _ComposerState extends State<_Composer> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The button that sets Mr Scout loose on a shop's own website.
+///
+/// It sits under the answer rather than firing automatically: driving a
+/// shopper's live store session is something they should start deliberately,
+/// and the card says exactly what will happen before they do.
+class _CartActionCard extends StatelessWidget {
+  const _CartActionCard({required this.action});
+
+  final ScoutCartAction action;
+
+  Future<void> _run(BuildContext context) async {
+    final items = action.items
+        .map((item) {
+          final uri = Uri.tryParse(item.productUrl);
+          if (uri == null || !uri.isScheme('https') && !uri.isScheme('http')) {
+            return null;
+          }
+          return AgentItemPlan(
+            title: item.title,
+            productUri: uri,
+            quantity: item.quantity,
+          );
+        })
+        .whereType<AgentItemPlan>()
+        .toList(growable: false);
+    if (items.isEmpty) return;
+    await showInAppBrowser(
+      context,
+      items.first.productUri.toString(),
+      title: 'Adding to ${action.retailerName}',
+      agentItems: items,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = action.items.first;
+    final quantity = item.quantity;
+    return Container(
+      key: const ValueKey('scout-cart-action'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      decoration: BoxDecoration(
+        border: Border.all(color: TS.lineSoftOf(context)),
+        borderRadius: BorderRadius.circular(TS.panelRadius),
+        color: TS.surfaceOf(context),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: TS.yellow,
+                  border: Border.all(color: TS.ink),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.smart_toy_outlined,
+                    color: TS.ink, size: 18),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'I CAN ADD THIS FOR YOU',
+                      style: TS.eyebrowOf(context).copyWith(fontSize: 9),
+                    ),
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      [
+                        action.retailerName,
+                        if (item.priceText != null) item.priceText!,
+                        if (quantity > 1) 'x$quantity',
+                      ].join('  ·  '),
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('scout-cart-action-run'),
+              onPressed: () => _run(context),
+              icon: const Icon(Icons.add_shopping_cart_rounded),
+              label: Text('Add to my ${action.retailerName} cart'),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Opens ${action.retailerName} in the app, in the session you are '
+            'signed into, and presses their add-to-cart. You still check out '
+            'yourself — Mr Scout never pays.',
+            style: TextStyle(
+              color: TS.mutedOf(context),
+              fontSize: 10,
+              height: 1.3,
+            ),
+          ),
+        ],
       ),
     );
   }

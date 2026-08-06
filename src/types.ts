@@ -167,7 +167,29 @@ export interface ScoutGroceryPlan {
   tradeOffs: string[]
 }
 
+/** One product Mr Scout is offering to put in a shop's own cart. */
+export interface ScoutCartActionItem {
+  productUrl: string
+  quantity: number
+  title: string
+  priceText?: string
+}
+
+/**
+ * An offer to fill the shopper's cart at one shop.
+ *
+ * The agent only ever runs after the shopper taps it, in that shop's own
+ * signed-in session inside the app's browser, and it stops at the cart.
+ */
+export interface ScoutCartAction {
+  items: ScoutCartActionItem[]
+  retailerId: string
+  retailerName: string
+}
+
 export interface ScoutChatAnswer {
+  /** Set when the shopper asked for something to be put in a store cart. */
+  cartAction?: ScoutCartAction
   catalogues: ScoutChatCatalogueCard[]
   deals: ScoutChatDealCard[]
   followUps: string[]
