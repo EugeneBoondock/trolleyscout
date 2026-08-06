@@ -304,11 +304,8 @@ class _DeferredDashboardStories extends StatelessWidget {
             key: const Key('dashboard-stories-loading'),
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Store stories',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
+              const _SectionLabel(label: 'Store stories'),
+              const SizedBox(height: 6),
               Text(
                 'Loading stores after the dashboard is ready.',
                 style: TextStyle(
@@ -482,8 +479,12 @@ class _SavingsHero extends StatelessWidget {
     return PressableScale(
       child: InkWell(
         onTap: onOpenBasket,
-        child: PaperCard(
+        child: Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(15),
+          // The mascot's own yellow, whole. This is the number the app
+          // exists to grow; it gets the loudest slab on the screen.
+          decoration: TS.slab(context, color: TS.yellow),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -491,7 +492,9 @@ class _SavingsHero extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text('MONEY YOU KEPT',
-                        style: TS.eyebrowOf(context)),
+                        style: TS.eyebrowOf(context).copyWith(
+                          color: TS.red,
+                        )),
                   ),
                   // Refresh lives on the number it refreshes, not floating
                   // beside the greeting.
@@ -505,8 +508,8 @@ class _SavingsHero extends StatelessWidget {
                         uxTap();
                         onRefresh();
                       },
-                      icon: Icon(Icons.refresh,
-                          size: 18, color: TS.mutedOf(context)),
+                      icon: const Icon(Icons.refresh,
+                          size: 18, color: TS.ink),
                     ),
                   ),
                 ],
@@ -532,8 +535,8 @@ class _SavingsHero extends StatelessWidget {
                         Text(
                           'off a basket that would have cost '
                           '${currency.format(fullPrice)}.',
-                          style: TextStyle(
-                            color: TS.mutedOf(context),
+                          style: const TextStyle(
+                            color: Color(0xE61C1710),
                             fontSize: 13.5,
                             height: 1.3,
                           ),
@@ -544,22 +547,22 @@ class _SavingsHero extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Divider(height: 1, color: TS.lineSoftOf(context)),
+              const Divider(height: 1, color: Color(0x4D1C1710)),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  PhosphorIcon(PhosphorIconsFill.basket,
-                      size: 17, color: TS.mutedOf(context)),
+                  const PhosphorIcon(PhosphorIconsFill.basket,
+                      size: 17, color: TS.ink),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
                       '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
                       'in your basket · you pay ${currency.format(summary.totalCents)}',
-                      style:
-                          TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+                      style: const TextStyle(
+                          color: Color(0xE61C1710), fontSize: 12.5),
                     ),
                   ),
-                  Icon(Icons.arrow_forward, size: 16, color: TS.redOf(context)),
+                  const Icon(Icons.arrow_forward, size: 16, color: TS.red),
                 ],
               ),
             ],
@@ -644,9 +647,12 @@ class _SavingsRing extends StatelessWidget {
         child: CustomPaint(
           painter: _RingPainter(
             fraction: value,
-            track: TS.lineSoftOf(context),
-            fill: TS.greenOf(context),
-            label: TS.mutedOf(context),
+            // On the yellow slab: an ink-wash track, the mascot's green for
+            // the arc, ink cardinals. Theme lookups would hand back cream on
+            // dark, which vanishes against yellow.
+            track: const Color(0x338A7C5C),
+            fill: TS.green,
+            label: TS.ink,
           ),
           child: Center(
             child: Column(
@@ -654,18 +660,18 @@ class _SavingsRing extends StatelessWidget {
               children: [
                 Text(
                   '${(value * 100).round()}%',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 18,
                     height: 1,
-                    color: TS.greenOf(context),
+                    color: TS.ink,
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
+                const Text(
                   'off',
                   style: TextStyle(
-                      fontSize: 10.5, color: TS.mutedOf(context), height: 1),
+                      fontSize: 10.5, color: Color(0xB31C1710), height: 1),
                 ),
               ],
             ),
@@ -810,18 +816,21 @@ class _CountUpMoney extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             currency.format(value.round()),
-            style: TextStyle(
+            style: const TextStyle(
               fontWeight: FontWeight.w900,
-              fontSize: 38,
+              fontSize: 46,
               height: 1,
-              letterSpacing: -1,
-              color: TS.greenOf(context),
+              letterSpacing: -1.2,
+              color: TS.ink,
             ),
           ),
         ),
       );
 }
 
+/// Section headings as stickers: a yellow chip, ink border, tiny hard
+/// shadow, rotated a hair off level. Neo-brutalism's section headers are
+/// labels somebody slapped on, not typeset captions.
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label, this.trailing});
 
@@ -832,9 +841,34 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Row(
         children: [
           Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Transform.rotate(
+                angle: -0.018,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: TS.yellow,
+                    border: Border.all(color: TS.ink, width: 1.5),
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: const [
+                      BoxShadow(color: TS.ink, offset: Offset(2, 2)),
+                    ],
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: TS.ink,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14.5,
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
           if (trailing != null) trailing!,
@@ -851,19 +885,49 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const actions = <(PhosphorIconData, String, AppDestination)>[
-      (PhosphorIconsFill.tag, 'Marketplace', AppDestination.deals),
-      (PhosphorIconsFill.mapPin, 'Near me', AppDestination.near),
-      (PhosphorIconsFill.basket, 'Basket', AppDestination.basket),
-      (PhosphorIconsFill.storefront, 'Stores', AppDestination.stores),
+    // Each tile takes one of the mascot's own colours, whole. Four cream
+    // tiles in a row read as a form; four colour slabs read as a toybox,
+    // which is what neo-brutalism is for.
+    const actions =
+        <(PhosphorIconData, String, AppDestination, Color, Color)>[
+      (
+        PhosphorIconsFill.tag,
+        'Marketplace',
+        AppDestination.deals,
+        TS.yellow,
+        TS.ink,
+      ),
+      (
+        PhosphorIconsFill.mapPin,
+        'Near me',
+        AppDestination.near,
+        TS.red,
+        Color(0xFFFDFAF1),
+      ),
+      (
+        PhosphorIconsFill.basket,
+        'Basket',
+        AppDestination.basket,
+        TS.green,
+        Color(0xFFFDFAF1),
+      ),
+      (
+        PhosphorIconsFill.storefront,
+        'Stores',
+        AppDestination.stores,
+        Color(0xFFFDFAF1),
+        TS.ink,
+      ),
     ];
     return Row(
       children: [
-        for (final (icon, label, destination) in actions) ...[
+        for (final (icon, label, destination, fill, fg) in actions) ...[
           Expanded(
             child: _QuickActionTile(
               icon: icon,
               label: label,
+              fill: fill,
+              foreground: fg,
               onTap: () {
                 uxTap();
                 onNavigate(destination);
@@ -881,11 +945,15 @@ class _QuickActionTile extends StatelessWidget {
   const _QuickActionTile({
     required this.icon,
     required this.label,
+    required this.fill,
+    required this.foreground,
     required this.onTap,
   });
 
   final PhosphorIconData icon;
   final String label;
+  final Color fill;
+  final Color foreground;
   final VoidCallback onTap;
 
   @override
@@ -894,18 +962,20 @@ class _QuickActionTile extends StatelessWidget {
           onTap: onTap,
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-            decoration: TS.card(context),
+            decoration: TS.slab(context, color: fill),
             child: Column(
               children: [
-                PhosphorIcon(icon, size: 23, color: TS.redOf(context)),
+                PhosphorIcon(icon, size: 23, color: foreground),
                 const SizedBox(height: 6),
                 Text(
                   label,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 12),
+                  style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12),
                 ),
               ],
             ),

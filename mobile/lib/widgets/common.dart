@@ -96,11 +96,21 @@ class _PressableScaleState extends State<PressableScale> {
       onPointerDown: (_) => _set(true),
       onPointerUp: (_) => _set(false),
       onPointerCancel: (_) => _set(false),
-      child: AnimatedScale(
-        scale: (_pressed && !reduceMotion) ? widget.pressedScale : 1.0,
-        duration: const Duration(milliseconds: 110),
+      // The neo-brutal press: the card translates onto its own shadow, like
+      // a stamp being pushed into the page. A shrink says "I am a picture of
+      // a button"; a stamp says "I am a slab you pressed".
+      child: AnimatedSlide(
+        offset: (_pressed && !reduceMotion)
+            ? const Offset(0.012, 0.012)
+            : Offset.zero,
+        duration: const Duration(milliseconds: 90),
         curve: Curves.easeOut,
-        child: widget.child,
+        child: AnimatedScale(
+          scale: (_pressed && !reduceMotion) ? 0.995 : 1.0,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: widget.child,
+        ),
       ),
     );
   }

@@ -314,6 +314,24 @@ class TS {
         ],
       );
 
+  /// A colour-blocked slab: the Gumroad move. A whole card filled in one of
+  /// the mascot's colours, ink border, hard offset shadow. Cream cards keep
+  /// the app calm; slabs are for the things that deserve to shout.
+  static BoxDecoration slab(BuildContext context, {required Color color}) =>
+      BoxDecoration(
+        color: color,
+        border: Border.all(color: ink, width: 2),
+        borderRadius: BorderRadius.circular(cardRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0x2EFFD42E)
+                : const Color(0xFF1C1710),
+            offset: const Offset(4, 4),
+          ),
+        ],
+      );
+
   static BoxDecoration cardStroke(
     BuildContext context, {
     Color? border,
