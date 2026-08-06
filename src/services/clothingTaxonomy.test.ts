@@ -121,3 +121,28 @@ describe('clothing taxonomy', () => {
     expect(isApparel('Full cream milk 2L')).toBe(false)
   })
 })
+
+describe('the deal feed is mostly groceries', () => {
+  it('keeps the food out of the fitting room', () => {
+    // Found on the live rail: a Winn Dixie grocery special shelved as a
+    // clothing accessory, because "Bag" was an accessory word. The fitting
+    // room now reads the ordinary deal feed, which is full of titles like
+    // this, so the bar has to hold against them.
+    expect(
+      isApparel('3 lb Bag Know & Love Yellow Onions or 5 lb Bag Russet Potatoes'),
+    ).toBe(false)
+    expect(isApparel('Frozen Chicken Braaipack 5kg')).toBe(false)
+    expect(isApparel('Onion Rings 500g')).toBe(false)
+    expect(isApparel('Coca-Cola 2L Bottle')).toBe(false)
+    expect(isApparel('Albany White Bread 700g')).toBe(false)
+  })
+
+  it('still keeps the bags people actually wear', () => {
+    // The fix is specific: bare "bag" goes, the named ones stay.
+    expect(garmentTypeFor('Luella Embossed Shopper with Laptop Bag'))
+      .toBe('accessories')
+    expect(garmentTypeFor('Elle Woven Tote - Black')).toBe('accessories')
+    expect(garmentTypeFor('Canvas Backpack Navy')).toBe('accessories')
+    expect(garmentTypeFor('Leather Handbag')).toBe('accessories')
+  })
+})

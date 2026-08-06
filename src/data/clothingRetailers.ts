@@ -27,13 +27,16 @@ export const CLOTHING_RETAILERS: ClothingRetailer[] = [
   // rail in the country, so it reads the most pages.
   { id: 'bash', name: 'Bash (TFG)', origin: 'https://bash.com', pages: 8, platform: 'vtex' },
 
-  // Shopify — the bulk of South African fashion retail.
-  // Mr Price runs Magento behind apiprd.omni.mrpg.com; its store view header
+  // Mr Price Group runs Magento behind apiprd.omni.mrpg.com; the store view header
   // is what unlocks it, and its images are rebuilt from the SKU.
   { id: 'mrp', name: 'Mr Price', origin: 'https://www.mrp.com', pages: 12, platform: 'magento-mrp' },
   // Takealot's fashion department, swept by search term because its own
   // paging is an opaque cursor.
   { id: 'takealot', name: 'Takealot', origin: 'https://www.takealot.com', pages: 12, platform: 'takealot' },
+  // Same Magento endpoint as Mr Price; the store view header picks the brand.
+  { id: 'mrp-sport', name: 'Mr Price Sport', origin: 'https://www.mrpsport.com', pages: 12, platform: 'magento-mrp' },
+
+  // Shopify — the bulk of South African fashion retail.
   { id: 'ackermans', name: 'Ackermans', origin: 'https://www.ackermans.co.za', pages: 4, platform: 'shopify' },
   { id: 'pep', name: 'PEP', origin: 'https://www.pepstores.com', pages: 4, platform: 'shopify' },
   { id: 'edgars', name: 'Edgars', origin: 'https://www.edgars.co.za', pages: 4, platform: 'shopify' },
@@ -72,5 +75,8 @@ export const CLOTHING_RETAILERS: ClothingRetailer[] = [
 //   Woolworths     — Dynatrace-guarded SPA (its Constructor.io feed is
 //                    already read elsewhere in this codebase).
 //   Studio 88      — Klevu search, needs a POST and a cluster bootstrap.
-//   Mr Price       — GraphQL behind a store header; schema unmapped.
 //   Truworths      — Unbxd, only autosuggest confirmed.
+//   Miladys        — same group as Mr Price, but no store view answered.
+//   Rage, Identity — no public catalogue endpoint.
+// Foschini, Markham, Sportscene and Totalsports are NOT missing: TFG serves
+// all of them through the Bash VTEX catalogue above.

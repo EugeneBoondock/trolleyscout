@@ -88,13 +88,24 @@ const TYPES: Array<[GarmentType, string[]]> = [
     // "short" is left out on purpose: a short-sleeve shirt is not a bottom.
     'sweatpants', 'jogger', 'capri', 'culotte', 'culottes', 'denim',
   ]],
+  // Deliberately no bare 'bag', 'ring', 'cap', 'tie' or 'shopper'. Those were
+  // safe while this only read clothing catalogues, and wrong the moment
+  // grocery deals were harvested onto the same rail: "3 lb Bag Yellow Onions"
+  // became an accessory, and so did onion rings, bottle caps and cable ties.
+  // Every entry here has to be a word that is only ever worn.
   ['accessories', [
-    'cap', 'caps', 'hat', 'hats', 'beanie', 'scarf', 'belt', 'belts', 'glove',
-    'gloves', 'bag', 'bags', 'handbag', 'backpack', 'wallet', 'sunglasses',
-    'watch', 'jewellery', 'necklace', 'earrings', 'bracelet', 'tie',
-    'headband',
-    'earring', 'ring', 'rings', 'tote', 'shopper', 'satchel', 'slingbag',
-    'clutch', 'purse', 'glasses', 'cardholder', 'anklet',
+    'beanie', 'scarf', 'belt', 'belts', 'glove', 'gloves', 'handbag',
+    'handbags', 'backpack', 'backpacks', 'wallet', 'wallets', 'sunglasses',
+    'jewellery', 'jewelry', 'necklace', 'earrings', 'earring', 'bracelet',
+    'anklet', 'satchel', 'slingbag', 'sling bag', 'shoulder bag', 'tote bag',
+    'clutch bag', 'baseball cap', 'peak cap', 'bucket hat', 'sun hat',
+    'beanies', 'headband', 'bow tie', 'neck tie', 'necktie', 'cardholder',
+    'wristwatch', 'hairband',
+    // These are safe: no grocery title calls anything a tote, a shopper, a
+    // purse or a hat. It is specifically 'bag', 'cap', 'ring' and 'tie' that
+    // collide, via bags of onions, bottle caps, onion rings and cable ties.
+    'tote', 'totes', 'shopper', 'purse', 'purses', 'hat', 'hats', 'watch',
+    'watches',
   ]],
   ['tops', [
     'shirt', 'shirts', 'tshirt', 'tee', 'tees', 'top', 'tops', 'blouse',
@@ -124,6 +135,17 @@ const NOT_APPAREL = [
   'shampoo', 'conditioner', 'perfume', 'deodorant', 'lotion', 'moisturiser',
   'nail polish', 'lipstick', 'mascara', 'hair wax', 'razor', 'toothpaste',
   'nappy', 'nappies', 'wipes',
+  // Food. The fitting room now also reads the ordinary deal feed, which is
+  // mostly groceries — a rail that offers a shopper onions to try on is
+  // worse than a rail with fewer clothes on it.
+  'onion', 'onions', 'potato', 'potatoes', 'tomato', 'tomatoes', 'apple',
+  'apples', 'banana', 'bananas', 'orange juice', 'milk', 'cheese', 'yoghurt',
+  'yogurt', 'bread', 'rice', 'pasta', 'cereal', 'coffee', 'tea bags', 'sugar',
+  'flour', 'maize', 'mealie', 'chicken', 'beef', 'mince', 'steak', 'fish',
+  'polony', 'viennas', 'boerewors', 'biltong', 'chips', 'crisps', 'biscuits',
+  'chocolate', 'sweets', 'juice', 'cooldrink', 'soda', 'beer', 'wine',
+  'cider', 'whisky', 'vodka', 'eggs', 'butter', 'margarine', 'oil', 'mayo',
+  'sauce', 'soup', 'beans', 'peanut', 'jam', 'honey', 'frozen', 'produce',
   // "pencil" only as a pencil case: a pencil skirt is a skirt.
   'stationery', 'pencil case', 'crayon', 'sharpener',
 ]

@@ -28,7 +28,23 @@ export interface ClothingCatalogueRequest {
 /// without the header the endpoint 404s, and with the wrong one it answers
 /// "Requested store is not found".
 const MRP_ENDPOINT = 'https://apiprd.omni.mrpg.com/graphql'
-const MRP_STORE_VIEW = 'en_za'
+
+/// One endpoint serves the whole Mr Price Group; the store view header picks
+/// the brand. Mr Price is `en_za`, Mr Price Sport is `mrpsport_en_za`.
+const MRP_STORE_VIEWS: Record<string, string> = {
+  'www.mrp.com': 'en_za',
+  'mrp.com': 'en_za',
+  'www.mrpsport.com': 'mrpsport_en_za',
+  'mrpsport.com': 'mrpsport_en_za',
+}
+
+function mrpStoreView(origin: string): string {
+  try {
+    return MRP_STORE_VIEWS[new URL(origin).host] ?? 'en_za'
+  } catch {
+    return 'en_za'
+  }
+}
 
 /// Product images are not in the GraphQL payload — it serves a placeholder —
 /// but they are derived from the SKU on the group's image CDN.
@@ -139,7 +155,10 @@ export function buildClothingCatalogueRequest(
     return {
       url: MRP_ENDPOINT,
       method: 'POST',
-      headers: { 'content-type': 'application/json', store: MRP_STORE_VIEW },
+      headers: {
+        'content-type': 'application/json',
+        store: mrpStoreView(origin),
+      },
       body: JSON.stringify({
         query: `{products(search:${JSON.stringify(term)},pageSize:${size},currentPage:1){items{sku name url_key stock_status price_range{minimum_price{final_price{value} regular_price{value}}}}}}`,
       }),
@@ -171,7 +190,7 @@ export function parseClothingCatalogue(
   }
   if (platform === 'vtex') return parseVtexCatalogue(payload, origin)
   if (platform === 'takealot') return parseTakealotCatalogue(payload)
-  if (platform === 'magento-mrp') return parseMrPriceCatalogue(payload)
+  if (platform === 'magento-mrp') return parseMrPriceCatalogue(payload, origin)
   return parseWooCommerceCatalogue(payload, origin)
 }
 
@@ -242,7 +261,10 @@ export function parseTakealotCatalogue(payload: unknown): ClothingProduct[] {
 
 /// Mr Price's Magento payload. The image is rebuilt from the SKU because the
 /// API serves a placeholder for every product.
-export function parseMrPriceCatalogue(payload: unknown): ClothingProduct[] {
+export function parseMrPriceCatalogue(
+  payload: unknown,
+  origin = 'https://www.mrp.com',
+): ClothingProduct[] {
   if (!isRecord(payload)) return []
   const data = isRecord(payload.data) ? payload.data : undefined
   const products = data && isRecord(data.products) ? data.products : undefined
@@ -280,7 +302,7 @@ export function parseMrPriceCatalogue(payload: unknown): ClothingProduct[] {
       previousPriceCents:
         was !== undefined && was > price ? Math.round(was * 100) : undefined,
       imageUrl: `${MRP_IMAGE_BASE}/${encodeURIComponent(sku)}_SI_00?$preset$&fmt=auto`,
-      productUrl: `https://www.mrp.com/${urlKey}`,
+      productUrl: `${origin.replace(/\/$/, '')}/${urlKey}`,
       inStock: row.stock_status !== 'OUT_OF_STOCK',
       categoryText: title,
     })
