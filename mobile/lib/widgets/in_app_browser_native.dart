@@ -1,10 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../assisted_store_cart.dart';
 import '../outbound_link.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../store_agent.dart';
+import '../store_agent_scripts.dart';
+import '../store_sessions.dart';
 import '../theme.dart';
+import 'agent_activity_panel.dart';
+
+/// Bridges the agent's state machine to the WebView the shopper is watching.
+///
+/// The WebView keeps its own cookie jar, so every script runs inside whatever
+/// store session the shopper already signed into — the app never handles a
+/// credential to make that work.
+class _WebViewAgentBrowser implements AgentBrowser {
+  _WebViewAgentBrowser(this._controller);
+
+  final WebViewController _controller;
+
+  @override
+  Future<void> load(Uri uri) => _controller.loadRequest(uri);
+
+  @override
+  Future<Object?> evaluate(String script) =>
+      _controller.runJavaScriptReturningResult(script);
+}
 
 Uri? safeInAppBrowserUri(String? value) {
   // Tagged here rather than at each call site, so every hop out to a shop
@@ -24,6 +48,8 @@ Future<void> showInAppBrowser(
   String? value, {
   String title = 'Trolley Scout browser',
   List<AssistedStoreCartItem> assistedItems = const [],
+  List<AgentItemPlan> agentItems = const [],
+  SupportedStore? watchSessionFor,
 }) async {
   final uri = safeInAppBrowserUri(value);
   if (uri == null) {
@@ -39,6 +65,8 @@ Future<void> showInAppBrowser(
       uri: uri,
       title: title,
       assistedItems: assistedItems,
+      agentItems: agentItems,
+      watchSessionFor: watchSessionFor,
     ),
   ));
 }
@@ -49,9 +77,19 @@ class TrolleyScoutBrowser extends StatefulWidget {
     required this.uri,
     required this.title,
     this.assistedItems = const [],
+    this.agentItems = const [],
+    this.watchSessionFor,
   });
 
+  /// Set when this browser was opened to sign into a shop: the page is watched
+  /// until it reports a signed-in session, which is then remembered.
+  final SupportedStore? watchSessionFor;
+
   final List<AssistedStoreCartItem> assistedItems;
+
+  /// When set, Mr Scout drives the page itself instead of handing the shopper
+  /// a one-tap helper.
+  final List<AgentItemPlan> agentItems;
   final Uri uri;
   final String title;
 
@@ -68,8 +106,12 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
   var _busy = false;
   late Uri _currentUri;
   var _progress = 0;
+  StoreAgentRunner? _agent;
+  Timer? _sessionWatch;
+  var _sessionConfirmed = false;
 
-  bool get _isAssisted => widget.assistedItems.isNotEmpty;
+  bool get _isAgentRun => widget.agentItems.isNotEmpty;
+  bool get _isAssisted => widget.assistedItems.isNotEmpty && !_isAgentRun;
   AssistedStoreCartItem get _assistedItem =>
       widget.assistedItems[_assistedIndex];
   bool get _isLastAssistedItem =>
@@ -107,6 +149,73 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
                 : NavigationDecision.navigate,
       ))
       ..loadRequest(widget.uri);
+    if (_isAgentRun) _startAgent();
+    if (widget.watchSessionFor != null) _watchForSignIn();
+  }
+
+  /// Polls the store's own page until it reports a signed-in session. The app
+  /// never sees the password — it only learns, from the shop's own page, that
+  /// a session now exists.
+  void _watchForSignIn() {
+    final store = widget.watchSessionFor;
+    if (store == null) return;
+    _sessionWatch = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      try {
+        final state = AgentPageState.fromJson(
+          decodeAgentJson(await _controller
+                  .runJavaScriptReturningResult(agentPageStateScript())) ??
+              const {},
+        );
+        if (!state.signedIn) return;
+        timer.cancel();
+        await StoreSessionStore.instance
+            .remember(store.id, accountLabel: state.accountLabel);
+        if (!mounted) return;
+        setState(() => _sessionConfirmed = true);
+      } catch (_) {
+        // A page that blocks scripts simply stays unconfirmed.
+      }
+    });
+  }
+
+  void _startAgent() {
+    final runner = StoreAgentRunner(
+      browser: _WebViewAgentBrowser(_controller),
+      items: widget.agentItems,
+    );
+    _agent = runner;
+    runner.addListener(_rememberSessionFromAgent);
+    // Started after the first frame so the panel is mounted and shows the very
+    // first step rather than jumping in mid-run.
+    WidgetsBinding.instance.addPostFrameCallback((_) => runner.run());
+  }
+
+  /// Once the agent has seen a signed-in page, the sessions screen can say so.
+  void _rememberSessionFromAgent() {
+    final runner = _agent;
+    if (runner == null) return;
+    final signedIn = runner.log.any((entry) =>
+        entry.phase == AgentPhase.checkingSession &&
+        entry.message.startsWith('Signed in at'));
+    if (!signedIn) return;
+    final store = storeForHost(_currentUri.host);
+    if (store != null) StoreSessionStore.instance.remember(store.id);
+  }
+
+  @override
+  void dispose() {
+    _sessionWatch?.cancel();
+    final runner = _agent;
+    if (runner != null) {
+      runner.removeListener(_rememberSessionFromAgent);
+      runner.cancel();
+      runner.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _addOne() async {
@@ -156,6 +265,10 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _openStoreCart() async {
+    await _controller.loadRequest(checkoutUriFor(_currentUri));
   }
 
   void _markAddedManually() {
@@ -280,6 +393,19 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
         child: Column(
           children: [
             Expanded(child: WebViewWidget(controller: _controller)),
+            if (widget.watchSessionFor case final store?)
+              _SessionWatchBanner(
+                confirmed: _sessionConfirmed,
+                onDone: () => Navigator.of(context).maybePop(),
+                store: store,
+              ),
+            if (_agent case final runner?)
+              AgentActivityPanel(
+                runner: runner,
+                onSignIn: runner.continueAfterSignIn,
+                onOpenCart: _openStoreCart,
+                onClose: () => Navigator.of(context).maybePop(),
+              ),
             if (_isAssisted) _buildAssistedPanel(context),
           ],
         ),
@@ -416,6 +542,73 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
                 height: 1.25,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown while the shopper signs into a shop, so they know the app is waiting
+/// for the store's own page to confirm a session — and that it stops there.
+class _SessionWatchBanner extends StatelessWidget {
+  const _SessionWatchBanner({
+    required this.confirmed,
+    required this.onDone,
+    required this.store,
+  });
+
+  final bool confirmed;
+  final VoidCallback onDone;
+  final SupportedStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: TS.surfaceOf(context),
+      child: Container(
+        key: const ValueKey('store-session-banner'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: TS.lineSoftOf(context))),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              confirmed ? Icons.verified_user_outlined : Icons.lock_outline,
+              color: confirmed ? TS.greenOf(context) : TS.mutedOf(context),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    confirmed
+                        ? 'Signed in to ${store.name}'
+                        : 'Sign in to ${store.name}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  Text(
+                    confirmed
+                        ? 'Mr Scout can now fill this shop\'s cart for you.'
+                        : 'Use the store\'s own form. Your password stays with the store.',
+                    style: TextStyle(
+                      color: TS.mutedOf(context),
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (confirmed)
+              FilledButton(
+                key: const ValueKey('store-session-done'),
+                onPressed: onDone,
+                child: const Text('Done'),
+              ),
           ],
         ),
       ),

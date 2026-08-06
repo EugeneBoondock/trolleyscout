@@ -202,7 +202,6 @@ class StoreVisitPreferences extends ChangeNotifier {
     return StoreVisitEnableResult.enabled;
   }
 
-
   Future<void> setEnabled(bool value) async {
     await load();
     _enabled = value;
@@ -337,12 +336,25 @@ class StoreVisitAssistant {
         _readAccuracy = readAccuracy ?? readDeviceLocationAccuracy,
         _now = now ?? DateTime.now;
 
-  // Inside the store means INSIDE: 45m covers a large supermarket floor
-  // without spilling into the parking lot, and a fix looser than 25m cannot
-  // support that claim, so it is ignored rather than trusted.
-  static const inStoreDistanceM = 45.0;
-  static const maxLocationAccuracyM = 25.0;
-  static const requiredEntryConfirmations = 2;
+  // Inside the store means INSIDE, and the claim has to survive the fix's own
+  // uncertainty: a reading accurate to 25m taken 40m from the door is not
+  // evidence of standing in the aisle. The whole uncertainty circle must fit
+  // inside the store's radius, which is what `distance + accuracy` checks.
+  static const inStoreDistanceM = 35.0;
+  static const maxLocationAccuracyM = 15.0;
+
+  /// Leaving is judged on a wider circle than arriving, so a shopper drifting
+  /// to the far end of the shop is not repeatedly "arriving" and "leaving".
+  static const exitDistanceM = 90.0;
+  static const requiredEntryConfirmations = 3;
+  static const requiredExitConfirmations = 2;
+
+  /// The same shop, seen this many times over this long. Walking past a
+  /// shopfront, queueing outside it or driving by cannot add up to a visit.
+  /// There is deliberately no "has the shopper moved" rule on top of this:
+  /// crossing a Makro floor between two checks is normal shopping, and
+  /// treating it as travel would suppress the real visits.
+  static const minimumDwell = Duration(minutes: 4);
 
   final Api api;
   final StoreVisitPreferences preferences;
@@ -352,6 +364,8 @@ class StoreVisitAssistant {
   bool _checking = false;
   String? _entryCandidateId;
   int _entryConfirmationCount = 0;
+  DateTime? _entryFirstSeenAt;
+  int _exitMissCount = 0;
 
   Future<StorePresenceEvent?> check() async {
     if (_checking) return null;
@@ -372,12 +386,21 @@ class StoreVisitAssistant {
         return null;
       }
       final result = await api.nearbyStores(location.lat, location.lon);
-      final nearest = _nearestStore(result.stores, location);
       final active = preferences.activeVisit;
       final now = _now();
 
-      if (active != null && nearest?.placeId != active.placeId) {
+      if (active != null) {
         _clearEntryCandidate();
+        final stillInside = result.stores.any((store) =>
+            store.placeId == active.placeId &&
+            _storeDistanceM(store, location) <= exitDistanceM);
+        if (stillInside) {
+          _exitMissCount = 0;
+          return null;
+        }
+        _exitMissCount += 1;
+        if (_exitMissCount < requiredExitConfirmations) return null;
+        _exitMissCount = 0;
         final finished = await preferences.recordDeparture(now);
         if (finished == null) return null;
         return StorePresenceEvent(
@@ -387,10 +410,7 @@ class StoreVisitAssistant {
         );
       }
 
-      if (active != null) {
-        _clearEntryCandidate();
-        return null;
-      }
+      final nearest = _storeAroundShopper(result.stores, location);
       if (nearest == null) {
         _clearEntryCandidate();
         return null;
@@ -398,10 +418,15 @@ class StoreVisitAssistant {
       if (_entryCandidateId != nearest.placeId) {
         _entryCandidateId = nearest.placeId;
         _entryConfirmationCount = 1;
+        _entryFirstSeenAt = now;
         return null;
       }
       _entryConfirmationCount += 1;
-      if (_entryConfirmationCount < requiredEntryConfirmations) return null;
+      final firstSeenAt = _entryFirstSeenAt ?? now;
+      if (_entryConfirmationCount < requiredEntryConfirmations ||
+          now.difference(firstSeenAt) < minimumDwell) {
+        return null;
+      }
       _clearEntryCandidate();
       final canPrompt = preferences.canPrompt(nearest.placeId, now);
       final visit = await preferences.recordArrival(nearest, now);
@@ -421,20 +446,47 @@ class StoreVisitAssistant {
     }
   }
 
-  NearbyStore? _nearestStore(
+  /// The one shop the shopper can honestly be said to be standing in, or null.
+  ///
+  /// A shopping centre packs many shopfronts into the space a phone can
+  /// resolve. When two different retailers both fit inside the uncertainty
+  /// circle, naming one of them is a guess, and a guess is exactly the "you're
+  /// at a store" pop-up that shows up in the wrong shop.
+  NearbyStore? _storeAroundShopper(
     List<NearbyStore> stores,
     ShopperLocation location,
   ) {
     final candidates = stores.where((store) {
       final distance = _storeDistanceM(store, location);
-      return distance <= inStoreDistanceM;
+      return distance.isFinite &&
+          distance + location.accuracyM <= inStoreDistanceM;
     }).toList()
       ..sort((left, right) {
         final leftDistance = _storeDistanceM(left, location);
         final rightDistance = _storeDistanceM(right, location);
         return leftDistance.compareTo(rightDistance);
       });
-    return candidates.isEmpty ? null : candidates.first;
+    if (candidates.isEmpty) return null;
+    final nearest = candidates.first;
+    final rival = candidates.firstWhere(
+      (store) => !_isSamePlace(store, nearest),
+      orElse: () => nearest,
+    );
+    if (!identical(rival, nearest) && !_isSamePlace(rival, nearest))
+      return null;
+    return nearest;
+  }
+
+  /// Chains list the same shop twice (a POI and its entrance, say). Those are
+  /// not competing answers; two different retailers are.
+  bool _isSamePlace(NearbyStore left, NearbyStore right) {
+    if (left.placeId == right.placeId) return true;
+    final leftRetailer = _canonicalRetailerId(left.retailerId);
+    final rightRetailer = _canonicalRetailerId(right.retailerId);
+    if (leftRetailer != null && rightRetailer != null) {
+      return leftRetailer == rightRetailer;
+    }
+    return _normalized(left.name) == _normalized(right.name);
   }
 
   bool _isReliable(ShopperLocation location, DateTime now) {
@@ -460,6 +512,7 @@ class StoreVisitAssistant {
   void _clearEntryCandidate() {
     _entryCandidateId = null;
     _entryConfirmationCount = 0;
+    _entryFirstSeenAt = null;
   }
 
   Future<(List<Deal>, List<Catalogue>)> _offersFor(NearbyStore store) async {

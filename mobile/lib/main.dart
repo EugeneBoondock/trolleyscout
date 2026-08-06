@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
@@ -34,6 +35,7 @@ import 'screens/saved_deals_screen.dart';
 import 'screens/saved_sources_screen.dart';
 import 'screens/scanner_screen.dart';
 import 'screens/scout_chat_screen.dart';
+import 'screens/store_sessions_screen.dart';
 import 'screens/stores_screen.dart';
 import 'screens/window_shopping_screen.dart';
 import 'screens/subscription_screen.dart';
@@ -139,8 +141,13 @@ class RootShell extends StatefulWidget {
   State<RootShell> createState() => _RootShellState();
 }
 
-class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
+class _RootShellState extends State<RootShell>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const _guestAccessKey = 'guest_explore_enabled_v1';
+
+  /// How far the bottom bar is revealed. Reading down folds it away so the
+  /// deal being read owns the screen; the first flick back up returns it.
+  late final AnimationController _navReveal;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   AppDestination _destination = AppDestination.dashboard;
@@ -170,6 +177,11 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _navReveal = AnimationController(
+      duration: const Duration(milliseconds: 180),
+      value: 1,
+      vsync: this,
+    );
     _storeVisitAssistant = StoreVisitAssistant(api: widget.controller.api);
     _introComplete = widget.launchIntroDuration == Duration.zero;
     _wasAuthenticated = widget.controller.session.isAuthenticated;
@@ -294,6 +306,7 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
     _storeVisitTimer?.cancel();
     _storeVisitInitialTimer?.cancel();
     _storeVisitResumeTimer?.cancel();
+    _navReveal.dispose();
     WidgetsBinding.instance.removeObserver(this);
     AppLinkCoordinator.instance.removeListener(_handleAppLink);
     widget.controller.removeListener(_handleSessionChanged);
@@ -474,7 +487,26 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
 
   void _showAuth(String intent) => setState(() => _authIntent = intent);
 
+  /// Folds the bottom bar away while the shopper reads down a page and brings
+  /// it back the moment they scroll up, so a phone screen spends its height on
+  /// deals rather than on navigation. Horizontal rails (the deal carousels)
+  /// are ignored: swiping sideways through cards is not reading down a page.
+  bool _handleUserScroll(UserScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    switch (notification.direction) {
+      case ScrollDirection.reverse:
+        _navReveal.reverse();
+      case ScrollDirection.forward:
+        _navReveal.forward();
+      case ScrollDirection.idle:
+        break;
+    }
+    return false;
+  }
+
   void _selectDestination(AppDestination destination) {
+    // A new page starts at the top, so the bar comes back with it.
+    _navReveal.forward();
     // Close the drawer directly through the Scaffold rather than a Navigator
     // pop: a pop is intercepted by the root PopScope, which would reset the
     // freshly selected destination back to the dashboard.
@@ -659,10 +691,10 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
         final extraCompactNav = phoneWidth < 360;
         final compactNav = phoneWidth < 400;
         final navIconSize = extraCompactNav
-            ? 19.0
+            ? 18.0
             : compactNav
-                ? 21.0
-                : 24.0;
+                ? 20.0
+                : 22.0;
         final navLabelSize = extraCompactNav
             ? 8.5
             : compactNav
@@ -810,224 +842,241 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
             // Tab and drawer switches cross-fade with a whisper of lift, so
             // navigation feels physical. Honours the system reduced-motion
             // setting via the zero-duration branch.
-            body: Row(
-              children: [
-                if (useNavigationRail && _authIntent == null)
-                  _PrimaryNavigationRail(
-                    selectedIndex: _primaryIndex,
-                    onDestinationSelected: (index) =>
-                        _selectDestination(_primaryDestinations[index]),
-                  ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      if (session.isOffline)
-                        Semantics(
-                          liveRegion: true,
-                          child: Container(
-                            width: double.infinity,
-                            color: TS.yellow,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.cloud_off_outlined,
-                                    size: 20, color: TS.ink),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Offline. Saved content is available; live actions will retry when you reconnect.',
-                                    style: TextStyle(
-                                      color: TS.ink,
-                                      fontWeight: FontWeight.w700,
+            body: NotificationListener<UserScrollNotification>(
+              onNotification: _handleUserScroll,
+              child: Row(
+                children: [
+                  if (useNavigationRail && _authIntent == null)
+                    _PrimaryNavigationRail(
+                      selectedIndex: _primaryIndex,
+                      onDestinationSelected: (index) =>
+                          _selectDestination(_primaryDestinations[index]),
+                    ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        if (session.isOffline)
+                          Semantics(
+                            liveRegion: true,
+                            child: Container(
+                              width: double.infinity,
+                              color: TS.yellow,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.cloud_off_outlined,
+                                      size: 20, color: TS.ink),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Offline. Saved content is available; live actions will retry when you reconnect.',
+                                      style: TextStyle(
+                                        color: TS.ink,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: AnimatedSwitcher(
+                                  duration:
+                                      MediaQuery.of(context).disableAnimations
+                                          ? Duration.zero
+                                          : const Duration(milliseconds: 220),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  transitionBuilder: (child, animation) =>
+                                      FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, 0.012),
+                                        end: Offset.zero,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
+                                  ),
+                                  child: KeyedSubtree(
+                                    key: ValueKey(
+                                        _authIntent ?? _destination.name),
+                                    child: _authIntent == null
+                                        ? _screenFor(_destination)
+                                        : AuthScreen(
+                                            controller: widget.controller,
+                                            initialIntent: _authIntent!,
+                                            onBack: () => setState(
+                                                () => _authIntent = null),
+                                            onAuthenticated: () => setState(() {
+                                              _authIntent = null;
+                                              _destination =
+                                                  AppDestination.dashboard;
+                                              _primaryIndex = 0;
+                                            }),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              if (_guideVisible && guideTip != null)
+                                Positioned(
+                                  left: 12,
+                                  right: 12,
+                                  bottom:
+                                      ShopperCalculatorStore.instance.enabled
+                                          ? 82
+                                          : 12,
+                                  child: Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: ScoutGuideCard(
+                                      message: guideTip.message,
+                                      onDismiss: () =>
+                                          setState(() => _guideVisible = false),
+                                      pose: guideTip.pose,
+                                      title: guideTip.title,
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: AnimatedSwitcher(
-                                duration:
-                                    MediaQuery.of(context).disableAnimations
-                                        ? Duration.zero
-                                        : const Duration(milliseconds: 220),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, animation) =>
-                                    FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, 0.012),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
-                                  ),
-                                ),
-                                child: KeyedSubtree(
-                                  key: ValueKey(
-                                      _authIntent ?? _destination.name),
-                                  child: _authIntent == null
-                                      ? _screenFor(_destination)
-                                      : AuthScreen(
-                                          controller: widget.controller,
-                                          initialIntent: _authIntent!,
-                                          onBack: () => setState(
-                                              () => _authIntent = null),
-                                          onAuthenticated: () => setState(() {
-                                            _authIntent = null;
-                                            _destination =
-                                                AppDestination.dashboard;
-                                            _primaryIndex = 0;
-                                          }),
-                                        ),
-                                ),
-                              ),
-                            ),
-                            if (_guideVisible && guideTip != null)
-                              Positioned(
-                                left: 12,
-                                right: 12,
-                                bottom: ShopperCalculatorStore.instance.enabled
-                                    ? 82
-                                    : 12,
-                                child: Align(
-                                  alignment: Alignment.bottomRight,
-                                  child: ScoutGuideCard(
-                                    message: guideTip.message,
-                                    onDismiss: () =>
-                                        setState(() => _guideVisible = false),
-                                    pose: guideTip.pose,
-                                    title: guideTip.title,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             bottomNavigationBar: _authIntent != null || useNavigationRail
                 ? null
-                : SafeArea(
-                    top: false,
-                    minimum: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: TS.surfaceOf(context),
-                        border: Border.all(
-                          color: TS.lineSoftOf(context),
-                          width: 1,
+                : SizeTransition(
+                    key: const Key('bottom-nav-reveal'),
+                    axisAlignment: -1,
+                    sizeFactor: CurvedAnimation(
+                      curve: Curves.easeOutCubic,
+                      parent: _navReveal,
+                      reverseCurve: Curves.easeInCubic,
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: TS.surfaceOf(context),
+                          border: Border.all(
+                            color: TS.lineSoftOf(context),
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(TS.panelRadius),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? const Color(0x66000000)
+                                  : const Color(0x211C1710),
+                              offset: const Offset(0, 5),
+                              blurRadius: 16,
+                            ),
+                          ],
                         ),
-                        borderRadius: BorderRadius.circular(TS.panelRadius),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0x66000000)
-                                    : const Color(0x211C1710),
-                            offset: const Offset(0, 5),
-                            blurRadius: 16,
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(TS.panelRadius - 1),
-                        child: MediaQuery(
-                          data: MediaQuery.of(context).copyWith(
-                            textScaler: TextScaler.linear(navTextScale),
-                          ),
-                          child: Theme(
-                            data: Theme.of(context).copyWith(
-                              navigationBarTheme: NavigationBarThemeData(
-                                labelTextStyle: WidgetStatePropertyAll(
-                                  TextStyle(
-                                    color: TS.inkOf(context),
-                                    fontSize: navLabelSize,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1,
+                        child: ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(TS.panelRadius - 1),
+                          child: MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              textScaler: TextScaler.linear(navTextScale),
+                            ),
+                            child: Theme(
+                              data: Theme.of(context).copyWith(
+                                navigationBarTheme: NavigationBarThemeData(
+                                  labelTextStyle: WidgetStatePropertyAll(
+                                    TextStyle(
+                                      color: TS.inkOf(context),
+                                      fontSize: navLabelSize,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            child: NavigationBar(
-                              height: extraCompactNav
-                                  ? 58
-                                  : compactNav
-                                      ? 61
-                                      : largeText
-                                          ? 72
-                                          : 64,
-                              backgroundColor: TS.surfaceOf(context),
-                              elevation: 0,
-                              indicatorColor: Colors.transparent,
-                              labelBehavior:
-                                  NavigationDestinationLabelBehavior.alwaysShow,
-                              selectedIndex: _primaryIndex,
-                              onDestinationSelected: (index) =>
-                                  _selectDestination(
-                                      _primaryDestinations[index]),
-                              destinations: [
-                                NavigationDestination(
-                                  icon: Icon(Icons.dashboard_outlined,
-                                      size: navIconSize),
-                                  selectedIcon: _SelectedNavIcon(
-                                    icon: Icons.dashboard,
-                                    compact: compactNav,
-                                    iconSize: navIconSize,
+                              child: NavigationBar(
+                                // Kept as tight as the labels allow: the bar was
+                                // eating a visible slice of every screen.
+                                height: extraCompactNav
+                                    ? 50
+                                    : compactNav
+                                        ? 52
+                                        : largeText
+                                            ? 64
+                                            : 56,
+                                backgroundColor: TS.surfaceOf(context),
+                                elevation: 0,
+                                indicatorColor: Colors.transparent,
+                                labelBehavior:
+                                    NavigationDestinationLabelBehavior
+                                        .alwaysShow,
+                                selectedIndex: _primaryIndex,
+                                onDestinationSelected: (index) =>
+                                    _selectDestination(
+                                        _primaryDestinations[index]),
+                                destinations: [
+                                  NavigationDestination(
+                                    icon: Icon(Icons.dashboard_outlined,
+                                        size: navIconSize),
+                                    selectedIcon: _SelectedNavIcon(
+                                      icon: Icons.dashboard,
+                                      compact: compactNav,
+                                      iconSize: navIconSize,
+                                    ),
+                                    label: 'Home',
                                   ),
-                                  label: 'Home',
-                                ),
-                                NavigationDestination(
-                                  icon: Icon(Icons.local_offer_outlined,
-                                      size: navIconSize),
-                                  selectedIcon: _SelectedNavIcon(
-                                    icon: Icons.local_offer,
-                                    compact: compactNav,
-                                    iconSize: navIconSize,
+                                  NavigationDestination(
+                                    icon: Icon(Icons.local_offer_outlined,
+                                        size: navIconSize),
+                                    selectedIcon: _SelectedNavIcon(
+                                      icon: Icons.local_offer,
+                                      compact: compactNav,
+                                      iconSize: navIconSize,
+                                    ),
+                                    label: 'Marketplace',
                                   ),
-                                  label: 'Marketplace',
-                                ),
-                                NavigationDestination(
-                                  icon: AnimatedScoutMark(
-                                    motion: ScoutMarkMotion.scout,
-                                    size: navIconSize + 5,
+                                  NavigationDestination(
+                                    icon: AnimatedScoutMark(
+                                      motion: ScoutMarkMotion.scout,
+                                      size: navIconSize + 5,
+                                    ),
+                                    selectedIcon: AnimatedScoutMark(
+                                      motion: ScoutMarkMotion.scout,
+                                      size: navIconSize + 7,
+                                    ),
+                                    label: 'Mr Scout',
                                   ),
-                                  selectedIcon: AnimatedScoutMark(
-                                    motion: ScoutMarkMotion.scout,
-                                    size: navIconSize + 7,
+                                  NavigationDestination(
+                                    icon: Icon(Icons.storefront_outlined,
+                                        size: navIconSize),
+                                    selectedIcon: _SelectedNavIcon(
+                                      icon: Icons.storefront,
+                                      compact: compactNav,
+                                      iconSize: navIconSize,
+                                    ),
+                                    label: 'Stores',
                                   ),
-                                  label: 'Mr Scout',
-                                ),
-                                NavigationDestination(
-                                  icon: Icon(Icons.storefront_outlined,
-                                      size: navIconSize),
-                                  selectedIcon: _SelectedNavIcon(
-                                    icon: Icons.storefront,
-                                    compact: compactNav,
-                                    iconSize: navIconSize,
+                                  NavigationDestination(
+                                    icon: Icon(Icons.window_outlined,
+                                        size: navIconSize),
+                                    selectedIcon: _SelectedNavIcon(
+                                      icon: Icons.window,
+                                      compact: compactNav,
+                                      iconSize: navIconSize,
+                                    ),
+                                    label: 'Window',
                                   ),
-                                  label: 'Stores',
-                                ),
-                                NavigationDestination(
-                                  icon: Icon(Icons.window_outlined,
-                                      size: navIconSize),
-                                  selectedIcon: _SelectedNavIcon(
-                                    icon: Icons.window,
-                                    compact: compactNav,
-                                    iconSize: navIconSize,
-                                  ),
-                                  label: 'Window',
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -1113,6 +1162,7 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
           onFindDeals: () => _selectDestination(AppDestination.deals),
         ),
       AppDestination.basket => BasketScreen(api: api),
+      AppDestination.storeSessions => const StoreSessionsScreen(),
       AppDestination.savedSources => SavedSourcesScreen(
           api: api,
           onBrowseStores: () => _selectDestination(AppDestination.stores),

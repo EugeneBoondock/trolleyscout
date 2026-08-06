@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../assisted_store_cart.dart';
+import '../store_agent.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets/catalogue_reader.dart';
@@ -711,11 +712,22 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
       );
       return;
     }
+    // Mr Scout drives the shop itself, in the shopper's own signed-in session,
+    // and narrates every step. The one-tap helper stays as the fallback for
+    // platforms where an agent cannot reach the page.
+    final agentItems = assistedItems
+        .map((item) => AgentItemPlan(
+              title: item.title,
+              productUri: item.productUri,
+              quantity: item.quantity,
+            ))
+        .toList(growable: false);
     await showInAppBrowser(
       context,
       assistedItems.first.productUri.toString(),
       title: 'Shop $retailerName',
       assistedItems: assistedItems,
+      agentItems: agentItems,
     );
   }
 
@@ -817,11 +829,9 @@ class _GroceryPlannerSheetState extends State<_GroceryPlannerSheet> {
                           name: entry.key,
                           itemCount: entry.value.length,
                           onShop: () => _shopStore(entry.key, entry.value),
-                          onCheckout:
-                              _checkoutUriForStore(entry.value) == null
-                                  ? null
-                                  : () => _openCheckout(
-                                      entry.key, entry.value),
+                          onCheckout: _checkoutUriForStore(entry.value) == null
+                              ? null
+                              : () => _openCheckout(entry.key, entry.value),
                           subtotal: _formatGroceryMoney(
                             entry.value.fold(
                               0,

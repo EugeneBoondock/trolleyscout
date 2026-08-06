@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trolley_scout/api.dart';
@@ -95,6 +96,49 @@ void main() {
       expect(tester.getSize(text).height, lessThan(20));
       expect(tester.getSize(text).width, lessThanOrEqualTo(60));
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'the bottom bar folds away when reading down and returns on the '
+      'way back up', (tester) async {
+    final controller = AppController(_ResponsiveApi())
+      ..session = _memberSession
+      ..restoring = false;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: TS.lightTheme(),
+      home: RootShell(
+        controller: controller,
+        launchIntroDuration: Duration.zero,
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final reveal = find.byKey(const Key('bottom-nav-reveal'));
+    final openHeight = tester.getSize(reveal).height;
+    expect(openHeight, greaterThan(0));
+
+    // A scroll notification from inside the page, the way a real list reports
+    // one: reading down folds the bar away.
+    // The mascot animates forever, so settle by the clock, not by quiet.
+    _scroll(tester, ScrollDirection.reverse);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getSize(reveal).height, 0);
+
+    _scroll(tester, ScrollDirection.forward);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getSize(reveal).height, openHeight);
+
+    // A sideways flick through a deal carousel is not reading down a page.
+    _scroll(tester, ScrollDirection.reverse,
+        axisDirection: AxisDirection.right);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getSize(reveal).height, openHeight);
+
     expect(tester.takeException(), isNull);
   });
 
@@ -214,6 +258,28 @@ void main() {
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     });
   }
+}
+
+/// Reports a scroll the way a real list does, from inside the page so it
+/// bubbles up through the shell's listener.
+void _scroll(
+  WidgetTester tester,
+  ScrollDirection direction, {
+  AxisDirection axisDirection = AxisDirection.down,
+}) {
+  final context = tester.element(find.byType(DashboardScreen));
+  UserScrollNotification(
+    context: context,
+    direction: direction,
+    metrics: FixedScrollMetrics(
+      axisDirection: axisDirection,
+      devicePixelRatio: 1,
+      maxScrollExtent: 2000,
+      minScrollExtent: 0,
+      pixels: 300,
+      viewportDimension: 600,
+    ),
+  ).dispatch(context);
 }
 
 void _configureSmallLargeTextView(WidgetTester tester) {

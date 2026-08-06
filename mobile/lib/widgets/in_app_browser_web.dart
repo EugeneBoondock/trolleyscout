@@ -6,6 +6,8 @@ import '../assisted_store_cart.dart';
 import '../outbound_link.dart';
 import 'package:web/web.dart' as web;
 
+import '../store_agent.dart';
+import '../store_sessions.dart';
 import '../theme.dart';
 
 Uri? safeInAppBrowserUri(String? value) {
@@ -26,6 +28,8 @@ Future<void> showInAppBrowser(
   String? value, {
   String title = 'Trolley Scout browser',
   List<AssistedStoreCartItem> assistedItems = const [],
+  List<AgentItemPlan> agentItems = const [],
+  SupportedStore? watchSessionFor,
 }) async {
   final uri = safeInAppBrowserUri(value);
   if (uri == null) {
@@ -41,6 +45,8 @@ Future<void> showInAppBrowser(
       uri: uri,
       title: title,
       assistedItems: assistedItems,
+      agentItems: agentItems,
+      watchSessionFor: watchSessionFor,
     ),
   ));
 }
@@ -51,7 +57,15 @@ class TrolleyScoutBrowser extends StatefulWidget {
     required this.uri,
     required this.title,
     this.assistedItems = const [],
+    this.agentItems = const [],
+    this.watchSessionFor,
   });
+
+  /// Browser security keeps a cross-origin iframe out of reach, so the agent
+  /// does not run on the web build; the shop is opened for the shopper to work
+  /// in themselves.
+  final List<AgentItemPlan> agentItems;
+  final SupportedStore? watchSessionFor;
 
   final List<AssistedStoreCartItem> assistedItems;
   final Uri uri;

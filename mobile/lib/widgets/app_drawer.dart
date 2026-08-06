@@ -21,6 +21,7 @@ enum AppDestination {
   savedDeals('Saved deals', Icons.wallet_outlined, true),
   basket('Basket', Icons.shopping_basket_outlined, true),
   savedSources('Saved sources', Icons.bookmark_outline, true),
+  storeSessions('Store sign-ins', Icons.key_outlined, true),
   offers('Offers', Icons.receipt_long_outlined, false),
   scanner('Scanner', Icons.verified_outlined, false),
   advertise('Advertise', Icons.campaign_outlined, true),
@@ -74,6 +75,7 @@ class AppMenuDrawer extends StatelessWidget {
           AppDestination.properties,
           AppDestination.savedDeals,
           AppDestination.basket,
+          AppDestination.storeSessions,
         ],
       ),
       (

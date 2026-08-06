@@ -45,7 +45,12 @@ void main() {
       now: () => now,
     );
 
+    // One sighting is a passer-by. The claim needs the same shop three times
+    // over four settled minutes.
     expect(await assistant.check(), isNull);
+    now = now.add(const Duration(minutes: 2));
+    expect(await assistant.check(), isNull);
+    now = now.add(const Duration(minutes: 2));
     final entered = await assistant.check();
 
     expect(entered?.type, StorePresenceEventType.entered);
@@ -57,6 +62,72 @@ void main() {
     now = now.add(const Duration(minutes: 5));
     expect(await assistant.check(), isNull);
     expect(preferences.visits, hasLength(1));
+  });
+
+  test('will not name a shop when the mall puts two inside the same circle',
+      () async {
+    final preferences = StoreVisitPreferences();
+    await preferences.setEnabled(true);
+    final api = _VisitApi()
+      ..nearby = const NearbyResult(stores: [_boxer, _neighbouringClicks]);
+    var now = DateTime.parse('2026-08-02T09:00:00.000Z');
+    final assistant = StoreVisitAssistant(
+      api: api,
+      preferences: preferences,
+      readLocation: () async => const ShopperLocation(-26.2, 28.04),
+      now: () => now,
+    );
+
+    for (var check = 0; check < 4; check += 1) {
+      expect(await assistant.check(), isNull);
+      now = now.add(const Duration(minutes: 2));
+    }
+    expect(preferences.visits, isEmpty);
+  });
+
+  test('will not claim a shop the fix is only accurate enough to be near',
+      () async {
+    final preferences = StoreVisitPreferences();
+    await preferences.setEnabled(true);
+    var now = DateTime.parse('2026-08-02T09:00:00.000Z');
+    // 30m from the door with a 10m fix: the shopper could be on the pavement.
+    final assistant = StoreVisitAssistant(
+      api: _VisitApi(),
+      preferences: preferences,
+      readLocation: () async =>
+          const ShopperLocation(-26.20027, 28.04, accuracyM: 10),
+      now: () => now,
+    );
+
+    for (var check = 0; check < 4; check += 1) {
+      expect(await assistant.check(), isNull);
+      now = now.add(const Duration(minutes: 2));
+    }
+    expect(preferences.visits, isEmpty);
+  });
+
+  test('a shopper driving past never stays long enough to arrive', () async {
+    final preferences = StoreVisitPreferences();
+    await preferences.setEnabled(true);
+    var now = DateTime.parse('2026-08-02T09:00:00.000Z');
+    var atTheShop = true;
+    final assistant = StoreVisitAssistant(
+      api: _VisitApi(),
+      preferences: preferences,
+      // Underfoot on one check, a block away on the next: a road past the
+      // door, not an aisle.
+      readLocation: () async => atTheShop
+          ? const ShopperLocation(-26.2, 28.04)
+          : const ShopperLocation(-26.209, 28.04),
+      now: () => now,
+    );
+
+    for (var check = 0; check < 6; check += 1) {
+      expect(await assistant.check(), isNull);
+      atTheShop = !atTheShop;
+      now = now.add(const Duration(minutes: 2));
+    }
+    expect(preferences.visits, isEmpty);
   });
 
   test('detects departure and keeps completed visit history', () async {
@@ -72,12 +143,18 @@ void main() {
       now: () => now,
     );
 
-    await assistant.check();
-    await assistant.check();
+    for (var check = 0; check < 3; check += 1) {
+      await assistant.check();
+      now = now.add(const Duration(minutes: 2));
+    }
+    expect(preferences.activeVisit, isNotNull);
+
     location = const ShopperLocation(-25.9, 28.4);
     api.nearby = const NearbyResult(stores: []);
     now = now.add(const Duration(hours: 1));
 
+    // One quiet check could be a bad fix; leaving takes two.
+    expect(await assistant.check(), isNull);
     final exited = await assistant.check();
 
     expect(exited?.type, StorePresenceEventType.exited);
@@ -108,14 +185,18 @@ void main() {
       () async {
     final preferences = StoreVisitPreferences();
     await preferences.setEnabled(true);
+    var now = DateTime.parse('2026-08-02T09:00:00.000Z');
     final assistant = StoreVisitAssistant(
       api: _VisitApi(),
       preferences: preferences,
       readLocation: () async => const ShopperLocation(-26.2, 28.04),
+      now: () => now,
     );
 
-    await assistant.check();
-    await assistant.check();
+    for (var check = 0; check < 3; check += 1) {
+      await assistant.check();
+      now = now.add(const Duration(minutes: 2));
+    }
     final taste = await TasteStore().load();
 
     expect(taste.score('Weekly special', category: 'Boxer'), greaterThan(0));
@@ -129,19 +210,25 @@ void main() {
       28.04,
       accuracyM: 85,
     );
+    var now = DateTime.parse('2026-08-02T09:00:00.000Z');
     final assistant = StoreVisitAssistant(
       api: _VisitApi(),
       preferences: preferences,
       readLocation: () async => location,
+      now: () => now,
     );
 
     expect(await assistant.check(), isNull);
     expect(preferences.visits, isEmpty);
 
     location = const ShopperLocation(-26.2, 28.04, accuracyM: 8);
-    expect(await assistant.check(), isNull);
-    expect(preferences.visits, isEmpty);
+    for (var check = 0; check < 2; check += 1) {
+      now = now.add(const Duration(minutes: 2));
+      expect(await assistant.check(), isNull);
+      expect(preferences.visits, isEmpty);
+    }
 
+    now = now.add(const Duration(minutes: 2));
     final entered = await assistant.check();
     expect(entered?.type, StorePresenceEventType.entered);
     expect(preferences.visits, hasLength(1));
@@ -218,6 +305,17 @@ const _boxer = NearbyStore(
   lat: -26.2,
   lon: 28.04,
   distanceM: 42,
+);
+
+/// A different chain a few metres away, the way a shopping centre lists them.
+const _neighbouringClicks = NearbyStore(
+  placeId: 'clicks-jhb',
+  name: 'Clicks Johannesburg',
+  address: '1 Main Street, Johannesburg',
+  retailerId: 'clicks',
+  lat: -26.20009,
+  lon: 28.04,
+  distanceM: 10,
 );
 
 const _boxerDeal = Deal(
