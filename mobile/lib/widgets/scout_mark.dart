@@ -11,6 +11,14 @@ class AnimatedScoutMark extends StatefulWidget {
     this.size = 38,
   }) : assetPath = 'assets/scout-logo.png';
 
+  /// The mark without its cream tile, for surfaces that are already cream:
+  /// centred in the app bar, the tile-on-tile read as a sticker.
+  const AnimatedScoutMark.flat({
+    super.key,
+    this.motion = ScoutMarkMotion.static,
+    this.size = 38,
+  }) : assetPath = 'assets/scout-logo-flat.png';
+
   const AnimatedScoutMark.business({
     super.key,
     this.motion = ScoutMarkMotion.static,

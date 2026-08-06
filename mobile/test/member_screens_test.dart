@@ -42,7 +42,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The dashboard leads with the shopper by name, then with the money kept.
-    expect(find.text('Sam Shopper'), findsOneWidget);
+    expect(find.textContaining('Sam Shopper'), findsOneWidget);
     expect(find.text('FREE PLAN'), findsOneWidget);
     // Savings hero: R10.00 kept off a R133.45 full-price basket.
     expect(find.text('R10.00'), findsOneWidget);
@@ -153,7 +153,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Sam Shopper'), findsOneWidget);
+    expect(find.textContaining('Sam Shopper'), findsOneWidget);
     expect(find.byKey(const Key('dashboard-stories-loading')), findsOneWidget);
     expect(
       find.byKey(const Key('dashboard-story-reel-skeleton')),

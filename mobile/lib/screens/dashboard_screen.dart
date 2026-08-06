@@ -369,18 +369,18 @@ class _GreetingHero extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 2),
-              Text(_greetingFor(now).toUpperCase(),
-                  style: TS.eyebrowOf(context)),
-              const SizedBox(height: 4),
+              // One line, like an address: "Good evening, Eugene". Splitting
+              // the greeting from the name across two rows read as a label
+              // above a value rather than someone being spoken to.
               Text(
-                name,
-                maxLines: 2,
+                '${_greetingFor(now)}, $name',
+                maxLines: 1,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 30,
-                  height: 1.05,
+                  fontSize: 24,
+                  height: 1.1,
                   letterSpacing: -0.3,
                 ),
               ),

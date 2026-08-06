@@ -758,10 +758,15 @@ class _RootShellState extends State<RootShell>
               // button in the hamburger's row rather than the app's mark.
               centerTitle: true,
               titleSpacing: 4,
-              title: const AnimatedScoutMark(
+              // The bar grows to carry the crest: a 64px mark in a 56px bar
+              // would clip its ribbon.
+              toolbarHeight: 76,
+              title: const AnimatedScoutMark.flat(
                 key: ValueKey('navbar-scout-mark'),
                 motion: ScoutMarkMotion.scout,
-                size: 36,
+                // Crest-sized and tile-less, like the mockup: the mark is the
+                // masthead, not an icon that wandered into the middle.
+                size: 64,
               ),
               actions: [
                 IconButton(
