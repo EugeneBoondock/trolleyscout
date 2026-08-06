@@ -46,13 +46,13 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // AdMob application id. Google's public test id by default, so a
-        // build without an AdMob account still runs and still shows (test)
-        // rewarded ads. Pass the real one to swap it in:
-        //   flutter build appbundle --dart-define=... -Padmob=ca-app-pub-XXX~YYY
+        // AdMob application id for Trolley Scout. Overridable with
+        // -Padmob=<id> for a fork or a test build; the Mobile Ads SDK crashes
+        // at startup if this meta-data is missing entirely, so it always has
+        // a value.
         manifestPlaceholders["admobAppId"] =
             (project.findProperty("admob") as String?)
-                ?: "ca-app-pub-3940256099942544~3347511713"
+                ?: "ca-app-pub-8288446924917589~2222484984"
     }
 
     flavorDimensions += "audience"

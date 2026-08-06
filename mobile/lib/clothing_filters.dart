@@ -24,13 +24,19 @@ class GarmentTypeOption {
   final String icon;
 }
 
+/// The categories a shopper can browse.
+///
+/// Underwear is deliberately absent. The fitting room puts a chosen garment on
+/// a photograph of a real person, and a browsable underwear aisle turns that
+/// into a tool for undressing someone who never agreed to it. The garment type
+/// still exists so the scout can recognise and shelve such items away from the
+/// try-on rail — it simply is not something this app offers to put on anybody.
 const List<GarmentTypeOption> garmentTypeOptions = [
   GarmentTypeOption(GarmentType.tops, 'Tops', '👕'),
   GarmentTypeOption(GarmentType.bottoms, 'Bottoms', '👖'),
   GarmentTypeOption(GarmentType.dresses, 'Dresses', '👗'),
   GarmentTypeOption(GarmentType.outerwear, 'Jackets', '🧥'),
   GarmentTypeOption(GarmentType.footwear, 'Shoes', '👟'),
-  GarmentTypeOption(GarmentType.underwear, 'Underwear', '🩲'),
   GarmentTypeOption(GarmentType.accessories, 'Accessories', '🧢'),
 ];
 

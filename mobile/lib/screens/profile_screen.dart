@@ -10,6 +10,7 @@ import '../shopper_calculator.dart';
 import '../store_visit_assistant.dart';
 import '../theme.dart';
 import '../ux.dart';
+import '../widgets/buy_fittings_sheet.dart';
 import '../widgets/common.dart';
 import '../widgets/scout_avatar_view.dart';
 import 'earn_rewards_screen.dart';
@@ -225,23 +226,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
               )),
             ),
           ),
-        // Opt-in only, and deliberately quiet: a shopper who never taps this
-        // never sees an ad anywhere in Trolley Scout.
+        // Both ways to get more fittings, shown before anyone runs out —
+        // someone planning a shop should not have to hit zero to discover
+        // that topping up exists. The ad route is opt-in and lives behind its
+        // own screen: nobody who ignores it ever sees an ad.
         PaperCard(
           margin: const EdgeInsets.only(bottom: 14),
-          child: ListTile(
-            key: const Key('profile-earn-rewards'),
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.play_circle_outline, color: TS.redOf(context)),
-            title: const Text('Earn rewards'),
-            subtitle: const Text(
-              'Watch an ad by choice for fittings or more Marketplace stores',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (context) =>
-                  EarnRewardsScreen(api: widget.controller.api),
-            )),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Fitting room',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(
+                'Top up your fittings, or earn them with your time instead.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      key: const Key('profile-buy-fittings'),
+                      onPressed: () => showBuyFittingsSheet(
+                          context, widget.controller.api),
+                      icon: const Icon(Icons.add_shopping_cart, size: 16),
+                      label: const Text('Buy fittings'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const Key('profile-earn-rewards'),
+                      onPressed: () =>
+                          Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (context) =>
+                            EarnRewardsScreen(api: widget.controller.api),
+                      )),
+                      icon: const Icon(Icons.play_circle_outline, size: 16),
+                      label: const Text('Earn free'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
         PaperCard(

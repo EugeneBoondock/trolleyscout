@@ -29,12 +29,12 @@ export const CLOTHING_RETAILERS: ClothingRetailer[] = [
 
   // Mr Price Group runs Magento behind apiprd.omni.mrpg.com; the store view header
   // is what unlocks it, and its images are rebuilt from the SKU.
-  { id: 'mrp', name: 'Mr Price', origin: 'https://www.mrp.com', pages: 12, platform: 'magento-mrp' },
+  { id: 'mr-price', name: 'Mr Price', origin: 'https://www.mrp.com', pages: 12, platform: 'magento-mrp' },
   // Takealot's fashion department, swept by search term because its own
   // paging is an opaque cursor.
   { id: 'takealot', name: 'Takealot', origin: 'https://www.takealot.com', pages: 12, platform: 'takealot' },
   // Same Magento endpoint as Mr Price; the store view header picks the brand.
-  { id: 'mrp-sport', name: 'Mr Price Sport', origin: 'https://www.mrpsport.com', pages: 12, platform: 'magento-mrp' },
+  { id: 'mr-price-sport', name: 'Mr Price Sport', origin: 'https://www.mrpsport.com', pages: 12, platform: 'magento-mrp' },
 
   // Shopify — the bulk of South African fashion retail.
   { id: 'ackermans', name: 'Ackermans', origin: 'https://www.ackermans.co.za', pages: 4, platform: 'shopify' },

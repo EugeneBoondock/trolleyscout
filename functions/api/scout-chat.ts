@@ -9,7 +9,7 @@ import {
 import { readLeafletSnapshot } from '../_shared/dealSnapshotStore'
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberPlan } from '../../src/data/memberPlans'
-import type { DiscoveredDeal } from '../../src/types'
+import type { DiscoveredDeal, ScoutCartAction } from '../../src/types'
 import {
   getMemberBasket,
   getMemberSession,
@@ -312,17 +312,26 @@ export async function handleScoutChat(
     const productDeals = marketplaceContext.deals
       .filter((deal) => marketplaceIds.has(deal.id))
       .slice(0, 6)
+    // Someone asking for something to be put in a shop's cart is not asking
+    // whether we hold a deal for it. This used to answer "I could not find
+    // that in your Marketplace deals" and stop — for Uber Eats, which
+    // publishes no deals at all, that was the only answer it could ever give.
+    // The agent drives the shop itself, so the offer stands either way.
+    const earlyCartAction = buildScoutCartAction(input.message, productDeals)
     return json(
       {
         answer: {
           catalogues: [],
+          ...(earlyCartAction ? { cartAction: earlyCartAction } : {}),
           deals: productDeals,
           followUps: [],
-          reply: marketplaceProductReply(
-            productQuery,
-            productDeals.length,
-            rankedProductResult.exactPackAvailable,
-          ),
+          reply: earlyCartAction
+            ? cartOfferReply(earlyCartAction, productDeals.length)
+            : marketplaceProductReply(
+                productQuery,
+                productDeals.length,
+                rankedProductResult.exactPackAvailable,
+              ),
         },
         model: MODEL,
       },
@@ -563,6 +572,24 @@ export function searchMarketplaceDeals(
 function matchingDealsReply(matchCount: number, searchTerms: string[]): string {
   const item = searchTerms.join(' ')
   return `I found ${matchCount} current ${item} ${matchCount === 1 ? 'deal' : 'deals'} in Marketplace. Prices and stock can change, so check the retailer before buying.`
+}
+
+/**
+ * What Mr Scout says when it is about to fill a shop's cart.
+ *
+ * Says plainly whether it is working from a deal we hold or from the shop's
+ * own search, so nobody is promised a price that was never checked.
+ */
+function cartOfferReply(action: ScoutCartAction, dealCount: number): string {
+  const names = action.items.map((item) => item.title)
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  if (dealCount === 0) {
+    return `No ${action.retailerName} deal for ${list} has reached Marketplace, so I will search ${action.retailerName} itself, open the closest match and add it to your cart. Tap below and I will start — you stay signed in and I stop at the cart.`
+  }
+  return `I can put ${list} into your ${action.retailerName} cart. Tap below and I will open the shop in your signed-in session and add it — I stop at the cart, so nothing is ever bought without you.`
 }
 
 function marketplaceProductReply(

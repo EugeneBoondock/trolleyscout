@@ -105,7 +105,7 @@ void main() {
     expect(cached.result.leafletCount, 1);
   });
 
-  test('large administrator feeds are cached as a bounded preview', () async {
+  test('a whole administrator feed survives the cache round trip', () async {
     final deals = List<Deal>.generate(
       12000,
       (index) => Deal(
@@ -140,7 +140,9 @@ void main() {
     final cached = await cache().load('ZA', 'admin');
 
     expect(cached, isNotNull);
-    expect(cached!.result.deals.length, lessThanOrEqualTo(500));
+    // The cache used to keep the first 500 and drop the rest, which turned an
+    // 11,000-deal Marketplace into a few hundred for anyone reading from it.
+    expect(cached!.result.deals.length, 12000);
     expect(cached.result.foundDealCount, 12000);
     expect(cached.result.access?.availableDealCount, 12000);
   });

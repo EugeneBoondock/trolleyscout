@@ -1,3 +1,4 @@
+import 'earn_rewards_screen.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -254,6 +255,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
               },
               // Running out mid-shop should not mean leaving the fitting
               // room: buying more brings the shopper straight back.
+              onEarnFittings: _gateMessage == null ? _earnFittings : null,
               onBuyFittings: _gateMessage == null
                   ? null
                   : () async {
@@ -269,6 +271,23 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
         },
       ),
     );
+  }
+
+  /// The free route: watch an ad by choice, five ads to a fitting. Opened on
+  /// purpose, never shown as an ad on the way past.
+  Future<void> _earnFittings() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => EarnRewardsScreen(api: widget.api),
+    ));
+    if (!mounted) return;
+    // Whatever was earned should show on the meter straight away.
+    try {
+      final options = await widget.api.tryOnCreditOptions();
+      if (!mounted) return;
+      setState(() => _quota = options.quota);
+    } catch (_) {
+      // The balance refreshes on the next fitting.
+    }
   }
 
   Future<void> _buyFittings() async {
@@ -474,6 +493,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
             quota: _quota!,
             onUpgrade: widget.onUpgrade,
             onBuyFittings: _quota!.isUnlimited ? null : _buyFittings,
+            onEarnFittings: _quota!.isUnlimited ? null : _earnFittings,
           ),
         ],
         const SizedBox(height: 16),
@@ -1072,10 +1092,14 @@ class _QuotaBar extends StatelessWidget {
     required this.quota,
     this.onUpgrade,
     this.onBuyFittings,
+    this.onEarnFittings,
   });
 
   final TryOnQuota quota;
   final VoidCallback? onBuyFittings;
+
+  /// Opens the opt-in rewards screen. Null hides the link.
+  final VoidCallback? onEarnFittings;
   final VoidCallback? onUpgrade;
 
   @override
@@ -1136,6 +1160,28 @@ class _QuotaBar extends StatelessWidget {
                   ),
                 ),
               ),
+            // The free route sits beside the paid one at every level. Someone
+            // who cannot spare the money should not have to run out first to
+            // find out there is another way.
+            if (onEarnFittings != null) ...[
+              const SizedBox(width: 12),
+              GestureDetector(
+                key: const Key('vton-earn-fittings'),
+                onTap: () {
+                  uxTap();
+                  onEarnFittings!.call();
+                },
+                child: Text(
+                  'Earn free',
+                  style: TextStyle(
+                    color: TS.mutedOf(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 6),
@@ -1164,12 +1210,16 @@ class _ScoutPlanGateCard extends StatelessWidget {
     required this.onUpgrade,
     this.message,
     this.onBuyFittings,
+    this.onEarnFittings,
   });
 
   final VoidCallback onUpgrade;
 
   /// Offered when an allowance ran out rather than a plan being missing.
   final VoidCallback? onBuyFittings;
+
+  /// Opens the opt-in rewards screen. Null hides the link.
+  final VoidCallback? onEarnFittings;
 
   /// The server's own words when a monthly allowance ran out, so the card
   /// says "all 10 fittings" rather than a generic plan pitch.

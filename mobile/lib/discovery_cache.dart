@@ -32,8 +32,21 @@ class DiscoveryCache {
   })  : _clock = clock ?? DateTime.now,
         _cacheDirectory = cacheDirectory ?? getApplicationCacheDirectory;
 
-  static const _keyPrefix = 'discovery_cache_v5';
-  static const _maxCachedDeals = 500;
+  // Bumped to v6 so every cache written by an older build is ignored once.
+  // The v5 caches hold at most 500 deals — see below — and a shopper on an
+  // unlimited plan would otherwise keep seeing that truncated feed for three
+  // hours at a time. The first open after an update therefore refetches in
+  // full, and the ordinary three-hour reuse resumes from there.
+  static const _keyPrefix = 'discovery_cache_v6';
+
+  /// The cache holds the whole feed, not a sample of it.
+  ///
+  /// This used to be 500. Nobody noticed while signed-in shoppers refetched on
+  /// every visit, because they never read the cache — but once they did, an
+  /// 11,000-deal Marketplace rendered as a few hundred. The real bound is the
+  /// byte cap below: if the feed does not fit, the cache is dropped rather
+  /// than quietly trimmed, and the next open fetches properly.
+  static const _maxCachedDeals = 20000;
   static const _maxCacheBytes = 8 * 1024 * 1024;
   static const _maxDecodedBytes = 8 * 1024 * 1024;
   final DateTime Function() _clock;

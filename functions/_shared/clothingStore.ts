@@ -150,7 +150,15 @@ export async function listClothingItems(
   query: ClothingQuery = {},
 ): Promise<ClothingItem[]> {
   if (!env.DB) return []
-  const conditions = ['country_code = ?', 'in_stock = 1']
+  // Underwear is never browsable. The fitting room dresses a photograph of a
+  // real person, so an underwear aisle is a tool for undressing someone who
+  // never agreed to it. Rows are still stored — the scout has to recognise
+  // them to keep them off the rail — they are simply never returned.
+  const conditions = [
+    'country_code = ?',
+    'in_stock = 1',
+    "garment_type <> 'underwear'",
+  ]
   const bindings: unknown[] = [(query.countryCode ?? 'ZA').toUpperCase()]
 
   if (query.retailerId && query.retailerId !== 'all') {
@@ -158,7 +166,11 @@ export async function listClothingItems(
     bindings.push(query.retailerId)
   }
   if (query.audience && query.audience !== 'any') {
-    conditions.push('audience = ?')
+    // Unisex and unstated garments belong in every audience. Most listings
+    // never say who a plain black jean is for, so they are stored as 'any' —
+    // and an exact match meant choosing Men emptied whole categories that
+    // were full of things a man could wear.
+    conditions.push("(audience = ? OR audience = 'any')")
     bindings.push(query.audience)
   }
   if (query.garmentType && query.garmentType !== 'any') {
