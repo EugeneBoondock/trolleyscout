@@ -1553,15 +1553,18 @@ class _WindowCardState extends State<_WindowCard> {
                 const SizedBox(height: 8),
                 Text(
                   deal.title,
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
+                  // Calm, and two lines at most. The price is the hero on this
+                  // card; the title's job is to say what the price is for.
                   style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                      letterSpacing: 0.1),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 if (deal.unitText != null) ...[
                   _Badge(
                     key: Key('window-price-qualifier-${deal.id}'),
@@ -1584,8 +1587,9 @@ class _WindowCardState extends State<_WindowCard> {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                                 color: TS.yellow,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w900)),
+                                fontSize: 25,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.4)),
                       ),
                     if (wasPrice != null) ...[
                       const SizedBox(width: 10),
@@ -1594,9 +1598,10 @@ class _WindowCardState extends State<_WindowCard> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                color: Colors.white70,
+                                color: Colors.white60,
                                 decoration: TextDecoration.lineThrough,
-                                fontSize: 16)),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ],
@@ -2934,7 +2939,7 @@ class _CaughtUpState extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.check_circle_outline,
-                        size: 54,
+                        size: 40,
                         color: TS.greenOf(context),
                       ),
                       const SizedBox(height: 16),
@@ -2945,8 +2950,8 @@ class _CaughtUpState extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: TS.inkOf(context),
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 8),

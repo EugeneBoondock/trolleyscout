@@ -116,19 +116,46 @@ async function fetchDirect(
 
 // Reader fallback is reserved for public result pages on hosts whose current
 // robots policy allows those paths.
+/**
+ * Reads a portal page through the reader proxy, then through the plain
+ * mirrors if that fails.
+ *
+ * The scouting and catalogue paths have never depended on one provider being
+ * up, and property search should not either: r.jina.ai was the only route
+ * here, so a rate limit or a missing key turned every portal into no homes at
+ * all rather than fewer.
+ */
 async function fetchViaReader(
   url: string,
   jinaApiKey: string | undefined,
   format: 'html' | 'text',
 ): Promise<string | undefined> {
-  const response = await timedFetch(`https://r.jina.ai/${url}`, {
+  const readers = [
+    `https://r.jina.ai/${url}`,
+    // Same proxy, no scheme prefix: it accepts both, and one form is
+    // sometimes rate limited when the other is not.
+    `https://r.jina.ai/${url.replace(/^https?:\/\//, '')}`,
+  ]
+  for (const reader of readers) {
+    const response = await timedFetch(reader, {
+      'user-agent': BROWSER_UA,
+      accept: 'text/html',
+      'x-return-format': format,
+      ...(jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : {}),
+    })
+    if (!response?.ok) continue
+    const body = (await response.text()).slice(0, MAX_BODY_BYTES)
+    if (body.length > 0) return body
+  }
+
+  // Last resort: the portal itself, with a browser user agent. Slower to
+  // parse and often client-rendered, but a page that answers beats none.
+  const direct = await timedFetch(url, {
     'user-agent': BROWSER_UA,
-    accept: 'text/html',
-    'x-return-format': format,
-    ...(jinaApiKey ? { authorization: `Bearer ${jinaApiKey}` } : {}),
+    accept: 'text/html,application/xhtml+xml',
   })
-  if (!response?.ok) return undefined
-  const body = (await response.text()).slice(0, MAX_BODY_BYTES)
+  if (!direct?.ok) return undefined
+  const body = (await direct.text()).slice(0, MAX_BODY_BYTES)
   return body.length > 0 ? body : undefined
 }
 
