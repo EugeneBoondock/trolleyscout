@@ -1,4 +1,5 @@
 import type { TrolleyScoutEnv } from '../_shared/env'
+import { runMeteredAi } from '../_shared/workersAi'
 import { json, methodNotAllowed } from '../_shared/respond'
 
 // Health facts for a marketplace food. The first shopper to ask pays the AI
@@ -105,8 +106,9 @@ async function generateFacts(
 ): Promise<FoodFacts | null> {
   if (!env.AI) return null
   try {
-    const result = await env.AI.run(
-      FACTS_MODEL as never,
+    const result = await runMeteredAi<unknown>(
+      env,
+      FACTS_MODEL,
       {
         max_tokens: 400,
         messages: [
@@ -122,11 +124,11 @@ async function generateFacts(
           },
           { content: title, role: 'user' },
         ],
-      } as never,
+      },
     ) as {
       choices?: Array<{ message?: { content?: unknown } }>
       response?: unknown
-    }
+    } | null
     // Older models answer {response}; the -fast family answers in the
     // OpenAI chat-completions shape.
     const text = typeof result?.response === 'string'

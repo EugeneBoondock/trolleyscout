@@ -1,5 +1,19 @@
 export interface TrolleyScoutEnv {
   AI?: Ai
+
+  /// Which AI Gateway to log and cache AI calls through. Configuration, not a
+  /// secret: it only names one of the account's gateways.
+  AI_GATEWAY_ID?: string
+  CF_ACCOUNT_ID?: string
+
+  /// The AI Search instance holding the document corpus (help, rules, docs).
+  AI_SEARCH_INSTANCE?: string
+
+  /// Headless Chrome, for the shops that refuse a plain fetch.
+  BROWSER?: Fetcher
+
+  /// Semantic index of what the shops sell. Holds titles, never prices.
+  PRODUCT_INDEX?: VectorizeIndex
   DB?: D1Database
   MEDIA?: R2Bucket
   ORGANIZATION_EMAIL?: Fetcher

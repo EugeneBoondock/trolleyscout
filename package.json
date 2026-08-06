@@ -19,6 +19,7 @@
     "cf:dev:scout": "wrangler dev --config wrangler.scout.toml --test-scheduled"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.3.0",
     "@fontsource/anton": "^5.2.7",
     "@noble/hashes": "^2.2.0",
     "@phosphor-icons/react": "^2.1.10",

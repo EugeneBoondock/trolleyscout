@@ -5,6 +5,18 @@ pages_build_output_dir = "dist"
 [ai]
 binding = "AI"
 
+# Headless Chrome for the retailers that refuse a plain fetch (PerimeterX,
+# WAF 403s, client-rendered grids). Metered hard in aiBudget.ts: the Paid plan
+# includes ten browser hours a month.
+[browser]
+binding = "BROWSER"
+
+# Semantic search over product titles. 384 dimensions keeps the catalogue
+# inside the 10M included stored dimensions.
+[[vectorize]]
+binding = "PRODUCT_INDEX"
+index_name = "trolley-scout-products"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "trolley-scout"

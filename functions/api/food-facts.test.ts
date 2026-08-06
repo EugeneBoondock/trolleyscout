@@ -3,18 +3,27 @@ import { describe, expect, it, vi } from 'vitest'
 import { factKey, onRequest } from './food-facts'
 
 function makeDb(rows: Record<string, string> = {}) {
-  const saved: unknown[][] = []
+  const writes: Array<{ args: unknown[]; sql: string }> = []
   return {
-    saved,
+    writes,
+    /// Rows written to the facts cache, as opposed to the AI budget meter —
+    /// every model call now also writes a meter row.
+    get saved() {
+      return writes.filter((write) => !write.sql.includes('ai_budget_usage'))
+    },
+    get metered() {
+      return writes.filter((write) => write.sql.includes('ai_budget_usage'))
+    },
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
         first: async () => {
           if (!sql.includes('SELECT')) return null
+          if (sql.includes('ai_budget_usage')) return null
           const key = args[0] as string
           return rows[key] ? { facts_json: rows[key] } : null
         },
         run: async () => {
-          saved.push(args)
+          writes.push({ args, sql })
           return {}
         },
       }),
@@ -73,6 +82,9 @@ describe('food facts', () => {
     expect(payload.data.cached).toBe(false)
     expect(payload.data.facts).toEqual(['High in fibre.', 'Cheap protein.'])
     expect(db.saved).toHaveLength(1)
+    // The model call is charged against the daily neuron allowance, so a busy
+    // day stops asking rather than spilling into billing.
+    expect(db.metered).toHaveLength(1)
   })
 
   it('says not-found when the AI cannot recognise a food', async () => {
