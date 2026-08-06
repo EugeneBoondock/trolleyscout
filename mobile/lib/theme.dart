@@ -135,7 +135,7 @@ class TS {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(cardRadius),
-          side: BorderSide(color: outlineSoftColor, width: 1.5),
+          side: BorderSide(color: outlineColor, width: 2),
         ),
       ),
       drawerTheme: DrawerThemeData(
@@ -149,21 +149,36 @@ class TS {
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surfaceColor,
         clipBehavior: Clip.antiAlias,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(
             top: Radius.circular(panelRadius),
           ),
+          side: BorderSide(color: outlineColor, width: 2.5),
         ),
       ),
+      // Every button is a slab: ink border, no elevation, no tonal wash.
+      // This is the piece that makes the style read on every screen instead
+      // of only where a card was hand-styled.
       filledButtonTheme: FilledButtonThemeData(
         style: ButtonStyle(
+          elevation: const WidgetStatePropertyAll(0),
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.w900),
+          ),
           shape: WidgetStatePropertyAll(RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(controlRadius),
+            side: const BorderSide(color: ink, width: 2),
           )),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: ButtonStyle(
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.w800),
+          ),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: outlineColor, width: 2),
+          ),
           shape: WidgetStatePropertyAll(RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(controlRadius),
           )),
@@ -211,15 +226,23 @@ class TS {
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(pillRadius),
-          side: BorderSide(color: outlineSoftColor, width: 1.5),
+          side: BorderSide(color: outlineColor, width: 2),
+        ),
+        labelStyle: TextStyle(
+          color: inkColor,
+          fontWeight: FontWeight.w800,
         ),
       ),
       dividerColor: outlineSoftColor,
       snackBarTheme: SnackBarThemeData(
         backgroundColor: inkColor,
-        contentTextStyle: TextStyle(color: background),
+        contentTextStyle: TextStyle(
+          color: background,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(controlRadius),
+          side: const BorderSide(color: yellow, width: 2),
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -227,6 +250,7 @@ class TS {
         backgroundColor: surfaceColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(panelRadius),
+          side: BorderSide(color: outlineColor, width: 2.5),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(

@@ -844,7 +844,11 @@ class _SectionLabel extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Transform.rotate(
-                angle: -0.018,
+                // Alternating tilt by label, so a column of stickers reads as
+                // hand-placed rather than stamped from one template. The
+                // craft in neo-brutalism is exactly this kind of deliberate
+                // imperfection.
+                angle: label.length.isEven ? -0.018 : 0.014,
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
