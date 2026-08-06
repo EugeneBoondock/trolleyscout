@@ -4,8 +4,43 @@ import path from 'path';
 
 const packageName = 'za.co.trolleyscout.trolley_scout';
 const aabPath = path.resolve('mobile/build/app/outputs/bundle/consumerRelease/app-consumer-release.aab');
+const pubspecPath = path.resolve('mobile/pubspec.yaml');
+
+/// The release name shown in the console. Read from the pubspec rather than
+/// typed in, because a hardcoded name once shipped a bundle labelled as the
+/// previous release.
+function releaseName() {
+  const pubspec = fs.readFileSync(pubspecPath, 'utf8');
+  const version = /^version:\s*(\S+)/m.exec(pubspec);
+  if (!version) throw new Error('No version found in mobile/pubspec.yaml');
+  return version[1];
+}
+
+/// A bundle older than the version that names it is a bundle from a previous
+/// build. Uploading one ships yesterday's app under today's version, which is
+/// worse than failing here.
+function assertBundleIsFresh() {
+  if (!fs.existsSync(aabPath)) {
+    throw new Error(
+      `No consumer bundle at ${aabPath}.\n` +
+      'Build it first: flutter build appbundle --flavor consumer --release',
+    );
+  }
+  const builtAt = fs.statSync(aabPath).mtimeMs;
+  const versionedAt = fs.statSync(pubspecPath).mtimeMs;
+  if (builtAt < versionedAt) {
+    throw new Error(
+      `The consumer bundle is older than the version bump in pubspec.yaml.\n` +
+      `  bundle:  ${new Date(builtAt).toISOString()}\n` +
+      `  pubspec: ${new Date(versionedAt).toISOString()}\n` +
+      'Rebuild it: flutter build appbundle --flavor consumer --release',
+    );
+  }
+}
 
 async function run() {
+  assertBundleIsFresh();
+  console.log('Publishing', releaseName(), 'from', aabPath);
   console.log('Fetching gcloud access token...');
   let token;
   try {
@@ -78,13 +113,14 @@ async function run() {
         track: 'alpha',
         releases: [
           {
-            name: '1.25.0+81',
+            name: releaseName(),
             versionCodes: [versionCode.toString()],
             status: 'completed',
             releaseNotes: [
               {
                 language: 'en-US',
-                text: 'The new Fitting room: filter clothing by store, gender and type, build a whole outfit, save your favourite fits, and top up fittings any time.',
+                text: process.env.RELEASE_NOTES
+                  ?? 'Fitting room: search every shop by name, tap a garment to save it or add it to your basket, pin the fits you love and see what each one is worth.',
               },
             ],
           },
