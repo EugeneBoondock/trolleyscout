@@ -182,8 +182,9 @@ void main() {
     final firstDestination = tester.widget<NavigationDestination>(
         find.byType(NavigationDestination).first);
     expect(navigation.selectedIndex, 0);
-    // Kept tight: the bar was eating a visible slice of every screen.
-    expect(navigation.height, 56);
+    // A short, quiet bar. The icons and labels shrank with it, so the row's
+    // own intrinsic height still fits inside this.
+    expect(navigation.height, 48);
     expect(firstDestination.label, 'Home');
     expect(
       tester

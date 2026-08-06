@@ -94,7 +94,11 @@ void main() {
       final text = find.descendant(of: navigation, matching: find.text(label));
       expect(text, findsOneWidget);
       expect(tester.getSize(text).height, lessThan(20));
-      expect(tester.getSize(text).width, lessThanOrEqualTo(60));
+      // What matters is that a label stays inside its own fifth of the bar,
+      // not any particular pixel width. The label font shrank with the bar, so
+      // "Marketplace" now renders in full where it used to be clipped.
+      final slotWidth = tester.getSize(navigation).width / 5;
+      expect(tester.getSize(text).width, lessThanOrEqualTo(slotWidth));
     }
     expect(tester.takeException(), isNull);
   });

@@ -4,6 +4,9 @@ class TS {
   static const cardRadius = 20.0;
   static const controlRadius = 16.0;
   static const panelRadius = 28.0;
+  // The bottom bar. Shallower than a panel so a short bar reads as a neat
+  // strip rather than a stretched pill.
+  static const navRadius = 20.0;
   // Chips and badges that read as pills — category filters, plan tags. Kept as
   // a token so a chip never ends up with a hand-picked radius of its own.
   static const pillRadius = 999.0;

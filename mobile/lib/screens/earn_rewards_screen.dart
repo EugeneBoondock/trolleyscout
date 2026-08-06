@@ -56,7 +56,7 @@ class _EarnRewardsScreenState extends State<EarnRewardsScreen> {
       final viewId = await _ads.showOne();
       if (!mounted) return;
       if (viewId == null) {
-        _say('No reward this time — the ad has to finish to count.');
+        _say('No reward this time the ad has to finish to count.');
         return;
       }
       final outcome = await widget.api.claimAdReward(rate.kind, viewId);
@@ -254,7 +254,7 @@ class _RewardCard extends StatelessWidget {
           Text(
             capped
                 ? 'All ${rate.lifetimeCap} earned. Nothing more to unlock here.'
-                : '$banked of ${rate.adsPerReward} watched — $left to go',
+                : '$banked of ${rate.adsPerReward} watched $left to go',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),

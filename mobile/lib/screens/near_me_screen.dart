@@ -418,7 +418,7 @@ class _NearMeScreenState extends State<NearMeScreen> {
           _currentLat = null;
           _currentLon = null;
           _message = 'Could not check ${label ?? 'that location'}. Showing '
-              'your last search near ${fallback.locationLabel} — retry to check again.';
+              'your last search near ${fallback.locationLabel} retry to check again.';
         } else {
           _message = 'Could not check that location. Try again.';
         }
@@ -1007,7 +1007,7 @@ class _ValueAndTripStrip extends StatelessWidget {
               child: Text(
                 '${best.deals.length + best.promotionCount} live specials'
                 '${best.distanceM == null ? '' : ' · ${best.distanceM! < 1000 ? '${best.distanceM!.round()} m' : '${(best.distanceM! / 1000).toStringAsFixed(1)} km'} away'}'
-                ' — the most savings for the least travel.',
+                ' the most savings for the least travel.',
                 style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
               ),
             ),

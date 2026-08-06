@@ -125,7 +125,7 @@ class _FoodFactsSheetState extends State<_FoodFactsSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Try again in a moment — the first look at a food can '
+                        'Try again in a moment the first look at a food can '
                         'take a few seconds.',
                         style: TextStyle(color: TS.mutedOf(context)),
                       ),

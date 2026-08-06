@@ -131,29 +131,47 @@ async function readUsedCount(
 /** Counted only after a render succeeds: a failed try-on costs the shopper
  * nothing from their allowance. Once the month's fittings are spent, the
  * render comes out of bought credits instead. */
+/**
+ * Counts a finished fitting.
+ *
+ * `count` is the number of garments the look was built from. An outfit is
+ * rendered as one request but is one dressing per item, and charging a
+ * four-piece outfit the same as a single t-shirt would let the allowance be
+ * spent four times over for the price of one.
+ *
+ * The month's allowance is spent first, then bought or earned credits, and a
+ * look that straddles the two takes what is left of the month and the rest
+ * from credits.
+ */
 export async function recordTryOnUse(
   env: TrolleyScoutEnv,
   accountId: string,
   now: Date = new Date(),
   quota?: TryOnQuota,
+  count = 1,
 ): Promise<void> {
   if (!env.DB) return
-  const monthlyExhausted = quota !== undefined &&
-    quota.limit !== null &&
-    quota.used >= quota.limit
-  if (monthlyExhausted) {
-    await adjustTryOnCredits(env, accountId, -1, 'try-on', undefined, now)
+  const spend = Math.max(1, Math.floor(count))
+  const monthlyLeft =
+    quota === undefined || quota.limit === null
+      ? spend
+      : Math.max(0, Math.min(spend, quota.limit - quota.used))
+  const fromCredits = spend - monthlyLeft
+
+  if (fromCredits > 0) {
+    await adjustTryOnCredits(env, accountId, -fromCredits, 'try-on', undefined, now)
       .catch(() => 0)
-    return
   }
+  if (monthlyLeft === 0) return
+
   try {
     await env.DB.prepare(
       `INSERT INTO try_on_usage (account_id, month_key, used_count, updated_at)
-        VALUES (?, ?, 1, ?)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT (account_id, month_key)
-        DO UPDATE SET used_count = used_count + 1, updated_at = excluded.updated_at`,
+        DO UPDATE SET used_count = used_count + ?, updated_at = excluded.updated_at`,
     )
-      .bind(accountId, monthKey(now), now.toISOString())
+      .bind(accountId, monthKey(now), monthlyLeft, now.toISOString(), monthlyLeft)
       .run()
   } catch {
     // Usage tracking is best-effort; never fail a completed render over it.

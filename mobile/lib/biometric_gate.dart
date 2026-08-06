@@ -86,7 +86,7 @@ class _BiometricGateState extends State<BiometricGate> {
     if (!mounted) return;
     setState(() {
       _authing = false;
-      _error = ok ? null : 'Fingerprint not recognised — try again.';
+      _error = ok ? null : 'Fingerprint not recognised try again.';
     });
     if (ok) widget.onUnlocked();
   }

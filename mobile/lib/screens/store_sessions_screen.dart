@@ -100,7 +100,7 @@ class _StoreSessionsScreenState extends State<StoreSessionsScreen> {
               Expanded(
                 child: Text(
                   'You type your password into the shop\'s own page. Trolley Scout '
-                  'never sees it, never stores it, and never pays for anything — '
+                  'never sees it, never stores it, and never pays for anything '
                   'Mr Scout stops at the cart so you check out yourself.',
                   style: TextStyle(
                     color: TS.mutedOf(context),

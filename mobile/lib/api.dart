@@ -1064,7 +1064,7 @@ class Api {
     final note = data['message'];
     return note is String && note.isNotEmpty
         ? note
-        : 'Thanks — your message has reached the team.';
+        : 'Thanks your message has reached the team.';
   }
 
   /// The AI help chat behind About & help. Signed-in only: the report is filed

@@ -2538,7 +2538,7 @@ class _CartActionCard extends StatelessWidget {
           Text(
             'Opens ${action.retailerName} in the app, in the session you are '
             'signed into, and presses their add-to-cart. You still check out '
-            'yourself — Mr Scout never pays.',
+            'yourself Mr Scout never pays.',
             style: TextStyle(
               color: TS.mutedOf(context),
               fontSize: 10,

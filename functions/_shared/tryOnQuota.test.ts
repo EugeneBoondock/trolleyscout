@@ -36,6 +36,41 @@ function makeEnv(rows: { usage?: number; credits?: number } = {}) {
 }
 
 describe('try-on quotas', () => {
+  it('charges an outfit once per garment, not once per render', async () => {
+    // A four-piece outfit is four dressings. Charging it as one would let the
+    // month's allowance be spent four times over for the price of one.
+    const { env, statements } = makeEnv({ credits: 0, usage: 2 })
+    await recordTryOnUse(
+      env,
+      'member-1',
+      new Date('2026-08-06T10:00:00.000Z'),
+      { credits: 0, limit: 10, remaining: 8, used: 2 },
+      4,
+    )
+
+    const usage = statements.find((entry) => entry.sql.includes('try_on_usage'))
+    expect(usage?.args).toContain(4)
+  })
+
+  it('takes what is left of the month, then the rest from credits', async () => {
+    // Nine of ten spent, a three-piece outfit: one from the month, two bought.
+    const { env, statements } = makeEnv({ credits: 5, usage: 9 })
+    await recordTryOnUse(
+      env,
+      'member-1',
+      new Date('2026-08-06T10:00:00.000Z'),
+      { credits: 5, limit: 10, remaining: 6, used: 9 },
+      3,
+    )
+
+    const credit = statements.find((entry) =>
+      entry.sql.includes('try_on_credit_events'),
+    )
+    expect(credit?.args).toContain(-2)
+    const usage = statements.find((entry) => entry.sql.includes('try_on_usage'))
+    expect(usage?.args).toContain(1)
+  })
+
   it('gives each plan the fittings it was sold', () => {
     expect(tryOnLimitFor('free', false)).toBe(10)
     expect(tryOnLimitFor('scout', false)).toBe(50)

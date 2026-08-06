@@ -33,13 +33,13 @@ CrowdEstimate estimateCrowd(DateTime when) {
   if (isPayWeekend) {
     return const CrowdEstimate(
       level: CrowdLevel.busy,
-      reason: 'Month-end pay weekend — tills run flat out.',
+      reason: 'Month-end pay weekend tills run flat out.',
     );
   }
   if (_isMonthEndWindow(when)) {
     return const CrowdEstimate(
       level: CrowdLevel.busy,
-      reason: 'Month-end week — stores fill up after payday.',
+      reason: 'Month-end week stores fill up after payday.',
     );
   }
   if (when.weekday == DateTime.saturday && hour >= 9 && hour < 13) {

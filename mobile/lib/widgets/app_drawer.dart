@@ -154,7 +154,13 @@ class AppMenuDrawer extends StatelessWidget {
             ),
             Expanded(
               child: ClipRect(
-                child: SingleChildScrollView(
+                // No overscroll glow. The app's accent is a saturated yellow,
+                // so the glow painted a solid yellow band across the drawer at
+                // whichever end the list ran out, over the footer at the
+                // bottom and over the header at the top.
+                child: ScrollConfiguration(
+                  behavior: const _NoGlowScrollBehavior(),
+                  child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -187,6 +193,7 @@ class AppMenuDrawer extends StatelessWidget {
                             _drawerTile(context, item),
                       ],
                     ],
+                  ),
                   ),
                 ),
               ),
@@ -377,4 +384,18 @@ class _BoondockFooter extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Kills the overscroll glow. Trolley Scout's accent is a saturated yellow,
+/// which the glow paints as a solid band right across whatever it overlaps.
+class _NoGlowScrollBehavior extends ScrollBehavior {
+  const _NoGlowScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
 }

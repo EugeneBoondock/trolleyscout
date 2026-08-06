@@ -20,7 +20,7 @@ class SupportChatCard extends StatefulWidget {
 
 class _SupportChatCardState extends State<SupportChatCard> {
   static const _greeting =
-      'Hi — tell me what went wrong, or what you wish Trolley Scout did. '
+      'Hi tell me what went wrong, or what you wish Trolley Scout did. '
       'I will ask a question or two, then pass it to the team with a summary.';
 
   final TextEditingController _draft = TextEditingController();

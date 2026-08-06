@@ -471,7 +471,7 @@ class StoreAgentRunner extends ChangeNotifier {
   Future<bool> _askForSignIn(AgentItemPlan item) async {
     _emit(
       AgentPhase.needsSignIn,
-      'You are not signed in at ${_host(item)}. Sign in below and I will carry on — I never see your password.',
+      'You are not signed in at ${_host(item)}. Sign in below and I will carry on I never see your password.',
     );
     final gate = Completer<bool>();
     _signInGate = gate;

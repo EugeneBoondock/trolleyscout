@@ -1,3 +1,5 @@
+import '../widgets/turntable_view.dart';
+import '../widgets/more_fittings_sheet.dart';
 import 'earn_rewards_screen.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -66,6 +68,10 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
   _FittingStage _stage = _FittingStage.photo;
   Uint8List? _photoBytes;
   Uint8List? _resultBytes;
+
+  /// True while the result is shown on the turntable rather than as a
+  /// before/after wipe.
+  bool _rotating = false;
   TryOnQuota? _quota;
   String? _gateMessage;
   String? _tryOnError;
@@ -141,7 +147,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
     final confirmed = await confirmAction(
       context,
       title: 'Delete my photo',
-      message: 'This removes the only copy — it lives on this phone and '
+      message: 'This removes the only copy it lives on this phone and '
           'nowhere else.',
       confirmLabel: 'Delete',
       destructive: true,
@@ -472,7 +478,42 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
           curve: Curves.easeOutBack,
           builder: (context, scale, child) =>
               Transform.scale(scale: scale, child: child),
-          child: _BeforeAfterSlider(before: before, after: after),
+          child: _rotating
+              ? TurntableView(
+                  key: const Key('vton-turntable'),
+                  image: MemoryImage(after),
+                )
+              : _BeforeAfterSlider(before: before, after: after),
+        ),
+        const SizedBox(height: 10),
+        // Two ways to look at one render. The before/after wipe and the
+        // turntable both want the horizontal drag, so they take turns rather
+        // than fight over it.
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _ViewToggle(
+              key: const Key('vton-view-compare'),
+              label: 'Compare',
+              icon: Icons.compare_arrows_rounded,
+              selected: !_rotating,
+              onTap: () {
+                uxTap();
+                setState(() => _rotating = false);
+              },
+            ),
+            const SizedBox(width: 8),
+            _ViewToggle(
+              key: const Key('vton-view-rotate'),
+              label: 'Rotate',
+              icon: Icons.threesixty_rounded,
+              selected: _rotating,
+              onTap: () {
+                uxTap();
+                setState(() => _rotating = true);
+              },
+            ),
+          ],
         ),
         if (_celebrate) ...[
           const SizedBox(height: 10),
@@ -481,7 +522,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
             children: [
               const Icon(Icons.auto_awesome, size: 16, color: TS.ink),
               const SizedBox(width: 6),
-              Text('Your first fit — looking sharp!',
+              Text('Your first fit looking sharp!',
                   style: TextStyle(
                       color: TS.mutedOf(context), fontWeight: FontWeight.w700)),
             ],
@@ -704,7 +745,7 @@ class _IntroPager extends StatelessWidget {
               _IntroStep(
                 illustration: _MirrorIllustration(),
                 title: 'Try clothes on yourself, before you buy',
-                message: 'Pick any clothing deal and see it on you — no '
+                message: 'Pick any clothing deal and see it on you no '
                     'queue, no fitting-room curtain, no buyer\'s remorse.',
               ),
               _IntroStep(
@@ -1143,45 +1184,35 @@ class _QuotaBar extends StatelessWidget {
             // Shown at every level, not only when the shopper has nearly run
             // out: someone who wants ten more fittings before a shopping trip
             // should not have to exhaust the free ones to find the button.
-            if (onBuyFittings != null)
+            // One + beside the balance, at every level rather than only when
+            // the fittings run low. It opens both ways of getting more, so
+            // neither money nor time is presented as the lesser option.
+            if (onBuyFittings != null || onEarnFittings != null)
               GestureDetector(
-                key: const Key('vton-buy-fittings'),
+                key: const Key('vton-more-fittings'),
                 onTap: () {
                   uxTap();
-                  onBuyFittings!.call();
+                  showMoreFittingsSheet(
+                    context,
+                    onBuy: onBuyFittings ?? () {},
+                    onEarn: onEarnFittings ?? () {},
+                  );
                 },
-                child: Text(
-                  low ? 'Get more' : 'Buy fittings',
-                  style: TextStyle(
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: (low ? TS.redOf(context) : TS.mutedOf(context))
+                        .withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(TS.pillRadius),
+                  ),
+                  child: Icon(
+                    Icons.add_rounded,
+                    size: 15,
                     color: low ? TS.redOf(context) : TS.mutedOf(context),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    decoration: TextDecoration.underline,
                   ),
                 ),
               ),
-            // The free route sits beside the paid one at every level. Someone
-            // who cannot spare the money should not have to run out first to
-            // find out there is another way.
-            if (onEarnFittings != null) ...[
-              const SizedBox(width: 12),
-              GestureDetector(
-                key: const Key('vton-earn-fittings'),
-                onTap: () {
-                  uxTap();
-                  onEarnFittings!.call();
-                },
-                child: Text(
-                  'Earn free',
-                  style: TextStyle(
-                    color: TS.mutedOf(context),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
         const SizedBox(height: 6),
@@ -1307,6 +1338,56 @@ class _ScoutPlanGateCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One of the two ways to view a finished look.
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? TS.yellow : Colors.transparent,
+          border: Border.all(
+            color: selected ? TS.yellow : TS.lineSoftOf(context),
+          ),
+          borderRadius: BorderRadius.circular(TS.pillRadius),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 15, color: selected ? TS.ink : TS.mutedOf(context)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? TS.ink : TS.mutedOf(context),
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

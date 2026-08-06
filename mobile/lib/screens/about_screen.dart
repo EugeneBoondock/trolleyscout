@@ -256,7 +256,7 @@ class _SupportFormCardState extends State<SupportFormCard> {
             ]),
             const SizedBox(height: 4),
             Text(
-              'Found a bug, hit an error, or want a feature? Tell the team — '
+              'Found a bug, hit an error, or want a feature? Tell the team '
               'messages land straight in the admin inbox and we reply by email.',
               style: TextStyle(color: TS.mutedOf(context), fontSize: 13),
             ),

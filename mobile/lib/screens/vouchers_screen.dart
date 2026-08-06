@@ -924,7 +924,12 @@ class _VoucherImage extends StatelessWidget {
   }
 }
 
-String _clean(String value) => value.replaceAll(RegExp(r'\s*—\s*'), ': ');
+/// Retailer voucher copy often joins a title to its benefit with an em dash.
+/// The app does not show em dashes, so the dash becomes a colon here. The
+/// pattern keeps the character because it is matching what shops wrote, not
+/// something Trolley Scout prints.
+String _clean(String value) =>
+    value.replaceAll(RegExp('\s*—\s*'), ': ');
 
 String _retailerName(String value) => value
     .split('-')

@@ -106,8 +106,8 @@ class _StoreCartsSheetState extends State<StoreCartsSheet> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 10, 18, 26),
                 child: Text(
-                  'Ask Mr Scout to add something to a shop\'s cart — "add the '
-                  'cheapest 5kg braai pack to my Pick n Pay cart" — and each '
+                  'Ask Mr Scout to add something to a shop\'s cart "add the '
+                  'cheapest 5kg braai pack to my Pick n Pay cart" and each '
                   'shop you fill shows up here.',
                   style: TextStyle(
                     color: TS.mutedOf(context),
@@ -136,7 +136,7 @@ class _StoreCartsSheetState extends State<StoreCartsSheet> {
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
               child: Text(
                 'This is what Mr Scout put in each shop. The shop\'s own cart is '
-                'the final word — open it to check quantities and pay.',
+                'the final word open it to check quantities and pay.',
                 style: TextStyle(
                   color: TS.mutedOf(context),
                   fontSize: 10,

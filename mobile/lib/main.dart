@@ -699,17 +699,17 @@ class _RootShellState extends State<RootShell>
         // At a big text setting the label's own height drives the bar, so the
         // icon has to give way or the bar grows back.
         final navIconSize = largeNavText
-            ? 17.0
+            ? 16.0
             : extraCompactNav
-                ? 18.0
+                ? 17.0
                 : compactNav
-                    ? 20.0
-                    : 22.0;
+                    ? 18.0
+                    : 20.0;
         final navLabelSize = extraCompactNav
-            ? 8.5
+            ? 8.0
             : compactNav
-                ? 9.5
-                : 11.0;
+                ? 8.5
+                : 10.0;
         final requestedTextScale = MediaQuery.textScalerOf(context).scale(1);
         final navTextScale =
             min(requestedTextScale, extraCompactNav ? 1.05 : 1.2);
@@ -973,7 +973,7 @@ class _RootShellState extends State<RootShell>
                     ),
                     child: SafeArea(
                       top: false,
-                      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+                      minimum: const EdgeInsets.fromLTRB(8, 0, 8, 3),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: TS.surfaceOf(context),
@@ -981,7 +981,7 @@ class _RootShellState extends State<RootShell>
                             color: TS.lineSoftOf(context),
                             width: 1,
                           ),
-                          borderRadius: BorderRadius.circular(TS.panelRadius),
+                          borderRadius: BorderRadius.circular(TS.navRadius),
                           boxShadow: [
                             BoxShadow(
                               color: Theme.of(context).brightness ==
@@ -995,7 +995,7 @@ class _RootShellState extends State<RootShell>
                         ),
                         child: ClipRRect(
                           borderRadius:
-                              BorderRadius.circular(TS.panelRadius - 1),
+                              BorderRadius.circular(TS.navRadius - 1),
                           child: MediaQuery(
                             data: MediaQuery.of(context).copyWith(
                               textScaler: TextScaler.linear(navTextScale),
@@ -1014,15 +1014,18 @@ class _RootShellState extends State<RootShell>
                                 ),
                               ),
                               child: NavigationBar(
-                                // Kept as tight as the labels allow: the bar was
-                                // eating a visible slice of every screen.
+                                // A short, quiet bar. The icon and label above
+                                // shrink first so the row's own intrinsic
+                                // height stays under these numbers; drop these
+                                // without dropping those and the labels win
+                                // and the bar grows back.
                                 height: extraCompactNav
-                                    ? 50
+                                    ? 44
                                     : compactNav
-                                        ? 52
+                                        ? 46
                                         : largeText
-                                            ? 64
-                                            : 56,
+                                            ? 58
+                                            : 48,
                                 backgroundColor: TS.surfaceOf(context),
                                 elevation: 0,
                                 indicatorColor: Colors.transparent,

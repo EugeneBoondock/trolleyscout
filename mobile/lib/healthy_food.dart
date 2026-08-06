@@ -82,7 +82,7 @@ class HealthyFoodFact {
 const List<HealthyFoodFact> healthyFoodFacts = [
   HealthyFoodFact(
     fact:
-        'Healthy eating fails on price, not willpower — fresh food costs more '
+        'Healthy eating fails on price, not willpower fresh food costs more '
         'per meal than filling processed staples.',
     tip:
         'That is exactly why this filter exists: it only shows whole foods '
@@ -91,7 +91,7 @@ const List<HealthyFoodFact> healthyFoodFacts = [
   HealthyFoodFact(
     fact:
         'Dried beans, lentils and eggs deliver the cheapest protein per rand '
-        'in South African stores — far below red meat.',
+        'in South African stores far below red meat.',
     tip: 'Swap two meat dinners a week for bean or egg dishes and bank the '
         'difference.',
   ),
@@ -114,19 +114,19 @@ const List<HealthyFoodFact> healthyFoodFacts = [
         'Vegetables in season are at their cheapest and most nutritious at '
         'the same time.',
     tip: 'Butternut, cabbage and carrots in winter; tomatoes and mealies in '
-        'summer — buy what the specials lean toward.',
+        'summer buy what the specials lean toward.',
   ),
   HealthyFoodFact(
     fact:
         'Frozen vegetables are frozen at peak freshness and often undercut '
-        'the fresh shelf — with none of the spoilage waste.',
+        'the fresh shelf with none of the spoilage waste.',
     tip: 'If fresh keeps going off before you finish it, frozen is the '
         'cheaper healthy option, not the lesser one.',
   ),
   HealthyFoodFact(
     fact:
         'Amasi and plain yoghurt give you the probiotics and protein that '
-        'flavoured tubs charge extra for — without the added sugar.',
+        'flavoured tubs charge extra for without the added sugar.',
     tip: 'Sweeten plain yoghurt with seasonal fruit from the produce '
         'specials instead.',
   ),

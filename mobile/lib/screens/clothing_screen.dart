@@ -226,7 +226,7 @@ class _ClothingScreenState extends State<ClothingScreen> {
                               eyebrow: 'Fitting room',
                               title: 'See it on you first',
                               description:
-                                  'Clothing from every store we scout — try a '
+                                  'Clothing from every store we scout try a '
                                   'piece on, or build a whole outfit before '
                                   'you spend.',
                             ),
@@ -262,7 +262,7 @@ class _ClothingScreenState extends State<ClothingScreen> {
                         uxTap();
                         showNotice(
                           context,
-                          'Building an outfit is a Scout plan perk — it fits '
+                          'Building an outfit is a Scout plan perk it fits '
                           'every piece one at a time.',
                         );
                         widget.onUpgrade?.call();

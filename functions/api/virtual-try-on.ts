@@ -137,16 +137,26 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
 
   // A fitting is only counted once it produced a look — a failed render
   // costs the shopper nothing from their monthly allowance.
+  // An outfit is one request but one dressing per garment, so it costs what
+  // it uses.
+  const fittingCost = garmentImages.length
   const spend = async (image: string) => {
-    await recordTryOnUse(env, account.id, new Date(), quota)
+    await recordTryOnUse(env, account.id, new Date(), quota, fittingCost)
     return json(
       {
         image,
         quota: {
-          credits: quota.credits,
+          credits: Math.max(0, quota.credits - Math.max(
+            0,
+            fittingCost - (quota.limit === null
+              ? fittingCost
+              : Math.max(0, quota.limit - quota.used)),
+          )),
           limit: quota.limit,
-          remaining: quota.remaining === null ? null : quota.remaining - 1,
-          used: quota.used + 1,
+          remaining: quota.remaining === null
+            ? null
+            : Math.max(0, quota.remaining - fittingCost),
+          used: quota.used + fittingCost,
         },
       },
       { headers: privateHeaders },
