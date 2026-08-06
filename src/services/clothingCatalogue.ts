@@ -160,7 +160,7 @@ export function buildClothingCatalogueRequest(
         store: mrpStoreView(origin),
       },
       body: JSON.stringify({
-        query: `{products(search:${JSON.stringify(term)},pageSize:${size},currentPage:1){items{sku name url_key stock_status price_range{minimum_price{final_price{value} regular_price{value}}}}}}`,
+        query: `{products(search:${JSON.stringify(term)},pageSize:${size},currentPage:1){items{sku name url_key stock_status categories{name} price_range{minimum_price{final_price{value} regular_price{value}}}}}}`,
       }),
     }
   }
@@ -304,7 +304,17 @@ export function parseMrPriceCatalogue(
       imageUrl: `${MRP_IMAGE_BASE}/${encodeURIComponent(sku)}_SI_00?$preset$&fmt=auto`,
       productUrl: `${origin.replace(/\/$/, '')}/${urlKey}`,
       inStock: row.stock_status !== 'OUT_OF_STOCK',
-      categoryText: title,
+      // The categories carry what the name never says: "Men", "Ladies",
+      // "Kids". Without them every Mr Price garment was audience 'any' and
+      // the Men filter showed the whole shop.
+      categoryText: [
+        title,
+        ...(Array.isArray(row.categories) ? row.categories : [])
+          .filter(isRecord)
+          .map((category) =>
+            typeof category.name === 'string' ? category.name : '')
+          .filter(Boolean),
+      ].join(' ').slice(0, 300),
     })
   }
   return out

@@ -47,13 +47,16 @@ void main() {
 
     expect(Theme.of(tester.element(find.byType(Scaffold))).brightness,
         Brightness.light);
-    await tester.tap(find.byTooltip('Use dark theme'));
+    // The toggle lives in the avatar menu now, not loose in the bar.
+    await tester.tap(find.byTooltip('Your menu'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.text('Dark mode'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(Theme.of(tester.element(find.byType(Scaffold))).brightness,
         Brightness.dark);
-    expect(find.byTooltip('Use light theme'), findsOneWidget);
   });
 }
 

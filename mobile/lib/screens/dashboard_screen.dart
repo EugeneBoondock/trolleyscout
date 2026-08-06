@@ -221,6 +221,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 currency: Currency.of(widget.api.effectiveCurrencyCode),
                 onOpenBasket: () => widget.onNavigate(AppDestination.basket),
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
+                onRefresh: _refresh,
               ),
               const SizedBox(height: 20),
               _DeferredDashboardStories(
@@ -239,10 +240,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onFindDeals: () => widget.onNavigate(AppDestination.deals),
               ),
               const SizedBox(height: 22),
-              const _SectionLabel(
-                label: 'What Trolley Scout is watching for you',
-              ),
-              const SizedBox(height: 10),
               _StatChipGrid(
                 chips: [
                   _StatChip(
@@ -362,9 +359,7 @@ class _GreetingHero extends StatelessWidget {
     // Open on the page, not boxed. The mark is centred in the bar above, so
     // the greeting under it reads as a masthead; a card around it turned the
     // top of the screen into a stack of containers.
-    return Stack(
-      children: [
-        SizedBox(
+    return SizedBox(
           width: double.infinity,
           child: Column(
             children: [
@@ -393,21 +388,7 @@ class _GreetingHero extends StatelessWidget {
               ),
             ],
           ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          child: IconButton(
-            tooltip: 'Refresh dashboard',
-            onPressed: () {
-              uxTap();
-              onRefresh();
-            },
-            icon: const Icon(Icons.refresh, size: 20),
-          ),
-        ),
-      ],
-    );
+        );
   }
 
   static String _greetingFor(DateTime now) {
@@ -482,12 +463,14 @@ class _SavingsHero extends StatelessWidget {
     required this.currency,
     required this.onOpenBasket,
     required this.onFindDeals,
+    required this.onRefresh,
   });
 
   final BasketSummary summary;
   final Currency currency;
   final VoidCallback onOpenBasket;
   final VoidCallback onFindDeals;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -504,7 +487,30 @@ class _SavingsHero extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('MONEY YOU KEPT', style: TS.eyebrowOf(context)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('MONEY YOU KEPT',
+                        style: TS.eyebrowOf(context)),
+                  ),
+                  // Refresh lives on the number it refreshes, not floating
+                  // beside the greeting.
+                  SizedBox(
+                    height: 26,
+                    width: 26,
+                    child: IconButton(
+                      tooltip: 'Refresh dashboard',
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        uxTap();
+                        onRefresh();
+                      },
+                      icon: Icon(Icons.refresh,
+                          size: 18, color: TS.mutedOf(context)),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -1268,24 +1274,64 @@ class _DealThumb extends StatelessWidget {
 
 /// Supporting counts, deliberately quieter than everything above them. These
 /// are reassurance ("the app is out there working"), not the headline.
+/// The watch-list banner: everything Trolley Scout is minding, one green
+/// slab in the mascot's own colours. The chips used to be a two-column grid
+/// of quiet tiles, which read as settings; one dark row reads as a status
+/// bar for the whole operation.
 class _StatChipGrid extends StatelessWidget {
   const _StatChipGrid({required this.chips});
 
   final List<_StatChip> chips;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth > 520 ? 4 : 2;
-          final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-          return Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final chip in chips) SizedBox(width: width, child: chip),
-            ],
-          );
-        },
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: TS.green,
+          border: Border.all(color: TS.lineOf(context), width: 2),
+          borderRadius: BorderRadius.circular(TS.cardRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0x2EFFD42E)
+                  : const Color(0xFF1C1710),
+              offset: const Offset(4, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'What Trolley Scout is watching for you',
+              style: TextStyle(
+                color: TS.yellow,
+                fontWeight: FontWeight.w900,
+                fontSize: 13.5,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < chips.length; i += 1) ...[
+                    if (i > 0)
+                      Container(
+                        width: 1,
+                        height: 30,
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        color: const Color(0x4DFFFFFF),
+                      ),
+                    chips[i],
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       );
 }
 
@@ -1303,51 +1349,38 @@ class _StatChip extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => PressableScale(
-        child: GestureDetector(
-          onTap: () {
-            uxTap();
-            onTap();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: TS.surfaceOf(context),
-              border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
-              borderRadius: BorderRadius.circular(TS.controlRadius),
-            ),
-            child: Row(
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: () {
+          uxTap();
+          onTap();
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PhosphorIcon(icon, size: 16, color: TS.yellow),
+            const SizedBox(width: 7),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                PhosphorIcon(icon, size: 20, color: TS.mutedOf(context)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(value,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 17,
-                              height: 1.1)),
-                      Text(label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: TS.mutedOf(context), fontSize: 11.5)),
-                    ],
-                  ),
-                ),
+                Text(value,
+                    maxLines: 1,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        height: 1.1)),
+                Text(label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                        color: Color(0xCCFFFFFF), fontSize: 10, height: 1.2)),
               ],
             ),
-          ),
+          ],
         ),
       );
 }
 
-/// Shown when one or more dashboard lanes could not refresh, so empty stats
-/// are never mistaken for a real "you have nothing yet" state.
 class _OfflineBanner extends StatelessWidget {
   const _OfflineBanner({required this.onRetry});
 

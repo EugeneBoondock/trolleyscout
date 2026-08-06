@@ -10,6 +10,7 @@ import 'package:trolley_scout/screens/scout_chat_screen.dart';
 import 'package:trolley_scout/screens/stores_screen.dart';
 import 'package:trolley_scout/session_cookie_store.dart';
 import 'package:trolley_scout/theme.dart';
+import 'package:trolley_scout/widgets/scout_avatar_view.dart';
 import 'package:trolley_scout/widgets/scout_mark.dart';
 
 void main() {
@@ -75,7 +76,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Explore first'));
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.text('Mr Scout'));
+    await tester.tap(find.byTooltip('Mr Scout'));
     await tester.pump();
 
     expect(find.text('Log in or sign up to open Mr Scout.'), findsOneWidget);
@@ -237,7 +238,7 @@ void main() {
       isNot(isA<AnimatedScoutMark>()),
     );
 
-    await tester.tap(find.text('Mr Scout').last);
+    await tester.tap(find.byTooltip('Mr Scout'));
     await tester.pump(const Duration(milliseconds: 350));
 
     expect(find.byType(ScoutChatScreen), findsOneWidget);
@@ -299,7 +300,12 @@ void main() {
     await tester.pumpWidget(_testApp(api));
     await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.tap(find.byTooltip('Settings'));
+    await tester.tap(find.byType(ScoutAvatarView), warnIfMissed: false);
+    // The popup fades in; a tap during the animation lands on its
+    // IgnorePointer and does nothing.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.text('Settings'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Settings'), findsWidgets);
 
@@ -376,7 +382,7 @@ void main() {
     expect(api.sessionCalls, 1);
     expect(api.currentSession.isAuthenticated, isTrue);
     expect(find.byTooltip('Sign out'), findsOneWidget);
-    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.byTooltip('Your menu'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pump(const Duration(milliseconds: 500));

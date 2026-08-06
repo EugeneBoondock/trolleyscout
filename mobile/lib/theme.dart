@@ -279,13 +279,15 @@ class TS {
         color: color ?? surfaceOf(context),
         border: Border.all(color: border ?? lineOf(context), width: width),
         borderRadius: BorderRadius.circular(cardRadius),
+        // A solid offset slab, zero blur: the neo-brutalist shadow. In the
+        // dark theme the slab is a low-alpha yellow, so cards sit on a faint
+        // cast of the mascot's own accent instead of disappearing black.
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0x8C000000)
-                : const Color(0x291C1710),
-            offset: const Offset(0, 5),
-            blurRadius: 16,
+                ? const Color(0x2EFFD42E)
+                : const Color(0xFF1C1710),
+            offset: const Offset(4, 4),
           ),
         ],
       );
@@ -299,13 +301,15 @@ class TS {
       BoxDecoration(
         color: color ?? surfaceOf(context),
         borderRadius: BorderRadius.circular(cardRadius),
+        // A solid offset slab, zero blur: the neo-brutalist shadow. In the
+        // dark theme the slab is a low-alpha yellow, so cards sit on a faint
+        // cast of the mascot's own accent instead of disappearing black.
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0x8C000000)
-                : const Color(0x291C1710),
-            offset: const Offset(0, 5),
-            blurRadius: 16,
+                ? const Color(0x2EFFD42E)
+                : const Color(0xFF1C1710),
+            offset: const Offset(4, 4),
           ),
         ],
       );

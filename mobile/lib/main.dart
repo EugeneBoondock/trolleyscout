@@ -699,12 +699,12 @@ class _RootShellState extends State<RootShell>
         // At a big text setting the label's own height drives the bar, so the
         // icon has to give way or the bar grows back.
         final navIconSize = largeNavText
-            ? 15.0
+            ? 20.0
             : extraCompactNav
-                ? 16.0
+                ? 21.0
                 : compactNav
-                    ? 17.0
-                    : 18.0;
+                    ? 22.0
+                    : 24.0;
         final navLabelSize = extraCompactNav
             ? 7.5
             : compactNav
@@ -769,19 +769,19 @@ class _RootShellState extends State<RootShell>
                 size: 64,
               ),
               actions: [
-                IconButton(
-                  tooltip: Theme.of(context).brightness == Brightness.light
-                      ? 'Use dark theme'
-                      : 'Use light theme',
-                  onPressed: () => widget.controller
-                      .toggleTheme(Theme.of(context).brightness),
-                  icon: Icon(
-                    Theme.of(context).brightness == Brightness.light
-                        ? Icons.dark_mode_outlined
-                        : Icons.light_mode_outlined,
-                  ),
-                ),
                 if (!session.isAuthenticated) ...[
+                  IconButton(
+                    tooltip: Theme.of(context).brightness == Brightness.light
+                        ? 'Use dark theme'
+                        : 'Use light theme',
+                    onPressed: () => widget.controller
+                        .toggleTheme(Theme.of(context).brightness),
+                    icon: Icon(
+                      Theme.of(context).brightness == Brightness.light
+                          ? Icons.dark_mode_outlined
+                          : Icons.light_mode_outlined,
+                    ),
+                  ),
                   if (compact)
                     PopupMenuButton<String>(
                       tooltip: 'Account options',
@@ -805,32 +805,66 @@ class _RootShellState extends State<RootShell>
                     ),
                   ],
                 ] else ...[
-                  WatchBell(controller: widget.controller),
-                  // The shopper's own tile, not a generic person glyph — the app
-                  // bar is where they most often check "am I still me?".
+                  // The shopper's own tile, and everything personal behind
+                  // it: settings, theme, alerts. Three separate buttons in
+                  // the bar was chrome competing with the crest.
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Tooltip(
-                      message: 'Settings',
-                      child: Semantics(
-                        button: true,
-                        label: 'Settings',
-                        child: PressableScale(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () =>
-                                _selectDestination(AppDestination.profile),
-                            child: SizedBox.square(
-                              dimension: 48,
-                              child: Center(
-                                child: ScoutAvatarView(
-                                  initials: session.account?.initials ?? '?',
-                                  size: 34,
-                                  borderWidth: 1.5,
-                                  showShadow: false,
-                                ),
-                              ),
+                    child: PopupMenuButton<String>(
+                      tooltip: 'Your menu',
+                      offset: const Offset(0, 52),
+                      onSelected: (choice) {
+                        switch (choice) {
+                          case 'settings':
+                            _selectDestination(AppDestination.profile);
+                          case 'theme':
+                            widget.controller
+                                .toggleTheme(Theme.of(context).brightness);
+                          case 'alerts':
+                            showWatchesSheet(context, widget.controller);
+                        }
+                      },
+                      itemBuilder: (context) {
+                        final light =
+                            Theme.of(context).brightness == Brightness.light;
+                        return [
+                          const PopupMenuItem(
+                            value: 'settings',
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.settings_outlined),
+                              title: Text('Settings'),
                             ),
+                          ),
+                          PopupMenuItem(
+                            value: 'theme',
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(light
+                                  ? Icons.dark_mode_outlined
+                                  : Icons.light_mode_outlined),
+                              title:
+                                  Text(light ? 'Dark mode' : 'Light mode'),
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'alerts',
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.notifications_outlined),
+                              title: Text('Notifications'),
+                            ),
+                          ),
+                        ];
+                      },
+                      child: SizedBox.square(
+                        dimension: 48,
+                        child: Center(
+                          child: ScoutAvatarView(
+                            initials: session.account?.initials ?? '?',
+                            size: 34,
+                            borderWidth: 1.5,
+                            showShadow: false,
                           ),
                         ),
                       ),
@@ -1029,9 +1063,14 @@ class _RootShellState extends State<RootShell>
                                 backgroundColor: TS.surfaceOf(context),
                                 elevation: 0,
                                 indicatorColor: Colors.transparent,
+                                // Icons only, which is Facebook's whole
+                                // trick: their bar is not shorter than 48,
+                                // it just carries nothing but glyphs. The
+                                // label row was a third of our bar's height;
+                                // names live on in tooltips and semantics.
                                 labelBehavior:
                                     NavigationDestinationLabelBehavior
-                                        .alwaysShow,
+                                        .alwaysHide,
                                 selectedIndex: _primaryIndex,
                                 onDestinationSelected: (index) =>
                                     _selectDestination(
