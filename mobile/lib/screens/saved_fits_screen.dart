@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../currency.dart';
 import '../saved_fits_store.dart';
 import '../theme.dart';
 import '../ux.dart';
@@ -24,6 +25,17 @@ class SavedFitsScreen extends StatefulWidget {
 class _SavedFitsScreenState extends State<SavedFitsScreen> {
   late final SavedFitsStore _store = widget.store ?? SavedFitsStore();
   late Future<List<SavedFit>> _future = _store.load();
+
+  Future<void> _togglePin(SavedFit fit) async {
+    uxTap();
+    final fits = await _store.setPinned(fit.id, !fit.pinned);
+    if (!mounted) return;
+    setState(() => _future = Future.value(fits));
+    showNotice(
+      context,
+      fit.pinned ? 'Unpinned.' : 'Pinned to the top of your fits.',
+    );
+  }
 
   Future<void> _openFullScreen(SavedFit fit) async {
     uxTap();
@@ -102,6 +114,7 @@ class _SavedFitsScreenState extends State<SavedFitsScreen> {
               readImage: _store.readImage,
               onDelete: () => _remove(fits[index]),
               onOpen: () => _openFullScreen(fits[index]),
+              onTogglePin: () => _togglePin(fits[index]),
             ),
           );
         },
@@ -177,12 +190,14 @@ class _SavedFitCard extends StatelessWidget {
     required this.readImage,
     required this.onDelete,
     required this.onOpen,
+    required this.onTogglePin,
   });
 
   final SavedFit fit;
   final Future<Uint8List?> Function(SavedFit fit) readImage;
   final VoidCallback onDelete;
   final VoidCallback onOpen;
+  final VoidCallback onTogglePin;
 
   @override
   Widget build(BuildContext context) {
@@ -235,12 +250,45 @@ class _SavedFitCard extends StatelessWidget {
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13),
                       ),
-                      Text(
-                        _when(fit.savedAt),
-                        style: TextStyle(
-                            color: TS.mutedOf(context), fontSize: 11.5),
+                      Row(
+                        children: [
+                          if (fit.valueCents > 0) ...[
+                            Text(
+                              Currency.of('ZAR').format(fit.valueCents),
+                              style: TextStyle(
+                                color: TS.redOf(context),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(
+                            child: Text(
+                              _when(fit.savedAt),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: TS.mutedOf(context), fontSize: 11.5),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
+                  ),
+                ),
+                IconButton(
+                  key: Key('pin-fit-${fit.id}'),
+                  tooltip: fit.pinned ? 'Unpin this fit' : 'Pin this fit',
+                  onPressed: onTogglePin,
+                  icon: Icon(
+                    fit.pinned
+                        ? Icons.push_pin_rounded
+                        : Icons.push_pin_outlined,
+                    size: 19,
+                    color: fit.pinned
+                        ? TS.redOf(context)
+                        : TS.mutedOf(context),
                   ),
                 ),
                 IconButton(

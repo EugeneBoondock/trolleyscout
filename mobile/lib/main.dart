@@ -1040,6 +1040,15 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
     );
   }
 
+  /// Scout and above may build outfits; admins always can.
+  bool get _canBuildOutfits {
+    final account = widget.controller.session.account;
+    if (account == null) return false;
+    if (account.isAdmin) return true;
+    return const {'scout', 'household', 'organization', 'developers'}
+        .contains(account.planId);
+  }
+
   Widget _screenFor(AppDestination destination) {
     final api = widget.controller.api;
     return switch (destination) {
@@ -1062,6 +1071,9 @@ class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
       AppDestination.clothing => ClothingScreen(
           api: api,
           onUpgrade: () => _selectDestination(AppDestination.subscription),
+          // An outfit renders once per garment, so building one is a paid
+          // perk rather than something a free allowance can carry.
+          canBuildOutfits: _canBuildOutfits,
         ),
       AppDestination.chat => ScoutChatScreen(
           api: api,

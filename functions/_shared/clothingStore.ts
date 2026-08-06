@@ -28,6 +28,8 @@ export interface ClothingQuery {
   garmentType?: string
   limit?: number
   offset?: number
+  /// What the shopper typed: matched against the garment's own words.
+  query?: string
   retailerId?: string
   /// Only garments a try-on can dress a body in.
   tryOnableOnly?: boolean
@@ -167,6 +169,19 @@ export async function listClothingItems(
       `garment_type IN (${TRY_ONABLE_TYPES.map(() => '?').join(', ')})`,
     )
     bindings.push(...TRY_ONABLE_TYPES)
+  }
+  // Every typed word must appear somewhere in the title or the shop's name,
+  // so "black nike" narrows rather than widens.
+  const words = (query.query ?? '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length > 1)
+    .slice(0, 5)
+  for (const word of words) {
+    conditions.push('(LOWER(title) LIKE ? OR LOWER(retailer_name) LIKE ?)')
+    const like = `%${word.replace(/[%_]/g, '')}%`
+    bindings.push(like, like)
   }
 
   const limit = Math.min(Math.max(1, query.limit ?? 60), MAX_LIMIT)

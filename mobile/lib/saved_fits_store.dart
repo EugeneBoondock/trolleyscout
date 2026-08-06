@@ -11,6 +11,8 @@ class SavedFit {
     required this.title,
     required this.savedAt,
     required this.imagePath,
+    this.valueCents = 0,
+    this.pinned = false,
   });
 
   factory SavedFit.fromJson(Map<String, dynamic> json) => SavedFit(
@@ -19,6 +21,9 @@ class SavedFit {
         savedAt: DateTime.tryParse(json['savedAt']?.toString() ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
         imagePath: json['imagePath']?.toString() ?? '',
+        valueCents:
+            json['valueCents'] is num ? (json['valueCents'] as num).toInt() : 0,
+        pinned: json['pinned'] == true,
       );
 
   final String id;
@@ -26,11 +31,27 @@ class SavedFit {
   final DateTime savedAt;
   final String imagePath;
 
+  /// What the garments in this look cost together, kept with the fit so the
+  /// shopper sees the price of the outfit they are admiring.
+  final int valueCents;
+  final bool pinned;
+
+  SavedFit copyWith({bool? pinned}) => SavedFit(
+        id: id,
+        title: title,
+        savedAt: savedAt,
+        imagePath: imagePath,
+        valueCents: valueCents,
+        pinned: pinned ?? this.pinned,
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'savedAt': savedAt.toUtc().toIso8601String(),
         'imagePath': imagePath,
+        'valueCents': valueCents,
+        'pinned': pinned,
       };
 }
 
@@ -62,7 +83,11 @@ class SavedFitsStore {
           .map((row) => SavedFit.fromJson(Map<String, dynamic>.from(row)))
           .where((fit) => fit.id.isNotEmpty && fit.imagePath.isNotEmpty)
           .toList()
-        ..sort((left, right) => right.savedAt.compareTo(left.savedAt));
+        // Pinned looks lead, newest first within each group.
+        ..sort((left, right) {
+          if (left.pinned != right.pinned) return left.pinned ? -1 : 1;
+          return right.savedAt.compareTo(left.savedAt);
+        });
       return List.unmodifiable(fits);
     } catch (_) {
       return const [];
@@ -83,6 +108,7 @@ class SavedFitsStore {
   Future<List<SavedFit>> save({
     required List<int> imageBytes,
     required String title,
+    int valueCents = 0,
     DateTime? savedAt,
   }) async {
     if (imageBytes.isEmpty) return load();
@@ -94,22 +120,49 @@ class SavedFitsStore {
         File('${directory.path}${Platform.pathSeparator}$id.png');
     await imageFile.writeAsBytes(imageBytes, flush: true);
 
+    final existing = await load();
     final fits = [
       SavedFit(
         id: id,
         title: title.trim().isEmpty ? 'Saved fit' : title.trim(),
         savedAt: now,
         imagePath: imageFile.path,
+        valueCents: valueCents,
       ),
-      ...await load(),
+      ...existing,
     ];
-    // The device is not a gallery: the oldest looks make way for new ones.
-    final kept = fits.take(maxFits).toList(growable: false);
-    for (final dropped in fits.skip(maxFits)) {
-      await _deleteImage(dropped);
+    // The device is not a gallery: the oldest looks make way for new ones —
+    // but a pinned look is one the shopper chose to keep, so it never ages
+    // out to make room.
+    final kept = <SavedFit>[];
+    final dropped = <SavedFit>[];
+    for (final fit in fits) {
+      if (kept.length < maxFits || fit.pinned) {
+        kept.add(fit);
+      } else {
+        dropped.add(fit);
+      }
+    }
+    for (final gone in dropped) {
+      await _deleteImage(gone);
     }
     await _writeIndex(kept);
     return kept;
+  }
+
+  /// Pins or unpins a look. A pinned fit sorts to the front and survives the
+  /// cap that ages older looks out.
+  Future<List<SavedFit>> setPinned(String id, bool pinned) async {
+    final fits = await load();
+    final updated = fits
+        .map((fit) => fit.id == id ? fit.copyWith(pinned: pinned) : fit)
+        .toList()
+      ..sort((left, right) {
+        if (left.pinned != right.pinned) return left.pinned ? -1 : 1;
+        return right.savedAt.compareTo(left.savedAt);
+      });
+    await _writeIndex(updated);
+    return List.unmodifiable(updated);
   }
 
   Future<List<SavedFit>> remove(String id) async {

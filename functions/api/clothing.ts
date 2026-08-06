@@ -16,6 +16,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       garmentType: params.get('type') ?? undefined,
       limit: numberParam(params.get('limit'), 60),
       offset: numberParam(params.get('offset'), 0),
+      query: params.get('q') ?? undefined,
       retailerId: params.get('retailerId') ?? undefined,
       tryOnableOnly: params.get('tryOnable') === '1',
     }),

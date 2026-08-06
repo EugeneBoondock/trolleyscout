@@ -47,6 +47,37 @@ void main() {
     expect(api.audiences.last, 'men');
   });
 
+  testWidgets('searches the whole rail server-side as the shopper types',
+      (tester) async {
+    final api = _ClothingApi();
+    await tester.pumpWidget(_wrap(ClothingScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('clothing-search')), 'nike');
+    // Debounced, so nothing is asked for until typing settles.
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(api.queries.last, 'nike');
+  });
+
+  testWidgets('keeps outfit building behind the Scout plan', (tester) async {
+    var upgraded = false;
+    await tester.pumpWidget(_wrap(ClothingScreen(
+      api: _ClothingApi(),
+      canBuildOutfits: false,
+      onUpgrade: () => upgraded = true,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('outfit-mode-toggle')));
+    await tester.pumpAndSettle();
+
+    // No picker appears; the shopper is pointed at the plan instead.
+    expect(find.text('Add to outfit'), findsNothing);
+    expect(upgraded, isTrue);
+  });
+
   testWidgets('builds an outfit from several garments', (tester) async {
     await tester.pumpWidget(_wrap(ClothingScreen(api: _ClothingApi())));
     await tester.pumpAndSettle();
@@ -127,17 +158,20 @@ class _ClothingApi extends Api {
   final List<ClothingItem> items;
   final bool fail;
   final List<String> audiences = [];
+  final List<String> queries = [];
 
   @override
   Future<ClothingRail> clothingRail({
     String retailerId = 'all',
     String audience = 'any',
     String garmentType = 'any',
+    String query = '',
     bool tryOnableOnly = false,
     int limit = 60,
     int offset = 0,
   }) async {
     audiences.add(audience);
+    queries.add(query);
     if (fail) throw const ApiException('The rail is offline.');
     final visible = audience == 'any'
         ? items

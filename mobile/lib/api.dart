@@ -850,19 +850,22 @@ class Api {
     String retailerId = 'all',
     String audience = 'any',
     String garmentType = 'any',
+    String query = '',
     bool tryOnableOnly = false,
     int limit = 60,
     int offset = 0,
   }) async {
-    final query = <String>[
+    final search = query.trim();
+    final params = <String>[
       'limit=$limit',
       'offset=$offset',
+      if (search.isNotEmpty) 'q=${Uri.encodeQueryComponent(search)}',
       if (retailerId != 'all') 'retailerId=${Uri.encodeQueryComponent(retailerId)}',
       if (audience != 'any') 'audience=$audience',
       if (garmentType != 'any') 'type=$garmentType',
       if (tryOnableOnly) 'tryOnable=1',
     ];
-    final data = await _request('GET', '/api/clothing?${query.join('&')}');
+    final data = await _request('GET', '/api/clothing?${params.join('&')}');
     return ClothingRail.fromJson(data);
   }
 

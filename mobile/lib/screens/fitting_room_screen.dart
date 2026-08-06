@@ -22,6 +22,7 @@ class FittingRoomScreen extends StatefulWidget {
     required this.api,
     required this.garmentImageUrls,
     required this.garmentTitle,
+    this.garmentValueCents = 0,
     this.onUpgrade,
     this.photoStore,
     this.fitsStore,
@@ -32,6 +33,10 @@ class FittingRoomScreen extends StatefulWidget {
   /// One garment, or a whole outfit the server layers onto one body.
   final List<String> garmentImageUrls;
   final String garmentTitle;
+
+  /// What this look costs, carried into the saved fit so the shopper can see
+  /// the price of the outfit they kept.
+  final int garmentValueCents;
 
   String get garmentImageUrl => garmentImageUrls.first;
 
@@ -390,7 +395,11 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
     uxTap();
     setState(() => _savingFit = true);
     try {
-      await _fitsStore.save(imageBytes: bytes, title: widget.garmentTitle);
+      await _fitsStore.save(
+        imageBytes: bytes,
+        title: widget.garmentTitle,
+        valueCents: widget.garmentValueCents,
+      );
       if (!mounted) return;
       setState(() {
         _fitSaved = true;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -20,9 +22,14 @@ class ClothingScreen extends StatefulWidget {
     required this.api,
     this.onUpgrade,
     this.photoStore,
+    this.canBuildOutfits = true,
   });
 
   final Api api;
+
+  /// Outfit building is a Scout-plan perk: it renders once per garment, so
+  /// it costs several fittings for one look.
+  final bool canBuildOutfits;
 
   /// Where the fitting room sends a shopper whose plan does not include it.
   final VoidCallback? onUpgrade;
@@ -40,6 +47,9 @@ class _ClothingScreenState extends State<ClothingScreen> {
   String _retailerId = 'all';
   ClothingAudience _audience = ClothingAudience.any;
   GarmentType _type = GarmentType.any;
+  String _query = '';
+  Timer? _searchDebounce;
+  final _searchController = TextEditingController();
 
   /// The outfit being assembled. Empty means the shopper is just browsing.
   final List<ClothingItem> _outfit = [];
@@ -58,8 +68,27 @@ class _ClothingScreenState extends State<ClothingScreen> {
         retailerId: _retailerId,
         audience: _audience.name,
         garmentType: _type.name,
+        query: _query,
         limit: 120,
       );
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Typing searches the whole rail server-side, a beat after the last
+  /// keystroke so a shopper is not billed a query per letter.
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted || value.trim() == _query) return;
+      _query = value.trim();
+      _reload();
+    });
+  }
 
   /// Filtering happens server-side, so changing one reloads the rail. The
   /// block body matters: an arrow closure would hand setState the Future it
@@ -86,6 +115,10 @@ class _ClothingScreenState extends State<ClothingScreen> {
         garmentTitle: garments.length == 1
             ? garments.first.title
             : '${garments.length}-piece outfit',
+        garmentValueCents: garments.fold(
+          0,
+          (total, item) => total + item.priceCents,
+        ),
         onUpgrade: widget.onUpgrade,
         photoStore: widget.photoStore,
       ),
@@ -213,6 +246,18 @@ class _ClothingScreenState extends State<ClothingScreen> {
                       audience: _audience,
                       type: _type,
                       outfitMode: _outfitMode,
+                      searchController: _searchController,
+                      onSearch: _onSearchChanged,
+                      canBuildOutfits: widget.canBuildOutfits,
+                      onOutfitLocked: () {
+                        uxTap();
+                        showNotice(
+                          context,
+                          'Building an outfit is a Scout plan perk — it fits '
+                          'every piece one at a time.',
+                        );
+                        widget.onUpgrade?.call();
+                      },
                       onRetailer: (value) {
                         _retailerId = value;
                         _reload();
@@ -311,6 +356,10 @@ class _FilterBar extends StatelessWidget {
     required this.onAudience,
     required this.onType,
     required this.onToggleOutfitMode,
+    required this.searchController,
+    required this.onSearch,
+    required this.canBuildOutfits,
+    required this.onOutfitLocked,
   });
 
   final List<MapEntry<String, String>> retailers;
@@ -322,6 +371,10 @@ class _FilterBar extends StatelessWidget {
   final ValueChanged<ClothingAudience> onAudience;
   final ValueChanged<GarmentType> onType;
   final VoidCallback onToggleOutfitMode;
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearch;
+  final bool canBuildOutfits;
+  final VoidCallback onOutfitLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -330,6 +383,30 @@ class _FilterBar extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: TextField(
+            key: const Key('clothing-search'),
+            controller: searchController,
+            onChanged: onSearch,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search clothes, brands, stores',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              isDense: true,
+              suffixIcon: searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        searchController.clear();
+                        onSearch('');
+                      },
+                    ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Row(
             children: [
               Expanded(
@@ -372,7 +449,7 @@ class _FilterBar extends StatelessWidget {
                     : 'Build an outfit from several pieces',
                 child: PressableScale(
                   child: GestureDetector(
-                    onTap: onToggleOutfitMode,
+                    onTap: canBuildOutfits ? onToggleOutfitMode : onOutfitLocked,
                     child: Container(
                       key: const Key('outfit-mode-toggle'),
                       height: 44,
@@ -391,7 +468,9 @@ class _FilterBar extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.auto_awesome_rounded,
+                            canBuildOutfits
+                                ? Icons.auto_awesome_rounded
+                                : Icons.lock_outline_rounded,
                             size: 17,
                             color: outfitMode
                                 ? TS.yellow

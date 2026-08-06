@@ -28,6 +28,23 @@ describe('clothing taxonomy', () => {
     expect(audienceFor('Cotton t-shirt')).toBe('any')
   })
 
+  it('spots children\'s clothing that never says child', () => {
+    // Character licences and age markings are how kidswear is actually
+    // titled; a plain word list read these as adult clothes and put nappy-age
+    // outfits in front of grown shoppers.
+    expect(audienceFor('Paw Patrol Marshall Striped T-Shirt')).toBe('kids')
+    expect(audienceFor('Pink Kuromi Bubble Dress')).toBe('kids')
+    expect(audienceFor('Bluey Fleece Hoodie')).toBe('kids')
+    expect(audienceFor('Cotton Tee 5-6y')).toBe('kids')
+    expect(audienceFor('Vest 3-6 months')).toBe('kids')
+    expect(audienceFor('Denim Shorts Age 8')).toBe('kids')
+    // Adult clothing keeps its own audience.
+    expect(audienceFor('Ladies Floral Blouse')).toBe('women')
+    expect(audienceFor('Mens Slim Chino')).toBe('men')
+    // A size range that is not an age must not read as kids.
+    expect(audienceFor('Ladies Socks Size 4-7')).toBe('women')
+  })
+
   it('sorts garments into the shape a shopper filters by', () => {
     expect(garmentTypeFor('Denim jacket')).toBe('outerwear')
     expect(garmentTypeFor('Slim fit jeans')).toBe('bottoms')

@@ -14,9 +14,28 @@ export type GarmentType =
   | 'accessories'
 
 const KIDS = [
-  'kids', 'kid', 'child', 'children', 'boys', 'girls', 'boy', 'girl',
-  'toddler', 'infant', 'baby', 'babies', 'junior', 'teen', 'school',
-  'newborn', 'romper', 'babygrow', 'onesie',
+  'kids', 'kid', 'child', 'children', 'childrens', 'boys', 'girls', 'boy',
+  'girl', 'toddler', 'infant', 'baby', 'babies', 'junior', 'juniors', 'teen',
+  'school', 'schoolwear', 'newborn', 'romper', 'babygrow', 'onesie',
+  'sleepsuit', 'bodyvest', 'dungaree', 'dungarees', 'creche', 'nursery',
+  'preschool', 'tween',
+  // Character licences are children's clothing in all but name, and the
+  // titles rarely say so: "Paw Patrol Marshall Striped T-Shirt" reads as an
+  // adult tee to a word list.
+  'paw patrol', 'peppa', 'bluey', 'cocomelon', 'frozen elsa', 'minions',
+  'barbie', 'hot wheels', 'thomas', 'sesame', 'mickey', 'minnie',
+  'spongebob', 'scooby', 'transformers', 'my little pony', 'teletubbies',
+  'gabbys', 'encanto', 'moana', 'stitch', 'kuromi', 'hello kitty',
+  'sonic', 'pokemon', 'bokkie',
+]
+
+/// Age and size markings that only ever appear on children's clothing:
+/// "2-7", "3-6 months", "Age 5-6", "12-18m", "Size 5-6y".
+const KIDS_SIZE_PATTERNS = [
+  /\b\d{1,2}\s*-\s*\d{1,2}\s*(y|yr|yrs|year|years|m|mth|mths|month|months)\b/i,
+  /\bage\s*\d{1,2}\b/i,
+  /\b\d{1,2}\s*(y|yr|yrs|year|years)\s*(old)?\b/i,
+  /\b(newborn|0-3|3-6|6-9|6-12|9-12|12-18|18-24)\b/i,
 ]
 const WOMEN = [
   'women', 'woman', 'womens', 'ladies', 'lady', 'female', 'dress', 'skirt',
@@ -114,8 +133,11 @@ export function isApparel(text: string): boolean {
 export function audienceFor(text: string): ClothingAudience {
   const words = tokens(text)
   const phrase = ` ${[...words].join(' ')} `
-  // Kids first: a "boys' shirt" is a kids item before it is a men's one.
+  // Kids first, and by size marking as well as by word: a "boys' shirt" is a
+  // kids item before it is a men's one, and a shirt sized 5-6y is a child's
+  // whether or not the title ever says child.
   if (mentions(words, phrase, KIDS)) return 'kids'
+  if (KIDS_SIZE_PATTERNS.some((pattern) => pattern.test(text))) return 'kids'
   if (mentions(words, phrase, WOMEN)) return 'women'
   if (mentions(words, phrase, MEN)) return 'men'
   return 'any'
