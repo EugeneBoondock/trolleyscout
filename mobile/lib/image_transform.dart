@@ -15,6 +15,18 @@ library;
 
 const String _transformOrigin = 'https://trolleyscout.co.za';
 
+/// Whether the zone will actually serve /cdn-cgi/image/ URLs.
+///
+/// It will not: trolleyscout.co.za is a free zone, and zone image
+/// transformations are not available on it — every transformed URL answers
+/// 404, which blanked every product photo and catalogue cover in the app.
+///
+/// The cost this was meant to save is real, so the machinery stays and this
+/// flag is the one line to flip if transformations are ever enabled. Until
+/// then the shop's own URL is served untouched, because a slightly heavy
+/// image beats no image.
+const bool imageTransformsEnabled = false;
+
 /// The only widths asked for, so unique transformations stay proportional to
 /// the number of images rather than the number of screen sizes.
 const List<int> imageWidthLadder = [160, 320, 640, 960];
@@ -27,6 +39,7 @@ const int defaultCardImageWidth = 640;
 String? sizedImageUrl(String? source, {int width = defaultCardImageWidth}) {
   final url = (source ?? '').trim();
   if (url.isEmpty) return null;
+  if (!imageTransformsEnabled) return url;
   if (!url.startsWith('http://') && !url.startsWith('https://')) return url;
   // Already transformed, already ours, or vector art that resizing can only
   // break.

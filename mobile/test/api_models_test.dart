@@ -33,13 +33,12 @@ void main() {
       },
     });
 
-    // Product photos are resized as they are parsed, so every widget that
-    // draws one gets a card-sized image without asking.
-    expect(result.deals.single.imageUrl, contains('/cdn-cgi/image/'));
+    // Served exactly as the shop published it. Zone image transformations are
+    // not available on this domain, and a rewritten URL answered 404 — which
+    // blanked every product photo and catalogue cover in the app.
+    expect(result.deals.single.imageUrl, 'https://market.test/rice.jpg');
     expect(
-        result.deals.single.imageUrl, contains('https://market.test/rice.jpg'));
-    expect(result.catalogues.single.imageUrl,
-        contains('https://market.test/catalogue.jpg'));
+        result.catalogues.single.imageUrl, 'https://market.test/catalogue.jpg');
     expect(result.catalogues.single.retailerName, 'Local Market');
     expect(result.catalogues.single.capturedAt, '2026-07-19T10:00:00.000Z');
     expect(
@@ -77,8 +76,7 @@ void main() {
     expect(store.firstSeenAt, '2026-07-01T10:00:00.000Z');
     expect(store.lastSeenAt, '2026-07-16T10:00:00.000Z');
     expect(store.promotionCount, 3);
-    expect(offer.imageUrl, contains('/cdn-cgi/image/'));
-    expect(offer.imageUrl, contains('https://shop.test/milk.jpg'));
+    expect(offer.imageUrl, 'https://shop.test/milk.jpg');
   });
 
   test('keeps branch promotion savings and validity dates in Near me', () {
@@ -181,12 +179,10 @@ void main() {
       ],
     });
 
-    // Sized on the way in, cover and sides alike.
-    expect(deal.gallery, hasLength(2));
-    expect(deal.gallery[0], contains('https://example.test/images/cover.jpg'));
-    expect(deal.gallery[1], contains('https://example.test/images/side.jpg'));
-    expect(
-        deal.gallery.every((url) => url.contains('/cdn-cgi/image/')), isTrue);
+    expect(deal.gallery, [
+      'https://example.test/images/cover.jpg',
+      'https://example.test/images/side.jpg',
+    ]);
     expect(ScrollDeal.fromJson(deal.toJson()).gallery, deal.gallery);
   });
 

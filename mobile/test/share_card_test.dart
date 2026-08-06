@@ -76,7 +76,7 @@ void main() {
 
       final data = ShareCardData.fromScrollDeal(deal);
 
-      expect(data.imageUrl, contains('https://cdn.example.test/fryer.jpg'));
+      expect(data.imageUrl, 'https://cdn.example.test/fryer.jpg');
       expect(data.noun, 'deal');
     });
 

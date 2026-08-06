@@ -5,48 +5,30 @@ import 'package:trolley_scout/image_transform.dart';
 void main() {
   const photo = 'https://cdn.retailer.test/products/jeans-1500.jpg';
 
-  test('fetches a card-sized photo instead of the shop\'s full-size one', () {
-    final url = sizedImageUrl(photo);
-
-    expect(url, contains('/cdn-cgi/image/'));
-    expect(url, contains('width=640'));
-    // Most of the saving on a photo comes from the format, not the pixels.
-    expect(url, contains('format=auto'));
-    // scale-down means a small source is never upscaled and re-encoded.
-    expect(url, contains('fit=scale-down'));
-    expect(url, contains(photo));
+  test('serves the shop own image while transforms are off', () {
+    // trolleyscout.co.za is a free zone and does not serve /cdn-cgi/image/
+    // URLs — every transformed link answered 404 and blanked every product
+    // photo in the app. A slightly heavy image beats no image.
+    expect(imageTransformsEnabled, isFalse);
+    expect(sizedImageUrl(photo), photo);
+    expect(sizedImageUrl(photo, width: 160), photo);
   });
 
-  test('snaps to a short ladder, because unique widths cost the allowance', () {
-    // The free allowance counts UNIQUE transformations, so a hundred
-    // arbitrary widths would spend the month on a single screen.
+  test('the width ladder is still short, for when it can be switched on', () {
+    // The free allowance counts UNIQUE transformations, so widths must snap
+    // to a handful of rungs rather than whatever a layout asks for.
     expect(snapImageWidth(1), 160);
-    expect(snapImageWidth(160), 160);
     expect(snapImageWidth(161), 320);
     expect(snapImageWidth(5000), imageWidthLadder.last);
   });
 
-  test('leaves alone what it cannot improve', () {
-    const transformed =
-        'https://trolleyscout.co.za/cdn-cgi/image/width=320/https://x.test/a.jpg';
-    expect(sizedImageUrl(transformed), transformed);
-
-    const svg = 'https://cdn.retailer.test/logo.svg';
-    expect(sizedImageUrl(svg), svg);
-
-    // Our own media is already stored at the right size.
-    const own = 'https://trolleyscout.co.za/media/catalogue/page-1.jpg';
-    expect(sizedImageUrl(own), own);
-
+  test('passes through what is not an absolute web image', () {
     expect(sizedImageUrl(null), isNull);
     expect(sizedImageUrl('  '), isNull);
     expect(sizedImageUrl('/local/asset.png'), '/local/asset.png');
   });
 
-  test('every deal arrives already sized, not just the ones we remembered',
-      () {
-    // Doing this once where the payload is parsed is what makes it true for
-    // all three dozen widgets that draw a product photo.
+  test('every deal keeps a URL that actually loads', () {
     final deal = Deal.fromJson(const {
       'id': 'd1',
       'title': 'Braaipack 5kg',
@@ -56,7 +38,6 @@ void main() {
       'imageUrl': photo,
     });
 
-    expect(deal.imageUrl, contains('/cdn-cgi/image/'));
-    expect(deal.imageUrl, contains(photo));
+    expect(deal.imageUrl, photo);
   });
 }

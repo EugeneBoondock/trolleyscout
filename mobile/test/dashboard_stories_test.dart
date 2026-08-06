@@ -59,14 +59,14 @@ void main() {
         DashboardStoryFrameKind.deal
       ],
     );
-    final frames =
-        stories.first.frames.map((frame) => frame.imageUrl).toList();
-    // Catalogue pages stay full size — they are leaflet scans the shopper
-    // pinches into. The product photo behind them is resized for the card.
-    expect(frames[0], 'https://images.test/page-1.webp');
-    expect(frames[1], 'https://images.test/page-2.webp');
-    expect(frames[2], contains('https://images.test/coffee.png'));
-    expect(frames[2], contains('/cdn-cgi/image/'));
+    expect(
+      stories.first.frames.map((frame) => frame.imageUrl),
+      [
+        'https://images.test/page-1.webp',
+        'https://images.test/page-2.webp',
+        'https://images.test/coffee.png',
+      ],
+    );
   });
 
   test('matches catalogue artwork by retailer id when display names differ',
