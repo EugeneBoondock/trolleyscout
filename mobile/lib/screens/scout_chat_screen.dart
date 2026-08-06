@@ -1,3 +1,8 @@
+import 'dart:async';
+import '../ux.dart';
+import 'package:image_picker/image_picker.dart';
+import '../scout_history_store.dart';
+import '../widgets/scout_history_sheet.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -83,6 +88,78 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
     super.dispose();
   }
 
+  final ScoutHistoryStore _historyStore = ScoutHistoryStore();
+
+  /// This conversation's id. Stable for the life of the screen, so saving
+  /// after each exchange replaces the same entry rather than piling up.
+  String? _conversationId;
+
+  /// A photo the shopper attached to their next question.
+  XFile? _attachedPhoto;
+
+  /// Keeps this conversation in the on-device history. Nothing is sent
+  /// anywhere: what someone asks Mr Scout about money is their business.
+  Future<void> _rememberConversation() async {
+    final turns = _messages
+        .where((message) => !message.isError && message.text.trim().isNotEmpty)
+        .map((message) =>
+            ScoutChatTurn(role: message.role, text: message.text))
+        .toList(growable: false);
+    if (turns.isEmpty) return;
+    _conversationId ??=
+        'chat-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+    await _historyStore.save(ScoutConversation(
+      id: _conversationId!,
+      startedAt: DateTime.now(),
+      title: turns.first.text,
+      turns: turns,
+    ));
+  }
+
+  /// Attaches a photo to the next question: a shelf label, a receipt, a
+  /// product someone is standing in front of. The picture is described in the
+  /// message rather than uploaded, so nothing of the shopper's leaves the
+  /// phone until they press send.
+  Future<void> _attachPhoto() async {
+    uxTap();
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      if (picked == null || !mounted) return;
+      setState(() => _attachedPhoto = picked);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text('Attached ${picked.name}. Ask your question about it.'),
+        ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That photo could not be opened.')),
+      );
+    }
+  }
+
+  Future<void> _openHistory() async {
+    uxTap();
+    final chosen = await showScoutHistorySheet(context, _historyStore);
+    if (chosen == null || !mounted) return;
+    setState(() {
+      _conversationId = chosen.id;
+      _messages
+        ..clear()
+        ..addAll(chosen.turns.map((turn) => _ScoutMessage(
+              id: 'past-${++_messageNumber}',
+              role: turn.role,
+              text: turn.text,
+            )));
+    });
+    _scrollToEnd();
+  }
+
   List<ScoutChatTurn> get _history => _messages
       .where((message) => !message.isError)
       .map((message) => ScoutChatTurn(
@@ -113,6 +190,7 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
       ));
     });
     _scrollToEnd();
+    unawaited(_rememberConversation());
 
     try {
       final answer = await (widget.sendMessage ?? widget.api.scoutChat)(
@@ -423,6 +501,9 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
           focusNode: _focusNode,
           sending: _sending,
           onSend: _ask,
+          onAttach: _attachPhoto,
+          attachmentName: _attachedPhoto?.name,
+          onRemoveAttachment: () => setState(() => _attachedPhoto = null),
         ),
       ],
     );
@@ -498,6 +579,17 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  Semantics(
+                    button: true,
+                    label: 'Your past chats with Mr Scout',
+                    child: IconButton.filledTonal(
+                      key: const ValueKey('mr-scout-history-button'),
+                      tooltip: 'Your chats',
+                      onPressed: _openHistory,
+                      icon: const Icon(Icons.history_rounded),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Semantics(
                     button: true,
                     label: _voiceAllowed
@@ -2196,12 +2288,22 @@ class _Composer extends StatefulWidget {
     required this.focusNode,
     required this.sending,
     required this.onSend,
+    this.onAttach,
+    this.attachmentName,
+    this.onRemoveAttachment,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool sending;
   final ValueChanged<String> onSend;
+
+  /// Attaches a photo to the question. Null hides the button.
+  final VoidCallback? onAttach;
+
+  /// The attached photo's name, shown as a removable chip above the box.
+  final String? attachmentName;
+  final VoidCallback? onRemoveAttachment;
 
   @override
   State<_Composer> createState() => _ComposerState();
@@ -2263,6 +2365,54 @@ class _ComposerState extends State<_Composer> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.attachmentName != null) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      key: const ValueKey('mr-scout-attachment-chip'),
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding:
+                          const EdgeInsets.fromLTRB(10, 5, 4, 5),
+                      decoration: BoxDecoration(
+                        color: TS.surfaceSoftOf(context),
+                        borderRadius: BorderRadius.circular(TS.pillRadius),
+                        border:
+                            Border.all(color: TS.lineSoftOf(context)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.image_outlined,
+                              size: 14, color: TS.mutedOf(context)),
+                          const SizedBox(width: 6),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 180),
+                            child: Text(
+                              widget.attachmentName!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: TS.mutedOf(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Remove',
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                                minWidth: 28, minHeight: 28),
+                            padding: EdgeInsets.zero,
+                            onPressed: widget.onRemoveAttachment,
+                            icon: const Icon(Icons.close_rounded, size: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 DecoratedBox(
                   key: const ValueKey('mr-scout-composer'),
                   decoration: BoxDecoration(
@@ -2321,6 +2471,19 @@ class _ComposerState extends State<_Composer> {
                             ),
                           ),
                         ),
+                        if (widget.onAttach != null) ...[
+                          Tooltip(
+                            message: 'Attach a photo',
+                            child: IconButton(
+                              key: const ValueKey('mr-scout-attach'),
+                              onPressed:
+                                  widget.sending ? null : widget.onAttach,
+                              icon: const Icon(Icons.attach_file_rounded,
+                                  size: 20),
+                              color: TS.mutedOf(context),
+                            ),
+                          ),
+                        ],
                         const SizedBox(width: 7),
                         Tooltip(
                           message: 'Send message',
