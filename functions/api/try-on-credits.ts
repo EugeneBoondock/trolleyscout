@@ -55,7 +55,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   }
 
   // Top-ups are for members whose plan already includes fittings and who ran
-  // out this month. A free shopper is better served by Scout: R29 buys 50
+  // out this month. A free shopper is better served by Scout: R50 buys 50
   // fittings and the rest of the toolkit, which beats any pack we could sell.
   const canBuyPacks = account.role === 'admin' ||
     PACK_ELIGIBLE_PLANS.has(account.planId.trim().toLowerCase())

@@ -106,8 +106,9 @@ export async function recordRewardedAdView(
     }
   }
 
+  const db = env as TrolleyScoutEnv & { DB: D1Database }
   const today = dayKey(now)
-  const seenToday = await countAdsOn(env, accountId, today)
+  const seenToday = await countAdsOn(db, accountId, today)
   if (seenToday >= MAX_ADS_PER_DAY) {
     return {
       granted: 0,
@@ -118,7 +119,7 @@ export async function recordRewardedAdView(
   }
 
   const rate = AD_REWARD_RATES[kind]
-  const earnedAlready = await countGranted(env, accountId, kind)
+  const earnedAlready = await countGranted(db, accountId, kind)
   if (rate.lifetimeCap !== null && earnedAlready >= rate.lifetimeCap) {
     return {
       granted: 0,
@@ -147,7 +148,7 @@ export async function recordRewardedAdView(
   }
 
   // A set completes when the unpaid views reach the rate.
-  const unpaid = await countUnpaid(env, accountId, kind)
+  const unpaid = await countUnpaid(db, accountId, kind)
   if (unpaid < rate.adsPerReward) {
     return {
       granted: 0,
@@ -192,13 +193,14 @@ export async function readAdRewardProgress(
   now: Date = new Date(),
 ): Promise<AdRewardProgress> {
   if (!env.DB) return emptyProgress()
+  const db = env as TrolleyScoutEnv & { DB: D1Database }
   const [adsToday, fittingUnpaid, sourceUnpaid, fittings, sources] =
     await Promise.all([
-      countAdsOn(env, accountId, dayKey(now)),
-      countUnpaid(env, accountId, 'fitting'),
-      countUnpaid(env, accountId, 'source'),
-      countGranted(env, accountId, 'fitting'),
-      countGranted(env, accountId, 'source'),
+      countAdsOn(db, accountId, dayKey(now)),
+      countUnpaid(db, accountId, 'fitting'),
+      countUnpaid(db, accountId, 'source'),
+      countGranted(db, accountId, 'fitting'),
+      countGranted(db, accountId, 'source'),
     ])
 
   return {
@@ -220,7 +222,11 @@ export async function readEarnedSourceBonus(
   accountId: string,
 ): Promise<number> {
   if (!env.DB) return 0
-  const earned = await countGranted(env, accountId, 'source')
+  const earned = await countGranted(
+    env as TrolleyScoutEnv & { DB: D1Database },
+    accountId,
+    'source',
+  )
   const cap = AD_REWARD_RATES.source.lifetimeCap ?? earned
   return Math.min(earned, cap)
 }

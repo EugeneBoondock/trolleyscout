@@ -1,5 +1,6 @@
 import type { NearbyStore } from "../../src/services/nearbyStores";
 import type { TrolleyScoutEnv } from "./env";
+import type { Page, PageCursor } from "./pageCursor";
 
 // How long a discovered store list stays fresh for a tile (Geoapify results
 // change slowly), and how long store promotions live without an end date.
@@ -454,35 +455,46 @@ export async function readDiscoveredStoreSummary(
 
 // Alert snapshots use a strict, paged deal-only reader. Query failures must
 // abort the alert batch instead of looking like an empty promotion corpus.
+// Paged by cursor rather than OFFSET: a seek to the row after the last one
+// costs a single index lookup however deep the paging goes, where OFFSET makes
+// the database count past every earlier row on every page.
 export async function readActiveStoreDealPromotionsStrict(
   env: TrolleyScoutEnv,
   nowIso: string,
   limit = 200,
-  offset = 0,
-): Promise<StorePromotion[]> {
+  cursor?: PageCursor,
+): Promise<Page<StorePromotion>> {
   if (!hasDb(env)) {
     throw new Error("Strict store promotion reads require a database binding.");
   }
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
     throw new RangeError("limit must be an integer between 1 and 1000.");
   }
-  if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw new RangeError("offset must be a non-negative integer.");
-  }
 
-  const result = await env.DB.prepare(
+  // captured_at runs newest first, so "after the cursor" means older — or the
+  // same instant with a larger id.
+  const seek = cursor
+    ? " AND (captured_at < ?2 OR (captured_at = ?2 AND id > ?3))"
+    : "";
+  const statement = env.DB.prepare(
     `SELECT id, place_id, store_name, retailer_id, kind, title, price_text,
       previous_price_text, saving_text, source_url, product_url, image_url,
       valid_from, valid_to, captured_at
       FROM store_promotions
-      WHERE kind = 'deal' AND expires_at >= ?
+      WHERE kind = 'deal' AND expires_at >= ?1${seek}
       ORDER BY captured_at DESC, id ASC
-      LIMIT ? OFFSET ?`,
-  )
-    .bind(nowIso, limit, offset)
-    .all<StorePromotionRow>();
+      LIMIT ${cursor ? "?4" : "?2"}`,
+  );
+  const result = await (cursor
+    ? statement.bind(nowIso, cursor.sort, cursor.id, limit)
+    : statement.bind(nowIso, limit)
+  ).all<StorePromotionRow>();
 
-  return result.results.map(rowToPromotion);
+  const last = result.results[result.results.length - 1];
+  return {
+    cursor: last ? { id: String(last.id), sort: last.captured_at } : undefined,
+    rows: result.results.map(rowToPromotion),
+  };
 }
 
 // Reads only catalogue rows before applying pagination. A large deal feed can

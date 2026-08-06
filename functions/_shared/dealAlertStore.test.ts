@@ -45,24 +45,28 @@ describe('deal alert store', () => {
   it('snapshots stable keys from the discovery corpus and deal-site feed', async () => {
     const dependencies = {
       nowMs: () => Date.parse('2026-07-19T12:00:00.000Z'),
-      readNormalizedDealsPage: async (_env: TrolleyScoutEnv, _now: string, _limit: number, offset: number) => offset === 0 ? [
-        {
-          productUrl: 'https://shop.test/products/rice?sku=rice-5kg&ref=home',
-          retailerName: 'Shop Test',
-          sourceUrl: 'https://shop.test/specials',
-          title: 'Rice 5 kg',
-        },
-      ] : [],
-      readPromotionsPage: async (_env: TrolleyScoutEnv, _now: string, _limit: number, offset: number) => offset === 0 ? [
-        {
-          id: 'milk-special',
-          kind: 'deal' as const,
-          placeId: 'market-test',
-          sourceUrl: 'https://market.test/specials',
-          storeName: 'Market Test',
-          title: 'Milk 2 L',
-        },
-      ] : [],
+      readNormalizedDealsPage: async () => ({
+        rows: [
+          {
+            productUrl: 'https://shop.test/products/rice?sku=rice-5kg&ref=home',
+            retailerName: 'Shop Test',
+            sourceUrl: 'https://shop.test/specials',
+            title: 'Rice 5 kg',
+          },
+        ],
+      }),
+      readPromotionsPage: async () => ({
+        rows: [
+          {
+            id: 'milk-special',
+            kind: 'deal' as const,
+            placeId: 'market-test',
+            sourceUrl: 'https://market.test/specials',
+            storeName: 'Market Test',
+            title: 'Milk 2 L',
+          },
+        ],
+      }),
       readSnapshots: async () => new Map([
         ['shop-test::specials', {
           checkedAt: '2026-07-19T12:00:00.000Z',
@@ -98,12 +102,14 @@ describe('deal alert store', () => {
     const first = await snapshotDealAlertKeys(env, dependencies)
     const second = await snapshotDealAlertKeys(env, {
       ...dependencies,
-      readNormalizedDealsPage: async (_env, _now, _limit, offset) => offset === 0 ? [{
-        productUrl: 'https://shop.test/products/rice?ref=campaign&sku=rice-5kg',
-        retailerName: 'Shop Test',
-        sourceUrl: 'https://shop.test/specials',
-        title: 'Rice 5 kg',
-      }] : [],
+      readNormalizedDealsPage: async () => ({
+        rows: [{
+          productUrl: 'https://shop.test/products/rice?ref=campaign&sku=rice-5kg',
+          retailerName: 'Shop Test',
+          sourceUrl: 'https://shop.test/specials',
+          title: 'Rice 5 kg',
+        }],
+      }),
       readSnapshots: async () => new Map([
         ['shop-test::specials', {
           checkedAt: '2026-07-19T12:05:00.000Z',
@@ -136,35 +142,48 @@ describe('deal alert store', () => {
       sourceUrl: 'https://shop.test/specials',
       title: `Deal ${index}`,
     }))
+    // Pages by cursor, the way the real reader does: seek to the row after
+    // the last id handed out, never count from the start.
     const readNormalizedDealsPage = vi.fn(async (
       _env: TrolleyScoutEnv,
       _now: string,
       limit: number,
-      offset: number,
-    ) => deals.slice(offset, offset + limit))
+      cursor: { id: string; sort: string } | undefined,
+    ) => {
+      const start = cursor ? Number(cursor.id) + 1 : 0
+      const rows = deals.slice(start, start + limit)
+      return {
+        cursor: rows.length
+          ? { id: String(start + rows.length - 1), sort: '2026-08-01' }
+          : undefined,
+        rows,
+      }
+    })
 
     const keys = await snapshotDealAlertKeys(env, {
       nowMs: () => Date.parse('2026-07-19T12:00:00.000Z'),
       readDealSites: async () => ({ deals: [], sources: [] }),
       readNormalizedDealsPage,
-      readPromotionsPage: async () => [],
+      readPromotionsPage: async () => ({ rows: [] }),
       readSnapshots: async () => new Map(),
     })
 
     expect(keys).toHaveLength(2_450)
+    // The first page starts with no cursor; every later page seeks from the
+    // last row it was given, so the database never counts past anything.
     expect(readNormalizedDealsPage).toHaveBeenNthCalledWith(
       1,
       env,
       '2026-07-19T12:00:00.000Z',
       1_000,
-      0,
+      undefined,
     )
     expect(readNormalizedDealsPage).toHaveBeenNthCalledWith(
       3,
       env,
       '2026-07-19T12:00:00.000Z',
       1_000,
-      2_000,
+      { id: '1999', sort: '2026-08-01' },
     )
   })
 
@@ -182,21 +201,30 @@ describe('deal alert store', () => {
       _env: TrolleyScoutEnv,
       _now: string,
       limit: number,
-      offset: number,
-    ) => deals.slice(offset, offset + limit)
+      cursor: { id: string; sort: string } | undefined,
+    ) => {
+      const start = cursor ? Number(cursor.id) + 1 : 0
+      const rows = deals.slice(start, start + limit)
+      return {
+        cursor: rows.length
+          ? { id: String(start + rows.length - 1), sort: '2026-08-01' }
+          : undefined,
+        rows,
+      }
+    }
 
     const keys = await snapshotDealAlertKeys(env, {
       nowMs: () => Date.parse('2026-07-19T12:00:00.000Z'),
       readDealSites: async () => ({ deals: [], sources: [] }),
       readNormalizedDealsPage,
-      readPromotionsPage: async () => [],
+      readPromotionsPage: async () => ({ rows: [] }),
       readSnapshots: async () => new Map(),
     })
     const again = await snapshotDealAlertKeys(env, {
       nowMs: () => Date.parse('2026-07-19T12:05:00.000Z'),
       readDealSites: async () => ({ deals: [], sources: [] }),
       readNormalizedDealsPage,
-      readPromotionsPage: async () => [],
+      readPromotionsPage: async () => ({ rows: [] }),
       readSnapshots: async () => new Map(),
     })
 
@@ -209,7 +237,7 @@ describe('deal alert store', () => {
   it('rejects the whole snapshot when one strict corpus lane fails', async () => {
     await expect(snapshotDealAlertKeys(env, {
       readDealSites: async () => ({ deals: [], sources: [] }),
-      readNormalizedDealsPage: async () => [],
+      readNormalizedDealsPage: async () => ({ rows: [] }),
       readPromotionsPage: async () => {
         throw new Error('store promotion query failed')
       },

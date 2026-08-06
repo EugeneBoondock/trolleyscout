@@ -1,3 +1,4 @@
+import type { Page, PageCursor } from './pageCursor'
 import type { WatchableDeal } from '../../src/services/dealWatch'
 import { readDealSiteFeedStrict, type DealSiteFeed } from './dealSiteScout'
 import {
@@ -31,14 +32,14 @@ export interface DealAlertSnapshotDependencies {
     env: TrolleyScoutEnv,
     nowIso: string,
     limit: number,
-    offset: number,
-  ) => Promise<AlertIdentityDeal[]>
+    cursor: PageCursor | undefined,
+  ) => Promise<Page<AlertIdentityDeal>>
   readPromotionsPage: (
     env: TrolleyScoutEnv,
     nowIso: string,
     limit: number,
-    offset: number,
-  ) => Promise<StorePromotion[]>
+    cursor: PageCursor | undefined,
+  ) => Promise<Page<StorePromotion>>
   readSnapshots: (env: TrolleyScoutEnv) => Promise<Map<string, DealSnapshot>>
 }
 
@@ -293,26 +294,28 @@ async function readEveryPage<T>(
     env: TrolleyScoutEnv,
     nowIso: string,
     limit: number,
-    offset: number,
-  ) => Promise<T[]>,
+    cursor: PageCursor | undefined,
+  ) => Promise<Page<T>>,
 ): Promise<T[]> {
   const rows: T[] = []
+  let cursor: PageCursor | undefined
 
-  for (let offset = 0; ; offset += SNAPSHOT_PAGE_SIZE) {
-    const page = await reader(env, nowIso, SNAPSHOT_PAGE_SIZE, offset)
-    if (!Array.isArray(page) || page.length > SNAPSHOT_PAGE_SIZE) {
+  for (;;) {
+    const page = await reader(env, nowIso, SNAPSHOT_PAGE_SIZE, cursor)
+    if (!page || !Array.isArray(page.rows) || page.rows.length > SNAPSHOT_PAGE_SIZE) {
       throw new Error('A strict alert snapshot page returned an invalid row set.')
     }
-    rows.push(...page)
-    // At the cap, stop paging and work with what we have — reading further
-    // costs O(offset) billed rows per page, and the snapshot itself truncates
-    // deterministically. Throwing here used to kill alerts entirely.
+    rows.push(...page.rows)
+    // At the cap, stop paging and work with what we have. The snapshot
+    // truncates deterministically, and throwing here used to kill alerts
+    // entirely.
     if (rows.length >= MAX_DEAL_ALERT_SNAPSHOT_KEYS) {
       return rows.slice(0, MAX_DEAL_ALERT_SNAPSHOT_KEYS)
     }
-    if (page.length < SNAPSHOT_PAGE_SIZE) {
+    if (page.rows.length < SNAPSHOT_PAGE_SIZE || !page.cursor) {
       return rows
     }
+    cursor = page.cursor
   }
 }
 
@@ -320,35 +323,50 @@ async function readNormalizedDealsPageStrict(
   env: TrolleyScoutEnv,
   nowIso: string,
   limit: number,
-  offset: number,
-): Promise<AlertIdentityDeal[]> {
+  cursor: PageCursor | undefined,
+): Promise<Page<AlertIdentityDeal>> {
   requireDatabase(env)
-  const result = await env.DB.prepare(
-    `SELECT retailer_id, title, product_url, source_url
+  // (expires_at, id) is already a total order, because id is unique — so the
+  // seek needs no other tie-breakers, and it matches idx_deal_items_active_page
+  // exactly. The old retailer_id/title tie-breakers only existed to make the
+  // OFFSET walk deterministic.
+  const seek = cursor
+    ? ' AND (expires_at > ?2 OR (expires_at = ?2 AND id > ?3))'
+    : ''
+  const statement = env.DB.prepare(
+    `SELECT id, expires_at, retailer_id, title, product_url, source_url
       FROM deal_items
-      WHERE status = 'active' AND expires_at > ?
-      ORDER BY expires_at ASC, retailer_id ASC, title ASC, id ASC
-      LIMIT ? OFFSET ?`,
+      WHERE status = 'active' AND expires_at > ?1${seek}
+      ORDER BY expires_at ASC, id ASC
+      LIMIT ${cursor ? '?4' : '?2'}`,
   )
-    .bind(nowIso, limit, offset)
-    .all<{
-      product_url: string
-      retailer_id: string
-      source_url: string
-      title: string
-    }>()
+  const result = await (cursor
+    ? statement.bind(nowIso, cursor.sort, cursor.id, limit)
+    : statement.bind(nowIso, limit)
+  ).all<{
+    expires_at: string
+    id: string
+    product_url: string
+    retailer_id: string
+    source_url: string
+    title: string
+  }>()
 
-  return result.results.map((row) => {
-    if (!row.retailer_id || !row.title || !row.product_url || !row.source_url) {
-      throw new Error('An active normalized deal row is missing identity fields.')
-    }
-    return {
-      productUrl: row.product_url,
-      retailerName: row.retailer_id,
-      sourceUrl: row.source_url,
-      title: row.title,
-    }
-  })
+  const last = result.results[result.results.length - 1]
+  return {
+    cursor: last ? { id: last.id, sort: last.expires_at } : undefined,
+    rows: result.results.map((row) => {
+      if (!row.retailer_id || !row.title || !row.product_url || !row.source_url) {
+        throw new Error('An active normalized deal row is missing identity fields.')
+      }
+      return {
+        productUrl: row.product_url,
+        retailerName: row.retailer_id,
+        sourceUrl: row.source_url,
+        title: row.title,
+      }
+    }),
+  }
 }
 
 function corpusDealIdentity(deal: WatchableDeal) {
