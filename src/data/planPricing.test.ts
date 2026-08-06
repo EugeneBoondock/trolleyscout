@@ -68,7 +68,7 @@ describe('resolveBillingCurrency', () => {
 
 describe('toSettlementCents', () => {
   it('needs no conversion for the currency PayFast settles in', () => {
-    expect(toSettlementCents(29, SETTLEMENT_CURRENCY, undefined)).toBe(2900)
+    expect(toSettlementCents(50, SETTLEMENT_CURRENCY, undefined)).toBe(5000)
   })
 
   it('converts a local price into the rand a card is debited', () => {
@@ -86,9 +86,9 @@ describe('toSettlementCents', () => {
 describe('resolvePlanPrice', () => {
   it('quotes a South African shopper in rand, with no rate involved', () => {
     expect(resolvePlanPrice('scout', 'monthly', { currencyCode: 'ZAR' })).toEqual({
-      amountCents: 2900,
+      amountCents: 5000,
       currencyCode: 'ZAR',
-      localAmount: 29,
+      localAmount: 50,
     })
   })
 
@@ -102,7 +102,7 @@ describe('resolvePlanPrice', () => {
     // The rand actually charged is the dollar price at the live rate, not the
     // South African price of the same plan.
     expect(price!.amountCents).toBe(9091)
-    expect(price!.amountCents).not.toBe(2900)
+    expect(price!.amountCents).not.toBe(5000)
   })
 
   it('prices the bigger plans above the entry plan in every currency', () => {
@@ -120,9 +120,9 @@ describe('resolvePlanPrice', () => {
 
   it('falls back to the rand price rather than losing the sale when a rate is missing', () => {
     expect(resolvePlanPrice('scout', 'monthly', { currencyCode: 'USD' })).toEqual({
-      amountCents: 2900,
+      amountCents: 5000,
       currencyCode: 'ZAR',
-      localAmount: 29,
+      localAmount: 50,
     })
   })
 

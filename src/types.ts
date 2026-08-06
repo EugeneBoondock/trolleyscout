@@ -173,6 +173,13 @@ export interface ScoutCartActionItem {
   quantity: number
   title: string
   priceText?: string
+  /**
+   * Set when productUrl is a search rather than a product page.
+   *
+   * Shops with no deal feed still stock the item; the agent opens the results
+   * and picks the closest match, the way a person would.
+   */
+  searchTerm?: string
 }
 
 /**

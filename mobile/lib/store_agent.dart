@@ -61,6 +61,7 @@ class AgentItemPlan {
     required this.productUri,
     this.quantity = 1,
     this.variant,
+    this.searchTerm,
   });
 
   final String title;
@@ -69,6 +70,18 @@ class AgentItemPlan {
 
   /// A size or colour the shopper named. Empty means "whatever is in stock".
   final String? variant;
+
+  /// Set when productUri is a search page rather than a product page. The
+  /// agent reads the results and re-points itself at the closest match.
+  final String? searchTerm;
+
+  /// The same request, now aimed at a real product page.
+  AgentItemPlan at(Uri product, String foundTitle) => AgentItemPlan(
+        title: foundTitle.isEmpty ? title : foundTitle,
+        productUri: product,
+        quantity: quantity,
+        variant: variant,
+      );
 }
 
 /// What the agent could see on the page, in one snapshot.
@@ -262,7 +275,21 @@ class StoreAgentRunner extends ChangeNotifier {
     );
   }
 
-  Future<AgentItemResult> _runItem(AgentItemPlan item) async {
+  Future<AgentItemResult> _runItem(AgentItemPlan plan) async {
+    // A shop with no deal feed hands over a search rather than a product. The
+    // agent reads the results first and re-points itself at the real page.
+    final item = plan.searchTerm == null || plan.searchTerm!.isEmpty
+        ? plan
+        : await _resolveBySearch(plan);
+    if (item == null) {
+      return AgentItemResult(
+        item: plan,
+        outcome: AgentItemOutcome.failed,
+        addedQuantity: 0,
+        note: 'Nothing on the shop matched ${plan.title}.',
+      );
+    }
+
     _emit(AgentPhase.opening, 'Opening ${item.title}');
     await _browser.load(item.productUri);
 
@@ -470,6 +497,41 @@ class StoreAgentRunner extends ChangeNotifier {
   /// as usable once it shows a buy box, says it is sold out, or asks for a
   /// login — and the last readable state is returned if nothing ever settles,
   /// so the caller can report what it saw.
+  /// Searches the shop and returns the plan aimed at the closest match.
+  ///
+  /// Null when the shop has nothing that answers the request — better than
+  /// adding the wrong thing to someone's live cart.
+  Future<AgentItemPlan?> _resolveBySearch(AgentItemPlan plan) async {
+    final term = plan.searchTerm ?? '';
+    _emit(AgentPhase.opening, 'Searching ${_host(plan)} for $term');
+    await _browser.load(plan.productUri);
+
+    for (var attempt = 0; attempt < pollAttempts; attempt++) {
+      if (_cancelled) return null;
+      final state = await _readState();
+      if (state != null && state.ready) {
+        if (state.overlayCount > 0) {
+          await _evaluateJson(agentDismissOverlaysScript());
+        }
+        final found = await _evaluateJson(agentPickSearchResultScript(term));
+        if (found != null && found['status'] == 'found') {
+          final href = found['href'];
+          final target = href is String ? Uri.tryParse(href) : null;
+          if (target != null && target.hasScheme) {
+            final label = found['label'];
+            _emit(
+              AgentPhase.reading,
+              'Found ${label is String && label.isNotEmpty ? label : term}',
+            );
+            return plan.at(target, label is String ? label : '');
+          }
+        }
+      }
+      await _wait(pollInterval);
+    }
+    return null;
+  }
+
   Future<AgentPageState?> _waitForReadyPage() async {
     AgentPageState? last;
     for (var attempt = 0; attempt < pollAttempts; attempt++) {

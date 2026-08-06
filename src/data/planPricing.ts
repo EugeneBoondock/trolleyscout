@@ -38,11 +38,18 @@ const PRICE_LISTS: Record<string, Record<PaidPlanId, LocalPlanPrice>> = {
     organization: { annual: 990, monthly: 99 },
     scout: { annual: 50, monthly: 5 },
   },
+  // The home market. Scout and Household carry the running cost of the
+  // scouting itself — the shops, the catalogues, the alerts — for a household
+  // that is watching every rand. Organisation and Developers are priced off
+  // what they include rather than off the shopping tiers: Organisation's three
+  // monthly campaigns are worth R300 at the R100 rate-card minimum before the
+  // shop profile and publishing are counted, and Developers is that plus
+  // 25,000 authenticated calls.
   ZAR: {
     developers: { annual: 9990, monthly: 999 },
-    household: { annual: 590, monthly: 59 },
+    household: { annual: 800, monthly: 80 },
     organization: { annual: 4990, monthly: 499 },
-    scout: { annual: 290, monthly: 29 },
+    scout: { annual: 500, monthly: 50 },
   },
 }
 

@@ -43,6 +43,55 @@ void main() {
     );
   });
 
+  test('searches a shop that gave it no product link', () async {
+    // Uber Eats publishes no deal feed, so Mr Scout hands the agent a search
+    // rather than a product page. Answering "I could not find one" would be
+    // wrong: the shop stocks it, and the agent can read a results page.
+    final store = _FakeStore(
+      cartBadge: 0,
+      searchIndex: {'mcfeast burger': 'https://eats.test/item/mcfeast'},
+    );
+    final browser = _FakeBrowser(store);
+    final runner = _runnerFor(browser, [
+      AgentItemPlan(
+        title: 'mcfeast burger',
+        productUri: Uri.parse('https://eats.test/search?q=mcfeast%20burger'),
+        searchTerm: 'mcfeast burger',
+      )
+    ]);
+
+    await runner.run();
+
+    expect(store.cart, 1);
+    expect(runner.phase, AgentPhase.finished);
+    // Search page first, then the product it found.
+    expect(browser.loaded, [
+      'https://eats.test/search?q=mcfeast%20burger',
+      'https://eats.test/item/mcfeast',
+    ]);
+    expect(
+      runner.log.map((entry) => entry.message).join(' | '),
+      contains('Searching eats.test for mcfeast burger'),
+    );
+  });
+
+  test('stops rather than add the wrong thing when a search finds nothing',
+      () async {
+    final store = _FakeStore(cartBadge: 0, searchIndex: const {});
+    final runner = _runnerFor(_FakeBrowser(store), [
+      AgentItemPlan(
+        title: 'mcfeast burger',
+        productUri: Uri.parse('https://eats.test/search?q=mcfeast%20burger'),
+        searchTerm: 'mcfeast burger',
+      )
+    ]);
+
+    await runner.run();
+
+    expect(store.cart, 0);
+    expect(runner.phase, AgentPhase.failed);
+  });
+
   test('waits for the buy box instead of trusting readyState', () async {
     // A React storefront reports readyState complete while the buy box is
     // still empty. An agent that believes it says "no add-to-cart button" on a
@@ -475,6 +524,7 @@ class _FakeStore {
     this.addBlocked = false,
     this.addControlAppearsOnPoll = 0,
     this.outOfStockUrls = const {},
+    this.searchIndex = const {},
   });
 
   bool signedIn;
@@ -495,6 +545,9 @@ class _FakeStore {
 
   /// Products this shop refuses, by URL.
   final Set<String> outOfStockUrls;
+
+  /// What the shop's own search finds, keyed by the phrase searched for.
+  final Map<String, String> searchIndex;
 
   String? chosenSize;
   int cart = 0;
@@ -531,6 +584,7 @@ class _FakeBrowser implements AgentBrowser {
       'dismiss-overlays' => _dismiss(),
       'select-variant' => _selectVariant(script),
       'add-to-cart' => _addToCart(),
+      'pick-search-result' => _pickSearchResult(script),
       'cart-count' => jsonEncode({
           'status': 'ok',
           'count': store.cartBadge == null ? null : store.cart,
@@ -566,6 +620,14 @@ class _FakeBrowser implements AgentBrowser {
       'blockedAddControl': buyBoxUp && store.addBlocked,
       'overlayCount': store.overlays,
     });
+  }
+
+  String _pickSearchResult(String script) {
+    final wanted =
+        RegExp(r"const wanted = '([^']*)'").firstMatch(script)?.group(1) ?? '';
+    final hit = store.searchIndex[wanted.toLowerCase()];
+    if (hit == null) return jsonEncode({'status': 'none'});
+    return jsonEncode({'status': 'found', 'href': hit, 'label': wanted});
   }
 
   String _dismiss() {

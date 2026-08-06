@@ -96,8 +96,9 @@ describe('classifyPlanChange', () => {
 
   it('ranks plans by what they cost a member each month', () => {
     expect(monthlyEquivalentCents('free', 'monthly')).toBe(0)
-    expect(monthlyEquivalentCents('scout', 'monthly')).toBe(2900)
-    expect(monthlyEquivalentCents('scout', 'annual')).toBe(2417)
+    expect(monthlyEquivalentCents('scout', 'monthly')).toBe(5000)
+    // R500 a year is R41.67 a month — the ten-month bargain, spread.
+    expect(monthlyEquivalentCents('scout', 'annual')).toBe(4167)
     expect(monthlyEquivalentCents('organization', 'annual')).toBe(41583)
   })
 })

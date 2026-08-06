@@ -450,6 +450,80 @@ String agentCartCountScript() => _wrap('cart-count', r'''
   return JSON.stringify({ status: 'ok', count: cartCount() });
 ''');
 
+/// Picks the product on a search-results page that best answers what the
+/// shopper asked for.
+///
+/// A shop with no deal feed — Uber Eats, Mr D — still stocks the thing. The
+/// agent opens the shop's own search and reads the results, rather than
+/// telling the shopper the item does not exist.
+///
+/// Anchors in the chrome (nav, header, footer) are ignored, because "Burgers"
+/// in a category strip is not a McFeast. What is left is scored on how much
+/// of the phrase it repeats, and a card that shows a price wins ties: a
+/// priced tile is a product, an unpriced one is usually a collection.
+String agentPickSearchResultScript(String wanted) => _wrap(
+    'pick-search-result',
+    'const wanted = ${_jsString(wanted)};\n' +
+        r"""
+  const words = wanted
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+  if (words.length === 0) return JSON.stringify({ status: 'none' });
+
+  // A two-word phrase has to match in full: half of "basmati rice" is "rice",
+  // which hands back rice cakes to someone who asked for basmati.
+  const required = words.length <= 2 ? words.length : Math.ceil(words.length / 2);
+  const chrome = /\b(nav|header|footer|menu|breadcrumb)\b/i;
+  const hasPrice = /(R\s?\d|\$\s?\d|\d+[.,]\d{2})/;
+
+  const labelOf = (node) => (
+    (node.getAttribute('aria-label') || '') + ' ' +
+    (node.getAttribute('title') || '') + ' ' +
+    (node.textContent || '') + ' ' +
+    Array.from(node.querySelectorAll('img'))
+      .map((img) => img.getAttribute('alt') || '')
+      .join(' ')
+  ).replace(/\s+/g, ' ').trim();
+
+  const inChrome = (node) => {
+    for (let up = node; up && up !== document.body; up = up.parentElement) {
+      const tag = (up.tagName || '').toLowerCase();
+      if (tag === 'nav' || tag === 'header' || tag === 'footer') return true;
+      const marks = (up.getAttribute('role') || '') + ' ' + (up.className || '');
+      if (typeof marks === 'string' && chrome.test(marks)) return true;
+    }
+    return false;
+  };
+
+  let best = null;
+  let bestScore = 0;
+  for (const node of deepAll('a[href]')) {
+    const href = node.getAttribute('href') || '';
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) continue;
+    if (inChrome(node)) continue;
+    const label = labelOf(node);
+    if (label.length < 3) continue;
+    const lower = label.toLowerCase();
+    let score = words.filter((word) => lower.includes(word)).length;
+    if (score < required) continue;
+    // A card with a price on it is a product; one without is usually a
+    // category or a store tile.
+    const card = node.closest('li, article, [data-testid], div') || node;
+    if (hasPrice.test(card.textContent || '')) score += 0.5;
+    if (score > bestScore) {
+      best = { node: node, label: label.slice(0, 120), href: node.href || href };
+      bestScore = score;
+    }
+  }
+
+  if (!best) return JSON.stringify({ status: 'none' });
+  best.node.scrollIntoView({ block: 'center' });
+  highlight(best.node, 'Opening this one');
+  return JSON.stringify({ status: 'found', href: best.href, label: best.label });
+""");
+
 /// Wipes the agent's highlight when it stops working, so the shopper gets a
 /// clean page back.
 String agentClearHighlightScript() => _wrap('clear-highlight', r'''

@@ -12,8 +12,8 @@ import {
 
 describe('memberPlans', () => {
   it('publishes the approved monthly and annual prices', () => {
-    expect(getMemberPlan('scout').prices).toEqual({ annual: 29000, monthly: 2900 })
-    expect(getMemberPlan('household').prices).toEqual({ annual: 59000, monthly: 5900 })
+    expect(getMemberPlan('scout').prices).toEqual({ annual: 50000, monthly: 5000 })
+    expect(getMemberPlan('household').prices).toEqual({ annual: 80000, monthly: 8000 })
     expect(getMemberPlan('organization').prices).toEqual({ annual: 499000, monthly: 49900 })
     expect(getMemberPlan('developers').prices).toEqual({ annual: 999000, monthly: 99900 })
   })
@@ -68,12 +68,12 @@ describe('memberPlans', () => {
 
   it('maps billing cycles to PayFast frequencies and trusted amounts', () => {
     expect(getPlanBillingOption('scout', 'monthly')).toMatchObject({
-      amountCents: 2900,
+      amountCents: 5000,
       frequency: 3,
       itemName: 'Trolley Scout Scout monthly',
     })
     expect(getPlanBillingOption('household', 'annual')).toMatchObject({
-      amountCents: 59000,
+      amountCents: 80000,
       frequency: 6,
       itemName: 'Trolley Scout Household annual',
     })
@@ -119,8 +119,8 @@ describe('memberPlans', () => {
     const plans = getLocalisedMemberPlans({ currencyCode: 'ZAR', rateFromZar: 1 })
     const scout = plans.find((plan) => plan.id === 'scout')!
 
-    expect(scout.localPrices).toEqual({ annual: 290, currencyCode: 'ZAR', monthly: 29 })
-    expect(scout.prices).toEqual({ annual: 29000, monthly: 2900 })
+    expect(scout.localPrices).toEqual({ annual: 500, currencyCode: 'ZAR', monthly: 50 })
+    expect(scout.prices).toEqual({ annual: 50000, monthly: 5000 })
   })
 
   it('makes the business tier available for an approved application flow', () => {

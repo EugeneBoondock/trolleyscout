@@ -42,12 +42,36 @@ describe('buildScoutCartAction', () => {
 
   it('fills the shop the shopper named, never a different one', () => {
     // Adding a Checkers product to a Pick n Pay request would be worse than
-    // doing nothing.
-    expect(
-      buildScoutCartAction('add the braai pack to my pnp basket', [
-        checkersBraaipack,
-      ]),
-    ).toBeUndefined()
+    // doing nothing. With no Pick n Pay deal to point at, it searches Pick n
+    // Pay rather than reaching for the Checkers one.
+    const action = buildScoutCartAction(
+      'add the braai pack to my pnp basket',
+      [checkersBraaipack],
+    )
+
+    expect(action?.retailerName).toBe('Pick n Pay')
+    expect(action?.items[0].productUrl).toContain('pnp.co.za')
+    expect(action?.items[0].searchTerm).toBe('braai pack')
+  })
+
+  it('searches a shop that has no deal feed at all', () => {
+    // "Add a mcfeast burger to my Uber Eats" used to answer that it could not
+    // find one, because no deal feed reaches the app from Uber Eats. The
+    // agent drives a real browser, so it can just search the shop.
+    const action = buildScoutCartAction(
+      'add a mcfeast burger to my uber eats cart',
+      [],
+    )
+
+    expect(action?.retailerName).toBe('Uber Eats')
+    expect(action?.items[0].searchTerm).toBe('mcfeast burger')
+    expect(action?.items[0].productUrl).toContain('ubereats.com')
+    // No price, because there is none until the agent is on the shop's page.
+    expect(action?.items[0].priceText).toBeUndefined()
+  })
+
+  it('offers nothing for a shop it cannot search and has no deal for', () => {
+    expect(buildScoutCartAction('add bread to my cart', [])).toBeUndefined()
   })
 
   it('reads "cheapest" as cheapest, not as first-ranked', () => {

@@ -39,6 +39,44 @@ const RETAILER_IDS: Record<string, string> = {
   'mr price': 'mrp',
 }
 
+/**
+ * Where to search a shop that has no deal feed.
+ *
+ * Most shops reach the app through their specials, so a cart request is
+ * answered from a deal we already hold. Uber Eats, Mr D and Sixty60 publish no
+ * feed at all, which meant Mr Scout could only say it could not find a
+ * McFeast — while the agent it was speaking for drives a real browser and
+ * could simply search for one.
+ *
+ * `{q}` is replaced with what the shopper asked for. The agent opens the
+ * results, picks the closest match and adds it, the way a person would.
+ */
+const STORE_SEARCH_URLS: Record<string, string> = {
+  'uber eats': 'https://www.ubereats.com/za/search?q={q}',
+  'mr d': 'https://www.mrdfood.com/search?q={q}',
+  sixty60: 'https://www.sixty60.co.za/search?q={q}',
+  checkers: 'https://www.checkers.co.za/search/all?q={q}',
+  'pick n pay': 'https://www.pnp.co.za/search/{q}',
+  woolworths: 'https://www.woolworths.co.za/cat?Ntt={q}',
+  takealot: 'https://www.takealot.com/all?qsearch={q}',
+  makro: 'https://www.makro.co.za/search/?text={q}',
+  'dis-chem': 'https://www.dischem.co.za/catalogsearch/result?q={q}',
+  clicks: 'https://clicks.co.za/search?q={q}',
+}
+
+const STORE_DISPLAY_NAMES: Record<string, string> = {
+  'uber eats': 'Uber Eats',
+  'mr d': 'Mr D Food',
+  sixty60: 'Checkers Sixty60',
+  checkers: 'Checkers',
+  'pick n pay': 'Pick n Pay',
+  woolworths: 'Woolworths',
+  takealot: 'Takealot',
+  makro: 'Makro',
+  'dis-chem': 'Dis-Chem',
+  clicks: 'Clicks',
+}
+
 const STORE_ALIASES: ReadonlyArray<readonly [string, RegExp]> = [
   ['pick n pay', /\b(pick\s*'?\s*n\s*'?\s*pay|picknpay|pnp)\b/i],
   ['checkers', /\bcheckers\b/i],
@@ -52,6 +90,11 @@ const STORE_ALIASES: ReadonlyArray<readonly [string, RegExp]> = [
   ['spar', /\bspar\b/i],
   ['boxer', /\bboxer\b/i],
   ['mr price', /\b(mr\s*price|mrp)\b/i],
+  // Delivery apps. No deal feed reaches the app from any of these, so a cart
+  // request naming one is always answered by searching the shop itself.
+  ['uber eats', /\b(uber\s*eats|ubereats)\b/i],
+  ['mr d', /\bmr\s*d(\s*food)?\b/i],
+  ['sixty60', /\b(sixty\s*60|sixty60)\b/i],
 ]
 
 const MAX_QUANTITY = 12
@@ -62,6 +105,10 @@ export function buildScoutCartAction(
 ): ScoutCartAction | undefined {
   if (!CART_INTENT.test(message)) return undefined
 
+  // A shopper who names a shop means that shop. Filling a different cart
+  // would be worse than doing nothing.
+  const namedStore = STORE_ALIASES.find(([, pattern]) => pattern.test(message))
+
   const usable = deals.filter(
     (deal) =>
       deal.soldOut !== true &&
@@ -69,15 +116,15 @@ export function buildScoutCartAction(
       /^https?:\/\//i.test(deal.productUrl) &&
       deal.title.trim().length > 0,
   )
-  if (usable.length === 0) return undefined
+  // No deal to point at. If the shopper named a shop the agent can search,
+  // send it there instead of answering that the item does not exist — a shop
+  // with no deal feed still has the product on its shelf.
+  if (usable.length === 0) return searchAction(message, namedStore?.[0])
 
-  // A shopper who names a shop means that shop. Filling a different cart
-  // would be worse than doing nothing, so an unmatched name yields no action.
-  const namedStore = STORE_ALIASES.find(([, pattern]) => pattern.test(message))
   const scoped = namedStore
     ? usable.filter((deal) => namedStore[1].test(deal.retailerName))
     : usable
-  if (scoped.length === 0) return undefined
+  if (scoped.length === 0) return searchAction(message, namedStore?.[0])
 
   const ordered = /\b(cheapest|lowest|best)\s*(price|priced)?\b/i.test(message)
     ? [...scoped].sort((left, right) => priceOf(left) - priceOf(right))
@@ -248,4 +295,37 @@ export function namedRetailerId(message: string): string | undefined {
 /** True when the shopper is asking for something to be put in a cart. */
 export function hasCartIntent(message: string): boolean {
   return CART_INTENT.test(message)
+}
+
+/**
+ * A cart action that searches the shop rather than opening a known product.
+ *
+ * Carries no price, because there is none to carry until the agent is looking
+ * at the shop's own page. The app says as much on the button.
+ */
+function searchAction(
+  message: string,
+  storeKey: string | undefined,
+): ScoutCartAction | undefined {
+  if (!storeKey) return undefined
+  const template = STORE_SEARCH_URLS[storeKey]
+  if (!template) return undefined
+
+  const wanted = requestedItems(message)
+  if (wanted.length === 0) return undefined
+
+  const items: ScoutCartActionItem[] = wanted
+    .slice(0, MAX_ITEMS)
+    .map((phrase) => ({
+      productUrl: template.replace('{q}', encodeURIComponent(phrase)),
+      quantity: quantityIn(phrase),
+      searchTerm: phrase,
+      title: phrase,
+    }))
+
+  return {
+    items,
+    retailerId: slug(storeKey),
+    retailerName: STORE_DISPLAY_NAMES[storeKey] ?? storeKey,
+  }
 }

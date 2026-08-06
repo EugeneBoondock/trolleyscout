@@ -2404,6 +2404,7 @@ class _CartActionCard extends StatelessWidget {
             title: item.title,
             productUri: uri,
             quantity: item.quantity,
+            searchTerm: item.searchTerm,
           );
         })
         .whereType<AgentItemPlan>()

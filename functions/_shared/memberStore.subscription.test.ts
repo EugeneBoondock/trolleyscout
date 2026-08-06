@@ -110,7 +110,7 @@ describe('subscription cancellation and resubscription', () => {
       redirectFields: {
         amount: '0.00',
         billing_date: '2099-09-04',
-        recurring_amount: '29.00',
+        recurring_amount: '50.00',
       },
       status: 'checkout_required',
     })
@@ -125,7 +125,7 @@ describe('subscription cancellation and resubscription', () => {
     }>()
 
     expect(attempt).toEqual({
-      amount_cents: 2900,
+      amount_cents: 5000,
       billing_starts_at: PAID_UNTIL,
       initial_amount_cents: 0,
     })

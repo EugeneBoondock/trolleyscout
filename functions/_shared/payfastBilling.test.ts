@@ -33,7 +33,7 @@ describe('payfastBilling', () => {
     })
 
     expect(Object.fromEntries(fields)).toMatchObject({
-      amount: '29.00',
+      amount: '50.00',
       cancel_url: 'https://trolleyscout.co.za/Subscription?payfast=cancelled',
       custom_str1: 'member-test',
       custom_str2: 'scout',
@@ -46,7 +46,7 @@ describe('payfastBilling', () => {
       merchant_id: '10000100',
       merchant_key: 'merchant-key',
       notify_url: 'https://trolleyscout.co.za/api/payfast-itn',
-      recurring_amount: '29.00',
+      recurring_amount: '50.00',
       return_url: 'https://trolleyscout.co.za/Subscription?payfast=success',
       subscription_type: '1',
     })
@@ -54,7 +54,7 @@ describe('payfastBilling', () => {
   })
 
   it('requests a sandbox Onsite UUID using form encoding', async () => {
-    const fields = new URLSearchParams({ amount: '29.00', signature: 'signature-test' })
+    const fields = new URLSearchParams({ amount: '50.00', signature: 'signature-test' })
     const fetcher = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ uuid: 'onsite-test' }), {
         headers: { 'content-type': 'application/json' },
@@ -98,7 +98,7 @@ describe('payfastBilling', () => {
     expect(Object.fromEntries(fields)).toMatchObject({
       amount: '0.00',
       billing_date: '2026-09-04',
-      recurring_amount: '29.00',
+      recurring_amount: '50.00',
       subscription_type: '1',
     })
     expect(verifyPayFastSignature(fields, 'secret phrase')).toBe(true)
@@ -110,7 +110,7 @@ describe('payfastBilling', () => {
     fields.append('pf_payment_id', 'pf-test')
     fields.append('payment_status', 'COMPLETE')
     fields.append('item_name', 'Trolley Scout Scout monthly')
-    fields.append('amount_gross', '29.00')
+    fields.append('amount_gross', '50.00')
     fields.append('custom_str1', 'member-test')
     fields.append('custom_str2', 'scout')
     fields.append('custom_str3', 'monthly')
@@ -120,13 +120,13 @@ describe('payfastBilling', () => {
 
     expect(
       validatePayFastItn(fields, {
-        amountCents: 2900,
+        amountCents: 5000,
         attemptId: 'billing-test',
         merchantId: '10000100',
         passphrase: 'secret phrase',
       }),
     ).toEqual({
-      amountCents: 2900,
+      amountCents: 5000,
       paymentId: 'pf-test',
       status: 'COMPLETE',
       token: 'subscription-test',
@@ -145,7 +145,7 @@ describe('payfastBilling', () => {
 
     expect(
       validatePayFastItn(fields, {
-        amountCents: 2900,
+        amountCents: 5000,
         attemptId: 'billing-test',
         merchantId: '10000100',
         passphrase: 'secret phrase',

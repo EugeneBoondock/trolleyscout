@@ -2770,6 +2770,7 @@ class ScoutCartActionItem {
     required this.productUrl,
     this.quantity = 1,
     this.priceText,
+    this.searchTerm,
   });
 
   final String title;
@@ -2777,12 +2778,20 @@ class ScoutCartActionItem {
   final int quantity;
   final String? priceText;
 
+  /// Set when productUrl is the shop's search rather than a product page.
+  ///
+  /// Uber Eats, Mr D and Sixty60 publish no deal feed, so there is no product
+  /// link to hand over — but the agent drives a real browser, so it can search
+  /// the shop and pick the closest match the way a person would.
+  final String? searchTerm;
+
   factory ScoutCartActionItem.fromJson(Map<String, dynamic> json) =>
       ScoutCartActionItem(
         title: _string(json['title'], ''),
         productUrl: _string(json['productUrl'], ''),
         quantity: _int(json['quantity'], 1),
         priceText: _optionalString(json['priceText']),
+        searchTerm: _optionalString(json['searchTerm']),
       );
 }
 
