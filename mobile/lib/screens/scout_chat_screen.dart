@@ -2419,8 +2419,9 @@ class _CartActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final item = action.items.first;
-    final quantity = item.quantity;
+    final items = action.items;
+    final item = items.first;
+    final totalUnits = items.fold<int>(0, (sum, line) => sum + line.quantity);
     return Container(
       key: const ValueKey('scout-cart-action'),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
@@ -2450,11 +2451,15 @@ class _CartActionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'I CAN ADD THIS FOR YOU',
+                      items.length == 1
+                          ? 'I CAN ADD THIS FOR YOU'
+                          : 'I CAN ADD ALL ${items.length} FOR YOU',
                       style: TS.eyebrowOf(context).copyWith(fontSize: 9),
                     ),
                     Text(
-                      item.title,
+                      items.length == 1
+                          ? item.title
+                          : '${items.length} items · $totalUnits in the cart',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w900),
@@ -2462,8 +2467,10 @@ class _CartActionCard extends StatelessWidget {
                     Text(
                       [
                         action.retailerName,
-                        if (item.priceText != null) item.priceText!,
-                        if (quantity > 1) 'x$quantity',
+                        if (items.length == 1 && item.priceText != null)
+                          item.priceText!,
+                        if (items.length == 1 && item.quantity > 1)
+                          'x${item.quantity}',
                       ].join('  ·  '),
                       style: TextStyle(
                         color: TS.mutedOf(context),
@@ -2476,6 +2483,42 @@ class _CartActionCard extends StatelessWidget {
               ),
             ],
           ),
+          if (items.length > 1) ...[
+            const SizedBox(height: 9),
+            for (final line in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Row(
+                  children: [
+                    Text(
+                      '${line.quantity}x',
+                      style: TextStyle(
+                        color: TS.mutedOf(context),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        line.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    if (line.priceText != null)
+                      Text(
+                        line.priceText!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
@@ -2483,7 +2526,11 @@ class _CartActionCard extends StatelessWidget {
               key: const ValueKey('scout-cart-action-run'),
               onPressed: () => _run(context),
               icon: const Icon(Icons.add_shopping_cart_rounded),
-              label: Text('Add to my ${action.retailerName} cart'),
+              label: Text(
+                items.length == 1
+                    ? 'Add to my ${action.retailerName} cart'
+                    : 'Add all ${items.length} to my ${action.retailerName} cart',
+              ),
             ),
           ),
           const SizedBox(height: 6),

@@ -1,4 +1,8 @@
-import type { ScoutCartAction, ScoutChatDealCard } from '../../src/types'
+import type {
+  ScoutCartAction,
+  ScoutCartActionItem,
+  ScoutChatDealCard,
+} from '../../src/types'
 
 /**
  * Turns "add the cheapest 5kg braai pack to my picknpay cart" into something
@@ -79,19 +83,126 @@ export function buildScoutCartAction(
     ? [...scoped].sort((left, right) => priceOf(left) - priceOf(right))
     : scoped
 
-  const chosen = ordered[0]
-  return {
-    items: [
-      {
-        priceText: chosen.priceText,
-        productUrl: chosen.productUrl,
-        quantity: quantityIn(message),
-        title: chosen.title,
-      },
-    ],
-    retailerId: slug(chosen.retailerName),
-    retailerName: chosen.retailerName,
+  // A shopper who lists several things wants all of them, added one after the
+  // other, without being asked again between each. The agent already drives a
+  // list; this is what stops the answer collapsing to the first thing they
+  // said.
+  const requested = requestedItems(message)
+  const items: ScoutCartActionItem[] = []
+  const taken = new Set<string>()
+
+  if (requested.length > 1) {
+    for (const phrase of requested) {
+      const match = bestMatch(phrase, ordered, taken)
+      if (!match) continue
+      taken.add(match.productUrl)
+      items.push({
+        priceText: match.priceText,
+        productUrl: match.productUrl,
+        quantity: quantityIn(phrase),
+        title: match.title,
+      })
+      if (items.length >= MAX_ITEMS) break
+    }
   }
+
+  // One thing asked for, or nothing in the list could be matched: fall back to
+  // the single best candidate rather than offering an empty cart.
+  if (items.length === 0) {
+    const chosen = ordered[0]
+    items.push({
+      priceText: chosen.priceText,
+      productUrl: chosen.productUrl,
+      quantity: quantityIn(message),
+      title: chosen.title,
+    })
+  }
+
+  const retailer =
+    ordered.find((deal) => deal.productUrl === items[0].productUrl) ?? ordered[0]
+  return {
+    items,
+    retailerId: slug(retailer.retailerName),
+    retailerName: retailer.retailerName,
+  }
+}
+
+/// Never open more than this in one run. A runaway list is a long, silent
+/// session driving someone's live store account.
+const MAX_ITEMS = 12
+
+/**
+ * The separate things a shopper asked for.
+ *
+ * "add milk, bread and 2kg of rice to my picknpay cart" is three items, not
+ * one. The leading verb and the trailing "to my ... cart" are stripped first
+ * so neither can be mistaken for a product.
+ */
+export function requestedItems(message: string): string[] {
+  const body = message
+    .replace(/^.*?\b(add|put|chuck|throw|place|load|stick)\b/i, '')
+    .replace(
+      /\b(to|in|into|on)\b\s+(my|the)?\s*[\w'\s-]{0,24}\b(cart|basket|trolley|bag|order)\b.*$/i,
+      '',
+    )
+    .trim()
+  if (!body) return []
+  return body
+    .split(/\s*,\s*|\s+and\s+|\s*&\s*|\s*\+\s*/i)
+    .map((part) => part.replace(/^(a|an|the|some|my)\s+/i, '').trim())
+    .filter((part) => part.length > 1)
+}
+
+/// The deal that best answers one phrase, or nothing when none really does.
+function bestMatch(
+  phrase: string,
+  deals: readonly ScoutChatDealCard[],
+  taken: ReadonlySet<string>,
+): ScoutChatDealCard | undefined {
+  const words = meaningfulWords(phrase)
+  if (words.length === 0) return undefined
+
+  let best: ScoutChatDealCard | undefined
+  let bestScore = 0
+  for (const deal of deals) {
+    if (taken.has(deal.productUrl)) continue
+    const title = deal.title.toLowerCase()
+    const score = words.filter((word) => title.includes(word)).length
+    // A short phrase has to match in full. "Half the words" of "basmati rice"
+    // is one word, which hands rice cakes to someone who asked for basmati.
+    // Longer phrases carry enough detail that half is a fair bar.
+    const required =
+      words.length <= 2 ? words.length : Math.ceil(words.length / 2)
+    if (score > bestScore && score >= required) {
+      best = deal
+      bestScore = score
+    }
+  }
+  return best
+}
+
+const FILLER = new Set([
+  'cheapest',
+  'best',
+  'lowest',
+  'price',
+  'priced',
+  'for',
+  'get',
+  'please',
+  'also',
+  'some',
+  'any',
+])
+
+function meaningfulWords(phrase: string): string[] {
+  return phrase
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(
+      (word) => word.length > 2 && !FILLER.has(word) && !/^\d+$/.test(word),
+    )
 }
 
 /// "2x", "x2", "two packs" — anything else is one.

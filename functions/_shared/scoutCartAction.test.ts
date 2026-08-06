@@ -4,6 +4,7 @@ import {
   buildScoutCartAction,
   hasCartIntent,
   namedRetailerId,
+  requestedItems,
 } from './scoutCartAction'
 import type { ScoutChatDealCard } from '../../src/types'
 
@@ -115,5 +116,111 @@ describe('named retailer', () => {
     expect(hasCartIntent('add basmati rice to my picknpay cart')).toBe(true)
     expect(hasCartIntent('put 2kg of rice in my trolley')).toBe(true)
     expect(hasCartIntent('what rice is cheapest?')).toBe(false)
+  })
+})
+
+describe('a whole grocery list in one go', () => {
+  const milk: ScoutChatDealCard = {
+    id: 'pnp-milk',
+    priceText: 'R24.99',
+    productUrl: 'https://www.pnp.co.za/full-cream-milk-2l/p/1',
+    retailerName: 'Pick n Pay',
+    title: 'Clover Full Cream Milk 2L',
+  }
+  const bread: ScoutChatDealCard = {
+    id: 'pnp-bread',
+    priceText: 'R18.99',
+    productUrl: 'https://www.pnp.co.za/white-bread/p/2',
+    retailerName: 'Pick n Pay',
+    title: 'Albany White Bread 700g',
+  }
+  const rice: ScoutChatDealCard = {
+    id: 'pnp-rice',
+    priceText: 'R89.99',
+    productUrl: 'https://www.pnp.co.za/basmati-rice/p/3',
+    retailerName: 'Pick n Pay',
+    title: 'Spekko Basmati Rice 2kg',
+  }
+  const shelf = [milk, bread, rice, pnpBraaipack]
+
+  it('adds every item the shopper listed, not just the first', () => {
+    // The whole point: no going back and forth per item.
+    const action = buildScoutCartAction(
+      'add milk, bread and basmati rice to my picknpay cart',
+      shelf,
+    )
+
+    expect(action?.items.map((item) => item.title)).toEqual([
+      'Clover Full Cream Milk 2L',
+      'Albany White Bread 700g',
+      'Spekko Basmati Rice 2kg',
+    ])
+    expect(action?.retailerName).toBe('Pick n Pay')
+  })
+
+  it('keeps a per-item quantity from the item that carried it', () => {
+    const action = buildScoutCartAction(
+      'add 2x milk and bread to my pnp cart',
+      shelf,
+    )
+
+    const quantities = Object.fromEntries(
+      (action?.items ?? []).map((item) => [item.title, item.quantity]),
+    )
+    expect(quantities['Clover Full Cream Milk 2L']).toBe(2)
+    expect(quantities['Albany White Bread 700g']).toBe(1)
+  })
+
+  it('never adds the same product twice for two similar phrases', () => {
+    const action = buildScoutCartAction(
+      'add milk and full cream milk to my pnp cart',
+      shelf,
+    )
+
+    const urls = (action?.items ?? []).map((item) => item.productUrl)
+    expect(new Set(urls).size).toBe(urls.length)
+  })
+
+  it('skips what the shop does not have and still adds the rest', () => {
+    const action = buildScoutCartAction(
+      'add milk, caviar and bread to my pnp cart',
+      shelf,
+    )
+
+    expect(action?.items.map((item) => item.title)).toEqual([
+      'Clover Full Cream Milk 2L',
+      'Albany White Bread 700g',
+    ])
+  })
+
+  it('will not hand over rice cakes to someone who asked for basmati rice',
+    () => {
+      // Half the phrase's words have to land, so one shared word is not a match.
+      const cakes: ScoutChatDealCard = {
+        ...rice,
+        id: 'pnp-cakes',
+        productUrl: 'https://www.pnp.co.za/rice-cakes/p/9',
+        title: 'Rice Cakes Salted 150g',
+      }
+      const action = buildScoutCartAction(
+        'add milk and basmati rice to my pnp cart',
+        [milk, cakes],
+      )
+
+      expect(action?.items.map((item) => item.title)).toEqual([
+        'Clover Full Cream Milk 2L',
+      ])
+    })
+
+  it('still answers a single request with a single item', () => {
+    const action = buildScoutCartAction('add milk to my pnp cart', shelf)
+    expect(action?.items).toHaveLength(1)
+  })
+
+  it('reads the list without swallowing the shop name as a product', () => {
+    expect(requestedItems('add milk, bread and rice to my picknpay cart'))
+      .toEqual(['milk', 'bread', 'rice'])
+    expect(requestedItems('add the cheapest 5kg chicken braai pack to my pnp cart'))
+      .toEqual(['cheapest 5kg chicken braai pack'])
   })
 })

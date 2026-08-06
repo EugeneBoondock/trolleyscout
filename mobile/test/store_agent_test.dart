@@ -293,6 +293,67 @@ void main() {
     expect(runner.results.single.note, contains('sold out'));
   });
 
+
+  test('works through a whole grocery list without stopping to ask', () async {
+    // The shopper asked once. Three products, one signed-in session, no
+    // question between them — that is the whole point of handing over a list.
+    final store = _FakeStore(cartBadge: 0);
+    final browser = _FakeBrowser(store);
+    final runner = _runnerFor(browser, [
+      AgentItemPlan(
+        title: 'Clover Full Cream Milk 2L',
+        productUri: Uri.parse('https://shop.test/milk'),
+        quantity: 2,
+      ),
+      AgentItemPlan(
+        title: 'Albany White Bread 700g',
+        productUri: Uri.parse('https://shop.test/bread'),
+      ),
+      AgentItemPlan(
+        title: 'Spekko Basmati Rice 2kg',
+        productUri: Uri.parse('https://shop.test/rice'),
+      ),
+    ]);
+
+    await runner.run();
+
+    expect(browser.loaded, [
+      'https://shop.test/milk',
+      'https://shop.test/bread',
+      'https://shop.test/rice',
+    ]);
+    // Two of the milk plus one each of the others.
+    expect(store.cart, 4);
+    expect(runner.addedCount, 4);
+    expect(runner.phase, AgentPhase.finished);
+    expect(runner.awaitingSignIn, isFalse);
+    expect(
+      runner.log.last.message,
+      contains('Added 4 items to your cart'),
+    );
+  });
+
+  test('one missing item does not abandon the rest of the list', () async {
+    // A sold-out product mid-list is reported and stepped over; the shopper
+    // still gets everything else they asked for.
+    final store = _FakeStore(cartBadge: 0, outOfStockUrls: {'https://shop.test/bread'});
+    final browser = _FakeBrowser(store);
+    final runner = _runnerFor(browser, [
+      AgentItemPlan(title: 'Milk', productUri: Uri.parse('https://shop.test/milk')),
+      AgentItemPlan(title: 'Bread', productUri: Uri.parse('https://shop.test/bread')),
+      AgentItemPlan(title: 'Rice', productUri: Uri.parse('https://shop.test/rice')),
+    ]);
+
+    await runner.run();
+
+    expect(store.cart, 2);
+    expect(runner.results.map((result) => result.outcome), [
+      AgentItemOutcome.added,
+      AgentItemOutcome.outOfStock,
+      AgentItemOutcome.added,
+    ]);
+  });
+
   testWidgets('the panel narrates each step as it happens', (tester) async {
     final store = _FakeStore(cartBadge: 0, signedIn: false);
     final runner = _runnerFor(_FakeBrowser(store), [_jeans]);
@@ -413,6 +474,7 @@ class _FakeStore {
     this.outOfStock = false,
     this.addBlocked = false,
     this.addControlAppearsOnPoll = 0,
+    this.outOfStockUrls = const {},
   });
 
   bool signedIn;
@@ -430,6 +492,9 @@ class _FakeStore {
 
   /// How many page-state reads happen before the buy box renders.
   final int addControlAppearsOnPoll;
+
+  /// Products this shop refuses, by URL.
+  final Set<String> outOfStockUrls;
 
   String? chosenSize;
   int cart = 0;
@@ -485,11 +550,14 @@ class _FakeBrowser implements AgentBrowser {
       'onLoginPage': !store.signedIn,
       'cartCount': store.cartBadge == null ? null : store.cart,
       'outOfStock': store.outOfStock ||
+          (loaded.isNotEmpty && store.outOfStockUrls.contains(loaded.last)) ||
           (store.chosenSize != null &&
               store.sizesThatGoOutOfStockOnPick.contains(store.chosenSize)),
       'needsVariant': store.sizes.isNotEmpty && store.chosenSize == null,
       'addControlCount': buyBoxUp &&
               !store.outOfStock &&
+              !(loaded.isNotEmpty &&
+                  store.outOfStockUrls.contains(loaded.last)) &&
               !store.addBlocked &&
               !(store.chosenSize != null &&
                   store.sizesThatGoOutOfStockOnPick.contains(store.chosenSize))
