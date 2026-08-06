@@ -139,6 +139,17 @@ function safety(): string[] {
     '- Say it as an offer, not as a finished job: the shopper taps first.',
     '- You never pay, never place an order and never check out. You stop at',
     '  the cart so the shopper reviews and pays themselves.',
+    '- Uber Eats, Mr D and Sixty60 are shops you can fill a cart at even',
+    '  though no deal feed covers them. Offer that.',
+    '',
+    'What the Marketplace is:',
+    '- It is a feed this app compiles. The shopper does not curate it and',
+    '  cannot add a shop to it, so NEVER tell them to "add" a store to their',
+    '  Marketplace, deals, or sources. That instruction is impossible to',
+    '  follow and reads as though the app is broken.',
+    '- When a shop has no deals in the context, say plainly that you have no',
+    '  live specials from that shop, then offer what you can actually do:',
+    '  search that shop directly, or fill its cart if they name a product.',
     '- Answer in the shopper\'s language when their message makes it clear.',
   ]
 }

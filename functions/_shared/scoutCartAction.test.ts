@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildScoutCartAction } from './scoutCartAction'
+import {
+  buildScoutCartAction,
+  hasCartIntent,
+  namedRetailerId,
+} from './scoutCartAction'
 import type { ScoutChatDealCard } from '../../src/types'
 
 const pnpBraaipack: ScoutChatDealCard = {
@@ -92,5 +96,24 @@ describe('buildScoutCartAction', () => {
         { ...pnpBraaipack, soldOut: true },
       ]),
     ).toBeUndefined()
+  })
+})
+
+describe('named retailer', () => {
+  it('picks out the shop the shopper named, in the id search uses', () => {
+    expect(namedRetailerId('add basmati rice to my picknpay cart'))
+      .toBe('pick-n-pay')
+    expect(namedRetailerId('put milk in my Checkers basket')).toBe('checkers')
+    expect(namedRetailerId('add panado to my dischem trolley')).toBe('dis-chem')
+    expect(namedRetailerId('add rice to my cart')).toBeUndefined()
+  })
+
+  it('recognises a cart request even when it reads like a grocery list', () => {
+    // This is what decides whether the shop's whole shelf is searched. Without
+    // it the only basmati rice Mr Scout can see is basmati rice on special, so
+    // it tells the shopper a shop that stocks it does not.
+    expect(hasCartIntent('add basmati rice to my picknpay cart')).toBe(true)
+    expect(hasCartIntent('put 2kg of rice in my trolley')).toBe(true)
+    expect(hasCartIntent('what rice is cheapest?')).toBe(false)
   })
 })

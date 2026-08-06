@@ -168,8 +168,9 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
       }
       try {
         final state = AgentPageState.fromJson(
-          decodeAgentJson(await _controller
-                  .runJavaScriptReturningResult(agentPageStateScript())) ??
+          decodeAgentJson(await _controller.runJavaScriptReturningResult(
+                agentPageStateScript(accountPath: store.accountPath),
+              )) ??
               const {},
         );
         if (!state.signedIn) return;
@@ -186,6 +187,7 @@ class _TrolleyScoutBrowserState extends State<TrolleyScoutBrowser> {
 
   void _startAgent() {
     final runner = StoreAgentRunner(
+      accountPath: storeForHost(widget.uri.host)?.accountPath ?? '',
       browser: _WebViewAgentBrowser(_controller),
       items: widget.agentItems,
     );

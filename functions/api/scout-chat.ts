@@ -46,7 +46,11 @@ import {
   buildGroceryPlan,
   parseGroceryPlanRequest,
 } from '../_shared/groceryPlanner'
-import { buildScoutCartAction } from '../_shared/scoutCartAction'
+import {
+  buildScoutCartAction,
+  hasCartIntent,
+  namedRetailerId,
+} from '../_shared/scoutCartAction'
 import {
   parseMarketplaceProductQuery,
   rankMarketplaceProductDeals,
@@ -111,7 +115,10 @@ export interface ScoutChatDependencies {
     env: TrolleyScoutEnv,
     input: ScoutRetrievalLogInput,
   ) => Promise<string | undefined>
-  retrieveProducts: (message: string) => Promise<ProductRetrievalResult>
+  retrieveProducts: (
+    message: string,
+    retailerId?: string,
+  ) => Promise<ProductRetrievalResult>
   runDeepSeek: (
     env: TrolleyScoutEnv,
     request: DeepSeekFallbackRequest,
@@ -146,7 +153,8 @@ const defaultDependencies: ScoutChatDependencies = {
       .filter((leaflet) => (leaflet.countryCode ?? 'ZA').toUpperCase() === countryCode),
   loadPersonalContext: loadScoutPersonalContext,
   logRetrieval: logScoutRetrieval,
-  retrieveProducts: (message) => retrieveProducts(message),
+  retrieveProducts: (message, retailerId) =>
+    retrieveProducts(message, retailerId ? { retailerIds: [retailerId] } : {}),
   runDeepSeek: runDeepSeekFallback,
 }
 
@@ -208,7 +216,13 @@ export async function handleScoutChat(
   const currencyCode = normalizedCurrencyCode(session.account.currencyCode)
   const groceryRequest = parseGroceryPlanRequest(input.message)
   const personalOfferRequest = isPersonalOfferRequest(input.message)
-  const shopping = !groceryRequest && !personalOfferRequest
+  // "Add basmati rice to my picknpay cart" is a shopping request even when the
+  // grocery planner also recognises it: without a live shelf search the only
+  // basmati rice Mr Scout can see is basmati rice that happens to be on
+  // special, so it tells the shopper the shop does not stock it.
+  const cartIntent = hasCartIntent(input.message)
+  const namedRetailer = namedRetailerId(input.message)
+  const shopping = (!groceryRequest && !personalOfferRequest) || cartIntent
   // The deterministic reader recognises most of what shoppers ask for at no
   // cost, so "50 inch television" costs one model call rather than two. It
   // cannot fix a typo or place an unfamiliar product though — "teh cheapest
@@ -257,7 +271,11 @@ export async function handleScoutChat(
       .then((context) => personalContextForRequest(input.message, context))
       .catch(() => ({})),
     shopping
-      ? dependencies.retrieveProducts(input.message).catch(() => undefined)
+      ? dependencies
+          // Pointed at the shop the shopper named, so the answer is about
+          // that shop's shelf rather than whichever retailer replied first.
+          .retrieveProducts(input.message, namedRetailer)
+          .catch(() => undefined)
       : Promise.resolve(undefined),
   ])
   const rankedProductResult = productQuery

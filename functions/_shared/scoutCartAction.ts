@@ -18,6 +18,23 @@ const CART_INTENT =
   /\b(add|put|chuck|throw|place|load|stick)\b[^.?!]{0,90}\b(cart|basket|trolley|bag)\b/i
 
 /// Shoppers type "picknpay", "pnp" and "Pick 'n Pay" for the same shop.
+/// Retailer ids as the product retrieval knows them, so a store the shopper
+/// names can be searched directly rather than guessed at from a category.
+const RETAILER_IDS: Record<string, string> = {
+  'pick n pay': 'pick-n-pay',
+  checkers: 'checkers',
+  shoprite: 'shoprite',
+  woolworths: 'woolworths',
+  makro: 'makro',
+  game: 'game',
+  takealot: 'takealot',
+  'dis-chem': 'dis-chem',
+  clicks: 'clicks',
+  spar: 'spar',
+  boxer: 'boxer',
+  'mr price': 'mrp',
+}
+
 const STORE_ALIASES: ReadonlyArray<readonly [string, RegExp]> = [
   ['pick n pay', /\b(pick\s*'?\s*n\s*'?\s*pay|picknpay|pnp)\b/i],
   ['checkers', /\bcheckers\b/i],
@@ -102,4 +119,22 @@ function slug(retailerName: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
+}
+
+/**
+ * The shop the shopper named, if any.
+ *
+ * Used to point a live product search at that one shop. Without it, "add
+ * basmati rice to my picknpay cart" searches five retailers, ranks whichever
+ * answered first, and then the Pick n Pay filter finds nothing — so the
+ * shopper is told there is no basmati rice at a shop that stocks it.
+ */
+export function namedRetailerId(message: string): string | undefined {
+  const match = STORE_ALIASES.find(([, pattern]) => pattern.test(message))
+  return match ? RETAILER_IDS[match[0]] : undefined
+}
+
+/** True when the shopper is asking for something to be put in a cart. */
+export function hasCartIntent(message: string): boolean {
+  return CART_INTENT.test(message)
 }

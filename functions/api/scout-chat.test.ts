@@ -731,7 +731,13 @@ describe('handleScoutChat', () => {
     }, deps)
 
     expect(response.status).toBe(200)
-    expect(deps.retrieveProducts).toHaveBeenCalledWith('can you get me 50 inch televisions?')
+    // The second argument scopes the search to a shop the shopper named;
+    // this message names none, so it stays undefined and every candidate
+    // retailer is searched.
+    expect(deps.retrieveProducts).toHaveBeenCalledWith(
+      'can you get me 50 inch televisions?',
+      undefined,
+    )
 
     const body = await response.json() as {
       data: { answer: { deals: Array<{ priceText: string; retailerName: string; title: string }> } }

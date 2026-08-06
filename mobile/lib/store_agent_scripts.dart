@@ -112,6 +112,40 @@ const cartEndpointCount = () => {
   return probe.count;
 };
 
+
+// Whether the shop itself says we are signed in.
+//
+// Text signals fail on an icon-only header: Mr Price's home page contains no
+// "sign in", no "sign out" and no greeting, so reading the DOM can only ever
+// answer "signed out" there. Asking the shop for an account-only page and
+// seeing whether it answers or bounces us to a login is the signal that
+// survives a header with no words in it.
+//
+// Fired in the background and read on a later poll, because the WebView
+// bridge can only return a value that is already resolved.
+const accountProbe = (path) => {
+  if (!path) return null;
+  const probe = window.__tsAccountProbe || (window.__tsAccountProbe = {
+    signedIn: null, at: 0, running: false,
+  });
+  const now = Date.now();
+  if (!probe.running && now - probe.at > 4000) {
+    probe.running = true;
+    probe.at = now;
+    fetch(path, { credentials: 'include', redirect: 'follow' })
+      .then((response) => {
+        const landed = String(response.url || '');
+        // A shop that wants a login either redirects there or refuses.
+        const bounced = /login|signin|sign-in|auth/i.test(landed) ||
+          response.status === 401 || response.status === 403;
+        probe.signedIn = response.ok && !bounced;
+      })
+      .catch(() => { probe.signedIn = null; })
+      .finally(() => { probe.running = false; });
+  }
+  return probe.signedIn;
+};
+
 const cartCount = () => {
   const fromEndpoint = cartEndpointCount();
   if (fromEndpoint !== null) return fromEndpoint;
@@ -199,7 +233,10 @@ String _wrap(String name, String body) =>
 /// One call rather than six keeps the agent's view of the page internally
 /// consistent: a storefront that re-renders between calls cannot report a
 /// signed-in header and a signed-out buy box in the same decision.
-String agentPageStateScript() => _wrap('page-state', r'''
+String agentPageStateScript({String accountPath = ''}) => _wrap(
+    'page-state',
+    'const accountPath = ${_jsString(accountPath)};\n' +
+        r'''
   const text = pageText();
   const controls = deepAll('button, [role="button"], input[type="submit"], input[type="button"], a');
 
@@ -218,8 +255,12 @@ String agentPageStateScript() => _wrap('page-state', r'''
     /\b(sign in|log ?in|login|register|create account)\b/.test(textOf(node)));
   const greeting = (document.body ? document.body.innerText : '')
     .match(/\b(hi|hello|welcome back|goeie dag),?\s+([A-Z][a-zA-Z]{1,20})\b/);
-  const signedIn = signOut.length > 0 || (accountLinks.length > 0 && signIn.length === 0) ||
-    Boolean(greeting);
+  // The shop's own answer wins when it gives one: an icon-only header has no
+  // words to read, and a stale text guess there is worse than no guess.
+  const probed = accountProbe(accountPath);
+  const readFromPage = signOut.length > 0 ||
+    (accountLinks.length > 0 && signIn.length === 0) || Boolean(greeting);
+  const signedIn = probed === null ? readFromPage : (probed || readFromPage);
   const accountLabel = greeting ? greeting[2] : null;
 
   // A login wall: the page is asking for credentials right now.

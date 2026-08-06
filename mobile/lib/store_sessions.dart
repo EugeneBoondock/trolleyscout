@@ -14,6 +14,7 @@ class SupportedStore {
     required this.host,
     required this.signInUrl,
     required this.homeUrl,
+    this.accountPath = '',
   });
 
   final String id;
@@ -21,11 +22,20 @@ class SupportedStore {
   final String host;
   final String signInUrl;
   final String homeUrl;
+
+  /// A same-origin path that only answers for a signed-in shopper.
+  ///
+  /// Several storefronts have icon-only headers with no "sign in" or "sign
+  /// out" text anywhere in the DOM — Mr Price is one — so there is nothing to
+  /// read. Asking the shop for this page and seeing whether it answers or
+  /// bounces to a login is the only signal that works there.
+  final String accountPath;
 }
 
 const List<SupportedStore> supportedStores = [
   SupportedStore(
     id: 'checkers',
+    accountPath: '/account/orders',
     name: 'Checkers',
     host: 'checkers.co.za',
     signInUrl: 'https://www.checkers.co.za/login',
@@ -33,6 +43,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'shoprite',
+    accountPath: '/account/orders',
     name: 'Shoprite',
     host: 'shoprite.co.za',
     signInUrl: 'https://www.shoprite.co.za/login',
@@ -40,6 +51,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'pick-n-pay',
+    accountPath: '/my-account',
     name: 'Pick n Pay',
     host: 'pnp.co.za',
     signInUrl: 'https://www.pnp.co.za/login',
@@ -47,6 +59,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'woolworths',
+    accountPath: '/account',
     name: 'Woolworths',
     host: 'woolworths.co.za',
     signInUrl: 'https://www.woolworths.co.za/login',
@@ -54,6 +67,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'takealot',
+    accountPath: '/account/orders',
     name: 'Takealot',
     host: 'takealot.com',
     signInUrl: 'https://www.takealot.com/account/login',
@@ -61,6 +75,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'makro',
+    accountPath: '/my-account',
     name: 'Makro',
     host: 'makro.co.za',
     signInUrl: 'https://www.makro.co.za/login',
@@ -68,6 +83,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'game',
+    accountPath: '/my-account',
     name: 'Game',
     host: 'game.co.za',
     signInUrl: 'https://www.game.co.za/login',
@@ -75,6 +91,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'dischem',
+    accountPath: '/customer/account/',
     name: 'Dis-Chem',
     host: 'dischem.co.za',
     signInUrl: 'https://www.dischem.co.za/customer/account/login',
@@ -82,6 +99,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'clicks',
+    accountPath: '/account',
     name: 'Clicks',
     host: 'clicks.co.za',
     signInUrl: 'https://clicks.co.za/login',
@@ -89,6 +107,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'mrp',
+    accountPath: '/customer/account/',
     name: 'Mr Price',
     host: 'mrp.com',
     signInUrl: 'https://www.mrp.com/customer/account/login',
@@ -96,6 +115,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'bash',
+    accountPath: '/account',
     name: 'Bash (TFG)',
     host: 'bash.com',
     signInUrl: 'https://bash.com/login',
@@ -103,6 +123,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'pep',
+    accountPath: '/account',
     name: 'PEP',
     host: 'pepstores.com',
     signInUrl: 'https://www.pepstores.com/account/login',
@@ -110,6 +131,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'ackermans',
+    accountPath: '/account',
     name: 'Ackermans',
     host: 'ackermans.co.za',
     signInUrl: 'https://www.ackermans.co.za/account/login',
@@ -117,6 +139,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'spar',
+    accountPath: '/account',
     name: 'SPAR',
     host: 'spar.co.za',
     signInUrl: 'https://www.spar.co.za/login',
@@ -124,6 +147,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'boxer',
+    accountPath: '/account',
     name: 'Boxer',
     host: 'boxer.co.za',
     signInUrl: 'https://www.boxer.co.za/login',
@@ -131,6 +155,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'edgars',
+    accountPath: '/account',
     name: 'Edgars',
     host: 'edgars.co.za',
     signInUrl: 'https://www.edgars.co.za/account/login',
@@ -138,6 +163,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'tekkie-town',
+    accountPath: '/account',
     name: 'Tekkie Town',
     host: 'tekkietown.co.za',
     signInUrl: 'https://tekkietown.co.za/account/login',
@@ -145,6 +171,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'sportscene',
+    accountPath: '/account',
     name: 'Sportscene',
     host: 'sportscene.co.za',
     signInUrl: 'https://www.sportscene.co.za/login',
@@ -152,6 +179,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'faithful-to-nature',
+    accountPath: '/customer/account/',
     name: 'Faithful to Nature',
     host: 'faithful-to-nature.co.za',
     signInUrl: 'https://www.faithful-to-nature.co.za/customer/account/login',
@@ -159,6 +187,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'bathu',
+    accountPath: '/account',
     name: 'Bathu',
     host: 'bathu.co.za',
     signInUrl: 'https://www.bathu.co.za/account/login',
@@ -166,6 +195,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'onedayonly',
+    accountPath: '/account',
     name: 'OneDayOnly',
     host: 'onedayonly.co.za',
     signInUrl: 'https://www.onedayonly.co.za/login',
@@ -175,6 +205,7 @@ const List<SupportedStore> supportedStores = [
   // which is exactly why the agent works in the shopper's own session.
   SupportedStore(
     id: 'ubereats',
+    accountPath: '/orders',
     name: 'Uber Eats',
     host: 'ubereats.com',
     signInUrl: 'https://www.ubereats.com/login-redirect',
@@ -182,6 +213,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'mrd-food',
+    accountPath: '/account',
     name: 'Mr D Food',
     host: 'mrdfood.com',
     signInUrl: 'https://www.mrdfood.com/login',
@@ -189,6 +221,7 @@ const List<SupportedStore> supportedStores = [
   ),
   SupportedStore(
     id: 'checkers-sixty60',
+    accountPath: '/account',
     name: 'Checkers Sixty60',
     host: 'sixty60.co.za',
     signInUrl: 'https://www.sixty60.co.za/login',

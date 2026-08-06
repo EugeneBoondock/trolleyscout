@@ -163,6 +163,7 @@ class StoreAgentRunner extends ChangeNotifier {
     Future<void> Function(Duration)? wait,
     this.pollAttempts = 25,
     this.maxVariantAttempts = 4,
+    this.accountPath = '',
     this.pollInterval = const Duration(milliseconds: 400),
   })  : _browser = browser,
         _items = List.unmodifiable(items),
@@ -176,6 +177,10 @@ class StoreAgentRunner extends ChangeNotifier {
   /// How many options to try before giving up on a product whose sizes only
   /// reveal their stock once chosen.
   final int maxVariantAttempts;
+
+  /// An account-only path on this shop, used to tell a signed-in session from
+  /// a signed-out one when the header has no words to read.
+  final String accountPath;
   final Duration pollInterval;
 
   final List<AgentLogEntry> _log = [];
@@ -506,7 +511,8 @@ class StoreAgentRunner extends ChangeNotifier {
   }
 
   Future<AgentPageState?> _readState() async {
-    final json = await _evaluateJson(agentPageStateScript());
+    final json =
+        await _evaluateJson(agentPageStateScript(accountPath: accountPath));
     return json == null ? null : AgentPageState.fromJson(json);
   }
 
