@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildClothingCatalogueRequest,
+  parseClothingCatalogue,
   buildClothingCatalogueUrl,
   parseShopifyCatalogue,
   parseWooCommerceCatalogue,
@@ -109,4 +111,122 @@ describe('parseWooCommerceCatalogue', () => {
     expect(parseWooCommerceCatalogue({ error: 'nope' }, 'https://chepa.co.za'))
       .toEqual([])
   })
+})
+
+describe('takealot fashion', () => {
+  const payload = {
+    sections: {
+      products: {
+        results: [
+          {
+            product_views: {
+              core: {
+                id: 92979167,
+                title: 'Oversize Snoodie-Blanket Hoodie',
+                slug: 'oversize-snoodie-blanket-hoodie',
+                brand: 'Snoodie',
+              },
+              buybox_summary: { prices: [222, 270] },
+              gallery: { images: ['https://media.takealot.com/a/{size}.jpg'] },
+              stock_availability_summary: { status: 'in_stock' },
+            },
+          },
+        ],
+      },
+    },
+  }
+
+  it('reads the buybox price the shopper would actually pay', () => {
+    const [product] = parseClothingCatalogue(
+      'takealot',
+      payload,
+      'https://www.takealot.com',
+    )
+    expect(product.title).toBe('Oversize Snoodie-Blanket Hoodie')
+    expect(product.priceCents).toBe(22200)
+    expect(product.previousPriceCents).toBe(27000)
+    expect(product.productUrl).toBe(
+      'https://www.takealot.com/oversize-snoodie-blanket-hoodie/PLID92979167',
+    )
+    // The gallery hands back a templated URL; a raw {size} renders nothing.
+    expect(product.imageUrl).toBe('https://media.takealot.com/a/pdpxl.jpg')
+  })
+
+  it('pages by search term, because start and page are ignored', () => {
+    // Takealot pages with an opaque cursor a stateless sweep cannot carry, and
+    // silently returns page one for start/page/offset — a sweep that trusted
+    // them would save the same 36 products twelve times.
+    const first = buildClothingCatalogueRequest(
+      'takealot',
+      'https://www.takealot.com',
+      1,
+    )
+    const second = buildClothingCatalogueRequest(
+      'takealot',
+      'https://www.takealot.com',
+      2,
+    )
+    expect(first?.url).toContain('qsearch=jeans')
+    expect(second?.url).not.toBe(first?.url)
+    expect(first?.method).toBe('GET')
+  })
+})
+
+describe('mr price', () => {
+  it('asks Magento with the store view that unlocks the catalogue', () => {
+    const request = buildClothingCatalogueRequest(
+      'magento-mrp',
+      'https://www.mrp.com',
+      1,
+    )
+    expect(request?.method).toBe('POST')
+    // Without this header the endpoint 404s; with the wrong value it answers
+    // "Requested store is not found".
+    expect(request?.headers?.store).toBe('en_za')
+    expect(request?.body).toContain('products(search:\\"t-shirt\\"')
+  })
+
+  it('rebuilds the image from the SKU, because the API serves a placeholder',
+    () => {
+      const [product] = parseClothingCatalogue(
+        'magento-mrp',
+        {
+          data: {
+            products: {
+              items: [
+                {
+                  sku: '01_107235205',
+                  name: 'Slim T-Shirt',
+                  url_key: 'slim-t-shirt-107235205',
+                  stock_status: 'IN_STOCK',
+                  price_range: {
+                    minimum_price: {
+                      final_price: { value: 89.99 },
+                      regular_price: { value: 129.99 },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        'https://www.mrp.com',
+      )
+      expect(product.title).toBe('Slim T-Shirt')
+      expect(product.priceCents).toBe(8999)
+      expect(product.previousPriceCents).toBe(12999)
+      expect(product.productUrl).toBe('https://www.mrp.com/slim-t-shirt-107235205')
+      expect(product.imageUrl).toContain('mrpricegroup/01_107235205_SI_00')
+    })
+
+  it('drops a row with no readable price rather than shelving a free shirt',
+    () => {
+      expect(
+        parseClothingCatalogue(
+          'magento-mrp',
+          { data: { products: { items: [{ sku: 'x', name: 'y', url_key: 'z' }] } } },
+          'https://www.mrp.com',
+        ),
+      ).toEqual([])
+    })
 })

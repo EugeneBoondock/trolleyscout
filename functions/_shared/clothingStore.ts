@@ -3,6 +3,7 @@ import type { ClothingProduct } from '../../src/services/clothingCatalogue'
 import {
   audienceFor,
   garmentTypeFor,
+  isApparel,
   isNonApparel,
   type ClothingAudience,
   type GarmentType,
@@ -258,4 +259,78 @@ function rowToItem(row: ClothingRow): ClothingItem {
     retailerName: row.retailer_name,
     title: row.title,
   }
+}
+
+/// Pulls the clothing that arrives through the ordinary deal feeds onto the
+/// fitting-room rail.
+///
+/// Most of the shops in the marketplace are grocers, but they run clothing
+/// aisles too, and those specials were previously visible only under Deals.
+/// The taxonomy is the gate: anything that is not apparel, or whose garment
+/// shape cannot be read, is left where it is rather than guessed at.
+export async function harvestClothingFromDeals(
+  env: TrolleyScoutEnv,
+  now: Date = new Date(),
+  limit = 2000,
+): Promise<number> {
+  if (!env.DB) return 0
+  const result = await env.DB.prepare(
+    `SELECT id, retailer_id, title, current_price_cents, previous_price_cents,
+            image_url, product_url
+      FROM deal_items
+      WHERE status = 'active' AND expires_at > ? AND image_url IS NOT NULL
+      ORDER BY captured_at DESC
+      LIMIT ?`,
+  )
+    .bind(now.toISOString(), limit)
+    .all<{
+      current_price_cents: number
+      id: string
+      image_url: string | null
+      previous_price_cents: number | null
+      product_url: string
+      retailer_id: string
+      title: string
+    }>()
+
+  const byRetailer = new Map<string, ClothingProduct[]>()
+  for (const row of result.results) {
+    if (!row.image_url || !row.product_url || !row.title) continue
+    if (!isApparel(row.title)) continue
+    const products = byRetailer.get(row.retailer_id) ?? []
+    products.push({
+      // Prefixed so a deal-sourced garment can never collide with one the
+      // scout read straight from a shop's catalogue.
+      externalId: `deal:${row.id}`,
+      title: row.title,
+      priceCents: row.current_price_cents,
+      previousPriceCents: row.previous_price_cents ?? undefined,
+      imageUrl: row.image_url,
+      productUrl: row.product_url,
+      inStock: true,
+      categoryText: row.title,
+    })
+    byRetailer.set(row.retailer_id, products)
+  }
+
+  let saved = 0
+  for (const [retailerId, products] of byRetailer) {
+    saved += await saveClothingItems(
+      env,
+      retailerId,
+      retailerDisplayName(retailerId),
+      products,
+      now,
+    )
+  }
+  return saved
+}
+
+/// Deal rows carry a retailer slug, not a display name.
+function retailerDisplayName(retailerId: string): string {
+  return retailerId
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }

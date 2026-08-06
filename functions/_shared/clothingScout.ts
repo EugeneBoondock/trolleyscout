@@ -1,11 +1,12 @@
 import { CLOTHING_RETAILERS, type ClothingRetailer } from '../../src/data/clothingRetailers'
 import {
-  buildClothingCatalogueUrl,
+  buildClothingCatalogueRequest,
   parseClothingCatalogue,
   type ClothingProduct,
 } from '../../src/services/clothingCatalogue'
 import type { TrolleyScoutEnv } from './env'
 import {
+  harvestClothingFromDeals,
   pruneStaleClothing,
   recordClothingRun,
   saveClothingItems,
@@ -88,6 +89,11 @@ export async function sweepClothingRetailers(
     }
   }
 
+  // The grocers run clothing aisles too, and those specials already arrive in
+  // the deal feed. Shelving them here means the rail is not limited to shops
+  // that publish a clothing catalogue.
+  productsSaved += await harvestClothingFromDeals(env, now)
+
   await pruneStaleClothing(env, now)
 
   return {
@@ -109,11 +115,21 @@ export async function readRetailerCatalogue(
   const pages = Math.max(1, retailer.pages ?? DEFAULT_PAGES)
 
   for (let page = 1; page <= pages; page += 1) {
-    const url = buildClothingCatalogueUrl(retailer.platform, retailer.origin, page)
-    if (!url) break
+    const request = buildClothingCatalogueRequest(
+      retailer.platform,
+      retailer.origin,
+      page,
+    )
+    if (!request) break
 
-    const response = await fetcher(url, {
-      headers: { accept: 'application/json', 'user-agent': BROWSER_UA },
+    const response = await fetcher(request.url, {
+      method: request.method,
+      body: request.body,
+      headers: {
+        accept: 'application/json',
+        'user-agent': BROWSER_UA,
+        ...(request.headers ?? {}),
+      },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     // VTEX answers a windowed catalogue with 206, which is a success — an

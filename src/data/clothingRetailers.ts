@@ -28,6 +28,12 @@ export const CLOTHING_RETAILERS: ClothingRetailer[] = [
   { id: 'bash', name: 'Bash (TFG)', origin: 'https://bash.com', pages: 8, platform: 'vtex' },
 
   // Shopify — the bulk of South African fashion retail.
+  // Mr Price runs Magento behind apiprd.omni.mrpg.com; its store view header
+  // is what unlocks it, and its images are rebuilt from the SKU.
+  { id: 'mrp', name: 'Mr Price', origin: 'https://www.mrp.com', pages: 12, platform: 'magento-mrp' },
+  // Takealot's fashion department, swept by search term because its own
+  // paging is an opaque cursor.
+  { id: 'takealot', name: 'Takealot', origin: 'https://www.takealot.com', pages: 12, platform: 'takealot' },
   { id: 'ackermans', name: 'Ackermans', origin: 'https://www.ackermans.co.za', pages: 4, platform: 'shopify' },
   { id: 'pep', name: 'PEP', origin: 'https://www.pepstores.com', pages: 4, platform: 'shopify' },
   { id: 'edgars', name: 'Edgars', origin: 'https://www.edgars.co.za', pages: 4, platform: 'shopify' },

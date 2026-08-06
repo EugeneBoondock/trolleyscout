@@ -6,7 +6,74 @@
 // today. The request URLs are the same public endpoints; only the reading of
 // them differs.
 
-export type ClothingPlatform = 'shopify' | 'woocommerce' | 'vtex'
+export type ClothingPlatform =
+  | 'shopify'
+  | 'woocommerce'
+  | 'vtex'
+  | 'takealot'
+  | 'magento-mrp'
+
+/// Not every catalogue answers a plain GET. Mr Price is a Magento GraphQL
+/// endpoint that needs a POST and a store header; Takealot is a search API on
+/// its own host. The sweep asks for a request, not a URL, so those fit
+/// alongside the shops that do answer a GET.
+export interface ClothingCatalogueRequest {
+  url: string
+  method: 'GET' | 'POST'
+  headers?: Record<string, string>
+  body?: string
+}
+
+/// Mr Price's storefront API. `store: en_za` is the South African store view —
+/// without the header the endpoint 404s, and with the wrong one it answers
+/// "Requested store is not found".
+const MRP_ENDPOINT = 'https://apiprd.omni.mrpg.com/graphql'
+const MRP_STORE_VIEW = 'en_za'
+
+/// Product images are not in the GraphQL payload — it serves a placeholder —
+/// but they are derived from the SKU on the group's image CDN.
+const MRP_IMAGE_BASE = 'https://cdn.media.amplience.net/i/mrpricegroup'
+
+/// Magento wants a search term or a filter; a catalogue-wide sweep has
+/// neither. Walking the words shoppers actually search covers the rail
+/// without needing category ids that change with every merchandising change.
+const MRP_SWEEP_TERMS = [
+  't-shirt',
+  'jeans',
+  'dress',
+  'jacket',
+  'shirt',
+  'shorts',
+  'skirt',
+  'hoodie',
+  'jersey',
+  'trousers',
+  'top',
+  'sneakers',
+]
+
+const TAKEALOT_SEARCH =
+  'https://api.takealot.com/rest/v-1-11-0/searches/products'
+const TAKEALOT_ROWS = 100
+
+/// Takealot pages by an opaque cursor, which a page-numbered sweep cannot
+/// carry, and it ignores `start`/`page`/`offset` outright. Walking search
+/// terms inside the fashion department gets the same coverage from a stateless
+/// request. The parameter is `qsearch`; `search` is silently ignored.
+const TAKEALOT_SWEEP_TERMS = [
+  'jeans',
+  't-shirt',
+  'dress',
+  'jacket',
+  'shirt',
+  'shorts',
+  'skirt',
+  'hoodie',
+  'jersey',
+  'trousers',
+  'sneakers',
+  'boots',
+]
 
 export interface ClothingProduct {
   /// Stable per-store id, so a re-sweep updates rather than duplicates.
@@ -58,6 +125,41 @@ export function buildClothingCatalogueUrl(
   return url.toString()
 }
 
+/// How to ask a shop for page `page` of its catalogue.
+export function buildClothingCatalogueRequest(
+  platform: ClothingPlatform,
+  origin: string,
+  page = 1,
+  pageSize = MAX_CLOTHING_PAGE_SIZE,
+): ClothingCatalogueRequest | undefined {
+  const index = Math.max(1, page)
+  if (platform === 'magento-mrp') {
+    const term = MRP_SWEEP_TERMS[(index - 1) % MRP_SWEEP_TERMS.length]
+    const size = Math.min(Math.max(1, pageSize), MAX_CLOTHING_PAGE_SIZE)
+    return {
+      url: MRP_ENDPOINT,
+      method: 'POST',
+      headers: { 'content-type': 'application/json', store: MRP_STORE_VIEW },
+      body: JSON.stringify({
+        query: `{products(search:${JSON.stringify(term)},pageSize:${size},currentPage:1){items{sku name url_key stock_status price_range{minimum_price{final_price{value} regular_price{value}}}}}}`,
+      }),
+    }
+  }
+  if (platform === 'takealot') {
+    const url = new URL(TAKEALOT_SEARCH)
+    url.searchParams.set('department_slug', 'fashion')
+    url.searchParams.set('rows', String(TAKEALOT_ROWS))
+    url.searchParams.set('sort', 'Relevance')
+    url.searchParams.set(
+      'qsearch',
+      TAKEALOT_SWEEP_TERMS[(index - 1) % TAKEALOT_SWEEP_TERMS.length],
+    )
+    return { url: url.toString(), method: 'GET' }
+  }
+  const url = buildClothingCatalogueUrl(platform, origin, page, pageSize)
+  return url ? { url, method: 'GET' } : undefined
+}
+
 export function parseClothingCatalogue(
   platform: ClothingPlatform,
   payload: unknown,
@@ -68,7 +170,122 @@ export function parseClothingCatalogue(
     return parseShopifyCatalogue(payload, origin, options)
   }
   if (platform === 'vtex') return parseVtexCatalogue(payload, origin)
+  if (platform === 'takealot') return parseTakealotCatalogue(payload)
+  if (platform === 'magento-mrp') return parseMrPriceCatalogue(payload)
   return parseWooCommerceCatalogue(payload, origin)
+}
+
+/// Takealot answers a search envelope: the products live under
+/// `sections.products.results[].product_views`, and the buybox holds the price
+/// the shopper would actually pay.
+export function parseTakealotCatalogue(payload: unknown): ClothingProduct[] {
+  if (!isRecord(payload)) return []
+  const sections = isRecord(payload.sections) ? payload.sections : undefined
+  const products = sections && isRecord(sections.products)
+    ? sections.products
+    : undefined
+  const results = products && Array.isArray(products.results)
+    ? products.results
+    : []
+
+  const out: ClothingProduct[] = []
+  for (const row of results) {
+    if (!isRecord(row)) continue
+    const views = isRecord(row.product_views) ? row.product_views : undefined
+    const core = views && isRecord(views.core) ? views.core : undefined
+    if (!core) continue
+    const id = typeof core.id === 'number' ? core.id : undefined
+    const title = typeof core.title === 'string' ? core.title.trim() : ''
+    const slug = typeof core.slug === 'string' ? core.slug : ''
+    if (!id || !title || !slug) continue
+
+    const buybox =
+      views && isRecord(views.buybox_summary) ? views.buybox_summary : undefined
+    const prices = buybox && Array.isArray(buybox.prices) ? buybox.prices : []
+    const price = typeof prices[0] === 'number' ? prices[0] : undefined
+    if (price === undefined) continue
+    const wasPrice = typeof prices[1] === 'number' ? prices[1] : undefined
+
+    const gallery = views && isRecord(views.gallery) ? views.gallery : undefined
+    const images = gallery && Array.isArray(gallery.images) ? gallery.images : []
+    const imageUrl = typeof images[0] === 'string' ? images[0] : ''
+    if (!imageUrl) continue
+
+    const stock = views && isRecord(views.stock_availability_summary)
+      ? views.stock_availability_summary
+      : undefined
+    const status = stock && typeof stock.status === 'string' ? stock.status : ''
+
+    out.push({
+      externalId: `PLID${id}`,
+      title,
+      priceCents: Math.round(price * 100),
+      previousPriceCents:
+        wasPrice !== undefined && wasPrice > price
+          ? Math.round(wasPrice * 100)
+          : undefined,
+      // The gallery hands back a templated URL; ask for a real size.
+      imageUrl: imageUrl.replace('{size}', 'pdpxl'),
+      productUrl: `https://www.takealot.com/${slug}/PLID${id}`,
+      inStock: status !== 'out_of_stock',
+      categoryText: [
+        title,
+        typeof core.brand === 'string' ? core.brand : '',
+        'fashion',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    })
+  }
+  return out
+}
+
+/// Mr Price's Magento payload. The image is rebuilt from the SKU because the
+/// API serves a placeholder for every product.
+export function parseMrPriceCatalogue(payload: unknown): ClothingProduct[] {
+  if (!isRecord(payload)) return []
+  const data = isRecord(payload.data) ? payload.data : undefined
+  const products = data && isRecord(data.products) ? data.products : undefined
+  const items = products && Array.isArray(products.items) ? products.items : []
+
+  const out: ClothingProduct[] = []
+  for (const row of items) {
+    if (!isRecord(row)) continue
+    const sku = typeof row.sku === 'string' ? row.sku.trim() : ''
+    const title = typeof row.name === 'string' ? row.name.trim() : ''
+    const urlKey = typeof row.url_key === 'string' ? row.url_key.trim() : ''
+    if (!sku || !title || !urlKey) continue
+
+    const range = isRecord(row.price_range) ? row.price_range : undefined
+    const minimum =
+      range && isRecord(range.minimum_price) ? range.minimum_price : undefined
+    const finalPrice =
+      minimum && isRecord(minimum.final_price) ? minimum.final_price : undefined
+    const regular =
+      minimum && isRecord(minimum.regular_price)
+        ? minimum.regular_price
+        : undefined
+    const price = finalPrice && typeof finalPrice.value === 'number'
+      ? finalPrice.value
+      : undefined
+    if (price === undefined || price <= 0) continue
+    const was = regular && typeof regular.value === 'number'
+      ? regular.value
+      : undefined
+
+    out.push({
+      externalId: sku,
+      title,
+      priceCents: Math.round(price * 100),
+      previousPriceCents:
+        was !== undefined && was > price ? Math.round(was * 100) : undefined,
+      imageUrl: `${MRP_IMAGE_BASE}/${encodeURIComponent(sku)}_SI_00?$preset$&fmt=auto`,
+      productUrl: `https://www.mrp.com/${urlKey}`,
+      inStock: row.stock_status !== 'OUT_OF_STOCK',
+      categoryText: title,
+    })
+  }
+  return out
 }
 
 /// VTEX products carry their sellers' live offers; the first seller with a
