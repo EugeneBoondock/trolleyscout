@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../saved_fits_store.dart';
 import '../theme.dart';
@@ -23,6 +24,32 @@ class SavedFitsScreen extends StatefulWidget {
 class _SavedFitsScreenState extends State<SavedFitsScreen> {
   late final SavedFitsStore _store = widget.store ?? SavedFitsStore();
   late Future<List<SavedFit>> _future = _store.load();
+
+  Future<void> _openFullScreen(SavedFit fit) async {
+    uxTap();
+    final bytes = await _store.readImage(fit);
+    if (!mounted || bytes == null) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _FullScreenFit(
+        fit: fit,
+        bytes: bytes,
+        onDownload: () => _download(fit, bytes),
+      ),
+    ));
+  }
+
+  /// Hands the image to the phone's own save/share sheet, which is the route
+  /// that works on both platforms without asking for gallery permissions.
+  Future<void> _download(SavedFit fit, Uint8List bytes) async {
+    try {
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(fit.imagePath, mimeType: 'image/png', name: '${fit.id}.png')],
+        subject: fit.title,
+      ));
+    } catch (_) {
+      if (mounted) showNotice(context, 'That fit could not be saved.');
+    }
+  }
 
   Future<void> _remove(SavedFit fit) async {
     final confirmed = await confirmAction(
@@ -74,9 +101,71 @@ class _SavedFitsScreenState extends State<SavedFitsScreen> {
               fit: fits[index],
               readImage: _store.readImage,
               onDelete: () => _remove(fits[index]),
+              onOpen: () => _openFullScreen(fits[index]),
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// One saved look, filling the screen: pinch to zoom, one tap to keep it.
+class _FullScreenFit extends StatelessWidget {
+  const _FullScreenFit({
+    required this.fit,
+    required this.bytes,
+    required this.onDownload,
+  });
+
+  final SavedFit fit;
+  final Uint8List bytes;
+  final VoidCallback onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(fit.title, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            key: const Key('download-fit'),
+            tooltip: 'Save this fit to your phone',
+            onPressed: () {
+              uxTap();
+              onDownload();
+            },
+            icon: const Icon(Icons.download_rounded),
+          ),
+        ],
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          key: const Key('full-screen-fit'),
+          minScale: 1,
+          maxScale: 5,
+          child: Image.memory(bytes, fit: BoxFit.contain),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: () {
+                uxTap();
+                onDownload();
+              },
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text('Save to phone'),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -87,11 +176,13 @@ class _SavedFitCard extends StatelessWidget {
     required this.fit,
     required this.readImage,
     required this.onDelete,
+    required this.onOpen,
   });
 
   final SavedFit fit;
   final Future<Uint8List?> Function(SavedFit fit) readImage;
   final VoidCallback onDelete;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -103,23 +194,30 @@ class _SavedFitCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: FutureBuilder<Uint8List?>(
-              future: readImage(fit),
-              builder: (context, snapshot) {
-                final bytes = snapshot.data;
-                if (bytes == null) {
-                  return Container(
-                    color: TS.surfaceSoftOf(context),
-                    alignment: Alignment.center,
-                    child: Icon(Icons.checkroom_outlined,
-                        size: 36, color: TS.mutedOf(context)),
-                  );
-                }
-                return SizedBox(
-                  width: double.infinity,
-                  child: Image.memory(bytes, fit: BoxFit.cover),
-                );
-              },
+            child: Semantics(
+              button: true,
+              label: 'Open ${fit.title} full screen',
+              child: GestureDetector(
+                onTap: onOpen,
+                child: FutureBuilder<Uint8List?>(
+                  future: readImage(fit),
+                  builder: (context, snapshot) {
+                    final bytes = snapshot.data;
+                    if (bytes == null) {
+                      return Container(
+                        color: TS.surfaceSoftOf(context),
+                        alignment: Alignment.center,
+                        child: Icon(Icons.checkroom_outlined,
+                            size: 36, color: TS.mutedOf(context)),
+                      );
+                    }
+                    return SizedBox(
+                      width: double.infinity,
+                      child: Image.memory(bytes, fit: BoxFit.cover),
+                    );
+                  },
+                ),
+              ),
             ),
           ),
           Padding(

@@ -9,6 +9,8 @@ import {
   snapshotDealAlertKeys,
 } from '../functions/_shared/dealAlertStore'
 import { refreshDealSites } from '../functions/_shared/dealSiteScout'
+import { sweepClothingRetailers } from '../functions/_shared/clothingScout'
+import { CLOTHING_RETAILERS } from '../src/data/clothingRetailers'
 import {
   runHolidayCampaignScout,
   type HolidayCampaignScoutResult,
@@ -622,12 +624,28 @@ function stableSlugHash(value: string): string {
 
 const DEAL_SOURCE_CADENCE_HOURS = 3
 const HOUR_MS = 60 * 60 * 1000
+/// Six shops an hour walks the whole fashion registry in about four hours,
+/// well inside a Worker's subrequest budget.
+const CLOTHING_STORES_PER_RUN = 6
 
 export function shouldRefreshDealSources(scheduledTime: number): boolean {
   if (!Number.isFinite(scheduledTime)) {
     throw new TypeError('scheduledTime must be a finite timestamp.')
   }
   return Math.floor(scheduledTime / HOUR_MS) % DEAL_SOURCE_CADENCE_HOURS === 0
+}
+
+/// The clothing registry is swept a few shops at a time, so the cursor is
+/// derived from the clock: each run picks up where the last one left off and
+/// the whole rail turns over roughly daily.
+export function clothingCursorFor(
+  scheduledTime: number,
+  storeCount: number,
+  storesPerRun: number,
+): number {
+  if (storeCount <= 0 || storesPerRun <= 0) return 0
+  const runIndex = Math.floor(scheduledTime / HOUR_MS)
+  return (runIndex * storesPerRun) % storeCount
 }
 
 export default {
@@ -650,7 +668,17 @@ export default {
     // Rolling retention for append-only audit tables so they stop growing
     // forever (indexes and insert cost scale with table size).
     await pruneAuditRows(env).catch(() => undefined)
-    console.log(JSON.stringify({ event: 'deal_scout_completed', ...result }))
+    // The fitting room's rail comes from fashion storefronts rather than the
+    // deal feed, so it is stocked here, a slice of shops per run.
+    const clothing = await sweepClothingRetailers(env, {
+      cursor: clothingCursorFor(
+        controller.scheduledTime,
+        CLOTHING_RETAILERS.length,
+        CLOTHING_STORES_PER_RUN,
+      ),
+      storesPerRun: CLOTHING_STORES_PER_RUN,
+    }).catch(() => undefined)
+    console.log(JSON.stringify({ event: 'deal_scout_completed', ...result, clothing }))
   },
 } satisfies ExportedHandler<ScoutEnv>
 

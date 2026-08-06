@@ -10,7 +10,10 @@ import type { TrolleyScoutEnv } from './env'
 // so they must never share one endpoint. A subscription ITN delivered to the ad
 // handler matches no ad, is rejected, and the payment is never recorded — so
 // the path is always chosen by purpose rather than read from configuration.
-export type PayFastNotifyPath = '/api/payfast-itn' | '/api/payfast-ad-itn'
+export type PayFastNotifyPath =
+  | '/api/payfast-itn'
+  | '/api/payfast-ad-itn'
+  | '/api/payfast-credits-itn'
 
 export function resolvePayFastNotifyUrl(
   env: TrolleyScoutEnv,

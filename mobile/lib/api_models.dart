@@ -795,6 +795,113 @@ class TryOnQuota {
   }
 }
 
+/// A garment the clothing scout read from a fashion storefront. Unlike a
+/// Deal it is not a markdown — it is simply what a shop sells today.
+class ClothingItem {
+  const ClothingItem({
+    required this.id,
+    required this.title,
+    required this.retailerId,
+    required this.retailerName,
+    required this.priceCents,
+    required this.imageUrl,
+    required this.productUrl,
+    this.previousPriceCents,
+    this.audience = 'any',
+    this.garmentType = 'any',
+  });
+
+  factory ClothingItem.fromJson(Map<String, dynamic> json) => ClothingItem(
+        id: json['id']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        retailerId: json['retailerId']?.toString() ?? '',
+        retailerName: json['retailerName']?.toString() ?? '',
+        priceCents:
+            json['priceCents'] is num ? (json['priceCents'] as num).toInt() : 0,
+        previousPriceCents: json['previousPriceCents'] is num
+            ? (json['previousPriceCents'] as num).toInt()
+            : null,
+        imageUrl: json['imageUrl']?.toString() ?? '',
+        productUrl: json['productUrl']?.toString() ?? '',
+        audience: json['audience']?.toString() ?? 'any',
+        garmentType: json['garmentType']?.toString() ?? 'any',
+      );
+
+  final String id;
+  final String title;
+  final String retailerId;
+  final String retailerName;
+  final int priceCents;
+  final int? previousPriceCents;
+  final String imageUrl;
+  final String productUrl;
+  final String audience;
+  final String garmentType;
+
+  /// Only garments a try-on can dress a body in.
+  bool get canTryOn => const ['tops', 'bottoms', 'dresses', 'outerwear']
+      .contains(garmentType);
+
+  /// The same garment as a Deal, so it can be saved, basketed and opened
+  /// through the machinery the rest of the app already has.
+  Deal toDeal() => Deal(
+        id: id,
+        retailerId: retailerId,
+        retailerName: retailerName,
+        sourceLabel: 'Fitting room',
+        sourceUrl: productUrl,
+        productUrl: productUrl,
+        title: title,
+        priceText: _rand(priceCents),
+        previousPriceText:
+            previousPriceCents == null ? null : _rand(previousPriceCents!),
+        imageUrl: imageUrl,
+        evidenceText: 'Listed at $retailerName for ${_rand(priceCents)}.',
+      );
+
+  static String _rand(int cents) => 'R${(cents / 100).toStringAsFixed(2)}';
+}
+
+class ClothingRail {
+  const ClothingRail({this.items = const [], this.retailers = const []});
+
+  factory ClothingRail.fromJson(Map<String, dynamic> json) => ClothingRail(
+        items: json['items'] is List
+            ? (json['items'] as List)
+                .whereType<Map>()
+                .map((row) => ClothingItem.fromJson(Map<String, dynamic>.from(row)))
+                .toList()
+            : const [],
+        retailers: json['retailers'] is List
+            ? (json['retailers'] as List)
+                .whereType<Map>()
+                .map((row) => ClothingRetailerCount(
+                      id: row['id']?.toString() ?? '',
+                      name: row['name']?.toString() ?? '',
+                      count: row['count'] is num
+                          ? (row['count'] as num).toInt()
+                          : 0,
+                    ))
+                .toList()
+            : const [],
+      );
+
+  final List<ClothingItem> items;
+  final List<ClothingRetailerCount> retailers;
+}
+
+class ClothingRetailerCount {
+  const ClothingRetailerCount({
+    required this.id,
+    required this.name,
+    required this.count,
+  });
+
+  final String id;
+  final String name;
+  final int count;
+}
+
 /// A pack of extra fittings a shopper can buy when the month runs dry.
 class TryOnCreditPack {
   const TryOnCreditPack({

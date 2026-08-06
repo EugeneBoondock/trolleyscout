@@ -119,8 +119,11 @@ describe('/api/virtual-try-on', () => {
     expect(response.status).toBe(200)
     // One render per garment, each dressing the previous result.
     expect(ai.run).toHaveBeenCalledTimes(2)
-    const secondCall = ai.run.mock.calls[1][1] as { person_image: string }
-    expect(secondCall.person_image).toBe(`data:image/jpeg;base64,${btoa('layered')}`)
+    const calls = ai.run.mock.calls as unknown as Array<
+      [string, { person_image: string }]
+    >
+    expect(calls[1][1].person_image)
+      .toBe(`data:image/jpeg;base64,${btoa('layered')}`)
   })
 
   it('lets an admin on the free plan through', async () => {

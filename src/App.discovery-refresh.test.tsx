@@ -208,8 +208,11 @@ it('lets shoppers jump from the catalogue retailer shelf to one store', async ()
       retailerId: 'alpha',
       retailerName: 'Alpha Market',
       url: 'https://example.test/alpha-weekly',
-      validFrom: '2026-08-02',
-      validTo: '2026-08-09',
+      // Open-ended windows: this test is about the retailer shelf, and a
+      // fixture that expires turns it into a calendar test that fails one
+      // random morning.
+      validFrom: '2020-01-01',
+      validTo: '2099-12-31',
     },
     {
       capturedAt: '2026-08-02T08:00:00.000Z',
@@ -226,8 +229,8 @@ it('lets shoppers jump from the catalogue retailer shelf to one store', async ()
       retailerId: 'bravo',
       retailerName: 'Bravo Shop',
       url: 'https://example.test/bravo',
-      validFrom: '2026-07-31',
-      validTo: '2026-08-05',
+      validFrom: '2020-01-01',
+      validTo: '2099-12-31',
     },
   ]
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

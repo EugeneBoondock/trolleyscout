@@ -844,6 +844,40 @@ class Api {
     );
   }
 
+  /// The fitting room's rail: garments the clothing scout read from South
+  /// African fashion storefronts, filtered server-side.
+  Future<ClothingRail> clothingRail({
+    String retailerId = 'all',
+    String audience = 'any',
+    String garmentType = 'any',
+    bool tryOnableOnly = false,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final query = <String>[
+      'limit=$limit',
+      'offset=$offset',
+      if (retailerId != 'all') 'retailerId=${Uri.encodeQueryComponent(retailerId)}',
+      if (audience != 'any') 'audience=$audience',
+      if (garmentType != 'any') 'type=$garmentType',
+      if (tryOnableOnly) 'tryOnable=1',
+    ];
+    final data = await _request('GET', '/api/clothing?${query.join('&')}');
+    return ClothingRail.fromJson(data);
+  }
+
+  /// Admin: sweep the fashion storefronts now rather than waiting for the
+  /// hourly run. The cursor continues where the last sweep stopped.
+  Future<String> adminRunClothingScout({int? cursor}) async {
+    final data = await _request(
+      'POST',
+      '/api/admin/clothing-run',
+      body: {if (cursor != null) 'cursor': cursor},
+      timeout: slowRequestTimeout,
+    );
+    return data['message']?.toString() ?? 'The clothing sweep finished.';
+  }
+
   /// The fitting packs on sale and what the shopper has left.
   Future<TryOnCreditOptions> tryOnCreditOptions() async {
     final data = await _request('GET', '/api/try-on-credits');

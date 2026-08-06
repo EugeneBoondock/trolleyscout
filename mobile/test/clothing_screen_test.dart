@@ -12,7 +12,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('renders only clothing deals as cards with a try-on button',
+  testWidgets('renders the scouted rail with a try-on where it fits',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(430, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -23,9 +23,7 @@ void main() {
     expect(find.text('See it on you first'), findsOneWidget);
     expect(find.text('Slim fit denim jeans'), findsOneWidget);
     expect(find.text('Canvas sneaker'), findsOneWidget);
-    // The grocery deal is classified out of the clothing rail.
-    expect(find.text('Full cream milk 2L'), findsNothing);
-    expect(find.text('R299'), findsOneWidget);
+    expect(find.text('R299.00'), findsOneWidget);
     expect(find.text('Mr Price'), findsOneWidget);
 
     // The model dresses a body, not feet: the jeans offer a fitting, the
@@ -35,16 +33,18 @@ void main() {
     expect(find.text('View in store'), findsOneWidget);
   });
 
-  testWidgets('filters the rail by who the clothing is for', (tester) async {
-    await tester.pumpWidget(_wrap(ClothingScreen(api: _ClothingApi())));
+  testWidgets('asks the server to filter by who the clothing is for',
+      (tester) async {
+    final api = _ClothingApi();
+    await tester.pumpWidget(_wrap(ClothingScreen(api: api)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Men'));
     await tester.pumpAndSettle();
 
-    // Neither fixture names a gender, so a specific audience empties the rail
-    // rather than guessing wrong.
-    expect(find.textContaining('Nothing matches those filters'), findsOneWidget);
+    // Filtering is a server query, not a local sift, so the rail is re-asked
+    // for with the chosen audience.
+    expect(api.audiences.last, 'men');
   });
 
   testWidgets('builds an outfit from several garments', (tester) async {
@@ -62,23 +62,23 @@ void main() {
     expect(find.text('Wear 1'), findsOneWidget);
   });
 
-  testWidgets('shows the empty rail when no clothing deals are found',
+  testWidgets('shows the empty rail while the scout is still stocking it',
       (tester) async {
-    await tester
-        .pumpWidget(_wrap(ClothingScreen(api: _ClothingApi(feedDeals: const []))));
+    await tester.pumpWidget(
+        _wrap(ClothingScreen(api: _ClothingApi(items: const []))));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('No clothing deals'), findsOneWidget);
+    expect(find.textContaining('rail is being stocked'), findsOneWidget);
   });
 
-  testWidgets('shows the error pane with a retry when the feed fails',
+  testWidgets('shows the error pane with a retry when the rail fails',
       (tester) async {
     await tester
         .pumpWidget(_wrap(ClothingScreen(api: _ClothingApi(fail: true))));
     await tester.pumpAndSettle();
 
-    expect(
-        find.text('Clothing deals are unavailable right now.'), findsOneWidget);
+    expect(find.text('The fitting room rail is unavailable right now.'),
+        findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 }
@@ -95,47 +95,62 @@ Widget _wrap(Widget child) {
   );
 }
 
-const _clothingDeals = [
-  Deal(
-    id: 'deal-1',
+const _railItems = [
+  ClothingItem(
+    id: 'mrp:1',
     title: 'Slim fit denim jeans',
+    retailerId: 'mrp',
     retailerName: 'Mr Price',
-    priceText: 'R299',
+    priceCents: 29900,
     imageUrl: 'https://cdn.example.test/jeans.jpg',
+    productUrl: 'https://mrp.test/jeans',
+    audience: 'any',
+    garmentType: 'bottoms',
   ),
-  Deal(
-    id: 'deal-2',
+  ClothingItem(
+    id: 'ack:2',
     title: 'Canvas sneaker',
+    retailerId: 'ackermans',
     retailerName: 'Ackermans',
-    priceText: 'R199',
+    priceCents: 19900,
     imageUrl: 'https://cdn.example.test/sneaker.jpg',
-  ),
-  Deal(
-    id: 'deal-3',
-    title: 'Full cream milk 2L',
-    retailerName: 'Shoprite',
-    priceText: 'R32',
-    imageUrl: 'https://cdn.example.test/milk.jpg',
+    productUrl: 'https://ackermans.test/sneaker',
+    audience: 'any',
+    garmentType: 'footwear',
   ),
 ];
 
 class _ClothingApi extends Api {
-  _ClothingApi({this.feedDeals = _clothingDeals, this.fail = false})
+  _ClothingApi({this.items = _railItems, this.fail = false})
       : super(baseUrl: 'https://example.test');
 
-  final List<Deal> feedDeals;
+  final List<ClothingItem> items;
   final bool fail;
+  final List<String> audiences = [];
 
   @override
-  Future<DiscoveryResult> discovery(
-      {bool forceLive = false, bool summary = false}) async {
-    if (fail) throw const ApiException('The feed is unreachable.');
-    return DiscoveryResult(
-      deals: feedDeals,
-      foundDealCount: feedDeals.length,
-      checkedSourceCount: 1,
-      unavailableSourceCount: 0,
-      leafletCount: 0,
+  Future<ClothingRail> clothingRail({
+    String retailerId = 'all',
+    String audience = 'any',
+    String garmentType = 'any',
+    bool tryOnableOnly = false,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    audiences.add(audience);
+    if (fail) throw const ApiException('The rail is offline.');
+    final visible = audience == 'any'
+        ? items
+        : items.where((item) => item.audience == audience).toList();
+    return ClothingRail(
+      items: visible,
+      retailers: items.isEmpty
+          ? const []
+          : const [
+              ClothingRetailerCount(id: 'mrp', name: 'Mr Price', count: 1),
+              ClothingRetailerCount(
+                  id: 'ackermans', name: 'Ackermans', count: 1),
+            ],
     );
   }
 }

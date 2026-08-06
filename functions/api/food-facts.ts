@@ -103,6 +103,7 @@ async function generateFacts(
   env: TrolleyScoutEnv,
   title: string,
 ): Promise<FoodFacts | null> {
+  if (!env.AI) return null
   try {
     const result = await env.AI.run(
       FACTS_MODEL as never,

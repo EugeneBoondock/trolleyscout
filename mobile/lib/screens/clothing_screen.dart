@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../clothing_filters.dart';
-import '../deal_filters.dart';
+import '../currency.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../vton_photo_store.dart';
 import '../widgets/common.dart';
+import 'deals_screen.dart' show showMarketplaceProductViewer;
 import 'fitting_room_screen.dart';
 import 'saved_fits_screen.dart';
 
@@ -35,15 +36,13 @@ class ClothingScreen extends StatefulWidget {
 }
 
 class _ClothingScreenState extends State<ClothingScreen> {
-  Future<List<Deal>>? _future;
-  final DealClassificationCache _classificationCache =
-      DealClassificationCache();
+  Future<ClothingRail>? _future;
   String _retailerId = 'all';
   ClothingAudience _audience = ClothingAudience.any;
   GarmentType _type = GarmentType.any;
 
   /// The outfit being assembled. Empty means the shopper is just browsing.
-  final List<Deal> _outfit = [];
+  final List<ClothingItem> _outfit = [];
   bool _outfitMode = false;
 
   @override
@@ -52,37 +51,38 @@ class _ClothingScreenState extends State<ClothingScreen> {
     _future = _load();
   }
 
-  Future<List<Deal>> _load({bool forceLive = false}) async {
-    // The rail opens from the cached feed the rest of the app already uses;
-    // only a pull-to-refresh pays for a live sweep. Waiting on a full live
-    // discovery made the page feel broken on open.
-    final result = await widget.api.discovery(
-      forceLive: forceLive,
-      summary: !forceLive,
-    );
-    // Clothing category first, then the wearable test: mirrors, hangers and
-    // irons live beside clothes but nobody puts them on.
-    return result.deals
-        .where((deal) => isWearableClothing(
-              deal,
-              classification: _classificationCache.classify(deal),
-            ))
-        .toList(growable: false);
+  /// The rail comes from the clothing scout, which reads fashion storefronts
+  /// directly. The deals feed carries almost no clothing, so a fitting room
+  /// built on it had nothing to try on.
+  Future<ClothingRail> _load() => widget.api.clothingRail(
+        retailerId: _retailerId,
+        audience: _audience.name,
+        garmentType: _type.name,
+        limit: 120,
+      );
+
+  /// Filtering happens server-side, so changing one reloads the rail. The
+  /// block body matters: an arrow closure would hand setState the Future it
+  /// assigned, which Flutter rejects.
+  void _reload() {
+    setState(() {
+      _future = _load();
+    });
   }
 
   Future<void> _refresh() async {
-    final future = _load(forceLive: true);
+    final future = _load();
     setState(() => _future = future);
-    await future.catchError((_) => const <Deal>[]);
+    await future.catchError((_) => const ClothingRail());
   }
 
-  void _openFittingRoom(List<Deal> garments) {
+  void _openFittingRoom(List<ClothingItem> garments) {
     if (garments.isEmpty) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => FittingRoomScreen(
         api: widget.api,
         garmentImageUrls:
-            garments.map((deal) => deal.gallery.first).toList(growable: false),
+            garments.map((item) => item.imageUrl).toList(growable: false),
         garmentTitle: garments.length == 1
             ? garments.first.title
             : '${garments.length}-piece outfit',
@@ -92,28 +92,58 @@ class _ClothingScreenState extends State<ClothingScreen> {
     ));
   }
 
-  void _toggleOutfitPiece(Deal deal) {
+  /// Opens the garment the way a marketplace product opens: full picture,
+  /// price, and a way through to the shop that sells it.
+  void _openGarment(ClothingItem item) {
+    showMarketplaceProductViewer(context, item.toDeal(), api: widget.api);
+  }
+
+  Future<void> _saveGarment(ClothingItem item) async {
+    uxTap();
+    try {
+      await widget.api.saveDeal(item.toDeal());
+      if (!mounted) return;
+      showNotice(context, 'Saved to your deals.');
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    }
+  }
+
+  Future<void> _basketGarment(ClothingItem item) async {
+    uxTap();
+    try {
+      // A basket item hangs off a saved deal, so the garment is saved first
+      // and the freshly saved row is the one added.
+      final saved = await widget.api.saveDeal(item.toDeal());
+      final match = saved.where((deal) => deal.productUrl == item.productUrl);
+      final target = match.isNotEmpty ? match.first : saved.firstOrNull;
+      if (target == null) {
+        if (mounted) showNotice(context, 'That garment could not be basketed.');
+        return;
+      }
+      await widget.api.addBasketItem(target.id);
+      if (!mounted) return;
+      showNotice(context, 'Added to your basket.');
+    } on ApiException catch (error) {
+      if (mounted) showNotice(context, error.message);
+    }
+  }
+
+  void _toggleOutfitPiece(ClothingItem item) {
     uxTap();
     setState(() {
-      final index = _outfit.indexWhere((piece) => piece.id == deal.id);
+      final index = _outfit.indexWhere((piece) => piece.id == item.id);
       if (index >= 0) {
         _outfit.removeAt(index);
       } else if (_outfit.length < 4) {
-        _outfit.add(deal);
+        _outfit.add(item);
       }
     });
   }
 
-  List<Deal> _visible(List<Deal> deals) => filterClothingDeals(
-        deals,
-        retailerId: _retailerId,
-        audience: _audience,
-        type: _type,
-      );
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Deal>>(
+    return FutureBuilder<ClothingRail>(
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -121,16 +151,20 @@ class _ClothingScreenState extends State<ClothingScreen> {
         }
         if (snapshot.hasError || snapshot.data == null) {
           return ErrorPane(
-            message: 'Clothing deals are unavailable right now.',
+            message: 'The fitting room rail is unavailable right now.',
             detail: snapshot.error is ApiException
                 ? (snapshot.error as ApiException).message
                 : null,
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: _reload,
           );
         }
-        final all = snapshot.data!;
-        final deals = _visible(all);
-        final retailers = _retailerOptions(all);
+        final rail = snapshot.data!;
+        final deals = rail.items;
+        final retailers = [
+          const MapEntry('all', 'All stores'),
+          for (final retailer in rail.retailers)
+            MapEntry(retailer.id, '${retailer.name} (${retailer.count})'),
+        ];
 
         return Stack(
           children: [
@@ -179,10 +213,18 @@ class _ClothingScreenState extends State<ClothingScreen> {
                       audience: _audience,
                       type: _type,
                       outfitMode: _outfitMode,
-                      onRetailer: (value) =>
-                          setState(() => _retailerId = value),
-                      onAudience: (value) => setState(() => _audience = value),
-                      onType: (value) => setState(() => _type = value),
+                      onRetailer: (value) {
+                        _retailerId = value;
+                        _reload();
+                      },
+                      onAudience: (value) {
+                        _audience = value;
+                        _reload();
+                      },
+                      onType: (value) {
+                        _type = value;
+                        _reload();
+                      },
                       onToggleOutfitMode: () => setState(() {
                         uxTap();
                         _outfitMode = !_outfitMode;
@@ -196,9 +238,9 @@ class _ClothingScreenState extends State<ClothingScreen> {
                       sliver: SliverToBoxAdapter(
                         child: EmptyCard(
                           icon: Icons.checkroom_outlined,
-                          message: all.isEmpty
-                              ? 'No clothing deals on the rail right now. '
-                                  'Pull to refresh or check back soon.'
+                          message: rail.retailers.isEmpty
+                              ? 'The rail is being stocked. Pull to refresh '
+                                  'or check back shortly.'
                               : 'Nothing matches those filters yet. Try a '
                                   'different store, audience or garment.',
                         ),
@@ -227,6 +269,9 @@ class _ClothingScreenState extends State<ClothingScreen> {
                             inOutfit: inOutfit,
                             onTryOn: () => _openFittingRoom([deal]),
                             onToggleOutfit: () => _toggleOutfitPiece(deal),
+                            onOpen: () => _openGarment(deal),
+                            onSave: () => _saveGarment(deal),
+                            onBasket: () => _basketGarment(deal),
                           );
                         },
                       ),
@@ -251,17 +296,6 @@ class _ClothingScreenState extends State<ClothingScreen> {
     );
   }
 
-  List<MapEntry<String, String>> _retailerOptions(List<Deal> deals) {
-    final names = <String, String>{};
-    for (final deal in deals) {
-      if (deal.retailerId.isNotEmpty && deal.retailerName.isNotEmpty) {
-        names.putIfAbsent(deal.retailerId, () => deal.retailerName);
-      }
-    }
-    final entries = names.entries.toList()
-      ..sort((left, right) => left.value.compareTo(right.value));
-    return [const MapEntry('all', 'All stores'), ...entries];
-  }
 }
 
 /// Store, audience and garment filters on one calm surface — chips the thumb
@@ -305,6 +339,9 @@ class _FilterBar extends StatelessWidget {
                     key: const Key('clothing-retailer-filter'),
                     initialValue: retailerId,
                     isDense: true,
+                    // Store names carry their garment counts, so the label
+                    // must be free to ellipsize rather than overflow.
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       contentPadding:
                           EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -457,8 +494,8 @@ class _OutfitTray extends StatelessWidget {
     required this.onWear,
   });
 
-  final List<Deal> pieces;
-  final ValueChanged<Deal> onRemove;
+  final List<ClothingItem> pieces;
+  final ValueChanged<ClothingItem> onRemove;
   final VoidCallback onWear;
 
   @override
@@ -516,14 +553,12 @@ class _OutfitTray extends StatelessWidget {
                                   border: Border.all(
                                       color: TS.lineOf(context), width: 1.5),
                                 ),
-                                child: piece.hasImage
-                                    ? Image.network(
-                                        piece.gallery.first,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            _GarmentPlaceholder(),
-                                      )
-                                    : _GarmentPlaceholder(),
+                                child: Image.network(
+                                  piece.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      _GarmentPlaceholder(),
+                                ),
                               ),
                               Positioned(
                                 right: 0,
@@ -577,21 +612,32 @@ class _ClothingDealCard extends StatelessWidget {
     required this.onToggleOutfit,
     required this.outfitMode,
     required this.inOutfit,
+    required this.onOpen,
+    required this.onSave,
+    required this.onBasket,
   });
 
-  final Deal deal;
+  final ClothingItem deal;
   final VoidCallback onTryOn;
   final VoidCallback onToggleOutfit;
   final bool outfitMode;
   final bool inOutfit;
+  final VoidCallback onOpen;
+  final VoidCallback onSave;
+  final VoidCallback onBasket;
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = deal.hasImage;
-    final tryOnable = hasImage && canTryOnDeal(deal);
+    final hasImage = deal.imageUrl.isNotEmpty;
+    // The scout already worked out what shape this garment is, so the card
+    // trusts that rather than re-reading the title on every build.
+    final tryOnable = hasImage && deal.canTryOn;
     return PressableScale(
       child: GestureDetector(
-        onTap: outfitMode && tryOnable ? onToggleOutfit : null,
+        // Tapping the garment opens it, exactly as a shopper expects of a
+        // picture in a shop — except while an outfit is being assembled,
+        // when a tap means "add this piece".
+        onTap: outfitMode && tryOnable ? onToggleOutfit : onOpen,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           clipBehavior: Clip.antiAlias,
@@ -613,13 +659,33 @@ class _ClothingDealCard extends StatelessWidget {
                       height: double.infinity,
                       child: hasImage
                           ? Image.network(
-                              deal.gallery.first,
+                              deal.imageUrl,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stack) =>
                                   _GarmentPlaceholder(),
                             )
                           : _GarmentPlaceholder(),
                     ),
+                    if (!outfitMode)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Column(
+                          children: [
+                            _CardAction(
+                              icon: Icons.bookmark_border_rounded,
+                              tooltip: 'Save ${deal.title}',
+                              onTap: onSave,
+                            ),
+                            const SizedBox(height: 6),
+                            _CardAction(
+                              icon: Icons.add_shopping_cart_rounded,
+                              tooltip: 'Add ${deal.title} to basket',
+                              onTap: onBasket,
+                            ),
+                          ],
+                        ),
+                      ),
                     if (inOutfit)
                       Positioned(
                         left: 8,
@@ -664,27 +730,38 @@ class _ClothingDealCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        if (deal.priceText != null) ...[
-                          Text(
-                            deal.priceText!,
-                            style: TextStyle(
-                              color: TS.redOf(context),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Expanded(
-                          child: Text(
-                            deal.retailerName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: TS.mutedOf(context), fontSize: 12),
+                        Text(
+                          Currency.of('ZAR').format(deal.priceCents),
+                          style: TextStyle(
+                            color: TS.redOf(context),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
                           ),
                         ),
+                        if (deal.previousPriceCents != null) ...[
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              Currency.of('ZAR')
+                                  .format(deal.previousPriceCents!),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: TS.faintOf(context),
+                                fontSize: 11,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
+                    ),
+                    Text(
+                      deal.retailerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(color: TS.mutedOf(context), fontSize: 12),
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -743,6 +820,43 @@ class _ClothingDealCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small round action that sits on the garment photo without hiding it.
+class _CardAction extends StatelessWidget {
+  const _CardAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(99),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: TS.surfaceOf(context).withValues(alpha: 0.92),
+              shape: BoxShape.circle,
+              border: Border.all(color: TS.lineSoftOf(context)),
+            ),
+            child: Icon(icon, size: 17, color: TS.inkOf(context)),
           ),
         ),
       ),

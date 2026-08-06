@@ -15,8 +15,6 @@ const MAX_OUTFIT_PIECES = 4
 const VTON_FLAG = 'vton'
 const VTON_MODEL = 'pruna/p-image-try-on'
 
-const PAID_PLAN_IDS = new Set(['scout', 'household', 'organization', 'developers'])
-
 interface FlagRow {
   enabled: number
 }
@@ -132,7 +130,6 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
       { headers: privateHeaders, status: 422 },
     )
   }
-  const garmentBase64 = garmentImages[0]
 
   // A fitting is only counted once it produced a look — a failed render
   // costs the shopper nothing from their monthly allowance.
@@ -156,7 +153,7 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   /// body for the next piece. Returns the finished look, or null so the
   /// caller can fall through to the next engine.
   const layer = async (
-    render: (person: string, garment: string) => Promise<string | null>,
+    render: (person: string, garment: string) => Promise<string | null | undefined>,
   ): Promise<string | null> => {
     let current = personBase64
     for (const garment of garmentImages) {
@@ -197,8 +194,15 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
   try {
     // Workers AI / AI Gateway fallback.
     const gatewayId = env.CF_AI_GATEWAY_ID || 'trolley-scout'
+    const ai = env.AI
+    if (!ai) {
+      return json(
+        { issues: ['Fitting room is warming up'] },
+        { headers: privateHeaders, status: 503 },
+      )
+    }
     const image = await layer(async (person, garment) => {
-      result = await env.AI.run(
+      result = await ai.run(
         VTON_MODEL as never,
         {
           garment_image: `data:image/jpeg;base64,${garment}`,
