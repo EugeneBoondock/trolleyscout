@@ -357,7 +357,11 @@ class _BoondockFooter extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+        // Opaque fill, for the same reason the header has one: the list
+        // scrolls underneath this, and a selected row is a solid yellow bar.
+        // Without a background it slid straight through the credit line.
         decoration: BoxDecoration(
+          color: TS.bgOf(context),
           border:
               Border(top: BorderSide(color: TS.lineSoftOf(context), width: 1)),
         ),

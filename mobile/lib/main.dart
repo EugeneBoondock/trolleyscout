@@ -699,17 +699,17 @@ class _RootShellState extends State<RootShell>
         // At a big text setting the label's own height drives the bar, so the
         // icon has to give way or the bar grows back.
         final navIconSize = largeNavText
-            ? 16.0
+            ? 15.0
             : extraCompactNav
-                ? 17.0
+                ? 16.0
                 : compactNav
-                    ? 18.0
-                    : 20.0;
+                    ? 17.0
+                    : 18.0;
         final navLabelSize = extraCompactNav
-            ? 8.0
+            ? 7.5
             : compactNav
-                ? 8.5
-                : 10.0;
+                ? 8.0
+                : 9.0;
         final requestedTextScale = MediaQuery.textScalerOf(context).scale(1);
         final navTextScale =
             min(requestedTextScale, extraCompactNav ? 1.05 : 1.2);
@@ -971,31 +971,25 @@ class _RootShellState extends State<RootShell>
                       parent: _navReveal,
                       reverseCurve: Curves.easeInCubic,
                     ),
+                    // Edge to edge, flat, one hairline on top. The bar used
+                    // to float as a rounded card with side margins, a full
+                    // border and a 16px shadow, which is what made it read as
+                    // a big slab rather than a strip.
                     child: SafeArea(
                       top: false,
-                      minimum: const EdgeInsets.fromLTRB(8, 0, 8, 3),
+                      minimum: EdgeInsets.zero,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: TS.surfaceOf(context),
-                          border: Border.all(
-                            color: TS.lineSoftOf(context),
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(TS.navRadius),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? const Color(0x66000000)
-                                  : const Color(0x211C1710),
-                              offset: const Offset(0, 5),
-                              blurRadius: 16,
+                          border: Border(
+                            top: BorderSide(
+                              color: TS.lineSoftOf(context),
+                              width: 1,
                             ),
-                          ],
+                          ),
                         ),
                         child: ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(TS.navRadius - 1),
+                          borderRadius: BorderRadius.zero,
                           child: MediaQuery(
                             data: MediaQuery.of(context).copyWith(
                               textScaler: TextScaler.linear(navTextScale),
@@ -1019,13 +1013,13 @@ class _RootShellState extends State<RootShell>
                                 // height stays under these numbers; drop these
                                 // without dropping those and the labels win
                                 // and the bar grows back.
-                                height: extraCompactNav
-                                    ? 44
-                                    : compactNav
-                                        ? 46
-                                        : largeText
-                                            ? 58
-                                            : 48,
+                                // 48 is the floor, not a preference: below it
+                                // the destinations stop meeting Android's
+                                // minimum tap target and the bar gets harder
+                                // to hit. The bar looks smaller because the
+                                // chrome around it is gone, not because the
+                                // touch area shrank.
+                                height: largeText ? 58 : 48,
                                 backgroundColor: TS.surfaceOf(context),
                                 elevation: 0,
                                 indicatorColor: Colors.transparent,
@@ -1038,10 +1032,10 @@ class _RootShellState extends State<RootShell>
                                         _primaryDestinations[index]),
                                 destinations: [
                                   NavigationDestination(
-                                    icon: Icon(Icons.dashboard_outlined,
+                                    icon: Icon(Icons.home_outlined,
                                         size: navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: Icons.dashboard,
+                                      icon: Icons.home_rounded,
                                       compact: compactNav,
                                       iconSize: navIconSize,
                                     ),
@@ -1254,8 +1248,8 @@ class _PrimaryNavigationRail extends StatelessWidget {
           onDestinationSelected: onDestinationSelected,
           destinations: const [
             NavigationRailDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
               label: Text('Home'),
             ),
             NavigationRailDestination(
