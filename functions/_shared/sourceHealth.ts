@@ -167,21 +167,38 @@ export async function readSourceHealth(
           ON baseline.retailer_id = latest.retailer_id`,
     ).bind(since).all<CountRow & { peak: number }>(),
 
+    // Two flat passes, not a correlated subquery.
+    //
+    // This previously counted barren runs with a COUNT(*) nested inside the
+    // window function, so for every row in deal_source_runs it re-scanned the
+    // whole table — 18.5 million rows read per execution, 8.5 seconds each,
+    // and on its own 81% of every D1 row this account read. Grouping once and
+    // joining costs a single pass over the same window.
     db.prepare(
-      `SELECT source_key, retailer_id, status, barren_runs FROM (
-        SELECT source_key,
-               retailer_id,
-               status,
-               (SELECT COUNT(*) FROM deal_source_runs AS r2
-                 WHERE r2.source_key = r1.source_key
-                   AND r2.status = 'success'
-                   AND r2.candidate_count = 0
-                   AND COALESCE(r2.catalogue_count, 0) = 0
-                   AND r2.created_at >= ?) AS barren_runs,
-               ROW_NUMBER() OVER (PARTITION BY source_key ORDER BY created_at DESC) AS rank
-          FROM deal_source_runs AS r1
+      `WITH recent AS (
+         SELECT source_key, retailer_id, status,
+                ROW_NUMBER() OVER (
+                  PARTITION BY source_key ORDER BY created_at DESC
+                ) AS rank
+           FROM deal_source_runs
           WHERE created_at >= ?
-      ) WHERE rank = 1`,
+       ),
+       barren AS (
+         SELECT source_key, COUNT(*) AS barren_runs
+           FROM deal_source_runs
+          WHERE status = 'success'
+            AND candidate_count = 0
+            AND COALESCE(catalogue_count, 0) = 0
+            AND created_at >= ?
+          GROUP BY source_key
+       )
+       SELECT recent.source_key AS source_key,
+              recent.retailer_id AS retailer_id,
+              recent.status AS status,
+              COALESCE(barren.barren_runs, 0) AS barren_runs
+         FROM recent
+         LEFT JOIN barren ON barren.source_key = recent.source_key
+        WHERE recent.rank = 1`,
     ).bind(since, since).all<RunRow>(),
   ])
 
