@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'image_transform.dart';
+
 class AuthDraft {
   const AuthDraft.login({required this.email, required this.password})
       : intent = 'login',
@@ -51,6 +53,7 @@ class MemberAccount {
     this.propertyViewCount = 0,
     this.voucherViewCount = 0,
     this.windowShoppingSeconds = 0,
+    this.emailVerified = false,
   });
 
   final String id;
@@ -89,6 +92,9 @@ class MemberAccount {
   final int voucherViewCount;
   final int windowShoppingSeconds;
 
+  /// Whether the shopper has proved they can read the address on the account.
+  final bool emailVerified;
+
   bool get isAdmin => role == 'admin';
 
   bool get isBanned => status == 'banned';
@@ -125,6 +131,7 @@ class MemberAccount {
         propertyViewCount: _int(json['propertyViewCount']),
         voucherViewCount: _int(json['voucherViewCount']),
         windowShoppingSeconds: _int(json['windowShoppingSeconds']),
+        emailVerified: json['emailVerified'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -681,10 +688,14 @@ class Deal {
 
   List<String> get gallery {
     final seen = <String>{};
+    // Every frame is sized, not just the cover: a gallery that mixed a
+    // resized first image with full-size ones would download the megabytes
+    // the resizing was meant to save the moment the shopper swiped.
     return <String>[
       if (imageUrl != null) imageUrl!,
       ...images,
     ]
+        .map((url) => sizedImageUrl(url) ?? '')
         .map((url) => url.trim())
         .where((url) => url.isNotEmpty && seen.add(url))
         .toList(growable: false);
@@ -716,7 +727,7 @@ class Deal {
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
         productUrl: _optionalString(json['productUrl']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         images: json['images'] is List
             ? (json['images'] as List)
                 .whereType<String>()
@@ -1233,7 +1244,7 @@ class BusinessStoryPublication {
         organizationSlug: _string(json['organizationSlug']),
         title: _string(json['title']),
         bodyText: _string(json['bodyText']),
-        imageUrl: _string(json['imageUrl']),
+        imageUrl: sizedImageUrl(_string(json['imageUrl'])) ?? '',
         targetUrl: _string(json['targetUrl']),
         imageAlt: _optionalString(json['imageAlt']),
         offerText: _optionalString(json['offerText']),
@@ -1501,7 +1512,7 @@ class VerifiedOffer {
         priceText: _optionalString(json['priceText']),
         savingText: _optionalString(json['savingText']),
         termsText: _optionalString(json['termsText']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
       );
 }
 
@@ -2359,6 +2370,9 @@ class CataloguePage {
 
   factory CataloguePage.fromJson(Map<String, dynamic> json) => CataloguePage(
         pageNumber: _int(json['pageNumber'], 1),
+        // Deliberately NOT resized: a catalogue page is a full leaflet scan
+        // the shopper pinches into to read a price. Serving it at card width
+        // would make the thing they came for unreadable.
         imageUrl: _string(json['imageUrl']),
         width: _intOrNull(json['width']),
         height: _intOrNull(json['height']),
@@ -2430,7 +2444,7 @@ class Catalogue {
         capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         retailerLogoUrl: _optionalString(json['retailerLogoUrl']),
         retailerName: _optionalString(json['retailerName']),
         pages: _mapList(json['pages']).map(CataloguePage.fromJson).toList(),
@@ -2446,7 +2460,7 @@ class Catalogue {
         capturedAt: _optionalString(json['capturedAt']),
         validFrom: _optionalString(json['validFrom']),
         validTo: _optionalString(json['validTo']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         retailerLogoUrl: _optionalString(json['retailerLogoUrl']),
         retailerName: _optionalString(json['storeName']),
         pages: _mapList(json['pages']).map(CataloguePage.fromJson).toList(),
@@ -2534,7 +2548,7 @@ class ScoutChatDealCard {
         productUrl: _string(json['productUrl']),
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         soldOut: json['soldOut'] == true,
       );
 }
@@ -2569,7 +2583,7 @@ class ScoutChatCatalogueCard {
         name: _string(json['name'], 'Catalogue'),
         url: _string(json['url']),
         pageCount: _int(json['pageCount']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         pageImageUrls: _stringList(json['pageImageUrls']),
         pagesUrl: _optionalString(json['pagesUrl']),
         validTo: _optionalString(json['validTo']),
@@ -2636,7 +2650,7 @@ class ScoutGroceryPlanItem {
         assumption: _string(json['assumption']),
         group: _string(json['group'], 'Grocery'),
         id: _string(json['id']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         lineTotalCents: _int(json['lineTotalCents']),
         lineTotalText: _string(json['lineTotalText']),
         previousPriceText: _optionalString(json['previousPriceText']),
@@ -2944,7 +2958,7 @@ class DealWatchMatch {
         retailerName: _optionalString(json['retailerName']),
         priceText: _optionalString(json['priceText']),
         productUrl: _optionalString(json['productUrl']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
       );
 }
 
@@ -3064,7 +3078,7 @@ class AdSubmission {
         amountCents: _int(json['amountCents']),
         status: _string(json['status'], 'pending'),
         createdAt: _string(json['createdAt']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         province: _optionalString(json['province']),
         reviewNote: _optionalString(json['reviewNote']),
       );
@@ -3096,7 +3110,7 @@ class PublicAd {
         bodyText: _string(json['bodyText']),
         targetUrl: _string(json['targetUrl']),
         placement: _string(json['placement'], 'feed'),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         province: _optionalString(json['province']),
       );
 }
@@ -3146,11 +3160,14 @@ class ScrollDeal {
 
   List<String> get gallery {
     final seen = <String>{};
+    // Sized before the dedup, not after: the cover arrives already resized
+    // from the parser while the extra frames are raw, so comparing them as
+    // they come would keep the same photo twice — once resized, once not.
     return <String>[
       if (imageUrl != null) imageUrl!,
       ...images,
     ]
-        .map((url) => url.trim())
+        .map((url) => (sizedImageUrl(url) ?? '').trim())
         .where((url) => url.isNotEmpty && seen.add(url))
         .toList(growable: false);
   }
@@ -3171,7 +3188,7 @@ class ScrollDeal {
         previousPriceText: _optionalString(json['previousPriceText']),
         savingText: _optionalString(json['savingText']),
         unitText: _optionalString(json['unitText']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         images: json['images'] is List
             ? (json['images'] as List)
                 .whereType<String>()
@@ -3317,7 +3334,7 @@ class PropertyListing {
         bathrooms: json['bathrooms'] is num ? json['bathrooms'] as num : null,
         garages: _intOrNull(json['garages']),
         propertyType: _optionalString(json['propertyType']),
-        imageUrl: _optionalString(json['imageUrl']),
+        imageUrl: sizedImageUrl(_optionalString(json['imageUrl'])),
         images: json['images'] is List
             ? (json['images'] as List)
                 .whereType<String>()

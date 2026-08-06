@@ -5,6 +5,8 @@ import {
   type ClothingProduct,
 } from '../../src/services/clothingCatalogue'
 import type { TrolleyScoutEnv } from './env'
+import { needsBrowserRender } from './browserRender'
+import { enqueueScoutJobs } from './scoutQueue'
 import {
   harvestClothingFromDeals,
   pruneStaleClothing,
@@ -52,6 +54,35 @@ export async function sweepClothingRetailers(
   const start = retailers.length === 0
     ? 0
     : ((options.cursor ?? 0) % retailers.length + retailers.length) % retailers.length
+
+  // With a queue bound, the sweep hands each shop out as its own message and
+  // returns. One shop timing out then costs only itself, a retry re-runs only
+  // that shop, and a shop that keeps failing lands in the dead-letter queue
+  // where the health alarm can see it instead of inferring a barren run.
+  if (env.SCOUT_QUEUE && !options.retailers) {
+    const slice = Array.from(
+      { length: Math.min(perRun, retailers.length) },
+      (_unused, step) => retailers[(start + step) % retailers.length],
+    )
+    const queued = await enqueueScoutJobs(
+      env,
+      slice.map((retailer) => ({
+        kind: 'clothing' as const,
+        needsBrowser: needsBrowserRender(retailer.id),
+        retailerId: retailer.id,
+        runId: now.toISOString(),
+      })),
+    )
+    if (queued > 0) {
+      return {
+        failed: 0,
+        nextCursor: (start + slice.length) % Math.max(1, retailers.length),
+        // Nothing is saved in this pass; the queue consumers do the saving.
+        productsSaved: 0,
+        storesSwept: queued,
+      }
+    }
+  }
 
   let productsSaved = 0
   let failed = 0

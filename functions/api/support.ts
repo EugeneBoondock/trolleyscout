@@ -1,12 +1,19 @@
 import type { TrolleyScoutEnv } from '../_shared/env'
 import { getMemberSession } from '../_shared/memberStore'
 import { json, methodNotAllowed } from '../_shared/respond'
+import {
+  callerIp,
+  turnstileAllows,
+  verifyTurnstile,
+} from '../_shared/turnstile'
 import { createSupportMessage } from '../_shared/supportStore'
 
 // Public endpoint: anyone can raise a support message from the Support page,
 // signed in or not. Admins read them in the admin console (see api/admin.ts).
 
 interface SupportBody {
+  /// Present from the web form; absent from the app and older builds.
+  turnstileToken?: string
   name?: string
   email?: string
   topic?: string
@@ -27,6 +34,26 @@ export const onRequest: PagesFunction<TrolleyScoutEnv> = async ({ env, request }
     body = (await request.json()) as SupportBody
   } catch {
     return json({ message: 'Request body must be valid JSON.' }, { headers: privateHeaders, status: 400 })
+  }
+
+  // Turnstile, checked only when the sender actually presented a token.
+  //
+  // The web form always sends one, so a script hitting this endpoint with a
+  // forged or stale token is turned away. A request with no token at all is
+  // still accepted: the mobile app and any older web build do not send one,
+  // and silently breaking support for them would be a far worse outcome than
+  // the spam this prevents. Tighten to "always required" once every client
+  // sends a token.
+  if (typeof body.turnstileToken === 'string' && body.turnstileToken.length) {
+    const outcome = await verifyTurnstile(env, body.turnstileToken, {
+      remoteIp: callerIp(request),
+    })
+    if (!turnstileAllows(outcome)) {
+      return json(
+        { message: 'That looked automated. Reload the page and try again.' },
+        { headers: privateHeaders, status: 403 },
+      )
+    }
   }
 
   // If the sender happens to be signed in, link the message to their account so

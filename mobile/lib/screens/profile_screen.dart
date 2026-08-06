@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -477,6 +478,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+        _EmailVerificationCard(controller: widget.controller),
         _AppearanceCard(controller: widget.controller),
         const _BiometricCard(),
         OutlinedButton.icon(
@@ -729,6 +731,210 @@ class _BiometricCardState extends State<_BiometricCard> {
             value: _enabled,
             onChanged: (_available && !_busy) ? _toggle : null,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Proving the shopper can read the address on their account.
+///
+/// Existing accounts were created before there was any way to send an email,
+/// so most are unverified through no fault of the shopper. The card says so
+/// plainly and offers the one button that fixes it, rather than nagging.
+class _EmailVerificationCard extends StatefulWidget {
+  const _EmailVerificationCard({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_EmailVerificationCard> createState() => _EmailVerificationCardState();
+}
+
+class _EmailVerificationCardState extends State<_EmailVerificationCard> {
+  final TextEditingController _code = TextEditingController();
+  bool _busy = false;
+  bool _codeSent = false;
+  String? _notice;
+  bool _noticeIsError = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    setState(() {
+      _busy = true;
+      _notice = null;
+    });
+    try {
+      await widget.controller.api.requestEmailVerification();
+      if (!mounted) return;
+      setState(() {
+        _codeSent = true;
+        _noticeIsError = false;
+        _notice = 'Code sent. It expires in 10 minutes.';
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _noticeIsError = true;
+        _notice = error.message;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirm() async {
+    final code = _code.text.trim();
+    if (code.length < 4) {
+      setState(() {
+        _noticeIsError = true;
+        _notice = 'Enter the code from your email.';
+      });
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _notice = null;
+    });
+    try {
+      await widget.controller.api.confirmEmailVerification(code);
+      if (!mounted) return;
+      // Say so first. The server has accepted the code, and a follow-up
+      // refresh that fails must not turn a true success into silence.
+      setState(() {
+        _code.clear();
+        _codeSent = false;
+        _noticeIsError = false;
+        _notice = 'Your email is verified.';
+      });
+      // Then pull the account so the badge flips without a restart.
+      unawaited(widget.controller.restore());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _noticeIsError = true;
+        _notice = error.message;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.controller.session.account;
+    if (account == null) return const SizedBox.shrink();
+    final verified = account.emailVerified;
+
+    return PaperCard(
+      key: const ValueKey('email-verification-card'),
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Email',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.merge(TS.display)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: verified
+                      ? TS.greenOf(context)
+                      : TS.surfaceSoftOf(context),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  verified ? 'Verified' : 'Not verified',
+                  style: TextStyle(
+                    color: verified ? Colors.white : TS.mutedOf(context),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            verified
+                ? '${account.email} is confirmed. You can reset your password '
+                    'with it if you ever get locked out.'
+                : 'Verify ${account.email} so you can reset your password if '
+                    'you get locked out, and so we can reach you about your '
+                    'account.',
+            style: TextStyle(
+              color: TS.mutedOf(context),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          if (!verified) ...[
+            const SizedBox(height: 11),
+            if (_codeSent) ...[
+              TextField(
+                controller: _code,
+                key: const ValueKey('email-verification-code'),
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Code from your email',
+                  hintText: '123456',
+                ),
+              ),
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      key: const ValueKey('email-verification-confirm'),
+                      onPressed: _busy ? null : _confirm,
+                      child: const Text('Confirm'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _busy ? null : _send,
+                    child: const Text('Resend'),
+                  ),
+                ],
+              ),
+            ] else
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  key: const ValueKey('email-verification-send'),
+                  onPressed: _busy ? null : _send,
+                  icon: _busy
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.mark_email_read_outlined),
+                  label: const Text('Verify my email'),
+                ),
+              ),
+          ],
+          if (_notice != null) ...[
+            const SizedBox(height: 9),
+            Text(
+              _notice!,
+              style: TextStyle(
+                color: _noticeIsError ? TS.redOf(context) : TS.greenOf(context),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ],
       ),
     );

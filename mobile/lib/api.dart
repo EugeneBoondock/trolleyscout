@@ -860,7 +860,8 @@ class Api {
       'limit=$limit',
       'offset=$offset',
       if (search.isNotEmpty) 'q=${Uri.encodeQueryComponent(search)}',
-      if (retailerId != 'all') 'retailerId=${Uri.encodeQueryComponent(retailerId)}',
+      if (retailerId != 'all')
+        'retailerId=${Uri.encodeQueryComponent(retailerId)}',
       if (audience != 'any') 'audience=$audience',
       if (garmentType != 'any') 'type=$garmentType',
       if (tryOnableOnly) 'tryOnable=1',
@@ -933,7 +934,8 @@ class Api {
     required bool enabled,
     String? accountId,
   }) async =>
-      VtonFlags.fromJson(await _request('PATCH', '/api/admin/vton-flags', body: {
+      VtonFlags.fromJson(
+          await _request('PATCH', '/api/admin/vton-flags', body: {
         'enabled': enabled,
         if (accountId != null && accountId.isNotEmpty) 'accountId': accountId,
       }));
@@ -1003,6 +1005,27 @@ class Api {
       'currentPassword': currentPassword,
     });
     await clearLocalSession();
+  }
+
+  /// Asks the server to email a one-time code to the address on the account.
+  ///
+  /// Cloudflare sends it; the app never sees the code. Throws with the
+  /// server's own wording when delivery is unavailable, so the shopper is told
+  /// something true rather than "something went wrong".
+  Future<void> requestEmailVerification() async {
+    await _request('POST', '/api/identity', body: {
+      'action': 'request',
+      'channel': 'email',
+    });
+  }
+
+  /// Confirms the code the shopper typed in.
+  Future<void> confirmEmailVerification(String code) async {
+    await _request('POST', '/api/identity', body: {
+      'action': 'verify',
+      'channel': 'email',
+      'code': code.trim(),
+    });
   }
 
   /// Sends a support message (bug report, feature request, question). Public

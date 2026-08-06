@@ -7,5 +7,13 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: false,
+    alias: {
+      // `cloudflare:workers` only exists inside workerd. Without this, any
+      // test that transitively imports the catalogue Workflow fails to load.
+      'cloudflare:workers': new URL(
+        './test/stubs/cloudflareWorkers.ts',
+        import.meta.url,
+      ).pathname,
+    },
   },
 })

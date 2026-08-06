@@ -28,3 +28,10 @@ queue = "trolley-scout-scout"
 max_batch_size = 10
 max_retries = 3
 dead_letter_queue = "trolley-scout-scout-dlq"
+
+# The catalogue lane as a durable run: checkpointed, backed off, and visible
+# in the dashboard instead of failing silently on the cron.
+[[workflows]]
+binding = "CATALOGUE_WORKFLOW"
+class_name = "CatalogueWorkflow"
+name = "trolley-scout-catalogue"

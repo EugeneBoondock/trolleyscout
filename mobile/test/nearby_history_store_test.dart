@@ -34,7 +34,7 @@ void main() {
     expect(restored?.capturedAt, capturedAt);
     expect(restored?.result.stores.single.name, 'Local Market');
     expect(restored?.result.stores.single.deals.single.imageUrl,
-        'https://market.test/rice.jpg');
+        contains('https://market.test/rice.jpg'));
   });
 
   test('returns no history for damaged local data', () async {

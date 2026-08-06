@@ -10,6 +10,9 @@ import {
 } from '../functions/_shared/dealAlertStore'
 import { refreshDealSites } from '../functions/_shared/dealSiteScout'
 import { sweepClothingRetailers } from '../functions/_shared/clothingScout'
+import { parseScoutJob, type ScoutJob } from '../functions/_shared/scoutQueue'
+// Re-exported so the Workflows runtime can find the class this worker binds.
+export { CatalogueWorkflow } from './catalogueWorkflow'
 import { CLOTHING_RETAILERS } from '../src/data/clothingRetailers'
 import {
   runHolidayCampaignScout,
@@ -649,6 +652,32 @@ export function clothingCursorFor(
 }
 
 export default {
+  /**
+   * Sweeps one shop per message.
+   *
+   * A message that throws is retried by Queues and, after three attempts,
+   * lands in the dead-letter queue — so a feed that has genuinely died stops
+   * being an empty result nobody notices and becomes a message someone can
+   * look at. Acking a bad message would throw that signal away, so failures
+   * are deliberately left to bubble.
+   */
+  async queue(batch: MessageBatch<unknown>, env: TrolleyScoutEnv) {
+    for (const message of batch.messages) {
+      const job = parseScoutJob(message.body)
+      if (!job) {
+        // Unparseable work will never become parseable on a retry.
+        message.ack()
+        continue
+      }
+      try {
+        await runScoutJob(env, job)
+        message.ack()
+      } catch {
+        message.retry()
+      }
+    }
+  },
+
   async scheduled(controller, env) {
     const result = await runScheduledScout(
       env,
@@ -704,4 +733,28 @@ async function pruneAuditRows(env: ScoutEnv): Promise<void> {
       // A missing table mid-migration must not fail the whole scheduled run.
     }
   }
+}
+
+/**
+ * Runs one queued shop.
+ *
+ * Only clothing today: the deal and catalogue lanes still run inline on the
+ * cron, and moving them is a separate change with its own failure modes.
+ */
+async function runScoutJob(
+  env: TrolleyScoutEnv,
+  job: ScoutJob,
+): Promise<void> {
+  if (job.kind !== 'clothing') return
+  const retailer = CLOTHING_RETAILERS.find(
+    (candidate) => candidate.id === job.retailerId,
+  )
+  if (!retailer) return
+  // A single-retailer sweep: passing `retailers` explicitly is also what stops
+  // this from queueing more work and looping forever.
+  await sweepClothingRetailers(env, {
+    now: new Date(),
+    retailers: [retailer],
+    storesPerRun: 1,
+  })
 }
