@@ -10,7 +10,11 @@ const privateHeaders = { 'cache-control': 'private, no-store' }
 const MAX_BODY_BYTES = 12 * 1024 * 1024
 const MAX_GARMENT_BYTES = 8 * 1024 * 1024
 // A full outfit in one go: top, bottom, jacket, shoes.
-const MAX_OUTFIT_PIECES = 4
+// Bottoms, top, a layer over it, shoes, headwear and two accessories is a
+// complete look and the most the slot rules on the app can produce. Every
+// piece is its own render, so this is also the ceiling on what one fitting
+// costs us — the shopper is charged one fitting either way.
+const MAX_OUTFIT_PIECES = 7
 
 const VTON_FLAG = 'vton'
 const VTON_MODEL = 'pruna/p-image-try-on'

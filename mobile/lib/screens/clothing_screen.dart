@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../clothing_filters.dart';
 import '../currency.dart';
+import '../outfit_slots.dart';
 import '../theme.dart';
 import '../ux.dart';
 import '../vton_photo_store.dart';
@@ -164,14 +165,22 @@ class _ClothingScreenState extends State<ClothingScreen> {
 
   void _toggleOutfitPiece(ClothingItem item) {
     uxTap();
-    setState(() {
-      final index = _outfit.indexWhere((piece) => piece.id == item.id);
-      if (index >= 0) {
-        _outfit.removeAt(index);
-      } else if (_outfit.length < 4) {
-        _outfit.add(item);
-      }
-    });
+    final index = _outfit.indexWhere((piece) => piece.id == item.id);
+    if (index >= 0) {
+      setState(() => _outfit.removeAt(index));
+      return;
+    }
+    // Two shirts cannot both be worn, but a shirt and a jacket can. When a
+    // piece will not fit, say which place on the body is taken and what does
+    // work instead — silently ignoring the tap reads as a broken button.
+    final problem = outfitRejection(item, _outfit);
+    if (problem != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(problem)));
+      return;
+    }
+    setState(() => _outfit.add(item));
   }
 
   @override
@@ -293,8 +302,8 @@ class _ClothingScreenState extends State<ClothingScreen> {
                     )
                   else
                     SliverPadding(
-                      padding: EdgeInsets.fromLTRB(
-                          16, 4, 16, _outfitMode && _outfit.isNotEmpty ? 128 : 16),
+                      padding: EdgeInsets.fromLTRB(16, 4, 16,
+                          _outfitMode && _outfit.isNotEmpty ? 128 : 16),
                       sliver: SliverGrid.builder(
                         gridDelegate:
                             const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -330,9 +339,11 @@ class _ClothingScreenState extends State<ClothingScreen> {
                 right: 0,
                 bottom: 0,
                 child: _OutfitTray(
-                  pieces: _outfit,
+                  pieces: outfitInLayerOrder(_outfit),
                   onRemove: _toggleOutfitPiece,
-                  onWear: () => _openFittingRoom(_outfit),
+                  // Dressed from the skin outwards: each render paints onto
+                  // the previous result, so the order is the outfit.
+                  onWear: () => _openFittingRoom(outfitInLayerOrder(_outfit)),
                 ),
               ),
           ],
@@ -340,7 +351,6 @@ class _ClothingScreenState extends State<ClothingScreen> {
       },
     );
   }
-
 }
 
 /// Store, audience and garment filters on one calm surface — chips the thumb
@@ -449,7 +459,8 @@ class _FilterBar extends StatelessWidget {
                     : 'Build an outfit from several pieces',
                 child: PressableScale(
                   child: GestureDetector(
-                    onTap: canBuildOutfits ? onToggleOutfitMode : onOutfitLocked,
+                    onTap:
+                        canBuildOutfits ? onToggleOutfitMode : onOutfitLocked,
                     child: Container(
                       key: const Key('outfit-mode-toggle'),
                       height: 44,
@@ -461,8 +472,7 @@ class _FilterBar extends StatelessWidget {
                           color: outfitMode ? TS.ink : TS.lineOf(context),
                           width: 1.5,
                         ),
-                        borderRadius:
-                            BorderRadius.circular(TS.controlRadius),
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -472,9 +482,7 @@ class _FilterBar extends StatelessWidget {
                                 ? Icons.auto_awesome_rounded
                                 : Icons.lock_outline_rounded,
                             size: 17,
-                            color: outfitMode
-                                ? TS.yellow
-                                : TS.inkOf(context),
+                            color: outfitMode ? TS.yellow : TS.inkOf(context),
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -482,9 +490,8 @@ class _FilterBar extends StatelessWidget {
                             style: TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 13,
-                              color: outfitMode
-                                  ? Colors.white
-                                  : TS.inkOf(context),
+                              color:
+                                  outfitMode ? Colors.white : TS.inkOf(context),
                             ),
                           ),
                         ],
@@ -667,8 +674,8 @@ class _OutfitTray extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: TS.ink,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
                 icon: const Icon(Icons.auto_awesome_rounded, size: 18),
                 label: Text(
@@ -848,11 +855,9 @@ class _ClothingDealCard extends StatelessWidget {
                       height: 36,
                       child: tryOnable
                           ? FilledButton.tonal(
-                              onPressed:
-                                  outfitMode ? onToggleOutfit : onTryOn,
+                              onPressed: outfitMode ? onToggleOutfit : onTryOn,
                               style: FilledButton.styleFrom(
-                                backgroundColor:
-                                    inOutfit ? TS.ink : TS.yellow,
+                                backgroundColor: inOutfit ? TS.ink : TS.yellow,
                                 foregroundColor:
                                     inOutfit ? Colors.white : TS.ink,
                                 padding:
@@ -874,7 +879,9 @@ class _ClothingDealCard extends StatelessWidget {
                                   Flexible(
                                     child: Text(
                                       outfitMode
-                                          ? (inOutfit ? 'Added' : 'Add to outfit')
+                                          ? (inOutfit
+                                              ? 'Added'
+                                              : 'Add to outfit')
                                           : 'Try it on',
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(

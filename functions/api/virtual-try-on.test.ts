@@ -106,6 +106,18 @@ describe('/api/virtual-try-on', () => {
   })
 
   it('layers a whole outfit onto one body', async () => {
+    // Distinct bytes per garment, so the order they reach the model can be
+    // told apart rather than assumed.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        const byte = url.includes('shirt') ? 11 : 22
+        return new Response(new Uint8Array([byte]), { status: 200 })
+      }),
+    )
+    const shirtBase64 = btoa(String.fromCharCode(11))
+    const jeansBase64 = btoa(String.fromCharCode(22))
     const ai = {
       run: vi.fn(async () => ({ image: btoa('layered') })),
     }
@@ -117,13 +129,23 @@ describe('/api/virtual-try-on', () => {
       personImage,
     })
     expect(response.status).toBe(200)
-    // One render per garment, each dressing the previous result.
+    // One render per garment, each dressing the previous result — never all
+    // at once against the original photo, which would produce two separate
+    // looks rather than one outfit.
     expect(ai.run).toHaveBeenCalledTimes(2)
     const calls = ai.run.mock.calls as unknown as Array<
-      [string, { person_image: string }]
+      [string, { person_image: string; garment_images: string[] }]
     >
+
+    // The first garment sent is the one worn against the shopper's own photo.
+    expect(calls[0][1].person_image).toContain(personImage)
+    expect(calls[0][1].garment_images[0]).toContain(shirtBase64)
+
+    // The second is rendered onto the result of the first, not onto the
+    // original: this is what makes it one body wearing both.
     expect(calls[1][1].person_image)
       .toBe(`data:image/jpeg;base64,${btoa('layered')}`)
+    expect(calls[1][1].garment_images[0]).toContain(jeansBase64)
   })
 
   it('lets an admin on the free plan through', async () => {

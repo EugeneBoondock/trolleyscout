@@ -58,8 +58,7 @@ const _introSeenKey = 'vton_intro_seen_v1';
 const _firstSuccessKey = 'vton_first_success_v1';
 
 class _FittingRoomScreenState extends State<FittingRoomScreen> {
-  late final VtonPhotoStore _photoStore =
-      widget.photoStore ?? VtonPhotoStore();
+  late final VtonPhotoStore _photoStore = widget.photoStore ?? VtonPhotoStore();
   late final SavedFitsStore _fitsStore = widget.fitsStore ?? SavedFitsStore();
   bool _fitSaved = false;
   bool _savingFit = false;
@@ -168,8 +167,7 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
     _statusTimer?.cancel();
     _statusTimer = Timer.periodic(const Duration(milliseconds: 1600), (_) {
       if (mounted) {
-        setState(
-            () => _statusIndex = (_statusIndex + 1) % _statusLines.length);
+        setState(() => _statusIndex = (_statusIndex + 1) % _statusLines.length);
       }
     });
     try {
@@ -245,7 +243,8 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
               onDone: _finishIntro,
             ),
           _FittingStage.photo => _photoStep(context),
-          _FittingStage.generating => const _GeneratingPane(key: Key('vton-generating')),
+          _FittingStage.generating =>
+            const _GeneratingPane(key: Key('vton-generating')),
           _FittingStage.result => _resultStep(context),
           _FittingStage.gated => _ScoutPlanGateCard(
               message: _gateMessage,
@@ -270,6 +269,19 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _buyFittings() async {
+    final bought = await showBuyFittingsSheet(context, widget.api);
+    if (!mounted || !bought) return;
+    // Show the new balance straight away rather than after the next fitting.
+    try {
+      final options = await widget.api.tryOnCreditOptions();
+      if (!mounted) return;
+      setState(() => _quota = options.quota);
+    } catch (_) {
+      // The purchase still landed; the balance refreshes on the next fitting.
+    }
   }
 
   Widget _photoStep(BuildContext context) {
@@ -430,14 +442,13 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
         Text('THE LOOK', style: TS.eyebrowOf(context)),
         const SizedBox(height: 4),
         Text(widget.garmentTitle,
-            style:
-                Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
+            style: Theme.of(context).textTheme.titleLarge?.merge(TS.display)),
         const SizedBox(height: 12),
         TweenAnimationBuilder<double>(
           // A subtle scale-in makes the first reveal land as a moment; the
           // shopper's later results settle instantly.
-          tween: Tween(
-              begin: (_celebrate && !reduceMotion) ? 0.9 : 1.0, end: 1.0),
+          tween:
+              Tween(begin: (_celebrate && !reduceMotion) ? 0.9 : 1.0, end: 1.0),
           duration: const Duration(milliseconds: 420),
           curve: Curves.easeOutBack,
           builder: (context, scale, child) =>
@@ -453,14 +464,17 @@ class _FittingRoomScreenState extends State<FittingRoomScreen> {
               const SizedBox(width: 6),
               Text('Your first fit — looking sharp!',
                   style: TextStyle(
-                      color: TS.mutedOf(context),
-                      fontWeight: FontWeight.w700)),
+                      color: TS.mutedOf(context), fontWeight: FontWeight.w700)),
             ],
           ),
         ],
         if (_quota != null) ...[
           const SizedBox(height: 12),
-          _QuotaBar(quota: _quota!, onUpgrade: widget.onUpgrade),
+          _QuotaBar(
+            quota: _quota!,
+            onUpgrade: widget.onUpgrade,
+            onBuyFittings: _quota!.isUnlimited ? null : _buyFittings,
+          ),
         ],
         const SizedBox(height: 16),
         Row(
@@ -564,8 +578,8 @@ class _PhotoGuidance extends StatelessWidget {
             Container(
               width: 44,
               height: 44,
-              decoration: const BoxDecoration(
-                  color: TS.yellow, shape: BoxShape.circle),
+              decoration:
+                  const BoxDecoration(color: TS.yellow, shape: BoxShape.circle),
               child: const Icon(Icons.accessibility_new, color: TS.ink),
             ),
             const SizedBox(width: 12),
@@ -761,10 +775,8 @@ class _IntroStep extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.merge(TS.display),
+              style:
+                  Theme.of(context).textTheme.headlineSmall?.merge(TS.display),
             ),
             const SizedBox(height: 10),
             Text(
@@ -820,8 +832,7 @@ class _MirrorIllustration extends StatelessWidget {
           Positioned(
             left: 4,
             top: 4,
-            child:
-                Icon(Icons.auto_awesome, color: TS.redOf(context), size: 22),
+            child: Icon(Icons.auto_awesome, color: TS.redOf(context), size: 22),
           ),
         ],
       ),
@@ -867,8 +878,7 @@ class _PrivacyIllustration extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: TS.lineOf(context), width: 3),
       ),
-      child: const Icon(Icons.phonelink_lock_outlined,
-          size: 64, color: TS.ink),
+      child: const Icon(Icons.phonelink_lock_outlined, size: 64, color: TS.ink),
     );
   }
 }
@@ -905,8 +915,7 @@ class _GeneratingPaneState extends State<_GeneratingPane>
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final state = context.findAncestorStateOfType<_FittingRoomScreenState>();
-    final line = _FittingRoomScreenState
-        ._statusLines[state?._statusIndex ?? 0];
+    final line = _FittingRoomScreenState._statusLines[state?._statusIndex ?? 0];
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -914,8 +923,8 @@ class _GeneratingPaneState extends State<_GeneratingPane>
           FadeTransition(
             opacity: reduceMotion
                 ? const AlwaysStoppedAnimation(1.0)
-                : Tween(begin: 0.35, end: 1.0).animate(CurvedAnimation(
-                    parent: _pulse, curve: Curves.easeInOut)),
+                : Tween(begin: 0.35, end: 1.0).animate(
+                    CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
             child: Container(
               width: 130,
               height: 170,
@@ -969,8 +978,8 @@ class _BeforeAfterSliderState extends State<_BeforeAfterSlider> {
         child: LayoutBuilder(
           builder: (context, constraints) => GestureDetector(
             onHorizontalDragUpdate: (details) => setState(() {
-              _fraction =
-                  (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
+              _fraction = (details.localPosition.dx / constraints.maxWidth)
+                  .clamp(0.0, 1.0);
             }),
             child: Stack(
               fit: StackFit.expand,
@@ -1003,8 +1012,8 @@ class _BeforeAfterSliderState extends State<_BeforeAfterSlider> {
                       shape: BoxShape.circle,
                       border: Border.all(color: TS.ink, width: 2),
                     ),
-                    child: const Icon(Icons.unfold_more,
-                        size: 18, color: TS.ink),
+                    child:
+                        const Icon(Icons.unfold_more, size: 18, color: TS.ink),
                   ),
                 ),
                 const Positioned(
@@ -1026,7 +1035,8 @@ class _LeftFractionClipper extends CustomClipper<Rect> {
   final double fraction;
 
   @override
-  Rect getClip(Size size) => Rect.fromLTRB(0, 0, size.width * fraction, size.height);
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(0, 0, size.width * fraction, size.height);
 
   @override
   bool shouldReclip(_LeftFractionClipper oldClipper) =>
@@ -1058,9 +1068,14 @@ class _SliderTag extends StatelessWidget {
 /// What the shopper has left this month, stated plainly — a filling bar for
 /// counted plans, a quiet line of pride for unlimited ones.
 class _QuotaBar extends StatelessWidget {
-  const _QuotaBar({required this.quota, this.onUpgrade});
+  const _QuotaBar({
+    required this.quota,
+    this.onUpgrade,
+    this.onBuyFittings,
+  });
 
   final TryOnQuota quota;
+  final VoidCallback? onBuyFittings;
   final VoidCallback? onUpgrade;
 
   @override
@@ -1101,16 +1116,20 @@ class _QuotaBar extends StatelessWidget {
                 ),
               ),
             ),
-            if (low && onUpgrade != null)
+            // Shown at every level, not only when the shopper has nearly run
+            // out: someone who wants ten more fittings before a shopping trip
+            // should not have to exhaust the free ones to find the button.
+            if (onBuyFittings != null)
               GestureDetector(
+                key: const Key('vton-buy-fittings'),
                 onTap: () {
                   uxTap();
-                  onUpgrade!.call();
+                  onBuyFittings!.call();
                 },
                 child: Text(
-                  'Get more',
+                  low ? 'Get more' : 'Buy fittings',
                   style: TextStyle(
-                    color: TS.redOf(context),
+                    color: low ? TS.redOf(context) : TS.mutedOf(context),
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
                     decoration: TextDecoration.underline,
@@ -1185,10 +1204,8 @@ class _ScoutPlanGateCard extends StatelessWidget {
                     ? 'Try clothes on before you buy'
                     : 'More fittings, any time',
                 textAlign: TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.merge(TS.display),
+                style:
+                    Theme.of(context).textTheme.titleLarge?.merge(TS.display),
               ),
               const SizedBox(height: 8),
               Text(

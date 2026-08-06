@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../currency.dart';
 import '../saved_fits_store.dart';
 import '../theme.dart';
+import '../widgets/turntable_view.dart';
 import '../ux.dart';
 import '../widgets/common.dart';
 
@@ -55,7 +56,9 @@ class _SavedFitsScreenState extends State<SavedFitsScreen> {
   Future<void> _download(SavedFit fit, Uint8List bytes) async {
     try {
       await SharePlus.instance.share(ShareParams(
-        files: [XFile(fit.imagePath, mimeType: 'image/png', name: '${fit.id}.png')],
+        files: [
+          XFile(fit.imagePath, mimeType: 'image/png', name: '${fit.id}.png')
+        ],
         subject: fit.title,
       ));
     } catch (_) {
@@ -155,13 +158,34 @@ class _FullScreenFit extends StatelessWidget {
           ),
         ],
       ),
-      body: Center(
-        child: InteractiveViewer(
-          key: const Key('full-screen-fit'),
-          minScale: 1,
-          maxScale: 5,
-          child: Image.memory(bytes, fit: BoxFit.contain),
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Center(
+              // Pinch to zoom stays; a horizontal drag turns the look. The
+              // turn is a parallax of this very image, so it costs no
+              // fitting and cannot drift from the shopper's own face.
+              child: InteractiveViewer(
+                key: const Key('full-screen-fit'),
+                minScale: 1,
+                maxScale: 5,
+                panEnabled: false,
+                child: TurntableView(image: MemoryImage(bytes)),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Drag left or right to turn',
+              style: TextStyle(
+                color: TS.mutedOf(context),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -286,9 +310,7 @@ class _SavedFitCard extends StatelessWidget {
                         ? Icons.push_pin_rounded
                         : Icons.push_pin_outlined,
                     size: 19,
-                    color: fit.pinned
-                        ? TS.redOf(context)
-                        : TS.mutedOf(context),
+                    color: fit.pinned ? TS.redOf(context) : TS.mutedOf(context),
                   ),
                 ),
                 IconButton(
