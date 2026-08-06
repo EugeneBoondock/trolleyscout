@@ -9,6 +9,12 @@ export interface TrolleyScoutEnv {
   /// The AI Search instance holding the document corpus (help, rules, docs).
   AI_SEARCH_INSTANCE?: string
 
+  /// Per-retailer scout work, retried and dead-lettered on its own.
+  SCOUT_QUEUE?: { sendBatch(messages: Array<{ body: unknown }>): Promise<void> }
+
+  /// Turnstile's server-side secret, for checking a challenge response.
+  TURNSTILE_SECRET_KEY?: string
+
   /// Headless Chrome, for the shops that refuse a plain fetch.
   BROWSER?: Fetcher
 

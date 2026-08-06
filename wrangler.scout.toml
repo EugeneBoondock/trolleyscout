@@ -20,3 +20,11 @@ binding = "DB"
 database_name = "trolley-scout"
 database_id = "2c43ec07-75b4-4d1f-aacb-ea0b112f36e3"
 migrations_dir = "migrations"
+
+# Consumes the per-retailer sweep jobs. Three attempts, then the message goes
+# to the dead-letter queue rather than being retried forever or dropped.
+[[queues.consumers]]
+queue = "trolley-scout-scout"
+max_batch_size = 10
+max_retries = 3
+dead_letter_queue = "trolley-scout-scout-dlq"

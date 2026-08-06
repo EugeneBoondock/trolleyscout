@@ -7,7 +7,19 @@ interface OrganizationEmailRequest {
   subject: string
   text: string
   to: string
+  /// Which of the two senders to use. Business invitations come from
+  /// access@; account mail (verification codes, password resets) comes from
+  /// noreply@, so a shopper never sees a business address on a login email.
+  sender?: 'business' | 'account'
 }
+
+const SENDERS = {
+  account: { email: 'noreply@trolleyscout.co.za', name: 'Trolley Scout' },
+  business: {
+    email: 'access@trolleyscout.co.za',
+    name: 'Trolley Scout for Business',
+  },
+} as const
 
 const PRIVATE_ORIGIN = 'https://organization-email.internal'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -37,10 +49,7 @@ const worker = {
 
     try {
       const result = await env.EMAIL.send({
-        from: {
-          email: 'access@trolleyscout.co.za',
-          name: 'Trolley Scout for Business',
-        },
+        from: SENDERS[email.sender ?? 'business'],
         html: email.html,
         subject: email.subject,
         text: email.text,
@@ -75,7 +84,10 @@ function parseEmailRequest(value: unknown): OrganizationEmailRequest | undefined
     return undefined
   }
 
-  return { html, subject, text, to }
+  // Anything other than the two known senders falls back to the business
+  // one, so a malformed value cannot pick an address that is not allowed.
+  const sender = body.sender === 'account' ? 'account' : 'business'
+  return { html, sender, subject, text, to }
 }
 
 function textField(value: unknown): string | undefined {

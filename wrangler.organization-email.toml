@@ -6,4 +6,4 @@ preview_urls = false
 
 [[send_email]]
 name = "EMAIL"
-allowed_sender_addresses = [ "access@trolleyscout.co.za" ]
+allowed_sender_addresses = [ "access@trolleyscout.co.za", "noreply@trolleyscout.co.za" ]

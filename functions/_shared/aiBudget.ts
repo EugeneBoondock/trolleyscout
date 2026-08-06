@@ -21,6 +21,7 @@ export type AiResource =
   | 'browserSeconds'
   | 'vectorQueryDims'
   | 'vectorStoredDims'
+  | 'emailsSent'
 
 type BudgetWindow = 'day' | 'month' | 'total'
 
@@ -53,6 +54,8 @@ export const AI_BUDGET: Record<AiResource, BudgetRule> = {
     window: 'total',
     label: 'Vectorize storage',
   },
+  // 3,000 transactional emails a month, then $0.35 per 1,000.
+  emailsSent: { included: 3_000, window: 'month', label: 'Email sending' },
 }
 
 /**

@@ -148,7 +148,10 @@ describe('AI budget', () => {
 
     const all = await readAllAiBudgets(env, now)
     const browser = all.find((row) => row.resource === 'browserSeconds')
-    expect(all).toHaveLength(4)
+    // Every metered allowance is reported, so adding one cannot leave a
+    // resource silently unwatched.
+    expect(all).toHaveLength(Object.keys(AI_BUDGET).length)
+    expect(all.map((row) => row.resource)).toContain('emailsSent')
     expect(browser?.used).toBe(600)
     expect(browser?.included).toBe(36_000)
   })

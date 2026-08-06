@@ -2,6 +2,18 @@ name = "trolley-scout"
 compatibility_date = "2026-07-01"
 pages_build_output_dir = "dist"
 
+# D1 lives in one region, so put the Functions that hammer it near the
+# database rather than near the shopper.
+[placement]
+mode = "smart"
+
+# One message per retailer, so a shop that times out costs only itself and
+# a shop that keeps failing lands in the dead-letter queue where the health
+# alarm can see it. A million operations a month are included.
+[[queues.producers]]
+binding = "SCOUT_QUEUE"
+queue = "trolley-scout-scout"
+
 [ai]
 binding = "AI"
 
