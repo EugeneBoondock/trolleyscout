@@ -699,17 +699,19 @@ class _RootShellState extends State<RootShell>
         // At a big text setting the label's own height drives the bar, so the
         // icon has to give way or the bar grows back.
         final navIconSize = largeNavText
-            ? 20.0
+            ? 17.0
             : extraCompactNav
-                ? 21.0
+                ? 18.0
                 : compactNav
-                    ? 22.0
-                    : 24.0;
+                    ? 19.0
+                    : 20.0;
+        // TikTok-small: present, legible, and never the thing that sets the
+        // bar's height.
         final navLabelSize = extraCompactNav
             ? 7.5
             : compactNav
                 ? 8.0
-                : 9.0;
+                : 8.5;
         final requestedTextScale = MediaQuery.textScalerOf(context).scale(1);
         final navTextScale =
             min(requestedTextScale, extraCompactNav ? 1.05 : 1.2);
@@ -758,15 +760,14 @@ class _RootShellState extends State<RootShell>
               // button in the hamburger's row rather than the app's mark.
               centerTitle: true,
               titleSpacing: 4,
-              // The bar grows to carry the crest: a 64px mark in a 56px bar
-              // would clip its ribbon.
-              toolbarHeight: 76,
-              title: const AnimatedScoutMark.flat(
-                key: ValueKey('navbar-scout-mark'),
+              // Masthead-sized on the dashboard, hallmark-sized everywhere
+              // else: other screens have their own headings to carry.
+              toolbarHeight:
+                  _destination == AppDestination.dashboard ? 76 : 56,
+              title: AnimatedScoutMark.flat(
+                key: const ValueKey('navbar-scout-mark'),
                 motion: ScoutMarkMotion.scout,
-                // Crest-sized and tile-less, like the mockup: the mark is the
-                // masthead, not an icon that wandered into the middle.
-                size: 64,
+                size: _destination == AppDestination.dashboard ? 64 : 40,
               ),
               actions: [
                 if (!session.isAuthenticated) ...[
@@ -1070,7 +1071,7 @@ class _RootShellState extends State<RootShell>
                                 // names live on in tooltips and semantics.
                                 labelBehavior:
                                     NavigationDestinationLabelBehavior
-                                        .alwaysHide,
+                                        .alwaysShow,
                                 selectedIndex: _primaryIndex,
                                 onDestinationSelected: (index) =>
                                     _selectDestination(
