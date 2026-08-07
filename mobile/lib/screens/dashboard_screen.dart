@@ -539,8 +539,8 @@ class _SavingsHero extends StatelessWidget {
                             Text(
                               'off a basket that would have cost '
                               '${currency.format(fullPrice)}.',
-                              style: const TextStyle(
-                                color: Color(0xE61C1710),
+                              style: TextStyle(
+                                color: TS.mutedOf(context),
                                 fontSize: 13.5,
                                 height: 1.3,
                               ),
@@ -555,15 +555,15 @@ class _SavingsHero extends StatelessWidget {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const PhosphorIcon(PhosphorIconsFill.basket,
-                          size: 17, color: TS.ink),
+                      PhosphorIcon(PhosphorIconsFill.basket,
+                          size: 17, color: TS.mutedOf(context)),
                       const SizedBox(width: 7),
                       Expanded(
                         child: Text(
                           '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
                           'in your basket · you pay ${currency.format(summary.totalCents)}',
-                          style: const TextStyle(
-                              color: Color(0xE61C1710), fontSize: 12.5),
+                          style: TextStyle(
+                              color: TS.mutedOf(context), fontSize: 12.5),
                         ),
                       ),
                       Icon(Icons.arrow_forward, size: 16, color: TS.redOf(context)),
@@ -659,7 +659,8 @@ class _SavingsRing extends StatelessWidget {
             // colour in dark mode.
             track: const Color(0x338A7C5C),
             fill: TS.green,
-            label: TS.ink,
+            label: TS.inkOf(context),
+            rim: TS.ink,
             face: TS.yellow,
           ),
           child: Center(
@@ -709,13 +710,18 @@ class _RingPainter extends CustomPainter {
     required this.track,
     required this.fill,
     required this.label,
+    required this.rim,
     required this.face,
   });
 
   final double fraction;
   final Color track;
   final Color fill;
+  /// The cardinal letters, which sit on the card and so follow the theme.
   final Color label;
+
+  /// The dial's own edge, which sits on the yellow face and so does not.
+  final Color rim;
 
   /// The dial the arc is measured on.
   final Color face;
@@ -741,7 +747,7 @@ class _RingPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = label,
+        ..color = rim,
     );
 
     canvas.drawArc(
@@ -816,6 +822,7 @@ class _RingPainter extends CustomPainter {
       old.fill != fill ||
       old.track != track ||
       old.label != label ||
+      old.rim != rim ||
       old.face != face;
 }
 
