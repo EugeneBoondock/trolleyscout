@@ -18,20 +18,48 @@ void main() {
     expect(dark.cardTheme.color, const Color(0xFF221C15));
   });
 
-  test('shared surfaces and controls never fall back to square corners', () {
-    expect(TS.cardRadius, greaterThanOrEqualTo(20));
-    expect(TS.controlRadius, greaterThanOrEqualTo(16));
-    expect(TS.panelRadius, greaterThanOrEqualTo(28));
+  test('shared surfaces keep the neo-brutalist edge without going severe', () {
+    // The radius ladder is a balance: hard enough that the 2px stroke and the
+    // slab shadow read as the edge of an object, soft enough that the corner
+    // stays on the mascot's side of friendly. The floor guards against pill
+    // regression, the ceiling against the reference sets' 5px severity.
+    expect(TS.cardRadius, inInclusiveRange(12, 20));
+    expect(TS.controlRadius, inInclusiveRange(8, 14));
+    expect(TS.panelRadius, inInclusiveRange(18, 28));
 
     for (final theme in [TS.lightTheme(), TS.darkTheme()]) {
       final card = theme.cardTheme.shape! as RoundedRectangleBorder;
       final dialog = theme.dialogTheme.shape! as RoundedRectangleBorder;
-      final button = theme.filledButtonTheme.style!.shape!
-          .resolve(<WidgetState>{})! as RoundedRectangleBorder;
 
       expect(card.borderRadius, BorderRadius.circular(TS.cardRadius));
       expect(dialog.borderRadius, BorderRadius.circular(TS.panelRadius));
-      expect(button.borderRadius, BorderRadius.circular(TS.controlRadius));
+      // Cards and dialogs carry the ink edge that does elevation's job.
+      expect(card.side.width, greaterThanOrEqualTo(TS.strokeBase));
+      expect(dialog.side.width, greaterThanOrEqualTo(TS.strokeBase));
+    }
+  });
+
+  test('buttons cast the hard slab and flatten while pressed', () {
+    for (final theme in [TS.lightTheme(), TS.darkTheme()]) {
+      for (final style in [
+        theme.filledButtonTheme.style!,
+        theme.outlinedButtonTheme.style!,
+      ]) {
+        final resting =
+            style.shape!.resolve(<WidgetState>{})! as NeoSlabBorder;
+        final pressed = style.shape!
+            .resolve({WidgetState.pressed})! as NeoSlabBorder;
+
+        expect(resting.radius, TS.controlRadius);
+        // The slab shadow is the style's signature; the press collapses it
+        // so the button lands flat on the page.
+        expect(resting.offset, greaterThan(0));
+        expect(pressed.offset, 0);
+        expect(resting.side.width, greaterThanOrEqualTo(TS.strokeBase));
+      }
+      // Chips carry the same slab so a filter row reads as a set of keys.
+      final chip = theme.chipTheme.shape! as NeoSlabBorder;
+      expect(chip.offset, greaterThan(0));
     }
   });
 

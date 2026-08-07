@@ -390,6 +390,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('Add first coupon'));
+    await tester.pump();
     await tester.tap(find.text('Add first coupon'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -417,6 +419,7 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -320));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Show at checkout'));
+    await tester.pump();
     await tester.tap(find.text('Show at checkout'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('personal-coupon-checkout-screen')),
@@ -476,6 +479,8 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Add first coupon'));
+    await tester.pump();
     await tester.tap(find.text('Add first coupon'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const Key('coupon-offer-photo')));
@@ -519,6 +524,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Show at checkout'));
+    await tester.pump();
     await tester.tap(find.text('Show at checkout'));
     await tester.pumpAndSettle();
 

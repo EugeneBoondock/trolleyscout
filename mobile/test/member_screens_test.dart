@@ -483,6 +483,8 @@ void main() {
     final cardWidth = tester.getSize(find.byType(AdminScreen)).width;
     expect(buttonWidth, greaterThan(cardWidth / 2));
 
+    await tester.ensureVisible(button);
+    await tester.pump();
     await tester.tap(button);
     await tester.pumpAndSettle();
 

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../currency.dart';
 import '../theme.dart';
+import 'neo.dart';
 import 'skeleton.dart';
 
 class ScreenHeader extends StatelessWidget {
@@ -25,30 +26,30 @@ class ScreenHeader extends StatelessWidget {
     final stacked = action != null &&
         (MediaQuery.sizeOf(context).width < 380 ||
             MediaQuery.textScalerOf(context).scale(1) > 1.3);
+    // The screen title, set the way the style sets its headlines: as large as
+    // the column allows and packed tight. The old headlineMedium was polite;
+    // oversized type is the load-bearing hierarchy device here, doing the job
+    // that colour and elevation do in a softer system.
+    final titleStyle =
+        Theme.of(context).textTheme.headlineLarge?.merge(TS.title);
+    final titleText = Text(title, style: titleStyle);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(eyebrow.toUpperCase(), style: TS.eyebrowOf(context)),
-        const SizedBox(height: 4),
+        // The eyebrow is a sticker rather than red small-caps: it gives every
+        // screen the same slapped-on label the dashboard's sections have, so
+        // the app reads as one system instead of one styled screen.
+        NeoSticker(label: eyebrow.toUpperCase(), fontSize: 11.5),
+        const SizedBox(height: 10),
         if (stacked) ...[
-          Text(title,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.merge(TS.display)),
+          titleText,
           const SizedBox(height: 12),
           Align(alignment: Alignment.centerLeft, child: action!),
         ] else
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineMedium
-                        ?.merge(TS.display)),
-              ),
+              Expanded(child: titleText),
               if (action != null) ...[const SizedBox(width: 12), action!],
             ],
           ),
@@ -64,19 +65,32 @@ class ScreenHeader extends StatelessWidget {
   }
 }
 
-/// Wraps a tappable surface so it dips slightly while pressed — the tactile
-/// micro-interaction that makes taps feel instant and premium. Uses a [Listener]
-/// (pointer events only), so it never competes with the child's own InkWell/tap
-/// in the gesture arena; it is purely a visual layer. Honours reduce-motion.
+/// Wraps a tappable surface so it stamps into the page while pressed — the
+/// tactile micro-interaction that makes taps feel instant and premium. Uses a
+/// [Listener] (pointer events only), so it never competes with the child's own
+/// InkWell/tap in the gesture arena; it is purely a visual layer. Honours
+/// reduce-motion.
+///
+/// The press is the style's signature move and it only works if two things
+/// happen together: the slab travels exactly as far as its shadow was offset,
+/// and the shadow disappears underneath it. Travel alone just slides the whole
+/// object across the page. Travel plus collapse lands it flat, which is what
+/// reads as pressed. The collapse reaches the decorations through
+/// [NeoPressScope], so every `TS.card(context)` under here does it without
+/// the call site knowing.
 class PressableScale extends StatefulWidget {
   const PressableScale({
     super.key,
     required this.child,
-    this.pressedScale = 0.97,
+    this.travel = TS.shadowCard,
   });
 
   final Widget child;
-  final double pressedScale;
+
+  /// How far the slab travels, which must match the shadow offset of whatever
+  /// it wraps — the default matches [TS.shadowCard]. Pass [TS.shadowHero] for
+  /// a hero slab so it still lands flat rather than stopping short.
+  final double travel;
 
   @override
   State<PressableScale> createState() => _PressableScaleState();
@@ -92,25 +106,20 @@ class _PressableScaleState extends State<PressableScale> {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final down = _pressed && !reduceMotion;
     return Listener(
       onPointerDown: (_) => _set(true),
       onPointerUp: (_) => _set(false),
       onPointerCancel: (_) => _set(false),
-      // The neo-brutal press: the card translates onto its own shadow, like
-      // a stamp being pushed into the page. A shrink says "I am a picture of
-      // a button"; a stamp says "I am a slab you pressed".
-      child: AnimatedSlide(
-        offset: (_pressed && !reduceMotion)
-            ? const Offset(0.012, 0.012)
-            : Offset.zero,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: down ? widget.travel : 0),
         duration: const Duration(milliseconds: 90),
         curve: Curves.easeOut,
-        child: AnimatedScale(
-          scale: (_pressed && !reduceMotion) ? 0.995 : 1.0,
-          duration: const Duration(milliseconds: 90),
-          curve: Curves.easeOut,
-          child: widget.child,
+        builder: (context, travelled, child) => Transform.translate(
+          offset: Offset(travelled, travelled),
+          child: child,
         ),
+        child: NeoPressScope(pressed: down, child: widget.child),
       ),
     );
   }
@@ -121,23 +130,50 @@ class PaperCard extends StatelessWidget {
       {super.key,
       required this.child,
       this.margin,
-      this.padding = const EdgeInsets.all(16)});
+      this.padding = const EdgeInsets.all(16),
+      this.color,
+      this.shadow = TS.shadowCard});
 
   final Widget child;
   final EdgeInsetsGeometry? margin;
   final EdgeInsetsGeometry padding;
 
+  /// Fills the whole card with one flat colour instead of paper — the
+  /// colour-blocking move. Pass one of [TS.blocks] so the foreground stays ink
+  /// in both themes.
+  final Color? color;
+
+  /// Depth in the slab ladder. Raise to [TS.shadowHero] for the one card on a
+  /// screen that should sit above the rest.
+  final double shadow;
+
   @override
   Widget build(BuildContext context) {
+    // Colour-blocked cards carry their fill across both themes, so their
+    // foreground comes from the fill rather than the theme — see NeoSlab.
+    final on = color == null ? null : neoOn(color!);
     return Container(
       width: double.infinity,
       margin: margin,
       padding: padding,
-      decoration: TS.card(context),
+      decoration: color == null
+          ? TS.card(context, shadow: shadow)
+          : TS.slab(context, color: color!, shadow: shadow),
       // ListTiles and ink splashes paint on the nearest Material; without this
       // they'd try to paint on the Scaffold's, underneath this card's color
       // (Flutter 3.44+ asserts on that). Transparent, so the paper look wins.
-      child: Material(type: MaterialType.transparency, child: child),
+      child: Material(
+        type: MaterialType.transparency,
+        child: on == null
+            ? child
+            : DefaultTextStyle.merge(
+                style: TextStyle(color: on),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: on),
+                  child: child,
+                ),
+              ),
+      ),
     );
   }
 }
@@ -174,14 +210,37 @@ class ErrorPane extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(message, textAlign: TextAlign.center),
+              // A failure gets a real object too, in the app's own red rather
+              // than a joke label: centred grey text was what an unstyled
+              // framework dialog looks like, and this was the one state left
+              // that looked like nobody had been near it. Plain-spoken, not
+              // cute — people hit this when something they needed did not
+              // work.
+              Container(
+                width: 44,
+                height: 44,
+                decoration: TS.slab(
+                  context,
+                  color: TS.red,
+                  shadow: TS.shadowSticker,
+                  radius: TS.tileRadius,
+                ),
+                child: const Icon(Icons.wifi_off_rounded,
+                    size: 22, color: TS.onDark),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
               if (detail != null && detail!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Text(detail!,
                     textAlign: TextAlign.center,
                     style: TextStyle(color: TS.mutedOf(context), fontSize: 12)),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               FilledButton(onPressed: onRetry, child: const Text('Retry')),
             ],
           ),
@@ -205,15 +264,33 @@ class EmptyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PaperCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
         child: Column(
           children: [
-            Icon(icon,
-                size: 34,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center),
+            // The icon sits in its own bordered tile: same edge, same slab,
+            // same flat fill as every other object in the app, just smaller.
+            // An empty state is where a styled app usually goes quiet and
+            // generic, and giving it a real object instead of a grey glyph is
+            // what keeps the system honest on the screens nobody designs.
+            Container(
+              width: 52,
+              height: 52,
+              decoration: TS.slab(
+                context,
+                color: TS.yellow,
+                shadow: TS.shadowSticker,
+                radius: TS.tileRadius,
+              ),
+              child: Icon(icon, size: 26, color: TS.ink),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
             if (action != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               action!,
             ],
           ],

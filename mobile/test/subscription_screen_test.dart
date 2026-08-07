@@ -18,11 +18,15 @@ void main() {
     await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Use Free'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Use Free'));
     await tester.pumpAndSettle();
     expect(find.text('Switch to Free?'), findsOneWidget);
     expect(api.checkoutCalls, 0);
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Schedule change'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Schedule change'));
     await tester.pumpAndSettle();
 
@@ -123,6 +127,8 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start Household'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Start Household'));
     await tester.pumpAndSettle();
 
@@ -150,6 +156,8 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start Household'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Start Household'));
     await tester.pumpAndSettle();
 
@@ -185,6 +193,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('nothing is charged today'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Resume Scout'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Resume Scout'));
     await tester.pumpAndSettle();
 
@@ -205,6 +215,8 @@ void main() {
     await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Keep Household'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Keep Household'));
     await tester.pumpAndSettle();
 
@@ -226,8 +238,11 @@ void main() {
     await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
     await tester.pumpAndSettle();
 
-    await tester.tap(
-        find.widgetWithText(FilledButton, 'Apply for Organisation access'));
+    final applyButton =
+        find.widgetWithText(FilledButton, 'Apply for Organisation access');
+    await tester.ensureVisible(applyButton);
+    await tester.pump();
+    await tester.tap(applyButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Tell us about your business'), findsOneWidget);
@@ -250,6 +265,8 @@ void main() {
     await tester.pumpWidget(_wrap(SubscriptionScreen(api: api)));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Open developer tools'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Open developer tools'));
     await tester.pumpAndSettle();
 

@@ -13,6 +13,7 @@ import '../top_savings.dart';
 import '../ux.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/common.dart';
+import '../widgets/neo.dart';
 import '../widgets/dashboard_stories.dart';
 import '../widgets/dashboard_stories_skeleton.dart';
 import '../widgets/in_app_browser.dart';
@@ -357,35 +358,35 @@ class _GreetingHero extends StatelessWidget {
     // the greeting under it reads as a masthead; a card around it turned the
     // top of the screen into a stack of containers.
     return SizedBox(
-          width: double.infinity,
-          child: Column(
-            children: [
-              const SizedBox(height: 2),
-              // One line, like an address: "Good evening, Eugene". Splitting
-              // the greeting from the name across two rows read as a label
-              // above a value rather than someone being spoken to.
-              Text(
-                '${_greetingFor(now)}, $name',
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 24,
-                  height: 1.1,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              const SizedBox(height: 8),
-              _PlanPill(planName: planName),
-              const SizedBox(height: 6),
-              Text(
-                _dateLine(now),
-                style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
-              ),
-            ],
+      width: double.infinity,
+      child: Column(
+        children: [
+          const SizedBox(height: 2),
+          // One line, like an address: "Good evening, Eugene". Splitting
+          // the greeting from the name across two rows read as a label
+          // above a value rather than someone being spoken to.
+          Text(
+            '${_greetingFor(now)}, $name',
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 24,
+              height: 1.1,
+              letterSpacing: -0.3,
+            ),
           ),
-        );
+          const SizedBox(height: 8),
+          _PlanPill(planName: planName),
+          const SizedBox(height: 6),
+          Text(
+            _dateLine(now),
+            style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+          ),
+        ],
+      ),
+    );
   }
 
   static String _greetingFor(DateTime now) {
@@ -477,97 +478,111 @@ class _SavingsHero extends StatelessWidget {
     final kept = summary.savingsCents / fullPrice;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     return PressableScale(
-      child: InkWell(
-        onTap: onOpenBasket,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(15),
-          // The mascot's own yellow, whole. This is the number the app
-          // exists to grow; it gets the loudest slab on the screen.
-          decoration: TS.slab(context, color: TS.yellow),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('MONEY YOU KEPT',
-                        style: TS.eyebrowOf(context).copyWith(
-                          color: TS.red,
-                        )),
-                  ),
-                  // Refresh lives on the number it refreshes, not floating
-                  // beside the greeting.
-                  SizedBox(
-                    height: 26,
-                    width: 26,
-                    child: IconButton(
-                      tooltip: 'Refresh dashboard',
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        uxTap();
-                        onRefresh();
-                      },
-                      icon: const Icon(Icons.refresh,
-                          size: 18, color: TS.ink),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  _SavingsRing(
-                    fraction: kept,
-                    animate: !reduceMotion,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _CountUpMoney(
-                          cents: summary.savingsCents,
-                          currency: currency,
-                          animate: !reduceMotion,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'off a basket that would have cost '
-                          '${currency.format(fullPrice)}.',
-                          style: const TextStyle(
-                            color: Color(0xE61C1710),
-                            fontSize: 13.5,
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              const Divider(height: 1, color: Color(0x4D1C1710)),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const PhosphorIcon(PhosphorIconsFill.basket,
-                      size: 17, color: TS.ink),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
-                      'in your basket · you pay ${currency.format(summary.totalCents)}',
-                      style: const TextStyle(
-                          color: Color(0xE61C1710), fontSize: 12.5),
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward, size: 16, color: TS.red),
-                ],
-              ),
-            ],
+      // The screen's one burst, in the bandana red, mostly hidden behind the
+      // card's top-right corner — a print accident that survived. One per
+      // screen, always behind something: scarcity is what keeps it an accent
+      // instead of clipart.
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Positioned(
+            top: -9,
+            right: -7,
+            child: NeoBurst(size: 34, color: TS.red, points: 11),
           ),
-        ),
+          InkWell(
+            onTap: onOpenBasket,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(15),
+              // The mascot's own yellow, whole. This is the number the app
+              // exists to grow; it gets the loudest slab on the screen.
+              decoration: TS.slab(context, color: TS.yellow),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('MONEY YOU KEPT',
+                            style: TS.eyebrowOf(context).copyWith(
+                                  color: TS.red,
+                                )),
+                      ),
+                      // Refresh lives on the number it refreshes, not floating
+                      // beside the greeting.
+                      SizedBox(
+                        height: 26,
+                        width: 26,
+                        child: IconButton(
+                          tooltip: 'Refresh dashboard',
+                          padding: EdgeInsets.zero,
+                          onPressed: () {
+                            uxTap();
+                            onRefresh();
+                          },
+                          icon: const Icon(Icons.refresh,
+                              size: 18, color: TS.ink),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _SavingsRing(
+                        fraction: kept,
+                        animate: !reduceMotion,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _CountUpMoney(
+                              cents: summary.savingsCents,
+                              currency: currency,
+                              animate: !reduceMotion,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'off a basket that would have cost '
+                              '${currency.format(fullPrice)}.',
+                              style: const TextStyle(
+                                color: Color(0xE61C1710),
+                                fontSize: 13.5,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(height: 1, color: Color(0x4D1C1710)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const PhosphorIcon(PhosphorIconsFill.basket,
+                          size: 17, color: TS.ink),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          '${summary.itemCount} item${summary.itemCount == 1 ? '' : 's'} '
+                          'in your basket · you pay ${currency.format(summary.totalCents)}',
+                          style: const TextStyle(
+                              color: Color(0xE61C1710), fontSize: 12.5),
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward, size: 16, color: TS.red),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -828,9 +843,14 @@ class _CountUpMoney extends StatelessWidget {
       );
 }
 
-/// Section headings as stickers: a yellow chip, ink border, tiny hard
-/// shadow, rotated a hair off level. Neo-brutalism's section headers are
-/// labels somebody slapped on, not typeset captions.
+/// Section headings as stickers: a yellow chip, ink border, tiny hard shadow.
+/// Now the shared [NeoSticker] rather than a private copy, so the dashboard's
+/// section headings and every other screen's eyebrow are literally the same
+/// widget instead of two implementations that drift.
+///
+/// These used to be rotated a degree off level. Level is better: one tilted
+/// label is a flourish, a column of them is a scrapbook, and this is an app
+/// people use to make rent stretch.
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label, this.trailing});
 
@@ -838,46 +858,8 @@ class _SectionLabel extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Transform.rotate(
-                // Alternating tilt by label, so a column of stickers reads as
-                // hand-placed rather than stamped from one template. The
-                // craft in neo-brutalism is exactly this kind of deliberate
-                // imperfection.
-                angle: label.length.isEven ? -0.018 : 0.014,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: TS.yellow,
-                    border: Border.all(color: TS.ink, width: 1.5),
-                    borderRadius: BorderRadius.circular(7),
-                    boxShadow: const [
-                      BoxShadow(color: TS.ink, offset: Offset(2, 2)),
-                    ],
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: TS.ink,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14.5,
-                      letterSpacing: 0.1,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
-      );
+  Widget build(BuildContext context) =>
+      NeoSticker(label: label, trailing: trailing);
 }
 
 /// The four things shoppers actually open the app to do, one tap from the top
@@ -892,8 +874,7 @@ class _QuickActions extends StatelessWidget {
     // Each tile takes one of the mascot's own colours, whole. Four cream
     // tiles in a row read as a form; four colour slabs read as a toybox,
     // which is what neo-brutalism is for.
-    const actions =
-        <(PhosphorIconData, String, AppDestination, Color, Color)>[
+    const actions = <(PhosphorIconData, String, AppDestination, Color, Color)>[
       (
         PhosphorIconsFill.tag,
         'Marketplace',
