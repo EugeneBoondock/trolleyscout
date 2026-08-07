@@ -675,9 +675,6 @@ class _AutoCompareToolState extends State<AutoCompareTool> {
                     backgroundColor: TS.yellow,
                     foregroundColor: TS.ink,
                     minimumSize: const Size(112, 56),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(TS.controlRadius),
-                    ),
                   ),
                   onPressed: _tripMode
                       ? (canCompareTrip ? _compareTrip : null)

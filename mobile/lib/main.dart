@@ -762,8 +762,7 @@ class _RootShellState extends State<RootShell>
               titleSpacing: 4,
               // Masthead-sized on the dashboard, hallmark-sized everywhere
               // else: other screens have their own headings to carry.
-              toolbarHeight:
-                  _destination == AppDestination.dashboard ? 76 : 56,
+              toolbarHeight: _destination == AppDestination.dashboard ? 76 : 56,
               title: AnimatedScoutMark.flat(
                 key: const ValueKey('navbar-scout-mark'),
                 motion: ScoutMarkMotion.scout,
@@ -844,8 +843,7 @@ class _RootShellState extends State<RootShell>
                               leading: Icon(light
                                   ? Icons.dark_mode_outlined
                                   : Icons.light_mode_outlined),
-                              title:
-                                  Text(light ? 'Dark mode' : 'Light mode'),
+                              title: Text(light ? 'Dark mode' : 'Light mode'),
                             ),
                           ),
                           const PopupMenuItem(
@@ -1012,10 +1010,12 @@ class _RootShellState extends State<RootShell>
                       parent: _navReveal,
                       reverseCurve: Curves.easeInCubic,
                     ),
-                    // Edge to edge, flat, one hairline on top. The bar used
+                    // Edge to edge, flat, one ink stroke on top. The bar used
                     // to float as a rounded card with side margins, a full
-                    // border and a 16px shadow, which is what made it read as
-                    // a big slab rather than a strip.
+                    // border and a 16px shadow; now it is a strip, and the
+                    // stroke matches the 2px edge every other surface carries
+                    // — a hairline here read as a different, softer system
+                    // exactly where the thumb rests all day.
                     child: SafeArea(
                       top: false,
                       minimum: EdgeInsets.zero,
@@ -1024,8 +1024,8 @@ class _RootShellState extends State<RootShell>
                           color: TS.surfaceOf(context),
                           border: Border(
                             top: BorderSide(
-                              color: TS.lineSoftOf(context),
-                              width: 1,
+                              color: TS.lineOf(context),
+                              width: TS.strokeBase,
                             ),
                           ),
                         ),

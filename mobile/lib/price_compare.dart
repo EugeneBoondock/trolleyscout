@@ -66,10 +66,9 @@ class AutoComparison {
 int? extractPriceCents(String? text) {
   if (text == null || text.isEmpty) return null;
 
-  final match =
-      RegExp(r'[R$€£]\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
-              .firstMatch(text) ??
-          RegExp(r'(\d+[.,]\d{2})').firstMatch(text);
+  final match = RegExp(r'[R$€£]\s*(\d+(?:[.,]\d{1,2})?)', caseSensitive: false)
+          .firstMatch(text) ??
+      RegExp(r'(\d+[.,]\d{2})').firstMatch(text);
   if (match == null) return null;
 
   final rands = double.tryParse(match.group(1)!.replaceAll(',', '.'));
@@ -103,7 +102,8 @@ StorePriceMatch? findBestDealForQuery(
   int? bestCents;
 
   for (final deal in deals) {
-    if (deal.retailerId != retailer.id || !dealMatchesQuery(deal, query)) continue;
+    if (deal.retailerId != retailer.id || !dealMatchesQuery(deal, query))
+      continue;
 
     final cents = extractPriceCents(deal.priceText);
     if (cents == null) continue;
@@ -131,13 +131,17 @@ List<StoreOption> storeOptionsFromDeals(List<Deal> deals) {
     byId.putIfAbsent(deal.retailerId, () => deal.retailerName);
   }
 
-  final options = byId.entries.map((e) => StoreOption(id: e.key, name: e.value)).toList()
+  final options = byId.entries
+      .map((e) => StoreOption(id: e.key, name: e.value))
+      .toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return options;
 }
 
-List<String> defaultStoreIds(List<Deal> deals) =>
-    storeOptionsFromDeals(deals).take(kDefaultStoreCount).map((s) => s.id).toList();
+List<String> defaultStoreIds(List<Deal> deals) => storeOptionsFromDeals(deals)
+    .take(kDefaultStoreCount)
+    .map((s) => s.id)
+    .toList();
 
 AutoComparison autoComparePrices(
   List<Deal> deals,
@@ -173,7 +177,8 @@ AutoComparison autoComparePrices(
     foundCount: priced.length,
     // A tie for cheapest flags both stores.
     matches: matches
-        .map((m) => m.copyWith(isCheapest: m.priceCents != null && m.priceCents == cheapestCents))
+        .map((m) => m.copyWith(
+            isCheapest: m.priceCents != null && m.priceCents == cheapestCents))
         .toList(),
     missingCount: matches.length - priced.length,
     query: query,

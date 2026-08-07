@@ -46,7 +46,8 @@ class _EarnRewardsScreenState extends State<EarnRewardsScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Rewards could not be loaded. Pull to try again.');
+      setState(
+          () => _error = 'Rewards could not be loaded. Pull to try again.');
     }
   }
 
@@ -240,8 +241,7 @@ class _RewardCard extends StatelessWidget {
                 ?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 4),
-          Text(rate.description,
-              style: Theme.of(context).textTheme.bodySmall),
+          Text(rate.description, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(TS.pillRadius),

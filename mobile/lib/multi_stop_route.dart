@@ -74,17 +74,17 @@ void _twoOptImprove(double startLat, double startLon, List<TripStop> route) {
     improved = false;
     for (var i = 0; i < route.length - 1; i++) {
       for (var j = i + 1; j < route.length; j++) {
-        final before = distanceMeters(pointLat(i - 1), pointLon(i - 1),
-                route[i].lat, route[i].lon) +
+        final before = distanceMeters(
+                pointLat(i - 1), pointLon(i - 1), route[i].lat, route[i].lon) +
             (j + 1 < route.length
-                ? distanceMeters(route[j].lat, route[j].lon,
-                    route[j + 1].lat, route[j + 1].lon)
+                ? distanceMeters(route[j].lat, route[j].lon, route[j + 1].lat,
+                    route[j + 1].lon)
                 : 0);
-        final after = distanceMeters(pointLat(i - 1), pointLon(i - 1),
-                route[j].lat, route[j].lon) +
+        final after = distanceMeters(
+                pointLat(i - 1), pointLon(i - 1), route[j].lat, route[j].lon) +
             (j + 1 < route.length
-                ? distanceMeters(route[i].lat, route[i].lon,
-                    route[j + 1].lat, route[j + 1].lon)
+                ? distanceMeters(route[i].lat, route[i].lon, route[j + 1].lat,
+                    route[j + 1].lon)
                 : 0);
         if (after + 0.01 < before) {
           final segment = route.sublist(i, j + 1).reversed.toList();

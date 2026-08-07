@@ -94,7 +94,8 @@ int? parseRandsToCents(String text) {
 
 /// Parses a pack size like "1,5" or "500" into a positive quantity.
 double? parseQuantity(String text) {
-  final cleaned = text.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.').trim();
+  final cleaned =
+      text.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.').trim();
 
   if (cleaned.isEmpty || !_numberPattern.hasMatch(cleaned)) {
     return null;
@@ -141,8 +142,10 @@ PackComparison compareUnitPrices(List<PackDraft> drafts) {
     return PackComparison(hasMixedUnits: hasMixedUnits, results: parsed);
   }
 
-  final bestUnitPrice = parsed.map((pack) => pack.unitPriceCents).reduce((a, b) => a < b ? a : b);
-  final best = parsed.firstWhere((pack) => pack.unitPriceCents == bestUnitPrice);
+  final bestUnitPrice =
+      parsed.map((pack) => pack.unitPriceCents).reduce((a, b) => a < b ? a : b);
+  final best =
+      parsed.firstWhere((pack) => pack.unitPriceCents == bestUnitPrice);
 
   final results = parsed.map((pack) {
     final isBest = pack.id == best.id;
@@ -156,11 +159,13 @@ PackComparison compareUnitPrices(List<PackDraft> drafts) {
       isBest: isBest,
       percentMoreThanBest: isBest || bestUnitPrice == 0
           ? null
-          : (((pack.unitPriceCents - bestUnitPrice) / bestUnitPrice) * 100).round(),
+          : (((pack.unitPriceCents - bestUnitPrice) / bestUnitPrice) * 100)
+              .round(),
     );
   }).toList();
 
-  return PackComparison(bestId: best.id, hasMixedUnits: false, results: results);
+  return PackComparison(
+      bestId: best.id, hasMixedUnits: false, results: results);
 }
 
 /// "R30.00 / kg" in the shopper's own money — [currency] is passed in rather

@@ -11,7 +11,8 @@ String? meaningfulWasPrice(String? wasText, String? priceText) {
 
 int? _randToCents(String? value) {
   if (value == null) return null;
-  final match = RegExp(r'(\d+(?:[.,]\d{1,2})?)').firstMatch(value.replaceAll(' ', ''));
+  final match =
+      RegExp(r'(\d+(?:[.,]\d{1,2})?)').firstMatch(value.replaceAll(' ', ''));
   if (match == null) return null;
   final amount = double.tryParse(match.group(1)!.replaceAll(',', '.'));
   return amount == null ? null : (amount * 100).round();

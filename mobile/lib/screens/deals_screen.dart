@@ -1194,7 +1194,7 @@ class _DealsScreenState extends State<DealsScreen> {
                                             ? TS.ink
                                             : TS.surfaceSoftOf(context),
                                         borderRadius: BorderRadius.circular(
-                                            TS.pillRadius),
+                                            TS.controlRadius),
                                       ),
                                       child: Text(
                                         isSelected
@@ -1605,24 +1605,17 @@ class _DealsScreenState extends State<DealsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: TS.surfaceOf(context),
-        // An active filter glows rather than adding a count to the label.
-        // A changing label changes the button's width, so it slid sideways
-        // under the thumb that had just tapped it.
+        // An active filter fills solid yellow rather than adding a count to
+        // the label. A changing label changes the button's width, so it slid
+        // sideways under the thumb that had just tapped it — and the old glow
+        // was the one blurred shadow left in the app. A flat fill is louder
+        // anyway.
+        color: hasActiveFilter ? TS.yellow : TS.surfaceOf(context),
         border: Border.all(
-          color: hasActiveFilter ? TS.yellow : TS.lineSoftOf(context),
+          color: hasActiveFilter ? TS.ink : TS.lineSoftOf(context),
           width: 2,
         ),
         borderRadius: BorderRadius.circular(TS.controlRadius),
-        boxShadow: hasActiveFilter
-            ? [
-                BoxShadow(
-                  color: TS.yellow.withValues(alpha: 0.55),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
       ),
       child: PopupMenuButton<String>(
         key: const Key('visibility-filter-menu'),
@@ -1826,7 +1819,7 @@ class _DealsScreenState extends State<DealsScreen> {
           decoration: BoxDecoration(
             color: active ? TS.inkOf(context) : TS.surfaceOf(context),
             border: Border.all(color: TS.lineSoftOf(context), width: 2),
-            borderRadius: BorderRadius.circular(TS.pillRadius),
+            borderRadius: BorderRadius.circular(TS.controlRadius),
           ),
           child: Text(label,
               style: TextStyle(
@@ -3051,25 +3044,10 @@ class _CatalogueDirectoryHeader extends StatelessWidget {
       key: const Key('catalogue-directory-header'),
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            TS.surfaceOf(context),
-            TS.surfaceSoftOf(context),
-          ],
-        ),
-        border: Border.all(color: TS.lineSoftOf(context), width: 1.5),
-        borderRadius: BorderRadius.circular(TS.panelRadius),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).shadowColor.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 9),
-          ),
-        ],
-      ),
+      // Flat surface, ink edge, hard slab: the directory header is a real
+      // object like everything else now. It wore the app's only gradient and
+      // its softest shadow, which made the flagship screen the least on-style.
+      decoration: TS.card(context, radiusOverride: TS.panelRadius),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

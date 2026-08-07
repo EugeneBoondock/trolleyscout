@@ -25,7 +25,8 @@ class SavedPropertiesStore {
       if (decoded is! List) return const [];
       return decoded
           .whereType<Map>()
-          .map((item) => PropertyListing.fromJson(Map<String, dynamic>.from(item)))
+          .map((item) =>
+              PropertyListing.fromJson(Map<String, dynamic>.from(item)))
           .where((listing) => listing.id.isNotEmpty)
           .toList();
     } catch (_) {

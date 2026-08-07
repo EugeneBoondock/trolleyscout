@@ -537,11 +537,12 @@ class TS {
     Color? border,
     double width = strokeBase,
     double shadow = shadowCard,
+    double? radiusOverride,
   }) =>
       BoxDecoration(
         color: color ?? surfaceOf(context),
         border: Border.all(color: border ?? lineOf(context), width: width),
-        borderRadius: BorderRadius.circular(cardRadius),
+        borderRadius: BorderRadius.circular(radiusOverride ?? cardRadius),
         boxShadow: hardShadow(context, offset: shadow),
       );
 

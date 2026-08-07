@@ -63,8 +63,7 @@ class ScoutConversation {
 /// this month. That is nobody else's business, so the transcript never leaves
 /// the device: no server copy, and clearing the app clears it.
 class ScoutHistoryStore {
-  ScoutHistoryStore({SharedPreferences? preferences})
-      : _injected = preferences;
+  ScoutHistoryStore({SharedPreferences? preferences}) : _injected = preferences;
 
   static const _key = 'scout_conversations_v1';
 

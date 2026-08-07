@@ -1790,10 +1790,6 @@ class _AdReviewSectionState extends State<AdReviewSection> {
                             style: FilledButton.styleFrom(
                               backgroundColor: TS.green,
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(TS.controlRadius),
-                              ),
                             ),
                             onPressed: _busyId == ad.id
                                 ? null
@@ -1808,10 +1804,6 @@ class _AdReviewSectionState extends State<AdReviewSection> {
                               foregroundColor: TS.redOf(context),
                               side: BorderSide(
                                   color: TS.redOf(context), width: 2),
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(TS.controlRadius),
-                              ),
                             ),
                             onPressed: _busyId == ad.id
                                 ? null
@@ -2073,102 +2065,102 @@ class _FittingRoomAdminSectionState extends State<FittingRoomAdminSection> {
           if (_expanded) ...[
             const SizedBox(height: 8),
             FutureBuilder<VtonFlags>(
-            future: _future,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: LinearProgressIndicator(minHeight: 3),
-                );
-              }
-              if (snapshot.hasError || snapshot.data == null) {
-                return Row(
-                  children: [
-                    const Expanded(
-                        child:
-                            Text('The fitting room flags are unavailable.')),
-                    TextButton(
-                      onPressed: () => setState(
-                          () => _future = widget.api.adminVtonFlags()),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                );
-              }
-              final flags = snapshot.data!;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SwitchListTile(
-                    key: const Key('vton-global-switch'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Open to members',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text(
-                      flags.globalEnabled
-                          ? 'Scout members can use the fitting room.'
-                          : 'The fitting room is switched off for everyone '
-                              'without an override.',
-                      style:
-                          TextStyle(color: TS.mutedOf(context), fontSize: 12),
-                    ),
-                    value: flags.globalEnabled,
-                    onChanged: _saving
-                        ? null
-                        : (enabled) => _apply(
-                            () => widget.api.setVtonFlag(enabled: enabled)),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    key: const Key('vton-override-account'),
-                    controller: _accountController,
-                    decoration: const InputDecoration(
-                      labelText: 'Member account id',
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: LinearProgressIndicator(minHeight: 3),
+                  );
+                }
+                if (snapshot.hasError || snapshot.data == null) {
+                  return Row(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _saving ? null : () => _setOverride(true),
-                          child: const Text('Allow member'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed:
-                              _saving ? null : () => _setOverride(false),
-                          child: const Text('Block member'),
-                        ),
+                      const Expanded(
+                          child:
+                              Text('The fitting room flags are unavailable.')),
+                      TextButton(
+                        onPressed: () => setState(
+                            () => _future = widget.api.adminVtonFlags()),
+                        child: const Text('Retry'),
                       ),
                     ],
-                  ),
-                  for (final override in flags.overrides)
-                    ListTile(
+                  );
+                }
+                final flags = snapshot.data!;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      key: const Key('vton-global-switch'),
                       contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      leading: Icon(
-                        override.enabled
-                            ? Icons.check_circle_outline
-                            : Icons.block_outlined,
-                        color: override.enabled
-                            ? TS.greenOf(context)
-                            : TS.redOf(context),
-                        size: 20,
-                      ),
-                      title: Text(override.accountId,
-                          overflow: TextOverflow.ellipsis),
+                      title: const Text('Open to members',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
                       subtitle: Text(
-                          override.enabled ? 'Allowed' : 'Blocked',
-                          style: TextStyle(
-                              color: TS.mutedOf(context), fontSize: 12)),
+                        flags.globalEnabled
+                            ? 'Scout members can use the fitting room.'
+                            : 'The fitting room is switched off for everyone '
+                                'without an override.',
+                        style:
+                            TextStyle(color: TS.mutedOf(context), fontSize: 12),
+                      ),
+                      value: flags.globalEnabled,
+                      onChanged: _saving
+                          ? null
+                          : (enabled) => _apply(
+                              () => widget.api.setVtonFlag(enabled: enabled)),
                     ),
-                ],
-              );
-            },
+                    const SizedBox(height: 8),
+                    TextField(
+                      key: const Key('vton-override-account'),
+                      controller: _accountController,
+                      decoration: const InputDecoration(
+                        labelText: 'Member account id',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed:
+                                _saving ? null : () => _setOverride(true),
+                            child: const Text('Allow member'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed:
+                                _saving ? null : () => _setOverride(false),
+                            child: const Text('Block member'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    for (final override in flags.overrides)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        leading: Icon(
+                          override.enabled
+                              ? Icons.check_circle_outline
+                              : Icons.block_outlined,
+                          color: override.enabled
+                              ? TS.greenOf(context)
+                              : TS.redOf(context),
+                          size: 20,
+                        ),
+                        title: Text(override.accountId,
+                            overflow: TextOverflow.ellipsis),
+                        subtitle: Text(override.enabled ? 'Allowed' : 'Blocked',
+                            style: TextStyle(
+                                color: TS.mutedOf(context), fontSize: 12)),
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 14),
             _TryOnUsageSection(api: widget.api),
@@ -2251,8 +2243,8 @@ class _TryOnUsageSectionState extends State<_TryOnUsageSection> {
                 children: [
                   const Expanded(child: Text('Usage is unavailable.')),
                   TextButton(
-                    onPressed: () => setState(
-                        () => _future = widget.api.adminTryOnStats()),
+                    onPressed: () =>
+                        setState(() => _future = widget.api.adminTryOnStats()),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -2294,8 +2286,8 @@ class _TryOnUsageSectionState extends State<_TryOnUsageSection> {
                           TextStyle(color: TS.mutedOf(context), fontSize: 12),
                     ),
                     trailing: TextButton(
-                      onPressed: () => setState(() =>
-                          _accountController.text = shopper.accountId),
+                      onPressed: () => setState(
+                          () => _accountController.text = shopper.accountId),
                       child: const Text('Top up'),
                     ),
                   ),

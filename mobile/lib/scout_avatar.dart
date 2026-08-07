@@ -305,15 +305,13 @@ class ScoutAvatarCatalog {
 
   static bool hasIcon(String key) => _icons.containsKey(key);
 
-  static bool hasColor(String key) =>
-      colors.any((option) => option.key == key);
+  static bool hasColor(String key) => colors.any((option) => option.key == key);
 
   static PhosphorIconData iconFor(String key) =>
       _icons[key] ?? PhosphorIconsFill.shoppingCart;
 
-  static ScoutAvatarColor colorFor(String key) =>
-      colors.firstWhere((option) => option.key == key,
-          orElse: () => colors.first);
+  static ScoutAvatarColor colorFor(String key) => colors
+      .firstWhere((option) => option.key == key, orElse: () => colors.first);
 
   /// A stable, pleasant default derived from the account name, so a shopper who
   /// never opens the picker still gets a tile that is recognisably theirs

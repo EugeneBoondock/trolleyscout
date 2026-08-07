@@ -161,39 +161,39 @@ class AppMenuDrawer extends StatelessWidget {
                 child: ScrollConfiguration(
                   behavior: const _NoGlowScrollBehavior(),
                   child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final group in groups) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 14, 20, 5),
-                          child: Text(group.$1.toUpperCase(),
-                              style: TS.eyebrowOf(context)),
-                        ),
-                        for (final item in group.$2)
-                          // Marketplace is a section with children (Clothing
-                          // for now): its row navigates as usual, its chevron
-                          // folds the children away.
-                          if (item == AppDestination.deals)
-                            _ExpandableDrawerGroup(
-                              parent: _drawerTile(
-                                context,
-                                item,
-                                withChevronGutter: true,
-                              ),
-                              isChildSelected:
-                                  destination == AppDestination.clothing,
-                              children: [
-                                _drawerSubTile(
-                                    context, AppDestination.clothing),
-                              ],
-                            )
-                          else
-                            _drawerTile(context, item),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final group in groups) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 14, 20, 5),
+                            child: Text(group.$1.toUpperCase(),
+                                style: TS.eyebrowOf(context)),
+                          ),
+                          for (final item in group.$2)
+                            // Marketplace is a section with children (Clothing
+                            // for now): its row navigates as usual, its chevron
+                            // folds the children away.
+                            if (item == AppDestination.deals)
+                              _ExpandableDrawerGroup(
+                                parent: _drawerTile(
+                                  context,
+                                  item,
+                                  withChevronGutter: true,
+                                ),
+                                isChildSelected:
+                                    destination == AppDestination.clothing,
+                                children: [
+                                  _drawerSubTile(
+                                      context, AppDestination.clothing),
+                                ],
+                              )
+                            else
+                              _drawerTile(context, item),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
                   ),
                 ),
               ),

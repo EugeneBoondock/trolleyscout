@@ -602,17 +602,9 @@ class _CalculatorCard extends StatelessWidget {
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
           color: TS.surfaceOf(context),
-          border: Border.all(color: TS.lineSoftOf(context)),
+          border: Border.all(color: TS.lineOf(context), width: 2),
           borderRadius: BorderRadius.circular(TS.panelRadius),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0x44000000)
-                  : const Color(0x101C1710),
-              offset: const Offset(0, 3),
-              blurRadius: 10,
-            ),
-          ],
+          boxShadow: TS.hardShadow(context),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -238,9 +238,8 @@ class _MarketCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = _statusFor(market.freshness);
-    final latest =
-        _latestDate(market.lastDealCapturedAt, market.directoryCheckedAt,
-            market.catalogueCheckedAt);
+    final latest = _latestDate(market.lastDealCapturedAt,
+        market.directoryCheckedAt, market.catalogueCheckedAt);
     return PaperCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

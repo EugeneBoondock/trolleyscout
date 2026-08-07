@@ -116,8 +116,7 @@ class SavedFitsStore {
     final id = 'fit-${now.microsecondsSinceEpoch}';
     final directory = await _fitsDirectory();
     await directory.create(recursive: true);
-    final imageFile =
-        File('${directory.path}${Platform.pathSeparator}$id.png');
+    final imageFile = File('${directory.path}${Platform.pathSeparator}$id.png');
     await imageFile.writeAsBytes(imageBytes, flush: true);
 
     final existing = await load();

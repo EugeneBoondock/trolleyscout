@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../multi_stop_route.dart';
@@ -55,17 +55,14 @@ class _TripPlannerSheet extends StatefulWidget {
 }
 
 class _TripPlannerSheetState extends State<_TripPlannerSheet> {
-  late final Set<String> _selected = widget.stores
-      .take(3)
-      .map((stop) => stop.id)
-      .toSet();
+  late final Set<String> _selected =
+      widget.stores.take(3).map((stop) => stop.id).toSet();
 
   PlannedTrip get _trip => planTrip(
         startLat: widget.startLat,
         startLon: widget.startLon,
-        stops: widget.stores
-            .where((stop) => _selected.contains(stop.id))
-            .toList(),
+        stops:
+            widget.stores.where((stop) => _selected.contains(stop.id)).toList(),
       );
 
   @override
@@ -104,8 +101,8 @@ class _TripPlannerSheetState extends State<_TripPlannerSheet> {
                       Text(
                         'Pick your stores - Mr Scout orders the stops so you '
                         'never double back.',
-                        style: TextStyle(
-                            color: TS.mutedOf(context), fontSize: 12),
+                        style:
+                            TextStyle(color: TS.mutedOf(context), fontSize: 12),
                       ),
                     ],
                   ),
@@ -211,8 +208,8 @@ class _TripPlannerSheetState extends State<_TripPlannerSheet> {
                                 isAdmin: widget.isAdmin,
                               ),
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
                                 visualDensity: VisualDensity.compact,
                               ),
                               child: const Text('Go'),

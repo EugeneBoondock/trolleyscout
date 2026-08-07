@@ -48,9 +48,6 @@ class LoginGateCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: TS.yellow,
                     foregroundColor: TS.ink,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(TS.controlRadius),
-                    ),
                   ),
                   onPressed: onSignUp ?? onLogin,
                   icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
@@ -63,9 +60,6 @@ class LoginGateCard extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: TS.inkOf(context),
                     side: BorderSide(color: TS.lineOf(context), width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(TS.controlRadius),
-                    ),
                   ),
                   onPressed: onLogin,
                   child: const Text('Log in'),

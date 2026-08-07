@@ -84,7 +84,8 @@ class Currency {
 
   /// "R1 234", or "R1 234.50" when there are cents. For round figures like a
   /// rate card, which read better without a trailing ".00".
-  String formatShort(int cents) => _prefixed(_amount(cents, alwaysCents: false));
+  String formatShort(int cents) =>
+      _prefixed(_amount(cents, alwaysCents: false));
 
   String _prefixed(String amount) {
     final isNegative = amount.startsWith('-');

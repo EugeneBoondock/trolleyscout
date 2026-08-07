@@ -270,8 +270,7 @@ class _SupportFormCardState extends State<SupportFormCard> {
               ],
               onChanged: _sending
                   ? null
-                  : (value) =>
-                      setState(() => _topic = value ?? _topics.first),
+                  : (value) => setState(() => _topic = value ?? _topics.first),
             ),
             const SizedBox(height: 10),
             TextFormField(

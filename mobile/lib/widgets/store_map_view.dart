@@ -314,24 +314,25 @@ class _StoreMapViewState extends State<StoreMapView> {
                   start.longitude + (widget.lon - start.longitude) * index / 24,
                 ),
               );
-        _steps = route?.steps ?? [
-          MapRouteStep(
-            type: 'depart',
-            modifier: 'straight',
-            name: '',
-            distanceMeters: 0,
-            durationSeconds: 0,
-            location: [start.latitude, start.longitude],
-          ),
-          MapRouteStep(
-            type: 'arrive',
-            modifier: '',
-            name: '',
-            distanceMeters: 0,
-            durationSeconds: 0,
-            location: [widget.lat, widget.lon],
-          ),
-        ];
+        _steps = route?.steps ??
+            [
+              MapRouteStep(
+                type: 'depart',
+                modifier: 'straight',
+                name: '',
+                distanceMeters: 0,
+                durationSeconds: 0,
+                location: [start.latitude, start.longitude],
+              ),
+              MapRouteStep(
+                type: 'arrive',
+                modifier: '',
+                name: '',
+                distanceMeters: 0,
+                durationSeconds: 0,
+                location: [widget.lat, widget.lon],
+              ),
+            ];
         _user = _route.first;
         _activeStepIndex = 0;
         _status = 'ready';
@@ -352,8 +353,8 @@ class _StoreMapViewState extends State<StoreMapView> {
       (_) {
         if (!mounted || !_simulating || _route.isEmpty) return;
         final stride = (_route.length / 45).ceil().clamp(1, 50);
-        _simulationIndex = (_simulationIndex + stride)
-            .clamp(0, _route.length - 1);
+        _simulationIndex =
+            (_simulationIndex + stride).clamp(0, _route.length - 1);
         _updateGuidance(_route[_simulationIndex]);
         if (_simulationIndex >= _route.length - 1) {
           _updateGuidance(_store);

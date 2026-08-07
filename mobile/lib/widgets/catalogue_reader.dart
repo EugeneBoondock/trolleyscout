@@ -546,9 +546,7 @@ class _CatalogueReaderState extends State<CatalogueReader> {
 
     return widget.deals.where((deal) {
       final crop = deal.imageCrop;
-      if (crop == null ||
-          !crop.isValid ||
-          deal.pageNumber != page.pageNumber) {
+      if (crop == null || !crop.isValid || deal.pageNumber != page.pageNumber) {
         return false;
       }
       final catalogueRetailer = _catalogue.retailerId?.trim();
@@ -637,8 +635,8 @@ class _CataloguePageLayerState extends State<_CataloguePageLayer> {
         widget.imageUrls.isEmpty) {
       return;
     }
-    final stream = NetworkImage(widget.imageUrls.first)
-        .resolve(ImageConfiguration.empty);
+    final stream =
+        NetworkImage(widget.imageUrls.first).resolve(ImageConfiguration.empty);
     final listener = ImageStreamListener(
       (info, _) {
         if (!mounted) return;
@@ -1080,15 +1078,9 @@ class _ReaderOverlayButton extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
         decoration: BoxDecoration(
           color: TS.surfaceOf(context),
-          border: Border.all(color: TS.lineSoftOf(context)),
+          border: Border.all(color: TS.lineOf(context), width: 2),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.16),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          boxShadow: TS.hardShadow(context, offset: TS.shadowSticker),
         ),
         child: IconButton(
           tooltip: tooltip,
@@ -1125,15 +1117,9 @@ class _ReaderPageControls extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         decoration: BoxDecoration(
           color: TS.surfaceOf(context),
-          border: Border.all(color: TS.lineSoftOf(context)),
+          border: Border.all(color: TS.lineOf(context), width: 2),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          boxShadow: TS.hardShadow(context),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

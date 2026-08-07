@@ -159,7 +159,8 @@ class _FoodFactsSheetState extends State<_FoodFactsSheet> {
                           Expanded(
                             child: Text(
                               fact,
-                              style: const TextStyle(fontSize: 14, height: 1.35),
+                              style:
+                                  const TextStyle(fontSize: 14, height: 1.35),
                             ),
                           ),
                         ],

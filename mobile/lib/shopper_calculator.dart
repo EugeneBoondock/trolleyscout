@@ -31,12 +31,11 @@ int shopperVatOnExclusive(int cents) =>
     (cents * shopperVatPercent / 100).round();
 
 bool isLikelyZeroRatedShopperItem(String value) {
-  final item = value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim();
+  final item =
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
   if (item.isEmpty) return false;
-  if (RegExp(r'\b(?:flavoured|flavored|chocolate|yoghurt|yogurt|custard|formula)\b')
+  if (RegExp(
+          r'\b(?:flavoured|flavored|chocolate|yoghurt|yogurt|custard|formula)\b')
       .hasMatch(item)) {
     return false;
   }

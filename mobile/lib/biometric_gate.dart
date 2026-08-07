@@ -140,9 +140,6 @@ class _BiometricGateState extends State<BiometricGate> {
               style: FilledButton.styleFrom(
                 backgroundColor: TS.yellow,
                 foregroundColor: TS.ink,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(TS.controlRadius),
-                ),
                 padding:
                     const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
               ),

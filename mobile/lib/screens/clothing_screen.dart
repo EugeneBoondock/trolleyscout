@@ -599,16 +599,12 @@ class _OutfitTray extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
         decoration: BoxDecoration(
           color: TS.surfaceOf(context),
+          // The 2px ink edge alone. A docked bar cannot cast the down-right
+          // slab, and a soft up-glow was the old system's habit; in this one
+          // the stroke does the separating.
           border: Border(
             top: BorderSide(color: TS.lineOf(context), width: 2),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 18,
-              offset: const Offset(0, -6),
-            ),
-          ],
         ),
         child: SafeArea(
           top: false,

@@ -1075,7 +1075,7 @@ class _SliderTag extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: TS.ink,
-          borderRadius: BorderRadius.circular(TS.pillRadius),
+          borderRadius: BorderRadius.circular(7),
         ),
         child: Text(label,
             style: const TextStyle(
@@ -1302,4 +1302,3 @@ class _ScoutPlanGateCard extends StatelessWidget {
     );
   }
 }
-

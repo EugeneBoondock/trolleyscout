@@ -57,8 +57,7 @@ Future<void> showMoreFittingsSheet(
             _Option(
               icon: PhosphorIcons.playCircle(PhosphorIconsStyle.fill),
               title: 'Watch an ad',
-              body:
-                  'Five ads earn one fitting. Opt in, and no ads appear '
+              body: 'Five ads earn one fitting. Opt in, and no ads appear '
                   'anywhere else in the app.',
               onTap: () {
                 uxTap();
@@ -116,8 +115,7 @@ class _Option extends StatelessWidget {
                           ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 2),
-                    Text(body,
-                        style: Theme.of(context).textTheme.bodySmall),
+                    Text(body, style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),

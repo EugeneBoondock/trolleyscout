@@ -55,10 +55,12 @@ class AdRateCard {
       (option) => option.id == placementId,
       orElse: () => placements.isNotEmpty
           ? placements.first
-          : const AdPlacementOption(id: 'feed', label: 'Deals feed', multiplierPct: 100),
+          : const AdPlacementOption(
+              id: 'feed', label: 'Deals feed', multiplierPct: 100),
     );
     final clamped = clampReach(reach);
-    final raw = (clamped * perPersonCents * placement.multiplierPct / 100).round();
+    final raw =
+        (clamped * perPersonCents * placement.multiplierPct / 100).round();
     return raw < minCents ? minCents : raw;
   }
 
@@ -78,7 +80,8 @@ class AdRateCard {
         (json['provinces'] as List?)?.whereType<String>().toList() ??
             const <String>[];
     return AdRateCard(
-      perPersonCents: (json['perPersonCents'] as num?)?.toInt() ?? fallback.perPersonCents,
+      perPersonCents:
+          (json['perPersonCents'] as num?)?.toInt() ?? fallback.perPersonCents,
       minCents: (json['minCents'] as num?)?.toInt() ?? fallback.minCents,
       minReach: (json['minReach'] as num?)?.toInt() ?? fallback.minReach,
       maxReach: (json['maxReach'] as num?)?.toInt() ?? fallback.maxReach,
@@ -100,7 +103,8 @@ class AdPlacementOption {
   final String label;
   final int multiplierPct;
 
-  factory AdPlacementOption.fromJson(Map<String, dynamic> json) => AdPlacementOption(
+  factory AdPlacementOption.fromJson(Map<String, dynamic> json) =>
+      AdPlacementOption(
         id: json['id']?.toString() ?? 'feed',
         label: json['label']?.toString() ?? 'Deals feed',
         multiplierPct: (json['multiplierPct'] as num?)?.toInt() ?? 100,

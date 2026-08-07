@@ -968,8 +968,9 @@ class AdRewardRate {
         label: _string(json['label'], ''),
         description: _string(json['description'], ''),
         adsPerReward: _int(json['adsPerReward'], 5),
-        lifetimeCap:
-            json['lifetimeCap'] is num ? (json['lifetimeCap'] as num).toInt() : null,
+        lifetimeCap: json['lifetimeCap'] is num
+            ? (json['lifetimeCap'] as num).toInt()
+            : null,
       );
 }
 

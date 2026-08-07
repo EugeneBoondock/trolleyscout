@@ -1508,7 +1508,8 @@ class _WindowCardState extends State<_WindowCard> {
                   icon: Icons.play_circle_fill,
                   color: const Color(0xFFFF0000),
                   label: 'YouTube',
-                  semanticsLabel: 'Watch YouTube video review for ${deal.title}',
+                  semanticsLabel:
+                      'Watch YouTube video review for ${deal.title}',
                   onTap: () {
                     showEmbeddedYouTubeVideoModal(
                       context,
@@ -1645,9 +1646,6 @@ class _WindowCardState extends State<_WindowCard> {
                     style: FilledButton.styleFrom(
                       backgroundColor: TS.yellow,
                       foregroundColor: TS.ink,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(TS.controlRadius),
-                      ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: widget.onOpen,
@@ -2462,9 +2460,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       style: FilledButton.styleFrom(
                         backgroundColor: TS.yellow,
                         foregroundColor: TS.ink,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(TS.controlRadius),
-                        ),
                         padding: const EdgeInsets.symmetric(
                             vertical: 14, horizontal: 16),
                       ),

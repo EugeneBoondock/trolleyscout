@@ -742,7 +742,9 @@ class _VoucherCardState extends State<_VoucherCard> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
         content: Text(
-          up ? 'Voted up! Marked as working.' : 'Voted down. Marked as expired.',
+          up
+              ? 'Voted up! Marked as working.'
+              : 'Voted down. Marked as expired.',
         ),
       ));
   }
@@ -875,7 +877,8 @@ class _VoucherCardState extends State<_VoucherCard> {
                 onPressed: () {
                   // Counted for the admin console, never allowed to delay the
                   // shopper getting to the retailer.
-                  unawaited(widget.onRecordView?.call() ?? Future<void>.value());
+                  unawaited(
+                      widget.onRecordView?.call() ?? Future<void>.value());
                   showInAppBrowser(
                     context,
                     voucher.redemptionUrl,
@@ -928,8 +931,7 @@ class _VoucherImage extends StatelessWidget {
 /// The app does not show em dashes, so the dash becomes a colon here. The
 /// pattern keeps the character because it is matching what shops wrote, not
 /// something Trolley Scout prints.
-String _clean(String value) =>
-    value.replaceAll(RegExp('\s*—\s*'), ': ');
+String _clean(String value) => value.replaceAll(RegExp('\s*—\s*'), ': ');
 
 String _retailerName(String value) => value
     .split('-')

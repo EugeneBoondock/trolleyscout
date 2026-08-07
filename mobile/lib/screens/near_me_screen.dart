@@ -532,8 +532,8 @@ class _NearMeScreenState extends State<NearMeScreen> {
             sliver: SliverToBoxAdapter(
               child: _ValueAndTripStrip(
                 bestValue: _bestValueStore(visibleStores),
-                canPlanTrip:
-                    _tripStops(visibleStores).length >= 2 && _currentLat != null,
+                canPlanTrip: _tripStops(visibleStores).length >= 2 &&
+                    _currentLat != null,
                 onPlanTrip: () => showTripPlannerSheet(
                   context,
                   api: widget.api,
@@ -614,9 +614,6 @@ class _NearMeScreenState extends State<NearMeScreen> {
             style: FilledButton.styleFrom(
               backgroundColor: TS.yellow,
               foregroundColor: TS.ink,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(TS.controlRadius),
-              ),
             ),
             onPressed: _busy ? null : _findNearby,
             icon: _busy
@@ -650,9 +647,6 @@ class _NearMeScreenState extends State<NearMeScreen> {
                 style: FilledButton.styleFrom(
                   backgroundColor: TS.ink,
                   foregroundColor: TS.surface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(TS.controlRadius),
-                  ),
                 ),
                 onPressed: _busy ? null : _findByAddress,
                 child: const Icon(Icons.arrow_forward),
@@ -863,7 +857,7 @@ class _SavedAddressChip extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(color: TS.lineOf(context), width: 2),
-          borderRadius: BorderRadius.circular(TS.pillRadius),
+          borderRadius: BorderRadius.circular(TS.controlRadius),
           color: TS.surfaceOf(context),
         ),
         padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
@@ -915,7 +909,7 @@ class _HistoryChip extends StatelessWidget {
             color: selected ? TS.ink : TS.lineOf(context),
             width: 2,
           ),
-          borderRadius: BorderRadius.circular(TS.pillRadius),
+          borderRadius: BorderRadius.circular(TS.controlRadius),
           color: selected ? TS.yellow : TS.surfaceOf(context),
         ),
         padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
@@ -1286,9 +1280,6 @@ class _NearStoreDetailScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: TS.inkOf(context),
                   side: BorderSide(color: TS.inkOf(context), width: 2),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(TS.controlRadius),
-                  ),
                 ),
                 icon: const Icon(Icons.local_offer, size: 16),
                 label: Text('See ${store.name}’s deals'),

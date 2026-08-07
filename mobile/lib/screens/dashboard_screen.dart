@@ -434,7 +434,9 @@ class _PlanPill extends StatelessWidget {
         decoration: BoxDecoration(
           color: TS.yellow,
           border: Border.all(color: TS.lineOf(context), width: 1.5),
-          borderRadius: BorderRadius.circular(TS.pillRadius),
+          // A tag, not a pill: the pill silhouette belongs to the soft system
+          // this design replaced.
+          borderRadius: BorderRadius.circular(7),
         ),
         child: Text(
           '$planName plan'.toUpperCase(),

@@ -174,11 +174,12 @@ class _SupportChatCardState extends State<SupportChatCard> {
                 if (_filedNotice != null)
                   Container(
                     key: const Key('support-chat-filed'),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: TS.greenOf(context).withValues(alpha: 0.1),
-                      border: Border.all(color: TS.greenOf(context), width: 1.5),
+                      border:
+                          Border.all(color: TS.greenOf(context), width: 1.5),
                       borderRadius: BorderRadius.circular(TS.cardRadius),
                     ),
                     child: Text(

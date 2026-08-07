@@ -33,8 +33,7 @@ class _TrolleyScoutBusinessAppState extends State<TrolleyScoutBusinessApp> {
   late final BusinessController _controller =
       widget.controller ?? BusinessController();
   late final bool _ownsController = widget.controller == null;
-  late final AppUpdateService _appUpdateService =
-      widget.appUpdateService ??
+  late final AppUpdateService _appUpdateService = widget.appUpdateService ??
       GooglePlayAppUpdateService(
         packageName: trolleyScoutBusinessAndroidPackage,
       );

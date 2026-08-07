@@ -149,7 +149,8 @@ class _BuyFittingsSheetState extends State<_BuyFittingsSheet> {
                                 'whole toolkit.'
                             : options.upgradeHint,
                         style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                             height: 1.35),
                       ),
                       const SizedBox(height: 12),
@@ -260,8 +261,7 @@ class _PackCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   '${currency.format(pack.perFittingCents)} a fitting',
-                  style:
-                      TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
+                  style: TextStyle(color: TS.mutedOf(context), fontSize: 12.5),
                 ),
               ],
             ),

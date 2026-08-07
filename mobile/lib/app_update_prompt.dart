@@ -84,8 +84,7 @@ class GooglePlayAppUpdateService implements AppUpdateService {
 
   @override
   Future<void> openPlayStore() async {
-    final marketUri =
-        Uri.parse('market://details?id=$packageName');
+    final marketUri = Uri.parse('market://details?id=$packageName');
     try {
       if (await _urlLauncher(marketUri)) {
         return;

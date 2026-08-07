@@ -81,51 +81,43 @@ class HealthyFoodFact {
 /// route through it, not at guilt.
 const List<HealthyFoodFact> healthyFoodFacts = [
   HealthyFoodFact(
-    fact:
-        'Healthy eating fails on price, not willpower fresh food costs more '
+    fact: 'Healthy eating fails on price, not willpower fresh food costs more '
         'per meal than filling processed staples.',
-    tip:
-        'That is exactly why this filter exists: it only shows whole foods '
+    tip: 'That is exactly why this filter exists: it only shows whole foods '
         'that are on promotion right now.',
   ),
   HealthyFoodFact(
-    fact:
-        'Dried beans, lentils and eggs deliver the cheapest protein per rand '
+    fact: 'Dried beans, lentils and eggs deliver the cheapest protein per rand '
         'in South African stores far below red meat.',
     tip: 'Swap two meat dinners a week for bean or egg dishes and bank the '
         'difference.',
   ),
   HealthyFoodFact(
-    fact:
-        'Tinned pilchards and sardines carry the same omega-3s dietitians '
+    fact: 'Tinned pilchards and sardines carry the same omega-3s dietitians '
         'praise in expensive fish.',
     tip: 'They keep for months, so stock up whenever a tin drops below its '
         'usual price.',
   ),
   HealthyFoodFact(
-    fact:
-        'Oats and sorghum porridge cost a fraction of boxed cereal per bowl '
+    fact: 'Oats and sorghum porridge cost a fraction of boxed cereal per bowl '
         'and hold you fuller for longer.',
     tip: 'A large bag on special beats any cereal deal on price per '
         'breakfast.',
   ),
   HealthyFoodFact(
-    fact:
-        'Vegetables in season are at their cheapest and most nutritious at '
+    fact: 'Vegetables in season are at their cheapest and most nutritious at '
         'the same time.',
     tip: 'Butternut, cabbage and carrots in winter; tomatoes and mealies in '
         'summer buy what the specials lean toward.',
   ),
   HealthyFoodFact(
-    fact:
-        'Frozen vegetables are frozen at peak freshness and often undercut '
+    fact: 'Frozen vegetables are frozen at peak freshness and often undercut '
         'the fresh shelf with none of the spoilage waste.',
     tip: 'If fresh keeps going off before you finish it, frozen is the '
         'cheaper healthy option, not the lesser one.',
   ),
   HealthyFoodFact(
-    fact:
-        'Amasi and plain yoghurt give you the probiotics and protein that '
+    fact: 'Amasi and plain yoghurt give you the probiotics and protein that '
         'flavoured tubs charge extra for without the added sugar.',
     tip: 'Sweeten plain yoghurt with seasonal fruit from the produce '
         'specials instead.',
@@ -134,6 +126,5 @@ const List<HealthyFoodFact> healthyFoodFacts = [
 
 /// A stable pick per day so the strip feels alive without shuffling on every
 /// rebuild.
-HealthyFoodFact healthyFactForDay(DateTime day) =>
-    healthyFoodFacts[day.difference(DateTime.utc(2026)).inDays.abs() %
-        healthyFoodFacts.length];
+HealthyFoodFact healthyFactForDay(DateTime day) => healthyFoodFacts[
+    day.difference(DateTime.utc(2026)).inDays.abs() % healthyFoodFacts.length];

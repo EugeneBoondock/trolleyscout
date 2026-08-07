@@ -102,8 +102,7 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
   Future<void> _rememberConversation() async {
     final turns = _messages
         .where((message) => !message.isError && message.text.trim().isNotEmpty)
-        .map((message) =>
-            ScoutChatTurn(role: message.role, text: message.text))
+        .map((message) => ScoutChatTurn(role: message.role, text: message.text))
         .toList(growable: false);
     if (turns.isEmpty) return;
     _conversationId ??=
@@ -518,17 +517,8 @@ class _ScoutChatScreenState extends State<ScoutChatScreen> {
       decoration: BoxDecoration(
         color: TS.surfaceOf(context),
         border: Border(
-          bottom: BorderSide(color: TS.lineSoftOf(context), width: 1),
+          bottom: BorderSide(color: TS.lineOf(context), width: 2),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0x52000000)
-                : const Color(0x101C1710),
-            offset: const Offset(0, 3),
-            blurRadius: 10,
-          ),
-        ],
       ),
       child: SafeArea(
         bottom: false,
@@ -1422,15 +1412,7 @@ class _EmptyState extends StatelessWidget {
                   color: TS.yellow,
                   border: Border.all(color: TS.ink, width: 2),
                   borderRadius: BorderRadius.circular(22),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0x66000000)
-                          : const Color(0x1F1C1710),
-                      offset: const Offset(0, 5),
-                      blurRadius: 14,
-                    ),
-                  ],
+                  boxShadow: TS.hardShadow(context),
                 ),
                 child: const AnimatedScoutMark(
                   motion: ScoutMarkMotion.scout,
@@ -2346,17 +2328,8 @@ class _ComposerState extends State<_Composer> {
         decoration: BoxDecoration(
           color: TS.bgOf(context),
           border: Border(
-            top: BorderSide(color: TS.lineSoftOf(context), width: 1),
+            top: BorderSide(color: TS.lineOf(context), width: 2),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0x4D000000)
-                  : const Color(0x121C1710),
-              offset: const Offset(0, -3),
-              blurRadius: 10,
-            ),
-          ],
         ),
         child: Center(
           child: ConstrainedBox(
@@ -2371,13 +2344,11 @@ class _ComposerState extends State<_Composer> {
                     child: Container(
                       key: const ValueKey('mr-scout-attachment-chip'),
                       margin: const EdgeInsets.only(bottom: 6),
-                      padding:
-                          const EdgeInsets.fromLTRB(10, 5, 4, 5),
+                      padding: const EdgeInsets.fromLTRB(10, 5, 4, 5),
                       decoration: BoxDecoration(
                         color: TS.surfaceSoftOf(context),
-                        borderRadius: BorderRadius.circular(TS.pillRadius),
-                        border:
-                            Border.all(color: TS.lineSoftOf(context)),
+                        borderRadius: BorderRadius.circular(TS.controlRadius),
+                        border: Border.all(color: TS.lineSoftOf(context)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2386,8 +2357,7 @@ class _ComposerState extends State<_Composer> {
                               size: 14, color: TS.mutedOf(context)),
                           const SizedBox(width: 6),
                           ConstrainedBox(
-                            constraints:
-                                const BoxConstraints(maxWidth: 180),
+                            constraints: const BoxConstraints(maxWidth: 180),
                             child: Text(
                               widget.attachmentName!,
                               maxLines: 1,
@@ -2417,18 +2387,8 @@ class _ComposerState extends State<_Composer> {
                   key: const ValueKey('mr-scout-composer'),
                   decoration: BoxDecoration(
                     color: TS.surfaceOf(context),
-                    border:
-                        Border.all(color: TS.lineSoftOf(context), width: 1.5),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0x3D000000)
-                            : const Color(0x101C1710),
-                        offset: const Offset(0, 3),
-                        blurRadius: 9,
-                      ),
-                    ],
+                    border: Border.all(color: TS.lineOf(context), width: 2),
+                    borderRadius: BorderRadius.circular(TS.controlRadius),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 7, 7, 7),

@@ -169,7 +169,9 @@ List<RetailSeason> buildRetailSeasons(
   ].whereType<RetailSeason>().toList();
 
   final seen = <String>{};
-  final unique = moments.where((moment) => seen.add(_normalize(moment.title))).toList()
+  final unique = moments
+      .where((moment) => seen.add(_normalize(moment.title)))
+      .toList()
     ..sort((left, right) =>
         _seasonSortKey(left, today).compareTo(_seasonSortKey(right, today)));
   return unique.take(8).toList(growable: false);
@@ -206,7 +208,8 @@ RetailSeason? _blackFridayMoment(DateTime today) {
     id: 'black-friday-${date.year}',
     leadDays: 60,
     searchTerms: _blackFridayTerms,
-    subtitle: 'Watch verified Black Friday and Cyber Monday prices before buying.',
+    subtitle:
+        'Watch verified Black Friday and Cyber Monday prices before buying.',
     title: 'Black Friday watch',
     today: today,
   );
@@ -228,7 +231,8 @@ RetailSeason? _christmasMoment(DateTime today) {
     id: 'christmas-${date.year}',
     leadDays: 60,
     searchTerms: _christmasTerms,
-    subtitle: 'Track festive food, gifts and home offers from live store sources.',
+    subtitle:
+        'Track festive food, gifts and home offers from live store sources.',
     title: 'Festive season',
     today: today,
   );
@@ -250,14 +254,16 @@ RetailSeason? _easterMoment(DateTime today) {
     id: 'easter-${easter.year}',
     leadDays: 60,
     searchTerms: _easterTerms,
-    subtitle: 'Find verified Easter food and family offers as stores publish them.',
+    subtitle:
+        'Find verified Easter food and family offers as stores publish them.',
     title: 'Easter savings',
     today: today,
   );
 }
 
 RetailSeason? _backToSchoolMoment(String countryCode, DateTime today) {
-  final southern = _southernSchoolMarkets.contains(countryCode.trim().toUpperCase());
+  final southern =
+      _southernSchoolMarkets.contains(countryCode.trim().toUpperCase());
   DateTime start;
   DateTime end;
   if (southern) {
@@ -290,29 +296,38 @@ RetailSeason? _backToSchoolMoment(String countryCode, DateTime today) {
 
 List<RetailSeason> _holidayMoments(
     DateTime today, List<RetailHoliday> holidays) {
-  return holidays.expand((holiday) {
-    final date = _parseIsoDate(holiday.date);
-    if (date == null || date.isBefore(today) || date.difference(today).inDays > 45) {
-      return const <RetailSeason>[];
-    }
-    final names = '${holiday.name} ${holiday.localName ?? ''}';
-    if (RegExp(r'christmas|good friday|easter', caseSensitive: false)
-        .hasMatch(names)) {
-      return const <RetailSeason>[];
-    }
-    final moment = _datedMoment(
-      date: date,
-      end: date,
-      icon: RetailSeasonIcon.calendar,
-      id: 'holiday-${holiday.date}-${_normalize(holiday.name).replaceAll(' ', '-')}',
-      leadDays: 45,
-      searchTerms: [holiday.name, if (holiday.localName != null) holiday.localName!],
-      subtitle: 'See live offers that stores have linked to this public holiday.',
-      title: holiday.localName ?? holiday.name,
-      today: today,
-    );
-    return moment == null ? const <RetailSeason>[] : [moment];
-  }).take(2).toList(growable: false);
+  return holidays
+      .expand((holiday) {
+        final date = _parseIsoDate(holiday.date);
+        if (date == null ||
+            date.isBefore(today) ||
+            date.difference(today).inDays > 45) {
+          return const <RetailSeason>[];
+        }
+        final names = '${holiday.name} ${holiday.localName ?? ''}';
+        if (RegExp(r'christmas|good friday|easter', caseSensitive: false)
+            .hasMatch(names)) {
+          return const <RetailSeason>[];
+        }
+        final moment = _datedMoment(
+          date: date,
+          end: date,
+          icon: RetailSeasonIcon.calendar,
+          id: 'holiday-${holiday.date}-${_normalize(holiday.name).replaceAll(' ', '-')}',
+          leadDays: 45,
+          searchTerms: [
+            holiday.name,
+            if (holiday.localName != null) holiday.localName!
+          ],
+          subtitle:
+              'See live offers that stores have linked to this public holiday.',
+          title: holiday.localName ?? holiday.name,
+          today: today,
+        );
+        return moment == null ? const <RetailSeason>[] : [moment];
+      })
+      .take(2)
+      .toList(growable: false);
 }
 
 RetailSeason _studentMoment() => const RetailSeason(
@@ -320,7 +335,8 @@ RetailSeason _studentMoment() => const RetailSeason(
       id: 'student-offers',
       searchTerms: _studentTerms,
       status: 'always',
-      subtitle: 'Find verified student pricing for study, tech, data and campus life.',
+      subtitle:
+          'Find verified student pricing for study, tech, data and campus life.',
       timingLabel: 'Available year-round',
       title: 'Student offers',
     );
@@ -393,7 +409,8 @@ RetailSeason? _rangedMoment({
 int _seasonSortKey(RetailSeason moment, DateTime today) {
   if (moment.status == 'active') return -2;
   if (moment.status == 'always') return 10000;
-  final starts = moment.startsOn == null ? null : _parseIsoDate(moment.startsOn!);
+  final starts =
+      moment.startsOn == null ? null : _parseIsoDate(moment.startsOn!);
   return starts?.difference(today).inDays ?? 9999;
 }
 
@@ -426,10 +443,8 @@ bool _containsTerm(String searchable, String term) {
   return ' $searchable '.contains(' $term ');
 }
 
-String _normalize(String value) => value
-    .toLowerCase()
-    .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-    .trim();
+String _normalize(String value) =>
+    value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
 
 DateTime? _parseIsoDate(String value) {
   final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
@@ -441,7 +456,6 @@ DateTime? _parseIsoDate(String value) {
   );
 }
 
-String _isoDate(DateTime date) =>
-    '${date.year.toString().padLeft(4, '0')}-'
+String _isoDate(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';

@@ -251,8 +251,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Expanded(
                     child: FilledButton.icon(
                       key: const Key('profile-buy-fittings'),
-                      onPressed: () => showBuyFittingsSheet(
-                          context, widget.controller.api),
+                      onPressed: () =>
+                          showBuyFittingsSheet(context, widget.controller.api),
                       icon: const Icon(Icons.add_shopping_cart, size: 16),
                       label: const Text('Buy fittings'),
                     ),

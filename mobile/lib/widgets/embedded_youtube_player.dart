@@ -119,8 +119,7 @@ iframe{border:0;width:100%;height:100%}</style>
       return;
     }
     try {
-      final videos =
-          await api.productVideos('${widget.productTitle} review');
+      final videos = await api.productVideos('${widget.productTitle} review');
       if (!mounted) return;
       if (videos.isEmpty) {
         _showEmbed(_searchFallbackEmbedUrl);
@@ -218,8 +217,7 @@ iframe{border:0;width:100%;height:100%}</style>
                 children: [
                   TextButton.icon(
                     key: const Key('video-review-previous'),
-                    onPressed:
-                        _index > 0 ? () => _showVideo(_index - 1) : null,
+                    onPressed: _index > 0 ? () => _showVideo(_index - 1) : null,
                     icon: const Icon(Icons.skip_previous, size: 20),
                     label: const Text('Previous'),
                     style: TextButton.styleFrom(

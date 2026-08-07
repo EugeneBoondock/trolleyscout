@@ -97,12 +97,10 @@ void main() {
     expect(asset('assets/onboarding/scout-budget.png'), findsOneWidget);
     final next =
         tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Next'));
-    final shape = next.style?.shape?.resolve(<WidgetState>{});
-    expect(shape, isA<RoundedRectangleBorder>());
-    expect(
-      (shape! as RoundedRectangleBorder).borderRadius,
-      BorderRadius.circular(TS.controlRadius),
-    );
+    // No local shape override: the theme's NeoSlabBorder must reach this
+    // button, since a local RoundedRectangleBorder silently strips the ink
+    // edge and slab shadow the design system carries on every control.
+    expect(next.style?.shape, isNull);
 
     await tester.drag(find.byType(PageView), const Offset(-500, 0));
     await tester.pumpAndSettle();
