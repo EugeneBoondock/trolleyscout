@@ -394,6 +394,23 @@ class TS {
           )),
         ),
       ),
+      // Stock M3 segmented buttons are stadiums — the auth screen's
+      // Sign up / Log in toggle was the one pill-shaped control left in the
+      // app. Keyed corners and the standard stroke bring it into the system;
+      // the selected fill stays the scheme's secondary (bandana red).
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.w800),
+          ),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: outlineColor, width: strokeBase),
+          ),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(controlRadius),
+          )),
+        ),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         height: 64,
         backgroundColor: surfaceColor,
