@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,6 +45,7 @@ import 'screens/vouchers_screen.dart';
 import 'theme.dart';
 import 'ux.dart';
 import 'widgets/in_app_alert_banner.dart';
+import 'widgets/neo.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/common.dart';
 import 'widgets/scout_avatar_view.dart';
@@ -696,22 +698,21 @@ class _RootShellState extends State<RootShell>
         final extraCompactNav = phoneWidth < 360;
         final compactNav = phoneWidth < 400;
         final largeNavText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
-        // At a big text setting the label's own height drives the bar, so the
-        // icon has to give way or the bar grows back.
+        // Sized like a banking app's bar rather than a toolbar's: the icons
+        // are the navigation, so they get the room, and the labels stay
+        // legible at every width instead of shrinking to decoration.
         final navIconSize = largeNavText
-            ? 17.0
+            ? 21.0
             : extraCompactNav
-                ? 18.0
+                ? 23.0
                 : compactNav
-                    ? 19.0
-                    : 20.0;
-        // TikTok-small: present, legible, and never the thing that sets the
-        // bar's height.
+                    ? 25.0
+                    : 26.0;
         final navLabelSize = extraCompactNav
-            ? 7.5
+            ? 9.5
             : compactNav
-                ? 8.0
-                : 8.5;
+                ? 10.0
+                : 11.0;
         final requestedTextScale = MediaQuery.textScalerOf(context).scale(1);
         final navTextScale =
             min(requestedTextScale, extraCompactNav ? 1.05 : 1.2);
@@ -750,12 +751,22 @@ class _RootShellState extends State<RootShell>
             floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
             appBar: AppBar(
               leading: Builder(
-                builder: (context) => IconButton(
-                  tooltip: 'Open navigation menu',
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                  icon: const Icon(Icons.menu),
+                // Matched to the avatar on the far side: a 34px face inside a
+                // 48px target. Two chrome controls bracketing the mark should
+                // be the same size, or the bar looks assembled rather than
+                // designed.
+                builder: (context) => Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: NeoIconButton(
+                    tooltip: 'Open navigation menu',
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    icon: Icons.menu,
+                    size: 34,
+                    iconSize: 18,
+                  ),
                 ),
               ),
+              leadingWidth: 64,
               // Centred, like a crest. Left-aligned it read as one more
               // button in the hamburger's row rather than the app's mark.
               centerTitle: true,
@@ -1060,7 +1071,7 @@ class _RootShellState extends State<RootShell>
                                 // to hit. The bar looks smaller because the
                                 // chrome around it is gone, not because the
                                 // touch area shrank.
-                                height: largeText ? 58 : 48,
+                                height: largeText ? 76 : 64,
                                 backgroundColor: TS.surfaceOf(context),
                                 elevation: 0,
                                 indicatorColor: Colors.transparent,
@@ -1078,21 +1089,19 @@ class _RootShellState extends State<RootShell>
                                         _primaryDestinations[index]),
                                 destinations: [
                                   NavigationDestination(
-                                    icon: Icon(Icons.home_outlined,
+                                    icon: PhosphorIcon(PhosphorIconsRegular.house,
                                         size: navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: Icons.home_rounded,
-                                      compact: compactNav,
+                                      icon: PhosphorIconsBold.house,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Home',
                                   ),
                                   NavigationDestination(
-                                    icon: Icon(Icons.local_offer_outlined,
+                                    icon: PhosphorIcon(PhosphorIconsRegular.tag,
                                         size: navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: Icons.local_offer,
-                                      compact: compactNav,
+                                      icon: PhosphorIconsBold.tag,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Marketplace',
@@ -1109,21 +1118,19 @@ class _RootShellState extends State<RootShell>
                                     label: 'Mr Scout',
                                   ),
                                   NavigationDestination(
-                                    icon: Icon(Icons.storefront_outlined,
+                                    icon: PhosphorIcon(PhosphorIconsRegular.storefront,
                                         size: navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: Icons.storefront,
-                                      compact: compactNav,
+                                      icon: PhosphorIconsBold.storefront,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Stores',
                                   ),
                                   NavigationDestination(
-                                    icon: Icon(Icons.window_outlined,
+                                    icon: PhosphorIcon(PhosphorIconsRegular.squaresFour,
                                         size: navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: Icons.window,
-                                      compact: compactNav,
+                                      icon: PhosphorIconsBold.squaresFour,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Window',
@@ -1240,28 +1247,23 @@ class _RootShellState extends State<RootShell>
 }
 
 class _SelectedNavIcon extends StatelessWidget {
-  const _SelectedNavIcon({
-    required this.icon,
-    required this.compact,
-    required this.iconSize,
-  });
+  const _SelectedNavIcon({required this.icon, required this.iconSize});
 
   final IconData icon;
-  final bool compact;
   final double iconSize;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: TS.yellow,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: SizedBox(
-        width: compact ? 48 : 64,
-        height: compact ? 28 : 32,
-        child: Icon(icon, color: TS.ink, size: iconSize),
-      ),
+    // The selected tab lights its own strokes rather than sitting inside a
+    // yellow lozenge. The pill was a second shape competing with the icon at
+    // the moment the icon has something to say, and it capped every glyph at
+    // lozenge size. Weight plus colour reads faster and leaves the icon its
+    // full room.
+    return Icon(
+      icon,
+      size: iconSize,
+      color: TS.yellow,
+      shadows: const [Shadow(color: Color(0x66FFD42E), blurRadius: 9)],
     );
   }
 }

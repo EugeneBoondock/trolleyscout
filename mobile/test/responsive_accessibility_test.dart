@@ -83,7 +83,9 @@ void main() {
     expect(find.byType(DashboardScreen), findsOneWidget);
     final navigation = find.byType(NavigationBar);
     expect(navigation, findsOneWidget);
-    expect(tester.getSize(navigation).height, lessThanOrEqualTo(58));
+    // Taller than a toolbar on purpose, still a fraction of the screen at
+    // 200% text.
+    expect(tester.getSize(navigation).height, lessThanOrEqualTo(80));
     for (final label in [
       'Home',
       'Marketplace',
@@ -93,7 +95,10 @@ void main() {
     ]) {
       final text = find.descendant(of: navigation, matching: find.text(label));
       expect(text, findsOneWidget);
-      expect(tester.getSize(text).height, lessThan(20));
+      // Labels are deliberately larger than they were: the guard is that one
+      // cannot blow the bar out, not that it stays tiny. The bar's own height
+      // is pinned above.
+      expect(tester.getSize(text).height, lessThanOrEqualTo(22));
       // What matters is that a label stays inside its own fifth of the bar,
       // not any particular pixel width. The label font shrank with the bar, so
       // "Marketplace" now renders in full where it used to be clipped.

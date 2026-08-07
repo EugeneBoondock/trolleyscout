@@ -480,26 +480,19 @@ class _SavingsHero extends StatelessWidget {
     final kept = summary.savingsCents / fullPrice;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     return PressableScale(
-      // The screen's one burst, in the bandana red, mostly hidden behind the
-      // card's top-right corner — a print accident that survived. One per
-      // screen, always behind something: scarcity is what keeps it an accent
-      // instead of clipart.
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          const Positioned(
-            top: -9,
-            right: -7,
-            child: NeoBurst(size: 34, color: TS.red, points: 11),
-          ),
           InkWell(
             onTap: onOpenBasket,
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(15),
-              // The mascot's own yellow, whole. This is the number the app
-              // exists to grow; it gets the loudest slab on the screen.
-              decoration: TS.slab(context, color: TS.yellow),
+              // Cream, not yellow. A whole yellow card made the dashboard's
+              // largest surface its loudest one too, leaving nothing quieter
+              // for it to stand against. The colour moved inside, onto the
+              // compass, where it marks the one thing being measured.
+              decoration: TS.slab(context, color: TS.surfaceOf(context)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -513,19 +506,15 @@ class _SavingsHero extends StatelessWidget {
                       ),
                       // Refresh lives on the number it refreshes, not floating
                       // beside the greeting.
-                      SizedBox(
-                        height: 26,
-                        width: 26,
-                        child: IconButton(
-                          tooltip: 'Refresh dashboard',
-                          padding: EdgeInsets.zero,
-                          onPressed: () {
-                            uxTap();
-                            onRefresh();
-                          },
-                          icon: const Icon(Icons.refresh,
-                              size: 18, color: TS.ink),
-                        ),
+                      NeoIconButton(
+                        tooltip: 'Refresh dashboard',
+                        icon: Icons.refresh,
+                        size: 32,
+                        iconSize: 17,
+                        onPressed: () {
+                          uxTap();
+                          onRefresh();
+                        },
                       ),
                     ],
                   ),
@@ -562,7 +551,7 @@ class _SavingsHero extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Divider(height: 1, color: Color(0x4D1C1710)),
+                  Divider(height: 1, color: TS.lineSoftOf(context)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -577,7 +566,7 @@ class _SavingsHero extends StatelessWidget {
                               color: Color(0xE61C1710), fontSize: 12.5),
                         ),
                       ),
-                      const Icon(Icons.arrow_forward, size: 16, color: TS.red),
+                      Icon(Icons.arrow_forward, size: 16, color: TS.redOf(context)),
                     ],
                   ),
                 ],
@@ -664,12 +653,14 @@ class _SavingsRing extends StatelessWidget {
         child: CustomPaint(
           painter: _RingPainter(
             fraction: value,
-            // On the yellow slab: an ink-wash track, the mascot's green for
-            // the arc, ink cardinals. Theme lookups would hand back cream on
-            // dark, which vanishes against yellow.
+            // The compass is where the colour lives now: a yellow dial face,
+            // the discount measured on it in the mascot's green, ink
+            // cardinals. Both are theme-independent so the dial keeps its
+            // colour in dark mode.
             track: const Color(0x338A7C5C),
             fill: TS.green,
             label: TS.ink,
+            face: TS.yellow,
           ),
           child: Center(
             child: Column(
@@ -718,12 +709,16 @@ class _RingPainter extends CustomPainter {
     required this.track,
     required this.fill,
     required this.label,
+    required this.face,
   });
 
   final double fraction;
   final Color track;
   final Color fill;
   final Color label;
+
+  /// The dial the arc is measured on.
+  final Color face;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -735,6 +730,19 @@ class _RingPainter extends CustomPainter {
     final letterBand = size.width / 2 - 7;
     final ringRadius = size.width / 2 - 18;
     final circle = Rect.fromCircle(center: centre, radius: ringRadius);
+
+    // The dial first: a filled face with the ink edge every other surface in
+    // the app carries, so the compass reads as an instrument rather than a
+    // progress ring that happens to have letters around it.
+    canvas.drawCircle(centre, ringRadius + stroke / 2, Paint()..color = face);
+    canvas.drawCircle(
+      centre,
+      ringRadius + stroke / 2,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = label,
+    );
 
     canvas.drawArc(
       circle,
@@ -807,7 +815,8 @@ class _RingPainter extends CustomPainter {
       old.fraction != fraction ||
       old.fill != fill ||
       old.track != track ||
-      old.label != label;
+      old.label != label ||
+      old.face != face;
 }
 
 /// Counts up to the amount on load. A number that lands rather than appears is
@@ -833,12 +842,15 @@ class _CountUpMoney extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             currency.format(value.round()),
-            style: const TextStyle(
+            // Money kept is green, the way the discount on the dial beside it
+            // is. Ink was only ever there because the card underneath was
+            // yellow.
+            style: TextStyle(
               fontWeight: FontWeight.w900,
               fontSize: 46,
               height: 1,
               letterSpacing: -1.2,
-              color: TS.ink,
+              color: TS.greenOf(context),
             ),
           ),
         ),
@@ -876,45 +888,30 @@ class _QuickActions extends StatelessWidget {
     // Each tile takes one of the mascot's own colours, whole. Four cream
     // tiles in a row read as a form; four colour slabs read as a toybox,
     // which is what neo-brutalism is for.
-    const actions = <(PhosphorIconData, String, AppDestination, Color, Color)>[
-      (
-        PhosphorIconsFill.tag,
-        'Marketplace',
-        AppDestination.deals,
-        TS.yellow,
-        TS.ink,
-      ),
-      (
-        PhosphorIconsFill.mapPin,
-        'Near me',
-        AppDestination.near,
-        TS.red,
-        Color(0xFFFDFAF1),
-      ),
-      (
-        PhosphorIconsFill.basket,
-        'Basket',
-        AppDestination.basket,
-        TS.green,
-        Color(0xFFFDFAF1),
-      ),
+    // Calmed on purpose. Four saturated blocks in a row turned the top of
+    // the dashboard into a colour chart and left the money card, which is the
+    // screen's actual subject, competing with its own shortcuts. The tiles
+    // keep the stroke, the slab and the keyed corners; the colour moved to
+    // the icon, which is enough to tell them apart at a glance.
+    const actions = <(PhosphorIconData, String, AppDestination, Color)>[
+      (PhosphorIconsFill.tag, 'Marketplace', AppDestination.deals, TS.red),
+      (PhosphorIconsFill.mapPin, 'Near me', AppDestination.near, TS.green),
+      (PhosphorIconsFill.basket, 'Basket', AppDestination.basket, TS.red),
       (
         PhosphorIconsFill.storefront,
         'Stores',
         AppDestination.stores,
-        Color(0xFFFDFAF1),
-        TS.ink,
+        TS.green,
       ),
     ];
     return Row(
       children: [
-        for (final (icon, label, destination, fill, fg) in actions) ...[
+        for (final (icon, label, destination, accent) in actions) ...[
           Expanded(
             child: _QuickActionTile(
               icon: icon,
               label: label,
-              fill: fill,
-              foreground: fg,
+              accent: accent,
               onTap: () {
                 uxTap();
                 onNavigate(destination);
@@ -932,15 +929,16 @@ class _QuickActionTile extends StatelessWidget {
   const _QuickActionTile({
     required this.icon,
     required this.label,
-    required this.fill,
-    required this.foreground,
+    required this.accent,
     required this.onTap,
   });
 
   final PhosphorIconData icon;
   final String label;
-  final Color fill;
-  final Color foreground;
+
+  /// The one piece of colour on the tile. The slab itself stays the page's
+  /// surface so a row of four reads as a set rather than a palette.
+  final Color accent;
   final VoidCallback onTap;
 
   @override
@@ -949,10 +947,10 @@ class _QuickActionTile extends StatelessWidget {
           onTap: onTap,
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-            decoration: TS.slab(context, color: fill),
+            decoration: TS.slab(context, color: TS.surfaceOf(context)),
             child: Column(
               children: [
-                PhosphorIcon(icon, size: 23, color: foreground),
+                PhosphorIcon(icon, size: 23, color: accent),
                 const SizedBox(height: 6),
                 Text(
                   label,
@@ -960,7 +958,7 @@ class _QuickActionTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: foreground,
+                      color: TS.inkOf(context),
                       fontWeight: FontWeight.w800,
                       fontSize: 12),
                 ),
@@ -1028,12 +1026,12 @@ class _TopSavingsStrip extends StatelessWidget {
       children: [
         _SectionLabel(
           label: 'Today’s savings',
-          trailing: TextButton(
+          trailing: NeoLinkButton(
+            label: 'See all deals',
             onPressed: () {
               uxTap();
               onBrowse();
             },
-            child: const Text('See all deals'),
           ),
         ),
         const SizedBox(height: 4),
@@ -1131,12 +1129,12 @@ class _SavedDealsStrip extends StatelessWidget {
       children: [
         _SectionLabel(
           label: 'Your saved deals',
-          trailing: TextButton(
+          trailing: NeoLinkButton(
+            label: 'See all ${deals.length}',
             onPressed: () {
               uxTap();
               onSeeAll();
             },
-            child: Text('See all ${deals.length}'),
           ),
         ),
         const SizedBox(height: 4),

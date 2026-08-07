@@ -183,7 +183,9 @@ void main() {
     expect(navigation.selectedIndex, 0);
     // A short, quiet bar. The icons and labels shrank with it, so the row's
     // own intrinsic height still fits inside this.
-    expect(navigation.height, 48);
+    // Banking-bar proportions: the icons are the navigation, so they get
+    // the room, and the labels stay legible rather than shrinking away.
+    expect(navigation.height, 64);
     expect(firstDestination.label, 'Home');
     expect(
       tester
@@ -323,9 +325,11 @@ void main() {
     await tester.pumpWidget(_testApp(_FakeApi(_memberSession)));
     await tester.pump(const Duration(milliseconds: 500));
 
+    // The bar draws Phosphor line art now, so the destination is found by
+    // its label rather than a Material codepoint.
     await tester.tap(find.descendant(
       of: find.byType(NavigationBar),
-      matching: find.byIcon(Icons.storefront_outlined),
+      matching: find.text('Stores'),
     ));
     await tester.pump(const Duration(milliseconds: 500));
     expect(

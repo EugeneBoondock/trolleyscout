@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'common.dart';
 
 /// The readable foreground for a flat [fill]. The blocking palette deliberately
 /// mixes light fills (yellow, mint) with dark ones (bandana red, basket green),
@@ -315,6 +316,132 @@ class NeoSlab extends StatelessWidget {
           child: IconTheme.merge(
             data: IconThemeData(color: on),
             child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An icon in a keyed slab: the bordered square from the reference sets, used
+/// for the chrome controls that Material would otherwise draw as bare glyphs
+/// floating on the background.
+///
+/// The drawer toggle and the refresh control are the two that matter. A naked
+/// icon has no edge, so on a cream page it reads as decoration rather than
+/// something you can press; giving it the same stroke and slab as every other
+/// control is what makes the system feel deliberate instead of applied to the
+/// cards and forgotten on the bars.
+class NeoIconButton extends StatelessWidget {
+  const NeoIconButton({
+    super.key,
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+    this.size = 38,
+    this.iconSize = 19,
+    this.fill,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String tooltip;
+  final double size;
+  final double iconSize;
+
+  /// Defaults to the page's surface, so the slab reads as chrome. Pass a
+  /// blocking colour when the control is the point of its own row.
+  final Color? fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = fill ?? TS.surfaceOf(context);
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        // The gesture goes on the target, not the slab. A 34px slab that also
+        // carried the tap was a 34px tap target, which is under the 48dp
+        // minimum and fails on exactly the controls people reach for while
+        // walking around a shop.
+        child: GestureDetector(
+          onTap: onPressed,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox.square(
+            dimension: size < 48 ? 48 : size,
+            child: Center(
+              child: PressableScale(
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  // The control radius, not the card's: at this size a 20px
+                  // corner eats the whole edge and the square reads as a pill.
+                  decoration: TS.slab(
+                    context,
+                    color: colour,
+                    radius: TS.controlRadius,
+                    shadow: TS.shadowSticker,
+                  ),
+                  child: Icon(icon, size: iconSize, color: neoOn(colour)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A "see all" as a keyed slab rather than a bare text link.
+///
+/// Text links are the one place a bordered-everything system leaks: a row of
+/// slabs with a naked blue-ish word floating beside it looks unfinished. The
+/// chevron carries the direction so the label can stay short.
+class NeoLinkButton extends StatelessWidget {
+  const NeoLinkButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.fill,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final Color? fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = fill ?? TS.surfaceOf(context);
+    final on = neoOn(colour);
+    return PressableScale(
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(11, 6, 8, 6),
+          decoration: TS.slab(
+            context,
+            color: colour,
+            radius: TS.controlRadius,
+            shadow: TS.shadowSticker,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: on,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Icon(Icons.chevron_right, size: 15, color: on),
+            ],
           ),
         ),
       ),

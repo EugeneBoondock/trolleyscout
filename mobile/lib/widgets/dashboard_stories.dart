@@ -88,10 +88,17 @@ class _StoryReelItem extends StatelessWidget {
                 width: 62,
                 height: 62,
                 padding: const EdgeInsets.all(4),
+                // An ink ring, not a red one on yellow. Two saturated rings
+                // around every logo turned the rail into a row of targets and
+                // fought the shop's own colours inside them; the stroke is
+                // what says "story" in this system anyway.
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: TS.yellow,
-                  border: Border.all(color: TS.redOf(context), width: 3),
+                  color: TS.surfaceOf(context),
+                  border: Border.all(color: TS.lineOf(context), width: 2.5),
+                  boxShadow: const [
+                    BoxShadow(color: TS.ink, offset: Offset(2, 2)),
+                  ],
                 ),
                 child: ClipOval(
                   child: ColoredBox(
