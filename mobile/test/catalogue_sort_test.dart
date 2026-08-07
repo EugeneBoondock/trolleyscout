@@ -55,7 +55,7 @@ void main() {
     );
   });
 
-  test('orders catalogues by start date and then capture time', () {
+  test('orders catalogues by when they landed, newest first', () {
     const catalogues = [
       Catalogue(
         name: 'Old Alpha',
@@ -79,9 +79,13 @@ void main() {
       ),
     ];
 
+    // Old Alpha's specials started three weeks ago, but it reached the app
+    // most recently, so that is the one a shopper means by "latest". Sorting
+    // on start date instead put it last and let the store name decide the
+    // rest of the order.
     expect(
       sortCataloguesMostRecent(catalogues).map((item) => item.name),
-      ['New Zulu', 'Undated Beta', 'Old Alpha'],
+      ['Old Alpha', 'New Zulu', 'Undated Beta'],
     );
   });
 

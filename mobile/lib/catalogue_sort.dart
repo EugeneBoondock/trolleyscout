@@ -108,20 +108,27 @@ List<Catalogue> sortCatalogues(
   return sorted;
 }
 
+/// Newest first, where "newest" means most recently added to Trolley Scout.
+///
+/// This used to lead with validFrom, which reads as the right idea and is not:
+/// shops start their specials on the same day as each other, so nearly every
+/// pair tied on it, tied again on capture time, and fell through to the store
+/// name. "Latest" was quietly rendering the alphabet.
+///
+/// Capture time is what the shopper means. A catalogue that landed in the app
+/// an hour ago is the latest one whether its dates start today or last week,
+/// and it is the only field that is genuinely distinct per catalogue.
 int _compareCatalogueDates(Catalogue left, Catalogue right) {
   final leftCaptured = _dateTime(left.capturedAt);
   final rightCaptured = _dateTime(right.capturedAt);
-  final leftPrimary = _dateTime(left.validFrom);
-  final rightPrimary = _dateTime(right.validFrom);
-  final primaryDifference = (rightPrimary == _missingCatalogueTime
-          ? rightCaptured
-          : rightPrimary)
-      .compareTo(
-          leftPrimary == _missingCatalogueTime ? leftCaptured : leftPrimary);
-  if (primaryDifference != 0) return primaryDifference;
-
   final captureDifference = rightCaptured.compareTo(leftCaptured);
   if (captureDifference != 0) return captureDifference;
+
+  // Same moment, or neither was stamped: fall back to when the specials run.
+  final leftStart = _dateTime(left.validFrom);
+  final rightStart = _dateTime(right.validFrom);
+  final startDifference = rightStart.compareTo(leftStart);
+  if (startDifference != 0) return startDifference;
   return _compareCatalogueStores(left, right);
 }
 
@@ -135,17 +142,10 @@ int _compareCatalogueStores(Catalogue left, Catalogue right) {
   return left.name.compareTo(right.name);
 }
 
+/// The same newest-first rule, without recursing back into the store name.
 int _compareCatalogueDatesWithoutStore(Catalogue left, Catalogue right) {
-  final leftCaptured = _dateTime(left.capturedAt);
-  final rightCaptured = _dateTime(right.capturedAt);
-  final leftPrimary = _dateTime(left.validFrom);
-  final rightPrimary = _dateTime(right.validFrom);
-  final primaryDifference = (rightPrimary == _missingCatalogueTime
-          ? rightCaptured
-          : rightPrimary)
-      .compareTo(
-          leftPrimary == _missingCatalogueTime ? leftCaptured : leftPrimary);
-  return primaryDifference != 0
-      ? primaryDifference
-      : rightCaptured.compareTo(leftCaptured);
+  final captureDifference =
+      _dateTime(right.capturedAt).compareTo(_dateTime(left.capturedAt));
+  if (captureDifference != 0) return captureDifference;
+  return _dateTime(right.validFrom).compareTo(_dateTime(left.validFrom));
 }

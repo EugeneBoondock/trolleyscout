@@ -1317,7 +1317,7 @@ class _DealThumb extends StatelessWidget {
       color: TS.surfaceSoftOf(context),
       child: Image.network(
         imageUrl!,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => placeholder,
         // Fade the photo in rather than letting it pop, and hold the card's
         // shape while it downloads so the strip never jumps.
