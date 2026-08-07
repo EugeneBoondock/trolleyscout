@@ -1049,14 +1049,28 @@ class _RootShellState extends State<RootShell>
                             child: Theme(
                               data: Theme.of(context).copyWith(
                                 navigationBarTheme: NavigationBarThemeData(
-                                  labelTextStyle: WidgetStatePropertyAll(
-                                    TextStyle(
-                                      color: TS.inkOf(context),
+                                  // The chosen label is struck through with
+                                  // the mascot's yellow, the way a marker
+                                  // goes over a word. Paired with the sticker
+                                  // glyph above it, the selection is stated
+                                  // twice without either half shouting.
+                                  labelTextStyle:
+                                      WidgetStateProperty.resolveWith((states) {
+                                    final chosen =
+                                        states.contains(WidgetState.selected);
+                                    return TextStyle(
+                                      color: chosen
+                                          ? TS.ink
+                                          : TS.inkOf(context),
                                       fontSize: navLabelSize,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight:
+                                          chosen ? FontWeight.w900 : FontWeight.w800,
                                       height: 1,
-                                    ),
-                                  ),
+                                      background: chosen
+                                          ? (Paint()..color = TS.yellow)
+                                          : null,
+                                    );
+                                  }),
                                 ),
                               ),
                               child: NavigationBar(
@@ -1089,19 +1103,17 @@ class _RootShellState extends State<RootShell>
                                         _primaryDestinations[index]),
                                 destinations: [
                                   NavigationDestination(
-                                    icon: PhosphorIcon(PhosphorIconsRegular.house,
-                                        size: navIconSize),
+                                    icon: _NavIcon(PhosphorIconsRegular.house, navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: PhosphorIconsBold.house,
+                                      icon: PhosphorIconsFill.house,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Home',
                                   ),
                                   NavigationDestination(
-                                    icon: PhosphorIcon(PhosphorIconsRegular.tag,
-                                        size: navIconSize),
+                                    icon: _NavIcon(PhosphorIconsRegular.tag, navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: PhosphorIconsBold.tag,
+                                      icon: PhosphorIconsFill.tag,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Marketplace',
@@ -1118,19 +1130,17 @@ class _RootShellState extends State<RootShell>
                                     label: 'Mr Scout',
                                   ),
                                   NavigationDestination(
-                                    icon: PhosphorIcon(PhosphorIconsRegular.storefront,
-                                        size: navIconSize),
+                                    icon: _NavIcon(PhosphorIconsRegular.storefront, navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: PhosphorIconsBold.storefront,
+                                      icon: PhosphorIconsFill.storefront,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Stores',
                                   ),
                                   NavigationDestination(
-                                    icon: PhosphorIcon(PhosphorIconsRegular.squaresFour,
-                                        size: navIconSize),
+                                    icon: _NavIcon(PhosphorIconsRegular.squaresFour, navIconSize),
                                     selectedIcon: _SelectedNavIcon(
-                                      icon: PhosphorIconsBold.squaresFour,
+                                      icon: PhosphorIconsFill.squaresFour,
                                       iconSize: navIconSize,
                                     ),
                                     label: 'Window',
@@ -1246,6 +1256,19 @@ class _RootShellState extends State<RootShell>
   }
 }
 
+/// An unselected destination: line art, stepped back so the chosen one owns
+/// the row.
+class _NavIcon extends StatelessWidget {
+  const _NavIcon(this.icon, this.size);
+
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      Icon(icon, size: size, color: TS.mutedOf(context));
+}
+
 class _SelectedNavIcon extends StatelessWidget {
   const _SelectedNavIcon({required this.icon, required this.iconSize});
 
@@ -1254,16 +1277,24 @@ class _SelectedNavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The selected tab lights its own strokes rather than sitting inside a
-    // yellow lozenge. The pill was a second shape competing with the icon at
-    // the moment the icon has something to say, and it capped every glyph at
-    // lozenge size. Weight plus colour reads faster and leaves the icon its
-    // full room.
-    return Icon(
-      icon,
-      size: iconSize,
-      color: TS.yellow,
-      shadows: const [Shadow(color: Color(0x66FFD42E), blurRadius: 9)],
+    // A pressed sticker: the solid glyph in the mascot's yellow with its own
+    // ink copy offset behind it. It is the same hard, blur-free shadow every
+    // slab in the app casts, applied to a shape instead of a box, so the bar
+    // belongs to the system rather than borrowing Material's lozenge.
+    return SizedBox(
+      height: iconSize + 2,
+      width: iconSize + 2,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 2,
+            top: 2,
+            child: Icon(icon, size: iconSize, color: TS.ink),
+          ),
+          Icon(icon, size: iconSize, color: TS.yellow),
+        ],
+      ),
     );
   }
 }
